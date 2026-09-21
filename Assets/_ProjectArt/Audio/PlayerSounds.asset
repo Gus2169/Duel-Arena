@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fc587c3b86b205b4ab0f3275c94c8fff, type: 3}
+  m_Name: PlayerSounds
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerSoundBank
+  entries:
+  - type: 0
+    clips:
+    - {fileID: 8300000, guid: bd649b9ed3d3ee648bd27b5a9ad89943, type: 3}
+    volume: 0.2
+    pitchRange: {x: 0.92, y: 1}
