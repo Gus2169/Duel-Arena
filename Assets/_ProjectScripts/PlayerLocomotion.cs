@@ -140,6 +140,17 @@ public class PlayerLocomotion : NetworkBehaviour
     [SerializeField] private AnimationCurve vaultHeightCurve = BuildDefaultVaultArc();
     [SerializeField] private bool debugDrawVaultRays = true;
 
+#if UNITY_EDITOR
+    // Compilé UNIQUEMENT dans l'Editor : ne peut pas se retrouver dans une build, même si la case
+    // reste cochée par mégarde dans le prefab. Même raisonnement que dans WeaponController.
+    [Header("Debug — triche simulée (Editor uniquement, décoche après usage)")]
+    [Tooltip("SIMULE UN CLIENT MODIFIÉ qui spamme la RPC d'input pour se déplacer plus vite que le serveur ne l'autorise. Sert à vérifier que le budget de temps de ApplyBufferedServerInputs tient : attendu = le joueur N'avance PAS plus vite, il se fait ramener en arrière en permanence par la réconciliation. N'a d'effet QUE sur une instance CLIENT distante (cas 2) — en Host, ton propre perso ne passe jamais par la queue serveur, donc cocher la case ne fera rien.")]
+    [SerializeField] private bool debugFloodServerInputs;
+
+    [Tooltip("Nombre d'envois de la RPC d'input par frame quand 'Debug Flood Server Inputs' est coché (1 = comportement normal). Avant le budget de temps, une valeur de 10 suffisait à traverser la carte.")]
+    [SerializeField, Range(1, 30)] private int debugFloodMultiplier = 10;
+#endif
+
     [Header("Réseau — spectateur")]
     [Tooltip("Délai volontaire (s) auquel un spectateur affiche un joueur distant, pour toujours avoir 2 points d'historique connus entre lesquels interpoler.")]
     [SerializeField] private float interpolationDelay = 0.1f;
@@ -393,11 +404,40 @@ public class PlayerLocomotion : NetworkBehaviour
         if (controller.isGrounded && !wasGrounded) TriggerLandingKick(Mathf.Abs(verticalVelocity));
 
         SubmitInputServerRpc(sequence, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, dt);
+
+#if UNITY_EDITOR
+        // Triche simulée : on renvoie le MÊME input plusieurs fois, avec des numéros de séquence
+        // distincts pour qu'il passe pour du trafic légitime. Chaque copie est individuellement
+        // plausible (même dt qu'un vrai frame) — c'est précisément ce qui rendait cette attaque
+        // invisible pour l'ancien garde-fou, qui ne bornait que le dt d'un input isolé et le total
+        // par FRAME serveur (contournable en gardant la queue pleine, voir ApplyBufferedServerInputs).
+        //
+        // Note : les copies ne sont volontairement PAS ajoutées à unconfirmedInputs — le client ne
+        // les a pas prédites. La réconciliation devient donc franchement brutale dès que le serveur
+        // confirme une de ces séquences, ce qui est exactement l'effet observable recherché.
+        if (debugFloodServerInputs)
+        {
+            for (int i = 1; i < debugFloodMultiplier; i++)
+            {
+                SubmitInputServerRpc(nextInputSequence++, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, dt);
+            }
+        }
+#endif
     }
 
     [ServerRpc]
     private void SubmitInputServerRpc(int sequence, Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, bool fireHeld, bool firePressedThisFrame, float deltaTime)
     {
+        // Garde-fou anti-flood (mémoire) : les ServerRpc sont livrées en Reliable, donc TOUT ce
+        // qu'un client envoie finit par arriver. Sans plafond, un client qui spamme cette RPC fait
+        // grossir la queue indéfiniment — la mémoire du serveur monte, et le retard de simulation
+        // de CE joueur s'allonge sans jamais se résorber (chaque Update() serveur n'en consomme
+        // qu'une fraction, voir le budget dans ApplyBufferedServerInputs). On jette donc les inputs
+        // excédentaires plutôt que de les accumuler : un client légitime n'atteint jamais ce
+        // plafond (MaxQueuedInputs ≈ 2 s de jeu à 60 FPS), et un client qui le dépasse se pénalise
+        // lui-même par une réconciliation plus brutale — ce qui est exactement le comportement voulu.
+        if (serverInputQueue.Count >= MaxQueuedInputs) return;
+
         serverInputQueue.Enqueue(new PendingInput
         {
             sequence = sequence,
@@ -424,28 +464,52 @@ public class PlayerLocomotion : NetworkBehaviour
     // RÉELLEMENT écoulé côté client — un client modifié pourrait en envoyer un artificiellement
     // grand pour parcourir une distance disproportionnée en un seul Move(), ou en spammer des
     // milliers avec un deltaTime individuellement plausible pour obtenir le même résultat par
-    // accumulation. Les deux bornes ci-dessous restent volontairement larges (elles ne doivent
-    // jamais pénaliser un vrai à-coup réseau/frame) : ce n'est qu'un premier filet, pas une
-    // simulation serveur indépendante du temps client — voir TODO rewind dans WeaponController
-    // pour la suite logique de ce renforcement.
+    // accumulation.
+    //
+    // MaxSingleInputDeltaTime traite le PREMIER cas (un dt aberrant isolé). Le SECOND cas (le
+    // flood) demande une borne sur le temps simulé accordé par unité de temps RÉEL, pas par
+    // frame : une borne par frame se contourne trivialement en gardant la queue pleine, puisque
+    // le serveur tourne à ~60 frames par seconde (l'ancienne borne de 0,5 s/frame autorisait
+    // ainsi ~30 s de mouvement simulé par seconde réelle, soit un speedhack ×30). D'où le budget
+    // ci-dessous, rechargé au rythme du temps réel.
     private const float MaxSingleInputDeltaTime = 0.1f; // ~3 ticks à 30Hz : couvre un vrai freeze client sans laisser passer un dt aberrant.
-    private const float MaxProcessedDeltaTimePerServerFrame = 0.5f; // borne la distance totale rattrapable en un seul Update() serveur, même si la queue déborde de messages.
+
+    // Budget de temps simulé (en secondes) accordé au client, rechargé de Time.deltaTime à chaque
+    // Update() serveur. Le point clé : pour un client LÉGITIME, la somme des deltaTime envoyés par
+    // seconde vaut toujours ≈ 1 seconde, quel que soit son framerate (60 FPS = 60 inputs de 16 ms,
+    // 144 FPS = 144 inputs de 7 ms — même total). Le budget ne pénalise donc jamais un gros
+    // framerate, seulement un client qui prétend avoir vécu plus de temps qu'il n'en est passé.
+    private const float InputTimeBudgetRefillFactor = 1.1f;  // 10% de marge pour la gigue réseau/frame.
+    private const float MaxInputTimeBudget = 0.25f;          // réserve max : permet un vrai rattrapage après un à-coup réseau, sans plus.
+    private const int MaxQueuedInputs = 120;                 // ≈ 2 s de jeu à 60 FPS — voir SubmitInputServerRpc.
+
+    private float serverInputTimeBudget;
 
     private void ApplyBufferedServerInputs()
     {
         int lastProcessedSequence = -1;
-        float processedDeltaTime = 0f;
 
-        while (serverInputQueue.Count > 0 && processedDeltaTime < MaxProcessedDeltaTimePerServerFrame)
+        serverInputTimeBudget = Mathf.Min(
+            serverInputTimeBudget + Time.deltaTime * InputTimeBudgetRefillFactor,
+            MaxInputTimeBudget);
+
+        while (serverInputQueue.Count > 0)
         {
-            PendingInput next = serverInputQueue.Dequeue();
+            // Peek plutôt que Dequeue : si le budget ne couvre pas cet input EN ENTIER, on le
+            // laisse dans la queue pour le prochain Update() au lieu de le tronquer. Simuler un
+            // input avec un dt partiel casserait la réconciliation (le client, lui, a prédit avec
+            // le dt complet) — exactement le genre de divergence que Move() doit éviter.
+            PendingInput next = serverInputQueue.Peek();
             float dt = Mathf.Clamp(next.deltaTime, 0f, MaxSingleInputDeltaTime);
+            if (dt > serverInputTimeBudget) break;
+
+            serverInputQueue.Dequeue();
+            serverInputTimeBudget -= dt;
 
             ServerCheckAutoStand(next.snapshot);
             Move(next.snapshot, dt);
             ServerAdvanceFootsteps(dt);
             lastProcessedSequence = next.sequence;
-            processedDeltaTime += dt;
         }
 
         // Le reste éventuel de la queue (flood ou vrai gros rattrapage) attend le prochain

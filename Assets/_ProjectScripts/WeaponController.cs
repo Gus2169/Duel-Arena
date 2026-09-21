@@ -51,6 +51,23 @@ public class WeaponController : NetworkBehaviour
     [Tooltip("Multiplicateur (%) additionnel appliqué par-dessus le pourcentage ci-dessus quand le joueur vise (input Aim maintenu). S'applique quelle que soit la posture/le déplacement, comme le sneak : viser stabilise toujours l'arme en plus du reste.")]
     [SerializeField, Range(0f, 100f)] private float recoilPercentWhileAiming = 50f;
 
+    [Header("Garde-fous serveur (anti-triche)")]
+    [Tooltip("Distance max (m) tolérée entre l'origine de tir annoncée par le client et la position du joueur connue du SERVEUR. Au-delà, le tir est rejeté : c'est ce qui empêche un client modifié de tirer depuis n'importe où sur la carte. Doit couvrir la hauteur caméra + le lean + l'avance de prédiction du tireur sous latence — voir le détail dans FireServerRpc. À resserrer une fois le rewind en place. Si tu vois des tirs légitimes rejetés en Console pendant un test à fort ping, augmente cette valeur plutôt que de retirer le garde-fou.")]
+    [SerializeField] private float maxOriginDistanceFromPlayer = 4f;
+
+#if UNITY_EDITOR
+    // Tout ce bloc est compilé UNIQUEMENT dans l'Editor (#if UNITY_EDITOR) : il ne peut donc
+    // physiquement pas se retrouver dans une build, même si la case reste cochée par mégarde dans
+    // le prefab. C'est volontaire — du code de triche laissé traîner est exactement le genre de
+    // chose qu'on retrouve dans une build six mois plus tard.
+    [Header("Debug — triche simulée (Editor uniquement, décoche après usage)")]
+    [Tooltip("SIMULE UN CLIENT MODIFIÉ. Décale l'origine de tir envoyée au serveur de N mètres vers l'avant, comme le ferait un tricheur voulant tirer depuis ailleurs (à travers un mur, derrière l'adversaire). Sert à vérifier que le garde-fou 'Max Origin Distance From Player' se déclenche bien : attendu = aucun dégât appliqué + un warning '[Serveur] Tir rejeté' en Console à chaque tir. À tester depuis l'instance CLIENT, pas le Host.")]
+    [SerializeField] private bool debugFakeShotOrigin;
+
+    [Tooltip("Décalage (m) appliqué quand 'Debug Fake Shot Origin' est coché. 50 m place l'origine largement au-delà de la tolérance serveur et de la plupart des murs de l'arène.")]
+    [SerializeField] private float debugFakeShotOriginOffset = 50f;
+#endif
+
     private PlayerInputReader input;
     private PlayerLocomotion locomotion;
 
@@ -155,7 +172,14 @@ public class WeaponController : NetworkBehaviour
             // Contexte réseau normal : seuls origin/direction partent au serveur, qui refait SEUL
             // son propre raycast et décide SEUL du résultat (voir FireServerRpc) — un client modifié
             // ne peut donc plus mentir sur ce qu'il prétend avoir touché.
-            FireServerRpc(origin, direction);
+            Vector3 sentOrigin = origin;
+#if UNITY_EDITOR
+            // Triche simulée : on ment au serveur sur l'origine du tir, exactement comme le ferait
+            // un client modifié. Le feedback visuel local ci-dessus reste, lui, honnête — on voit
+            // donc bien à l'écran que le tir part d'où il devrait, alors que le serveur le rejette.
+            if (debugFakeShotOrigin) sentOrigin = origin + direction * debugFakeShotOriginOffset;
+#endif
+            FireServerRpc(sentOrigin, direction);
         }
         else if (hitSomething)
         {
@@ -223,6 +247,31 @@ public class WeaponController : NetworkBehaviour
         // d'exception, mais autant refuser explicitement plutôt que de raycaster pour rien.
         if (direction.sqrMagnitude < 0.0001f) return;
         direction = direction.normalized;
+
+        // Garde-fou anti-triche : `origin` est fourni par le CLIENT et servait jusqu'ici tel quel.
+        // Sans cette vérification, un client modifié peut raycaster depuis N'IMPORTE QUEL point de
+        // la carte — derrière l'adversaire, de l'autre côté d'un mur, depuis le spawn d'en face —
+        // tout en respectant parfaitement la cadence de tir. C'était le trou le plus grave restant
+        // dans le hit registration, plus grave que l'absence de rewind.
+        //
+        // On compare à la racine du joueur côté SERVEUR (aux pieds), pas à la caméra : le
+        // cameraPivot n'est mis à jour que sur l'instance du propriétaire (catégorie C), donc sa
+        // position est périmée côté serveur pour un client distant et ne peut pas servir de
+        // référence. D'où une tolérance en distance plutôt qu'une égalité — elle doit couvrir :
+        //   - la hauteur caméra debout (~1,7 m au-dessus des pieds),
+        //   - le décalage latéral du lean (~0,4 m),
+        //   - et surtout l'AVANCE de prédiction du tireur : son client simule en avance sur le
+        //     serveur, donc sa caméra est légitimement devant la position que le serveur lui
+        //     connaît, d'autant plus que le ping est élevé (~1,2 m à 6 m/s et 200 ms de RTT).
+        // La valeur par défaut est donc volontairement large : l'objectif est de rendre impossible
+        // le tir "depuis ailleurs", pas de chipoter sur quelques dizaines de centimètres. Elle
+        // pourra être resserrée une fois le rewind en place (le serveur saura alors où le tireur
+        // se trouvait vraiment au moment du tir, et non seulement où il est maintenant).
+        if ((origin - transform.root.position).sqrMagnitude > maxOriginDistanceFromPlayer * maxOriginDistanceFromPlayer)
+        {
+            Debug.LogWarning($"[Serveur] Tir rejeté : origine invalide (à {Vector3.Distance(origin, transform.root.position):F1} m du joueur, max {maxOriginDistanceFromPlayer} m). Soit un client modifié, soit la tolérance est trop serrée pour la latence testée.", this);
+            return;
+        }
 
         bool hitSomething = Physics.Raycast(origin, direction, out RaycastHit hit, data.maxRange, data.hittableMask);
         Vector3 end = hitSomething ? hit.point : origin + direction * data.maxRange;
