@@ -58,6 +58,10 @@ public class WeaponController : NetworkBehaviour
     private float timeSinceLastShot;
     private int shotIndexInBurst;
 
+    // Garde-fou anti-triche (voir FireServerRpc) : dernier tir ACCEPTÉ par le serveur, pour
+    // faire respecter data.shotsPerSecond indépendamment de ce que le client prétend faire.
+    private float serverLastAcceptedFireTime = -Mathf.Infinity;
+
     private float verticalRecoilAccumulated;
     private float horizontalRecoilAccumulated;
 
@@ -200,6 +204,26 @@ public class WeaponController : NetworkBehaviour
     [ServerRpc]
     private void FireServerRpc(Vector3 origin, Vector3 direction)
     {
+        // Garde-fou anti-triche : cooldown/HandleFireInput ne sont que des CONVENTIONS côté
+        // client — rien n'empêche un client modifié d'appeler cette RPC aussi vite qu'il veut.
+        // Le serveur doit donc lui-même refuser tout tir arrivant plus vite que shotsPerSecond
+        // ne l'autorise, sans quoi la cadence de tir n'est jamais réellement protégée malgré
+        // tout le soin apporté au hit registration ci-dessous. Tolérance de 15% pour absorber
+        // la gigue réseau/frame sans pénaliser un tir légitime tombé pile à la limite.
+        float minInterval = 1f / Mathf.Max(0.01f, data.shotsPerSecond);
+        float now = Time.time;
+        if (now - serverLastAcceptedFireTime < minInterval * 0.85f)
+        {
+            return;
+        }
+        serverLastAcceptedFireTime = now;
+
+        // Garde-fou anti-triche : une direction nulle (ou non fournie) ferait un Raycast dans une
+        // direction indéfinie — .normalized d'un vecteur nul renvoie déjà Vector3.zero sans lever
+        // d'exception, mais autant refuser explicitement plutôt que de raycaster pour rien.
+        if (direction.sqrMagnitude < 0.0001f) return;
+        direction = direction.normalized;
+
         bool hitSomething = Physics.Raycast(origin, direction, out RaycastHit hit, data.maxRange, data.hittableMask);
         Vector3 end = hitSomething ? hit.point : origin + direction * data.maxRange;
         Vector3 hitNormal = hitSomething ? hit.normal : Vector3.zero;

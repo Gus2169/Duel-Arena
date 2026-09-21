@@ -419,18 +419,37 @@ public class PlayerLocomotion : NetworkBehaviour
     // Cas 3 — serveur : seule source de vérité pour le perso d'un client distant
     // ------------------------------------------------------------------
 
+    // Garde-fous anti-triche sur les inputs reçus du client (voir ApplyBufferedServerInputs) :
+    // rien ne garantit que le deltaTime envoyé par SubmitInputServerRpc reflète le temps
+    // RÉELLEMENT écoulé côté client — un client modifié pourrait en envoyer un artificiellement
+    // grand pour parcourir une distance disproportionnée en un seul Move(), ou en spammer des
+    // milliers avec un deltaTime individuellement plausible pour obtenir le même résultat par
+    // accumulation. Les deux bornes ci-dessous restent volontairement larges (elles ne doivent
+    // jamais pénaliser un vrai à-coup réseau/frame) : ce n'est qu'un premier filet, pas une
+    // simulation serveur indépendante du temps client — voir TODO rewind dans WeaponController
+    // pour la suite logique de ce renforcement.
+    private const float MaxSingleInputDeltaTime = 0.1f; // ~3 ticks à 30Hz : couvre un vrai freeze client sans laisser passer un dt aberrant.
+    private const float MaxProcessedDeltaTimePerServerFrame = 0.5f; // borne la distance totale rattrapable en un seul Update() serveur, même si la queue déborde de messages.
+
     private void ApplyBufferedServerInputs()
     {
         int lastProcessedSequence = -1;
+        float processedDeltaTime = 0f;
 
-        while (serverInputQueue.Count > 0)
+        while (serverInputQueue.Count > 0 && processedDeltaTime < MaxProcessedDeltaTimePerServerFrame)
         {
             PendingInput next = serverInputQueue.Dequeue();
+            float dt = Mathf.Clamp(next.deltaTime, 0f, MaxSingleInputDeltaTime);
+
             ServerCheckAutoStand(next.snapshot);
-            Move(next.snapshot, next.deltaTime);
-            ServerAdvanceFootsteps(next.deltaTime);
+            Move(next.snapshot, dt);
+            ServerAdvanceFootsteps(dt);
             lastProcessedSequence = next.sequence;
+            processedDeltaTime += dt;
         }
+
+        // Le reste éventuel de la queue (flood ou vrai gros rattrapage) attend le prochain
+        // Update() serveur plutôt que d'être traité d'un coup — voir commentaire ci-dessus.
 
         if (lastProcessedSequence >= 0)
         {
