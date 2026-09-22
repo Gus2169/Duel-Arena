@@ -68,9 +68,12 @@ Deux interrupteurs de triche simulée dans l'inspecteur, sous le header `Debug �
 
 ## Pièges déjà rencontrés (ne pas les re-découvrir)
 
-- **Valeur RELATIVE/cumulative dans `Move()`** → doit avoir un équivalent « valeur confirmée » renvoyé par le serveur et appliqué AVANT le rejeu des inputs non confirmés, sinon dérive à chaque correction (bug du yaw en double). Vaut pour toute future extension de `Move()`.
+- **Valeur RELATIVE/cumulative dans `Move()`** → doit avoir un équivalent « valeur confirmée » renvoyé par le serveur et appliqué AVANT le rejeu des inputs non confirmés, sinon dérive à chaque correction. Déjà arrivé deux fois : le yaw (dérive en double) et `currentVelocity` (désaccord permanent en accel/décel). Vaut pour toute future extension de `Move()`.
+- **Comparer une prédiction, c'est comparer à séquence ÉGALE.** Le seuil de réconciliation compare ce que le serveur confirme pour une séquence donnée à ce que le client avait prédit **pour cette même séquence** (`PendingInput.predictedPosition`). Comparer à la position *actuelle* du client n'aurait aucun sens : elle est en avance de tout le RTT, donc l'écart y est toujours grand. Corollaire : après un rejeu, les prédictions stockées doivent être **réécrites** avec les nouvelles valeurs, sinon la correction suivante se base sur des données périmées.
 - **Tout script qui lit clavier/souris doit avoir une garde `IsOwner`** en tête d'`Update()`/`LateUpdate()` — sinon chaque instance locale réagit à la souris physique (caméras qui bougent sur 2 écrans, `AudioListener` en surnombre, tirs pour tout le monde). `PlayerInputReader` ne connaît volontairement pas la notion de propriétaire : c'est aux consommateurs de se garder.
-- **Warning « N audio listeners in the scene »** : la garde dans `OnNetworkSpawn` ne voit que les enfants du Player. Un `AudioListener` orphelin ailleurs dans la scène (typiquement une caméra de secours affichée avant le spawn) ne sera jamais désactivé par ce code — chercher là en premier.
+- **JAMAIS d'instance du PlayerPrefab posée dans une scène réseau**, même désactivée. Netcode ré-ACTIVE de force les `NetworkObject` in-scene désactivés côté client — c'est écrit noir sur blanc dans `NetworkSpawnManager.cs` (« if it is disabled then enable it so NetworkBehaviours will have their OnNetworkSpawn method invoked »). Symptôme vécu le 2026-09-22 : un joueur fantôme apparaissait sur le CLIENT au moment de sa connexion, au point de spawn, invisible pour le Host et absent de la hiérarchie de l'Editor — avec sa caméra et son `AudioListener`, d'où le warning des 2 audio listeners. **Un joueur se spawne par `NetworkManager.PlayerPrefab`, jamais en le posant dans la scène.** Même méfiance pour tout autre `NetworkObject` in-scene désactivé.
+- **La caméra de secours de la scène doit être éteinte au démarrage d'une session.** Deux caméras plein écran actives à la même `depth` = la scène rendue DEUX FOIS par frame (et un `AudioListener` de trop). C'est `NetworkBootstrapUI` qui s'en charge, pas `PlayerLocomotion` : la garde de ce dernier ne voit que les enfants du Player, et cette caméra n'en est pas un. Cause identifiée le 2026-09-22 d'un Host qui ramait par rapport au Client.
+- **Warning « N audio listeners in the scene »** : la garde dans `OnNetworkSpawn` ne voit que les enfants du Player. Un `AudioListener` orphelin ailleurs dans la scène ne sera jamais désactivé par ce code — voir les deux points ci-dessus, qui en sont les deux causes déjà rencontrées.
 - **Un champ `[SerializeField]` assigné dans l'inspecteur PENDANT le Play Mode n'est jamais sauvegardé.** Symptôme typique : un fix qui marche dans un contexte mais pas l'autre alors que le code est identique. Toujours assigner en mode Édition puis sauvegarder.
 - **Ressenti « saccadé » en build** : vérifier d'abord le Packet Delay Ms du Debug Simulator avant de soupçonner le réseau ou le code. Contrainte réelle séparée : 2 instances complètes sur une machine coûtent cher en perf.
 - **`obstacleMask`** (utilisé par `CheckCapsule`/`CheckSphere`, pas seulement des raycasts) doit exclure le layer du joueur : `obstacleMask &= ~(1 << gameObject.layer)` dans `Awake`.
@@ -90,19 +93,23 @@ Les deux référencent un asset Terrain à la racine d'`Assets/` (`New Terrain.a
 
 **Placeholders assumés** (à remplacer avec le vrai système d'armes / le vrai HUD, pas des bugs) : `CrosshairUI` (réticule OnGUI), `WeaponVisualFeedback` (tracer/impact procéduraux), `NetworkBootstrapUI` (boutons Host/Server/Client en OnGUI).
 
-`TestSpin.cs` reste utilisé par un objet de test (`CubeTest`) dans la scène.
+`CubeTest` (dans `MultiTestScene`) est un `NetworkObject` in-scene **désactivé**, donc `TestSpin.cs` ne tourne jamais. Il n'est pas impliqué dans le bug du joueur fantôme (il n'est pas le `PlayerPrefab`), mais c'est la même famille de piège : à supprimer au prochain nettoyage, ce qui rendra `TestSpin.cs` mort à son tour.
+
+Les objets `/Spawn` et `/Spawn Enemy` de `MultiTestScene` **ne sont câblés à rien** — voir dette n°7.
 
 ## Dettes techniques (audit du 2026-09-21, vérifié dans le code)
 
 1. ✅ **Corrigé** — speedhack par flood d'inputs (borne par frame → budget sur le temps réel).
 2. ✅ **Corrigé** — `origin` de tir non validée dans `FireServerRpc`.
-3. **Réconciliation sans seuil d'erreur.** `ApplyBufferedServerInputs` envoie une correction à *chaque* frame serveur où des inputs ont été traités. Côté client, chaque correction fait un `controller.enabled = false/true`, un repositionnement, puis rejoue **tous** les inputs non confirmés — à 100 ms de RTT, ~600 `CharacterController.Move()` par seconde et par joueur juste pour réconcilier. Le toggle de `controller.enabled` remet en plus `isGrounded` à `false` à chaque correction, ce qui fait clignoter la détection de sol. **Fix : ne réconcilier que si `Vector3.Distance(predicted, confirmed) > ~0.05f`.**
-4. **Deux états échappent à la réconciliation — même famille que le bug de yaw.**
-   - `currentVelocity` (cumulative via `MoveTowards`) n'est jamais recalée sur une valeur serveur avant le rejeu. Elle reconverge seule, mais garantit un désaccord permanent pendant chaque phase d'accel/décel.
-   - **La hauteur/le rayon du `CharacterController`** : `UpdateStanceTransition()` lerp avec `Time.deltaTime` indépendamment sur chaque instance. Pendant une transition de posture, client et serveur n'ont pas la même capsule → pas la même collision → `Move()` n'est plus déterministe, ce qui viole le contrat écrit en en-tête de la fonction. **À corriger avant le hitbox rewindable**, qui sinon se construit sur une base non déterministe.
-5. **Bug de spawn latent.** `PlayerLocomotion.OnNetworkSpawn` fait `transform.position = networkPosition.Value`, mais au spawn la `NetworkVariable` vaut encore `default` = **(0,0,0)**. Le commentaire dit « évite un téléport visuel » ; en pratique ça *provoque* un téléport à l'origine du monde, serveur compris. Invisible aujourd'hui (pas de points de spawn) — ça cassera dès la boucle BO5 avec des spawns opposés. Fix : ne repositionner que si `!IsServer`, et initialiser `networkPosition.Value = transform.position` côté serveur.
+3. ✅ **Corrigé le 2026-09-22** — réconciliation sans seuil d'erreur. Le client ne se recale plus qu'au-delà de `positionReconciliationThreshold` (5 cm) ou `yawReconciliationThreshold` (1°), au lieu de recaler + rejouer à chaque frame.
+4. **Un état échappe encore à la réconciliation.**
+   - ✅ **Corrigé le 2026-09-22** — `currentVelocity` est désormais renvoyée par le serveur dans la correction et appliquée avant le rejeu.
+   - **La hauteur/le rayon du `CharacterController`** : `UpdateStanceTransition()` lerp avec `Time.deltaTime` indépendamment sur chaque instance. Pendant une transition de posture, client et serveur n'ont pas la même capsule → pas la même collision → `Move()` n'est plus déterministe, ce qui viole le contrat écrit en en-tête de la fonction. **À corriger avant le hitbox rewindable**, qui sinon se construit sur une base non déterministe. C'est aussi la cause la plus probable si des recalages fréquents subsistent en changeant de posture.
+5. ✅ **Corrigé le 2026-09-22** — spawn téléporté à l'origine du monde. `OnNetworkSpawn` appliquait `transform.position = networkPosition.Value` inconditionnellement, alors que la `NetworkVariable` vaut encore `default` = (0,0,0) à cet instant. Le serveur publie désormais sa position de spawn, et seuls les clients s'y alignent.
 
-6. **GPU Resident Drawer incompatible avec la géométrie ProBuilder.** `PC_RPAsset.asset` a `m_GPUResidentDrawerMode: 1`. Résultat : à chaque ouverture de scène, la Console se remplit d'erreurs `BatchDrawCommand was submitted with an invalid Batch, Mesh, or Material ID` (`MaterialID: ProBuilderDefault`, `MeshID: <null>`, passe SHADOWCASTER) — **139 dans `Arena.unity`, 155 dans `MultiTestScene.unity`**. Ce n'est pas un bug de gameplay et ça ne casse rien de visible, mais ça **noie la Console**, donc ça masque les vraies erreurs. Deux options : passer `m_GPUResidentDrawerMode` à 0 (le plus simple, le gain du GPU Resident Drawer est nul à cette échelle), ou attendre de remplacer le blocking ProBuilder par les assets finaux. **Vérifié le 2026-09-22 : ces erreurs sont pré-existantes et indépendantes du code du projet.**
+7. **Les deux joueurs spawnent encore au MÊME endroit.** Plus par téléport à l'origine (dette n°5 corrigée), mais parce que rien n'assigne de position de spawn : `NetworkManager` instancie le prefab à sa propre position, pour tout le monde. Les deux `CharacterController` se chevauchent puis se repoussent — c'est visible en test à 2 joueurs. La scène contient déjà des objets `/Spawn` et `/Spawn Enemy` **qui ne sont câblés à rien**. Fix : côté serveur, positionner le joueur sur un point de spawn libre au moment du spawn (naturellement lié à la boucle de round, qui devra de toute façon replacer les joueurs à chaque manche).
+
+6. ✅ **Corrigé le 2026-09-22** — GPU Resident Drawer incompatible avec la géométrie ProBuilder. `PC_RPAsset.asset` avait `m_GPUResidentDrawerMode: 1`, ce qui noyait la Console sous ~150 erreurs `BatchDrawCommand was submitted with an invalid Batch, Mesh, or Material ID` à chaque ouverture de scène — sans effet visible en jeu, mais ça masquait les vraies erreurs. Passé à 0 ; son gain est nul à l'échelle d'une arène de duel. **À reconsidérer seulement si la géométrie finale n'est plus du ProBuilder et que le nombre d'objets explose.**
 
 **Hygiène** : aucun `.asmdef` → tout dans `Assembly-CSharp`, recompilation complète à chaque modif. **Aucun test**, alors que `Move()` est une fonction pure paramétrée par un snapshot : un test EditMode « même snapshot × 2 → même position » attraperait les régressions de déterminisme de la dette n°4 automatiquement.
 
@@ -124,14 +131,29 @@ Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline
 
 ## Ordre de travail
 
-1. **Seuil de réconciliation + `currentVelocity` confirmée** (dettes 3 et 4) — améliore le feel *et* la perf.
-2. **Déterminisme de la hauteur de capsule** (dette 4) — **avant** le hitbox.
-3. **Hitbox de tir séparé du `CharacterController` de mouvement.** Aujourd'hui le raycast serveur touche le `CharacterController`, qui suit la posture mais **jamais le lean** (le lean ne déplace que la caméra/`leanPivot`) : un joueur qui penche pour peek est partiellement intouchable sur son flanc exposé. Le hitbox doit suivre posture ET lean, être synchronisé et **rewindable**. Le `CharacterController`, lui, ne doit jamais bouger avec le lean (ça casserait la collision monde).
-4. **Rewind / compensation de latence** — à traiter avec le point 3, même cause racine. **Pas implémenté**, TODO détaillé dans `WeaponController.FireServerRpc`. Approche retenue : mesurer le RTT en piggybackant sur le round-trip prédiction/réconciliation existant (plutôt qu'une RPC de ping dédiée ou l'horloge de Netcode), historique de position glissant côté serveur, délai de rewind suggéré par le client mais **clampé serveur**, restauration en `try/finally`.
-5. **Boucle de round / conditions de victoire (BO5)** — rien ne termine la partie aujourd'hui, seule la vie baisse. C'est ce qui fera remonter la dette n°5 (spawns).
-6. **Vault réseauté** — voir ci-dessous.
-7. **Migrer le multijoueur vers `Arena.unity`.**
-8. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
+*(Livré le 2026-09-22, **pas encore testé à 2 joueurs réels** : seuil de réconciliation + `currentVelocity` confirmée. À valider au prochain test Host+Client — voir « Ce qu'il reste à valider » plus bas.)*
+
+1. **Déterminisme de la hauteur de capsule** (dette 4) — **avant** le hitbox.
+2. **Hitbox de tir séparé du `CharacterController` de mouvement.** Aujourd'hui le raycast serveur touche le `CharacterController`, qui suit la posture mais **jamais le lean** (le lean ne déplace que la caméra/`leanPivot`) : un joueur qui penche pour peek est partiellement intouchable sur son flanc exposé. Le hitbox doit suivre posture ET lean, être synchronisé et **rewindable**. Le `CharacterController`, lui, ne doit jamais bouger avec le lean (ça casserait la collision monde).
+3. **Rewind / compensation de latence** — à traiter avec le point 2, même cause racine. **Pas implémenté**, TODO détaillé dans `WeaponController.FireServerRpc`. Approche retenue : mesurer le RTT en piggybackant sur le round-trip prédiction/réconciliation existant (plutôt qu'une RPC de ping dédiée ou l'horloge de Netcode), historique de position glissant côté serveur, délai de rewind suggéré par le client mais **clampé serveur**, restauration en `try/finally`.
+4. **Boucle de round / conditions de victoire (BO5)** — rien ne termine la partie aujourd'hui, seule la vie baisse. C'est ce qui fera remonter la dette n°5 (spawns).
+5. **Vault réseauté** — voir ci-dessous.
+6. **Migrer le multijoueur vers `Arena.unity`.**
+7. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
+
+## Ce qu'il reste à valider (test Host + Client)
+
+Le seuil de réconciliation compile et la logique est vérifiée, mais **le ressenti ne se vérifie qu'en jouant** — et c'est un arbitrage qui revient à l'utilisateur, pas à Claude.
+
+À tester depuis l'instance **CLIENT** (le Host ne passe jamais par ce code) :
+1. **Packet Delay à 0** — déplacement continu, zigzags, demi-tours. Doit être au moins aussi fluide qu'avant, idéalement plus.
+2. **Packet Delay à 100-150 ms** — c'est là que le gain doit se voir : avant, le client subissait un recalage + rejeu à chaque frame. Chercher une éventuelle sensation de « flottement » : elle signifierait que le seuil de 5 cm est trop permissif.
+3. **Changements de posture en mouvement** — le point le plus suspect. La hauteur de capsule n'est pas encore déterministe (dette n°4), donc c'est là que des recalages résiduels devraient subsister. Si ça accroche *uniquement* en changeant de posture, le diagnostic est confirmé et c'est le prochain chantier.
+4. **Tirs sous latence** — vérifier qu'aucun `[Serveur] Tir rejeté` n'apparaît en Console.
+
+S'y ajoutent les correctifs du 2026-09-22 (joueur fantôme, caméra de secours, spawn) : côté Client, il ne doit plus y avoir qu'**un seul adversaire visible**, **aucun warning « audio listeners »**, et le Host ne devrait plus ramer davantage que le Client à cause du rendu en double. Les deux joueurs apparaîtront encore au même endroit tant que la dette n°7 n'est pas traitée.
+
+Réglages si besoin : `positionReconciliationThreshold` (baisser si ça flotte, monter si ça saccade) et `yawReconciliationThreshold`, tous deux sur `PlayerLocomotion`.
 
 ## Vault : désactivé, pas cassé
 
