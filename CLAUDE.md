@@ -104,7 +104,9 @@ Les objets `/Spawn` et `/Spawn Enemy` de `MultiTestScene` **ne sont câblés à 
 3. ✅ **Corrigé le 2026-09-22** — réconciliation sans seuil d'erreur. Le client ne se recale plus qu'au-delà de `positionReconciliationThreshold` (5 cm) ou `yawReconciliationThreshold` (1°), au lieu de recaler + rejouer à chaque frame.
 4. **Un état échappe encore à la réconciliation.**
    - ✅ **Corrigé le 2026-09-22** — `currentVelocity` est désormais renvoyée par le serveur dans la correction et appliquée avant le rejeu.
-   - **La hauteur/le rayon du `CharacterController`** : `UpdateStanceTransition()` lerp avec `Time.deltaTime` indépendamment sur chaque instance. Pendant une transition de posture, client et serveur n'ont pas la même capsule → pas la même collision → `Move()` n'est plus déterministe, ce qui viole le contrat écrit en en-tête de la fonction. **À corriger avant le hitbox rewindable**, qui sinon se construit sur une base non déterministe. C'est aussi la cause la plus probable si des recalages fréquents subsistent en changeant de posture.
+   - ✅ **Corrigé le 2026-09-22** — la hauteur/le rayon du `CharacterController` étaient interpolés dans `Update()` avec le `Time.deltaTime` local de chaque instance, donc client et serveur ne simulaient pas avec la même capsule pendant une transition de posture. La capsule de **collision** est désormais une fonction PURE de `networkStance` (instantanée, `ApplySimulationCapsule`), appliquée depuis `Move()` pour être correcte aussi pendant un rejeu. La hauteur caméra et la **capsule visuelle** gardent leur interpolation douce dans `UpdateStanceVisuals()` (catégorie C, sans effet sur la simulation).
+
+   **Choix assumé** : supprimer l'état cumulatif plutôt que d'ajouter une hauteur confirmée de plus dans la RPC de correction. Conséquence : bref décalage (~0,1 s) entre la capsule visible et celle qui entre en collision pendant une transition. Se relever reste protégé par `CanStandUp()`, donc la capsule debout instantanée ne peut pas faire traverser un plafond.
 5. ✅ **Corrigé le 2026-09-22** — spawn téléporté à l'origine du monde. `OnNetworkSpawn` appliquait `transform.position = networkPosition.Value` inconditionnellement, alors que la `NetworkVariable` vaut encore `default` = (0,0,0) à cet instant. Le serveur publie désormais sa position de spawn, et seuls les clients s'y alignent.
 
 7. **Les deux joueurs spawnent encore au MÊME endroit.** Plus par téléport à l'origine (dette n°5 corrigée), mais parce que rien n'assigne de position de spawn : `NetworkManager` instancie le prefab à sa propre position, pour tout le monde. Les deux `CharacterController` se chevauchent puis se repoussent — c'est visible en test à 2 joueurs. La scène contient déjà des objets `/Spawn` et `/Spawn Enemy` **qui ne sont câblés à rien**. Fix : côté serveur, positionner le joueur sur un point de spawn libre au moment du spawn (naturellement lié à la boucle de round, qui devra de toute façon replacer les joueurs à chaque manche).
@@ -133,13 +135,12 @@ Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline
 
 *(Livré le 2026-09-22, **pas encore testé à 2 joueurs réels** : seuil de réconciliation + `currentVelocity` confirmée. À valider au prochain test Host+Client — voir « Ce qu'il reste à valider » plus bas.)*
 
-1. **Déterminisme de la hauteur de capsule** (dette 4) — **avant** le hitbox.
-2. **Hitbox de tir séparé du `CharacterController` de mouvement.** Aujourd'hui le raycast serveur touche le `CharacterController`, qui suit la posture mais **jamais le lean** (le lean ne déplace que la caméra/`leanPivot`) : un joueur qui penche pour peek est partiellement intouchable sur son flanc exposé. Le hitbox doit suivre posture ET lean, être synchronisé et **rewindable**. Le `CharacterController`, lui, ne doit jamais bouger avec le lean (ça casserait la collision monde).
-3. **Rewind / compensation de latence** — à traiter avec le point 2, même cause racine. **Pas implémenté**, TODO détaillé dans `WeaponController.FireServerRpc`. Approche retenue : mesurer le RTT en piggybackant sur le round-trip prédiction/réconciliation existant (plutôt qu'une RPC de ping dédiée ou l'horloge de Netcode), historique de position glissant côté serveur, délai de rewind suggéré par le client mais **clampé serveur**, restauration en `try/finally`.
-4. **Boucle de round / conditions de victoire (BO5)** — rien ne termine la partie aujourd'hui, seule la vie baisse. C'est ce qui fera remonter la dette n°5 (spawns).
-5. **Vault réseauté** — voir ci-dessous.
-6. **Migrer le multijoueur vers `Arena.unity`.**
-7. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
+1. **Hitbox de tir séparé du `CharacterController` de mouvement.** Aujourd'hui le raycast serveur touche le `CharacterController`, qui suit la posture mais **jamais le lean** (le lean ne déplace que la caméra/`leanPivot`) : un joueur qui penche pour peek est partiellement intouchable sur son flanc exposé. Le hitbox doit suivre posture ET lean, être synchronisé et **rewindable**. Le `CharacterController`, lui, ne doit jamais bouger avec le lean (ça casserait la collision monde).
+2. **Rewind / compensation de latence** — à traiter avec le point 1, même cause racine. **Pas implémenté**, TODO détaillé dans `WeaponController.FireServerRpc`. Approche retenue : mesurer le RTT en piggybackant sur le round-trip prédiction/réconciliation existant (plutôt qu'une RPC de ping dédiée ou l'horloge de Netcode), historique de position glissant côté serveur, délai de rewind suggéré par le client mais **clampé serveur**, restauration en `try/finally`.
+3. **Boucle de round / conditions de victoire (BO5)** — rien ne termine la partie aujourd'hui, seule la vie baisse. C'est ce qui fera remonter la dette n°5 (spawns).
+4. **Vault réseauté** — voir ci-dessous.
+5. **Migrer le multijoueur vers `Arena.unity`.**
+6. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
 
 ## Ce qu'il reste à valider (test Host + Client)
 

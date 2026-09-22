@@ -183,6 +183,12 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private Vector3 currentVelocity;      // vitesse horizontale lissée (monde), pour l'accel/décel
     private float currentCameraHeight;    // hauteur de base liée à la posture, sans le kick d'atterrissage
+
+    // Dimensions de la capsule VISUELLE, volontairement distinctes de celles du
+    // CharacterController : la collision change instantanément avec la posture (pour rester
+    // déterministe, voir ApplySimulationCapsule), le mesh continue de glisser en douceur.
+    private float visualCapsuleHeight;
+    private float visualCapsuleRadius;
     private float landingDipOffset;       // décalage négatif temporaire appliqué par-dessus, qui remonte à 0
 
     private float bobPhase;
@@ -371,10 +377,10 @@ public class PlayerLocomotion : NetworkBehaviour
             ApplyCameraPivotPosition();
         }
 
-        // Catégorie A (posture) — effet purement dérivé de networkStance, tourne sur TOUTES les
-        // instances (propriétaire, spectateurs, serveur) : chaque instance a son propre
-        // CharacterController local à faire correspondre visuellement à la posture réseau.
-        UpdateStanceTransition();
+        // Habillage de la posture (hauteur caméra + capsule visuelle) — purement visuel, tourne
+        // sur TOUTES les instances, y compris les spectateurs qui n'appellent jamais Move().
+        // La capsule de COLLISION, elle, est appliquée dans Move() : c'est de la simulation.
+        UpdateStanceVisuals();
 
         if (IsOwner)
         {
@@ -699,6 +705,12 @@ public class PlayerLocomotion : NetworkBehaviour
         Stance stance = networkStance.Value;
         StanceProfile profile = GetStanceProfile(stance);
 
+        // Capsule de collision appliquée ICI, dans la fonction déterministe, et pas seulement
+        // dans Update() : un rejeu de réconciliation tourne en dehors d'Update (depuis la
+        // ClientRpc de correction), et doit donc reconstituer lui-même la bonne capsule avant
+        // d'appeler controller.Move(). Voir ApplySimulationCapsule.
+        ApplySimulationCapsule(stance);
+
         bool wantsSprint = snap.sprintHeld && stance == Stance.Standing && inputDir.z > 0.1f
             && !snap.aimHeld && !snap.fireHeld && !snap.firePressedThisFrame;
         bool wantsSneak = snap.sneakHeld && !wantsSprint;
@@ -826,30 +838,79 @@ public class PlayerLocomotion : NetworkBehaviour
         _ => standingProfile,
     };
 
-    /// <summary>Tourne sur TOUTES les instances (propriétaire, spectateurs, serveur) : lerp du
-    /// CharacterController local + de la hauteur caméra + de la capsule visuelle vers le profil
-    /// cible dérivé de networkStance. Chaque instance a son propre CharacterController/mesh à
-    /// faire correspondre visuellement à la posture réseau.</summary>
-    private void UpdateStanceTransition()
+    /// <summary>
+    /// CAPSULE DE COLLISION — catégorie A (simulation). Fonction PURE de networkStance : aucune
+    /// interpolation, aucun état cumulatif, donc strictement identique partout dès que la
+    /// NetworkVariable de posture a la même valeur.
+    ///
+    /// C'était le dernier trou de déterminisme de Move(). Avant, les dimensions du
+    /// CharacterController étaient interpolées dans Update() avec le Time.deltaTime LOCAL de
+    /// chaque instance : pendant une transition de posture, le client et le serveur ne simulaient
+    /// donc pas avec la même capsule, donc pas avec la même collision — ce qui violait le contrat
+    /// "Move() doit rester strictement déterministe" écrit en en-tête de classe, et produisait des
+    /// recalages que le seuil de réconciliation ne pouvait pas absorber (la divergence était
+    /// RÉELLE, pas du bruit).
+    ///
+    /// Le choix retenu est de rendre la collision INSTANTANÉE plutôt que de réseauter une hauteur
+    /// interpolée : ça supprime l'état cumulatif au lieu d'en ajouter un de plus à confirmer dans
+    /// la RPC de correction. Ce que le joueur RESSENT (hauteur de caméra) et ce qu'il VOIT
+    /// (capsule visuelle) restent interpolés en douceur, eux — voir UpdateStanceVisuals().
+    /// Se relever reste protégé par CanStandUp(), donc le passage instantané à la capsule debout
+    /// ne peut pas faire traverser un plafond.
+    /// </summary>
+    private void ApplySimulationCapsule(Stance stance)
+    {
+        StanceProfile profile = GetStanceProfile(stance);
+
+        // Court-circuit : écrire height/radius force PhysX à reconstruire le collider, inutile de
+        // le faire à chaque frame alors que la posture ne change que rarement.
+        if (Mathf.Approximately(controller.height, profile.controllerHeight)
+            && Mathf.Approximately(controller.radius, profile.controllerRadius))
+        {
+            return;
+        }
+
+        controller.height = profile.controllerHeight;
+        controller.radius = profile.controllerRadius;
+        controller.center = new Vector3(0f, profile.controllerHeight / 2f, 0f);
+    }
+
+    /// <summary>
+    /// Habillage de la posture — catégorie C/visuel. Tourne sur TOUTES les instances (y compris
+    /// les spectateurs, qui n'appellent jamais Move()) et peut donc utiliser Time.deltaTime sans
+    /// risque : rien ici n'influence la simulation.
+    ///
+    /// La capsule visuelle a désormais ses propres dimensions, distinctes de celles du
+    /// CharacterController : ce dernier passe instantanément d'une posture à l'autre, le mesh
+    /// continue de glisser. Bref décalage assumé entre ce qu'on voit et ce qui entre en collision
+    /// pendant une transition (~0,1 s) — invisible en pratique, et le prix d'une simulation
+    /// réellement déterministe.
+    /// </summary>
+    private void UpdateStanceVisuals()
     {
         StanceProfile targetProfile = GetStanceProfile(networkStance.Value);
+        float step = stanceTransitionSpeed * Time.deltaTime;
 
-        controller.height = Mathf.MoveTowards(controller.height, targetProfile.controllerHeight, stanceTransitionSpeed * Time.deltaTime);
-        controller.radius = Mathf.MoveTowards(controller.radius, targetProfile.controllerRadius, stanceTransitionSpeed * Time.deltaTime);
-        controller.center = new Vector3(0f, controller.height / 2f, 0f);
+        currentCameraHeight = Mathf.MoveTowards(currentCameraHeight, targetProfile.cameraHeight, step);
+        visualCapsuleHeight = Mathf.MoveTowards(visualCapsuleHeight, targetProfile.controllerHeight, step);
+        visualCapsuleRadius = Mathf.MoveTowards(visualCapsuleRadius, targetProfile.controllerRadius, step);
 
-        currentCameraHeight = Mathf.MoveTowards(currentCameraHeight, targetProfile.cameraHeight, stanceTransitionSpeed * Time.deltaTime);
+        ApplyVisualCapsule(visualCapsuleHeight, visualCapsuleRadius);
 
-        ApplyVisualCapsule(controller.height, controller.radius);
+        // Les spectateurs n'appellent jamais Move() : sans ça, leur CharacterController local
+        // garderait la capsule de la posture précédente. Sans effet sur les dégâts (le serveur
+        // seul raycaste pour ça), mais ça garde les colliders cohérents partout, notamment pour
+        // le raycast purement visuel du tireur.
+        ApplySimulationCapsule(networkStance.Value);
     }
 
     private void ApplyStanceImmediate(Stance stance)
     {
         StanceProfile profile = GetStanceProfile(stance);
-        controller.height = profile.controllerHeight;
-        controller.radius = profile.controllerRadius;
-        controller.center = new Vector3(0f, profile.controllerHeight / 2f, 0f);
+        ApplySimulationCapsule(stance);
         currentCameraHeight = profile.cameraHeight;
+        visualCapsuleHeight = profile.controllerHeight;
+        visualCapsuleRadius = profile.controllerRadius;
         landingDipOffset = 0f;
 
         if (cameraPivot != null)
@@ -859,7 +920,7 @@ public class PlayerLocomotion : NetworkBehaviour
             cameraPivot.localPosition = pos;
         }
 
-        ApplyVisualCapsule(controller.height, controller.radius);
+        ApplyVisualCapsule(visualCapsuleHeight, visualCapsuleRadius);
     }
 
     private void ApplyVisualCapsule(float height, float radius)
