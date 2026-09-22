@@ -1,0 +1,122 @@
+# Duel Arena — configuration Git
+#
+# Trois rôles :
+#   1. Normalisation des fins de ligne (supprime les warnings "LF will be replaced by CRLF").
+#   2. Unity Smart Merge sur les fichiers YAML d'Unity, pour que deux modifications d'une même
+#      scène puissent fusionner au lieu de partir en conflit illisible.
+#   3. Git LFS sur les binaires, pour que le dépôt ne gonfle pas à chaque version d'un son,
+#      d'une texture ou d'un modèle 3D.
+#
+# ATTENTION : LFS ne s'applique qu'aux fichiers ajoutés ou modifiés APRÈS ce fichier.
+# Les binaires déjà commités restent stockés normalement dans l'historique tant qu'on ne fait
+# pas un `git lfs migrate` (réécriture d'historique).
+
+# ---------------------------------------------------------------------------
+# 1. Fins de ligne
+# ---------------------------------------------------------------------------
+* text=auto
+
+*.cs      text diff=csharp
+*.md      text
+*.json    text
+*.xml     text
+*.yml     text
+*.shader  text
+*.hlsl    text
+*.cginc   text
+*.uss     text
+*.uxml    text
+
+# ---------------------------------------------------------------------------
+# 2. Unity Smart Merge (fichiers YAML d'Unity)
+#
+# Nécessite la config locale correspondante, déjà posée dans .git/config :
+#   merge.unityyamlmerge.driver -> UnityYAMLMerge.exe
+# ---------------------------------------------------------------------------
+*.unity          text merge=unityyamlmerge eol=lf
+*.prefab         text merge=unityyamlmerge eol=lf
+*.asset          text merge=unityyamlmerge eol=lf
+*.mat            text merge=unityyamlmerge eol=lf
+*.anim           text merge=unityyamlmerge eol=lf
+*.controller     text merge=unityyamlmerge eol=lf
+*.overrideController text merge=unityyamlmerge eol=lf
+*.physicMaterial text merge=unityyamlmerge eol=lf
+*.physicsMaterial2D text merge=unityyamlmerge eol=lf
+*.playable       text merge=unityyamlmerge eol=lf
+*.mask           text merge=unityyamlmerge eol=lf
+*.brush          text merge=unityyamlmerge eol=lf
+*.flare          text merge=unityyamlmerge eol=lf
+*.fontsettings   text merge=unityyamlmerge eol=lf
+*.guiskin        text merge=unityyamlmerge eol=lf
+*.giparams       text merge=unityyamlmerge eol=lf
+*.meta           text merge=unityyamlmerge eol=lf
+*.mixer          text merge=unityyamlmerge eol=lf
+*.preset         text merge=unityyamlmerge eol=lf
+*.renderTexture  text merge=unityyamlmerge eol=lf
+*.shadervariants text merge=unityyamlmerge eol=lf
+*.signal         text merge=unityyamlmerge eol=lf
+*.spriteatlas    text merge=unityyamlmerge eol=lf
+*.terrainlayer   text merge=unityyamlmerge eol=lf
+*.inputactions   text merge=unityyamlmerge eol=lf
+
+# ---------------------------------------------------------------------------
+# 3. Git LFS — binaires
+# ---------------------------------------------------------------------------
+
+# Audio
+*.wav  filter=lfs diff=lfs merge=lfs -text
+*.mp3  filter=lfs diff=lfs merge=lfs -text
+*.ogg  filter=lfs diff=lfs merge=lfs -text
+*.aif  filter=lfs diff=lfs merge=lfs -text
+*.aiff filter=lfs diff=lfs merge=lfs -text
+*.flac filter=lfs diff=lfs merge=lfs -text
+
+# Images / textures
+*.png  filter=lfs diff=lfs merge=lfs -text
+*.jpg  filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.gif  filter=lfs diff=lfs merge=lfs -text
+*.bmp  filter=lfs diff=lfs merge=lfs -text
+*.tga  filter=lfs diff=lfs merge=lfs -text
+*.tif  filter=lfs diff=lfs merge=lfs -text
+*.tiff filter=lfs diff=lfs merge=lfs -text
+*.psd  filter=lfs diff=lfs merge=lfs -text
+*.exr  filter=lfs diff=lfs merge=lfs -text
+*.hdr  filter=lfs diff=lfs merge=lfs -text
+*.iff  filter=lfs diff=lfs merge=lfs -text
+*.pict filter=lfs diff=lfs merge=lfs -text
+
+# Modèles 3D
+*.fbx   filter=lfs diff=lfs merge=lfs -text
+*.obj   filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+*.dae   filter=lfs diff=lfs merge=lfs -text
+*.3ds   filter=lfs diff=lfs merge=lfs -text
+*.dxf   filter=lfs diff=lfs merge=lfs -text
+*.max   filter=lfs diff=lfs merge=lfs -text
+*.c4d   filter=lfs diff=lfs merge=lfs -text
+*.ma    filter=lfs diff=lfs merge=lfs -text
+*.mb    filter=lfs diff=lfs merge=lfs -text
+
+# Vidéo
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.mov filter=lfs diff=lfs merge=lfs -text
+*.avi filter=lfs diff=lfs merge=lfs -text
+*.webm filter=lfs diff=lfs merge=lfs -text
+
+# Polices
+*.ttf filter=lfs diff=lfs merge=lfs -text
+*.otf filter=lfs diff=lfs merge=lfs -text
+
+# Binaires divers
+*.dll          filter=lfs diff=lfs merge=lfs -text
+*.so           filter=lfs diff=lfs merge=lfs -text
+*.dylib        filter=lfs diff=lfs merge=lfs -text
+*.a            filter=lfs diff=lfs merge=lfs -text
+*.pdb          filter=lfs diff=lfs merge=lfs -text
+*.unitypackage filter=lfs diff=lfs merge=lfs -text
+*.aputerrain   filter=lfs diff=lfs merge=lfs -text
+
+# Terrain : les .asset de Unity sont normalement du YAML texte (le projet est en
+# Force Text), donc ils restent gérés en texte ci-dessus, PAS en LFS. Si un jour un
+# .asset devient binaire (passage en Force Binary), il faudra le basculer ici.

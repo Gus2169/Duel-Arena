@@ -102,7 +102,23 @@ Les deux référencent un asset Terrain à la racine d'`Assets/` (`New Terrain.a
    - **La hauteur/le rayon du `CharacterController`** : `UpdateStanceTransition()` lerp avec `Time.deltaTime` indépendamment sur chaque instance. Pendant une transition de posture, client et serveur n'ont pas la même capsule → pas la même collision → `Move()` n'est plus déterministe, ce qui viole le contrat écrit en en-tête de la fonction. **À corriger avant le hitbox rewindable**, qui sinon se construit sur une base non déterministe.
 5. **Bug de spawn latent.** `PlayerLocomotion.OnNetworkSpawn` fait `transform.position = networkPosition.Value`, mais au spawn la `NetworkVariable` vaut encore `default` = **(0,0,0)**. Le commentaire dit « évite un téléport visuel » ; en pratique ça *provoque* un téléport à l'origine du monde, serveur compris. Invisible aujourd'hui (pas de points de spawn) — ça cassera dès la boucle BO5 avec des spawns opposés. Fix : ne repositionner que si `!IsServer`, et initialiser `networkPosition.Value = transform.position` côté serveur.
 
-**Hygiène** : pas de `.gitattributes`, donc **ni Git LFS ni Smart Merge** — à mettre en place **avant** d'ajouter des assets binaires (modèles, textures, sons), après coup c'est une réécriture d'historique. Aucun `.asmdef` → tout dans `Assembly-CSharp`, recompilation complète à chaque modif. **Aucun test**, alors que `Move()` est une fonction pure paramétrée par un snapshot : un test EditMode « même snapshot × 2 → même position » attraperait les régressions de déterminisme de la dette n°4 automatiquement.
+6. **GPU Resident Drawer incompatible avec la géométrie ProBuilder.** `PC_RPAsset.asset` a `m_GPUResidentDrawerMode: 1`. Résultat : à chaque ouverture de scène, la Console se remplit d'erreurs `BatchDrawCommand was submitted with an invalid Batch, Mesh, or Material ID` (`MaterialID: ProBuilderDefault`, `MeshID: <null>`, passe SHADOWCASTER) — **139 dans `Arena.unity`, 155 dans `MultiTestScene.unity`**. Ce n'est pas un bug de gameplay et ça ne casse rien de visible, mais ça **noie la Console**, donc ça masque les vraies erreurs. Deux options : passer `m_GPUResidentDrawerMode` à 0 (le plus simple, le gain du GPU Resident Drawer est nul à cette échelle), ou attendre de remplacer le blocking ProBuilder par les assets finaux. **Vérifié le 2026-09-22 : ces erreurs sont pré-existantes et indépendantes du code du projet.**
+
+**Hygiène** : aucun `.asmdef` → tout dans `Assembly-CSharp`, recompilation complète à chaque modif. **Aucun test**, alors que `Move()` est une fonction pure paramétrée par un snapshot : un test EditMode « même snapshot × 2 → même position » attraperait les régressions de déterminisme de la dette n°4 automatiquement.
+
+## Configuration Git (posée le 2026-09-22)
+
+`.gitattributes` couvre trois choses : normalisation des fins de ligne (`* text=auto`), **Unity Smart Merge** sur les fichiers YAML d'Unity, et **Git LFS** sur les binaires (audio, images, modèles 3D, vidéo, polices, DLL).
+
+Configuration locale correspondante (dans `.git/config`, **pas** dans le global) :
+- `git lfs install --local` — filtres LFS + hooks.
+- `merge.unityyamlmerge.driver` → `UnityYAMLMerge.exe` de Unity 6000.6.0f1. **À repointer si la version d'Unity du projet change.**
+
+Deux limites à connaître :
+- **LFS ne s'applique qu'aux fichiers ajoutés ou modifiés après coup.** Les 7 `.wav` déjà commités restent des blobs normaux dans l'historique. Sans conséquence (dépôt à 1,8 Mo), mais si on veut les rapatrier : `git lfs migrate import --include="*.wav" --everything` — c'est une **réécriture d'historique**, triviale ici puisqu'il n'y a pas de remote, mais elle change tous les hashes de commit.
+- `* text=auto` ne normalise que ce qui est touché ensuite. Pour l'appliquer à tout d'un coup : `git add --renormalize .` puis un commit dédié — ça touche tous les fichiers texte, donc à faire en isolation, jamais mélangé à un vrai changement.
+
+Les `.asset` d'Unity sont du YAML texte (projet en Force Text) : ils passent par Smart Merge, pas par LFS. Si le projet basculait en Force Binary, il faudrait les déplacer côté LFS.
 
 Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline de rendu Mobile, inutile pour un FPS compétitif PC. Sans impact, à nettoyer si on touche aux settings de rendu.
 
