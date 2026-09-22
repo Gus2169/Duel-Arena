@@ -1,8 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// Données d'une arme (Phase 3 de la feuille de route, en avance ici pour tester le TTK
-/// dès la Phase 0). Tout est data-driven : ajouter une arme = créer un nouvel asset,
+/// Données d'une arme. Tout est data-driven : ajouter une arme = créer un nouvel asset,
 /// jamais toucher au code de WeaponController.
 ///
 /// Créer un asset : clic droit dans le Project > Create > Duel Arena > Weapon Data.

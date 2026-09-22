@@ -2,30 +2,22 @@ using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// Tir hitscan + recul déterministe. Pose ce script sur un GameObject "Weapon" enfant
-/// du Player (peu importe sa position exacte pour l'instant, aucune arme visible encore).
+/// Tir hitscan + recul déterministe. Posé sur un GameObject "Weapon" enfant du Player.
 ///
-/// À assigner dans l'inspecteur :
-/// - data          : un asset WeaponData
-/// - aimCamera     : la Camera sous LeanPivot (celle qui existe déjà pour le look)
-/// - cameraLook    : le composant PlayerCameraLook posé sur CameraPivot
-/// - visualFeedback: le composant WeaponVisualFeedback (pose-le sur le Player par exemple)
+/// NetworkBehaviour (et non MonoBehaviour) : Fire() ne s'exécute que sur la machine du tireur
+/// (garde IsOwner en tête d'Update, nécessaire pour éviter qu'une même touche physique fasse
+/// tirer toutes les copies de WeaponController présentes sur l'écran).
 ///
-/// Ce script lit PlayerInputReader.FireHeld / FirePressedThisFrame — assure-toi d'avoir
-/// ajouté l'action "Fire" dans PlayerControls.inputactions (voir PlayerInputReader.cs).
+/// HIT REGISTRATION SERVEUR-AUTORITAIRE : le tireur raycast localement pour son propre feedback
+/// visuel INSTANTANÉ (tracer/impact, aucun dégât associé), puis envoie juste origin/direction au
+/// serveur, qui refait SEUL son propre raycast et décide SEUL du hit et des dégâts
+/// (Health.ApplyDamage n'est jamais appelée directement par un client sur un objet réseauté).
+/// Les autres joueurs reçoivent ensuite le tracer/impact calculé par le serveur via
+/// BroadcastShotClientRpc.
 ///
-/// NetworkBehaviour (et non plus MonoBehaviour) depuis le fix multijoueur : Fire() ne s'exécute
-/// que sur la machine du tireur (garde IsOwner ci-dessous, nécessaire pour éviter qu'une même
-/// touche physique fasse tirer toutes les copies de WeaponController présentes sur l'écran).
-///
-/// HIT REGISTRATION SERVEUR (increment 1, SANS compensation de latence/rewind — voir TODO sur
-/// FireServerRpc) : le tireur raycast localement pour son propre feedback visuel INSTANTANÉ
-/// (tracer/impact, aucun dégât associé), puis envoie juste origin/direction au serveur, qui
-/// refait SEUL son propre raycast et décide SEUL du hit et des dégâts (Health.ApplyDamage n'est
-/// plus jamais appelée directement par un client sur un objet réseauté). Les autres joueurs
-/// reçoivent ensuite le tracer/impact calculé par le serveur via BroadcastShotClientRpc — donc
-/// potentiellement légèrement différent de ce que le tireur a vu localement sous latence, c'est
-/// attendu pour cet incrément (le rewind, plus tard, réduira cet écart).
+/// LIMITE CONNUE, pas un oubli : pas encore de compensation de latence (rewind) — le serveur
+/// valide contre la position ACTUELLE des adversaires, donc légèrement en retard sur ce que le
+/// tireur voyait, d'autant plus sous forte latence. Voir le TODO détaillé sur FireServerRpc.
 /// </summary>
 [RequireComponent(typeof(Transform))]
 public class WeaponController : NetworkBehaviour
@@ -209,7 +201,7 @@ public class WeaponController : NetworkBehaviour
         audioSource.PlayOneShot(clip, data.fireVolume);
     }
 
-    /// <summary>Autorité serveur du tir (increment 1, SANS compensation de latence/rewind) : re-raycast
+    /// <summary>Autorité serveur du tir (SANS compensation de latence/rewind) : re-raycast
     /// depuis origin/direction fournis par le tireur, contre l'état ACTUEL des colliders côté
     /// serveur au moment où cette RPC est traitée — donc légèrement "en retard" par rapport à ce que
     /// le tireur voyait sur son écran, d'autant plus que la latence est élevée. Compromis volontaire

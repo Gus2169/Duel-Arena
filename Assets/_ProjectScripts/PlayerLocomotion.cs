@@ -3,12 +3,12 @@ using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// Version réseautée de PlayerLocomotion, fusionnant le pattern validé dans NetworkPlayerMovement.cs
-/// (prédiction client + réconciliation serveur + interpolation spectateur) avec TOUTES les features
-/// gameplay du script solo d'origine : vitesses sprint/sneak/ADS, accel/décel, gravité, et posture
-/// complète Debout/Accroupi/Prone avec CanStandUp().
+/// Contrôleur joueur complet et réseauté : prédiction client + réconciliation serveur +
+/// interpolation spectateur, par-dessus les features gameplay (vitesses sprint/sneak/ADS,
+/// accel/décel, gravité, posture complète Debout/Accroupi/Prone avec CanStandUp()).
 ///
-/// Répartition en 3 catégories (voir feuille de route technique, Phase 1) :
+/// Répartition en 3 catégories (détaillée dans CLAUDE.md, à respecter pour toute nouvelle
+/// mécanique joueur) :
 ///
 /// A. SIMULÉ / AUTORITAIRE (réseauté via le pattern 4-cas ci-dessous) :
 ///    position, vitesse, gravité, posture (Debout/Accroupi/Prone), vitesses de déplacement, yaw.
@@ -130,7 +130,7 @@ public class PlayerLocomotion : NetworkBehaviour
     [Header("Obstacles (partagé lean / stand-up / vault)")]
     [SerializeField] private LayerMask obstacleMask = ~0;
 
-    [Header("Vault (désactivé le temps de sa passe réseau dédiée — voir feuille de route)")]
+    [Header("Vault (DÉSACTIVÉ — attend son incrément réseau dédié, voir le bloc Vault plus bas)")]
     [SerializeField] private float vaultCheckDistance = 0.8f;
     [SerializeField] private float vaultMinHeight = 0.3f;
     [SerializeField] private float vaultMaxHeight = 1.3f;
@@ -273,38 +273,11 @@ public class PlayerLocomotion : NetworkBehaviour
             listener.enabled = IsOwner;
         }
 
-        // DIAGNOSTIC TEMPORAIRE — à retirer une fois le bug des AudioListener en surnombre résolu.
-        // Le message "3 audio listeners in the scene" persistant malgré le code ci-dessus veut
-        // dire que le problème n'est probablement PAS dans ce Player : soit un AudioListener
-        // "orphelin" hors des prefabs Player (ex. une Main Camera de scène restée de la version
-        // solo, jamais touchée par GetComponentsInChildren ci-dessus puisqu'elle n'est pas un
-        // enfant de CE GameObject), soit IsOwner vaut true sur plus d'une instance à la fois (bug
-        // de spawn/ownership, plus grave). Ce log liste TOUS les AudioListener de la scène avec
-        // leur chemin hiérarchique complet — colle-moi la sortie Console après le prochain test.
-        LogSceneAudioListeners();
-    }
-
-    private void LogSceneAudioListeners()
-    {
-        var listeners = Object.FindObjectsByType<AudioListener>(FindObjectsSortMode.None);
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"[PlayerLocomotion] Spawn de {gameObject.name} (OwnerClientId={OwnerClientId}, IsOwner={IsOwner}, IsServer={IsServer}) — {listeners.Length} AudioListener(s) dans la scène :");
-        foreach (AudioListener l in listeners)
-        {
-            sb.AppendLine($"  - {GetHierarchyPath(l.transform)} | enabled={l.enabled} | activeInHierarchy={l.gameObject.activeInHierarchy}");
-        }
-        Debug.Log(sb.ToString());
-    }
-
-    private static string GetHierarchyPath(Transform t)
-    {
-        string path = t.name;
-        while (t.parent != null)
-        {
-            t = t.parent;
-            path = t.name + "/" + path;
-        }
-        return path;
+        // Si un jour le warning "There are N audio listeners in the scene" revient : la boucle
+        // ci-dessus ne voit QUE les enfants de ce GameObject. Un AudioListener orphelin posé
+        // ailleurs dans la scène (typiquement une Main Camera de secours affichée avant le spawn
+        // du joueur) ne sera jamais désactivé par ce code — c'est là qu'il faut chercher en
+        // premier, avant de soupçonner un bug d'ownership.
     }
 
     public override void OnNetworkDespawn()
@@ -362,9 +335,8 @@ public class PlayerLocomotion : NetworkBehaviour
         }
 
         // Catégorie A (posture) — effet purement dérivé de networkStance, tourne sur TOUTES les
-        // instances (propriétaire, spectateurs, serveur), exactement comme validé dans le script
-        // de test : chaque instance a son propre CharacterController local à faire correspondre
-        // visuellement à la posture réseau.
+        // instances (propriétaire, spectateurs, serveur) : chaque instance a son propre
+        // CharacterController local à faire correspondre visuellement à la posture réseau.
         UpdateStanceTransition();
 
         if (IsOwner)
@@ -628,7 +600,7 @@ public class PlayerLocomotion : NetworkBehaviour
         inputDir = Vector3.ClampMagnitude(inputDir, 1f);
         Vector3 worldDir = transform.TransformDirection(inputDir);
 
-        IsAiming = snap.aimHeld; // TODO (Phase 3, système d'armes) : brancher FOV/sway ici.
+        IsAiming = snap.aimHeld; // TODO (avec le vrai système d'armes) : brancher FOV/sway ici.
 
         Stance stance = networkStance.Value;
         StanceProfile profile = GetStanceProfile(stance);
@@ -666,7 +638,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
     // ------------------------------------------------------------------
     // Posture (catégorie A) — requête propriétaire → validation/confirmation serveur → effet
-    // visuel partout. Volontairement PAS prédit (comme validé dans le script de test) : les
+    // visuel partout. Volontairement PAS prédit (compromis assumé) : les
     // changements de posture sont peu fréquents, attendre la confirmation serveur reste un
     // compromis acceptable. À revoir avec prédiction si ça se sent mou en pratique.
     // ------------------------------------------------------------------
@@ -763,7 +735,7 @@ public class PlayerLocomotion : NetworkBehaviour
     /// <summary>Tourne sur TOUTES les instances (propriétaire, spectateurs, serveur) : lerp du
     /// CharacterController local + de la hauteur caméra + de la capsule visuelle vers le profil
     /// cible dérivé de networkStance. Chaque instance a son propre CharacterController/mesh à
-    /// faire correspondre, exactement comme validé dans le script de test.</summary>
+    /// faire correspondre visuellement à la posture réseau.</summary>
     private void UpdateStanceTransition()
     {
         StanceProfile targetProfile = GetStanceProfile(networkStance.Value);

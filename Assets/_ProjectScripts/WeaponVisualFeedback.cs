@@ -2,22 +2,14 @@ using UnityEngine;
 
 /// <summary>
 /// Feedback visuel de tir en Game view : trace lumineuse du tir + marqueur d'impact temporaire.
-/// Remplace les Debug.DrawLine existants dans WeaponController (invisibles en dehors de la fenêtre
-/// Scene, donc inutiles en Play normal) par quelque chose de réellement visible à l'écran pendant
-/// que tu joues.
+/// PLACEHOLDER assumé, appelé par WeaponController.Fire() (feedback local du tireur) et par
+/// BroadcastShotClientRpc (ce que voient les autres joueurs).
 ///
 /// Entièrement procédural : pas de prefab à préparer, pas de matériau à créer à la main. Le shader
-/// utilisé est détecté automatiquement pour rester compatible que le projet soit en Built-in RP ou
-/// en URP (le cas le plus probable pour un projet Unity 6 récent). Pensé pour être remplacé plus
-/// tard par de vrais VFX (Particle System, tracer avec traînée, décal d'impact texturé...) sans
-/// changer l'API publique (SpawnTracer / SpawnImpact) — ce qui appelle ces méthodes n'aura rien à
-/// changer le jour où tu amélioreras le visuel.
-///
-/// Mise en place :
-/// 1. Pose ce script sur le Player (ou un enfant dédié à l'arme).
-/// 2. Assigne-le au champ "Visual Feedback" de WeaponController dans l'inspecteur.
-/// 3. Dans WeaponController.Fire() (ou équivalent), appelle SpawnTracer/SpawnImpact juste après le
-///    Physics.Raycast, à la place (ou en plus) des Debug.DrawLine actuels.
+/// utilisé est détecté automatiquement pour rester compatible Built-in RP / URP. Pensé pour être
+/// remplacé plus tard par de vrais VFX (Particle System, tracer avec traînée, décal d'impact
+/// texturé...) sans changer l'API publique (SpawnTracer / SpawnImpact) — les appelants n'auront
+/// rien à changer le jour où le visuel sera amélioré.
 /// </summary>
 public class WeaponVisualFeedback : MonoBehaviour
 {

@@ -1,10 +1,9 @@
 using UnityEngine;
 
 /// <summary>
-/// Réticule minimaliste affiché en Game view, en attendant une vraie arme visible à l'écran
-/// (viewmodel + animations, prévu avec le système d'armes en Phase 3). Objectif immédiat : pouvoir
-/// viser sans dépendre de la fenêtre Scene. 100% local, aucune dépendance réseau — safe à faire
-/// maintenant, ce n'est pas du temps volé à la Phase 1.
+/// Réticule minimaliste affiché en Game view. PLACEHOLDER assumé, en attendant une vraie arme
+/// visible à l'écran (viewmodel 3D + animations) et un vrai HUD. Objectif immédiat : pouvoir viser
+/// sans dépendre de la fenêtre Scene. 100% local, aucune dépendance réseau.
 ///
 /// Important : le point visé est calculé via aimCamera.WorldToScreenPoint plutôt que supposé au
 /// centre géométrique de la fenêtre (Screen.width/2, Screen.height/2). Les deux coïncident dans la
@@ -13,12 +12,9 @@ using UnityEngine;
 /// elle-même, le réticule reste garanti aligné avec le rayon de tir de WeaponController, quel que
 /// soit le réglage caméra en cause.
 ///
-/// Mise en place :
-/// 1. Pose ce script sur n'importe quel GameObject actif de la scène (le Player convient bien).
-/// 2. Assigne "Aim Camera" avec EXACTEMENT la même caméra que celle assignée dans WeaponController
-///    (aimCamera) — c'est ce qui garantit l'alignement avec les impacts.
-/// 3. Si tu veux que le viseur se resserre en ADS, assigne aussi "Input Reader" (glisse le
-///    composant PlayerInputReader du Player) — sinon laisse-le vide, le réticule reste fixe.
+/// Contrainte à respecter : "Aim Camera" doit être EXACTEMENT la même caméra que celle assignée
+/// à WeaponController.aimCamera — c'est ce qui garantit l'alignement du réticule avec les impacts.
+/// "Input Reader" est optionnel (sans lui le réticule ne se resserre pas en ADS).
 /// </summary>
 public class CrosshairUI : MonoBehaviour
 {

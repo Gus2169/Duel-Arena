@@ -4,14 +4,18 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// Fait le pont entre l'asset Input Actions (généré en C#) et le reste du code du joueur.
 ///
-/// Nouveau par rapport à ta version : l'action "Fire" (clic gauche), avec à la fois
-/// FireHeld (pour les armes automatiques) et FirePressedThisFrame (pour le semi-auto,
-/// un appui = un coup, même si le joueur reste appuyé).
+/// Deux formes pour le tir : FireHeld (armes automatiques) et FirePressedThisFrame (semi-auto,
+/// un appui = un coup même en restant appuyé).
 ///
-/// Pré-requis dans l'éditeur Unity :
-/// 1. Dans PlayerControls.inputactions, Action Map "Gameplay", ajoute une action :
-///    - Fire (Button) -> clic gauche de la souris (<Mouse>/leftButton)
-/// 2. Reclique sur "Apply" dans l'inspecteur de l'asset pour régénérer la classe C#.
+/// Les actions "one-shot" (Crouch, Prone, Jump, Lean, Fire) sont mises à true par un callback
+/// de l'Input System puis remises à false par ConsumeFrameInputs() en fin de frame. Ce script
+/// ne connaît PAS la notion de propriétaire réseau : il lit le clavier/souris physique de la
+/// machine. C'est aux consommateurs (PlayerLocomotion, WeaponController) de se garder avec
+/// IsOwner — sans quoi chaque instance de joueur affichée localement réagirait à ces inputs.
+///
+/// NOTE : JumpPressedThisFrame n'est actuellement lu par PERSONNE — le vault, son seul
+/// consommateur, est débranché (voir le bloc Vault dans PlayerLocomotion). La touche de saut
+/// ne fait donc rien pour l'instant. C'est voulu, pas un oubli.
 /// </summary>
 [DisallowMultipleComponent]
 public class PlayerInputReader : MonoBehaviour

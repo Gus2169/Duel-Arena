@@ -2,8 +2,8 @@ using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// Boutons de test temporaires pour valider une connexion réseau, avant toute vraie UI de lobby
-/// (prévue en Phase 7). Pose ce script sur le MÊME GameObject que ton NetworkManager.
+/// Boutons de test temporaires pour valider une connexion réseau, avant toute vraie UI de lobby.
+/// Posé sur le MÊME GameObject que le NetworkManager.
 ///
 /// Affiche 3 boutons (Host / Server / Client) tant qu'aucune connexion n'est active, puis affiche
 /// le rôle courant et le nombre de clients connectés une fois connecté. Logue aussi dans la
