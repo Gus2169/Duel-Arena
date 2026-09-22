@@ -7382,6 +7382,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b4a3615f81d4bf7419f661925c73a567, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Health
+  ShowTopMostFoldoutHeaderGroup: 1
   maxHealth: 100
 --- !u!1 &194889881
 GameObject:
@@ -8677,11 +8678,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a22f4f7e9f23b6044a0fb99a2c2a9dd3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WeaponController
+  ShowTopMostFoldoutHeaderGroup: 1
   data: {fileID: 11400000, guid: b440da299e5267f43b00e97e946bbf53, type: 2}
   aimCamera: {fileID: 1321851311}
   cameraLook: {fileID: 1063082723}
   visualFeedback: {fileID: 456940121}
-  fireAudioSource: {fileID: 220843107}
+  audioSource: {fileID: 220843107}
   recoilPercentStandingStatic: 85
   recoilPercentStandingSneaking: 92
   recoilPercentStandingMoving: 100
@@ -13580,6 +13582,7 @@ GameObject:
   - component: {fileID: 456940118}
   - component: {fileID: 456940122}
   - component: {fileID: 456940121}
+  - component: {fileID: 456940123}
   - component: {fileID: 456940117}
   - component: {fileID: 456940120}
   - component: {fileID: 456940119}
@@ -13644,8 +13647,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bf73b6d0012322f49822fb75a34e239f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerLocomotion
+  ShowTopMostFoldoutHeaderGroup: 1
   cameraPivot: {fileID: 1063082722}
   leanPivot: {fileID: 676278389}
+  visualCapsule: {fileID: 0}
+  yawSensitivity: 0.12
   walkSpeed: 5
   sneakSpeed: 2
   runSpeed: 10
@@ -13736,6 +13742,7 @@ MonoBehaviour:
     m_PostInfinity: 2
     m_RotationOrder: 4
   debugDrawVaultRays: 1
+  interpolationDelay: 0.1
 --- !u!114 &456940118
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -13899,6 +13906,33 @@ MonoBehaviour:
   adsLineLength: 4
   showCenterDot: 1
   centerDotSize: 2
+--- !u!114 &456940123
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 456940114}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 1298389993
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  m_InScenePlacedDisabledByDefault: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  m_InScenePlaced: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
 --- !u!43 &459330509
 Mesh:
   m_ObjectHideFlags: 0
@@ -32488,7 +32522,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d1919ff17fbe8e242a4f9c934b3dd4b0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerCameraLook
-  playerBody: {fileID: 456940116}
   mouseSensitivity: 0.12
   minPitch: -85
   maxPitch: 85
