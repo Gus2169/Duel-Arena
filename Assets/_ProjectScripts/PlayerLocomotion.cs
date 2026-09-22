@@ -151,6 +151,13 @@ public class PlayerLocomotion : NetworkBehaviour
     [SerializeField, Range(1, 30)] private int debugFloodMultiplier = 10;
 #endif
 
+    [Header("Réseau — réconciliation (client distant)")]
+    [Tooltip("Écart de position (m) au-delà duquel le client se recale sur le serveur et rejoue ses inputs non confirmés. En dessous, la prédiction est jugée bonne et RIEN n'est fait — c'est ce qui évite un recalage + rejeu à chaque frame. Trop bas : corrections permanentes, saccades et coût CPU. Trop haut : le joueur peut dériver visiblement de sa position réelle côté serveur avant d'être ramené, donc se faire toucher là où il ne se voit pas. 5 cm est un bon compromis de départ.")]
+    [SerializeField] private float positionReconciliationThreshold = 0.05f;
+
+    [Tooltip("Même principe que le seuil de position, mais pour le yaw (degrés). Le yaw est piloté directement par la souris, donc client et serveur convergent très bien : une tolérance de l'ordre du degré suffit.")]
+    [SerializeField] private float yawReconciliationThreshold = 1f;
+
     [Header("Réseau — spectateur")]
     [Tooltip("Délai volontaire (s) auquel un spectateur affiche un joueur distant, pour toujours avoir 2 points d'historique connus entre lesquels interpoler.")]
     [SerializeField] private float interpolationDelay = 0.1f;
@@ -223,6 +230,17 @@ public class PlayerLocomotion : NetworkBehaviour
         public int sequence;
         public MovementInputSnapshot snapshot;
         public float deltaTime;
+
+        // État que le CLIENT avait prédit juste APRÈS avoir simulé cet input. Rempli uniquement
+        // côté propriétaire distant (cas 2), inutilisé côté serveur.
+        //
+        // C'est la clé du seuil de réconciliation : pour savoir si une prédiction était juste, il
+        // faut comparer ce que le serveur confirme pour une séquence DONNÉE avec ce que le client
+        // avait prédit POUR CETTE MÊME SÉQUENCE. Comparer la position ACTUELLE du client (déjà en
+        // avance de plusieurs inputs) à la position confirmée (en retard d'un RTT) n'a aucun sens :
+        // l'écart y est toujours grand, et un seuil dessus ne déclencherait jamais correctement.
+        public Vector3 predictedPosition;
+        public float predictedYaw;
     }
 
     // Côté propriétaire distant (cas 2) : inputs envoyés au serveur mais pas encore confirmés.
@@ -253,9 +271,28 @@ public class PlayerLocomotion : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-        // Évite un "téléport" visuel au spawn pour les spectateurs.
-        transform.position = networkPosition.Value;
-        transform.rotation = Quaternion.Euler(0f, networkYaw.Value, 0f);
+        if (IsServer)
+        {
+            // Le SERVEUR publie la position où il vient de faire apparaître ce joueur. Sans ça,
+            // networkPosition vaut encore default = (0,0,0) à cet instant, et la branche cliente
+            // ci-dessous téléportait tout le monde à l'origine du monde — y compris le serveur
+            // lui-même, dans la version précédente qui appliquait ce recalage inconditionnellement.
+            // Le commentaire d'origine disait "évite un téléport visuel au spawn" ; en pratique
+            // c'est lui qui le PROVOQUAIT. Invisible tant que la scène de test spawne près de
+            // l'origine, et fatal dès qu'il y aura de vrais points de spawn opposés.
+            networkPosition.Value = transform.position;
+            networkYaw.Value = transform.eulerAngles.y;
+        }
+        else
+        {
+            // Client/spectateur : on s'aligne sur ce que le serveur a publié (livré avec le
+            // message de spawn), pour éviter une frame affichée à la position du prefab.
+            controller.enabled = false;
+            transform.position = networkPosition.Value;
+            transform.rotation = Quaternion.Euler(0f, networkYaw.Value, 0f);
+            controller.enabled = true;
+        }
+
         networkPosition.OnValueChanged += HandleNetworkPositionChanged;
         ApplyStanceImmediate(networkStance.Value);
 
@@ -369,11 +406,22 @@ public class PlayerLocomotion : NetworkBehaviour
         float dt = Time.deltaTime;
 
         int sequence = nextInputSequence++;
-        unconfirmedInputs.Add(new PendingInput { sequence = sequence, snapshot = snap, deltaTime = dt });
 
         bool wasGrounded = controller.isGrounded;
         Move(snap, dt);
         if (controller.isGrounded && !wasGrounded) TriggerLandingKick(Mathf.Abs(verticalVelocity));
+
+        // L'input est enregistré APRÈS Move() : on a besoin de l'état prédit qui en résulte pour
+        // pouvoir le comparer plus tard à ce que le serveur confirmera pour cette même séquence
+        // (voir PendingInput et ReceiveCorrectionClientRpc).
+        unconfirmedInputs.Add(new PendingInput
+        {
+            sequence = sequence,
+            snapshot = snap,
+            deltaTime = dt,
+            predictedPosition = transform.position,
+            predictedYaw = transform.eulerAngles.y,
+        });
 
         SubmitInputServerRpc(sequence, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, dt);
 
@@ -491,44 +539,90 @@ public class PlayerLocomotion : NetworkBehaviour
         {
             networkPosition.Value = transform.position;
             networkYaw.Value = transform.eulerAngles.y;
-            SendCorrectionToOwner(lastProcessedSequence, transform.position, verticalVelocity, transform.eulerAngles.y);
+            SendCorrectionToOwner(lastProcessedSequence, transform.position, verticalVelocity, transform.eulerAngles.y, currentVelocity);
         }
     }
 
-    private void SendCorrectionToOwner(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw)
+    private void SendCorrectionToOwner(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity)
     {
         var targetParams = new ClientRpcParams
         {
             Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
         };
-        ReceiveCorrectionClientRpc(confirmedSequence, confirmedPosition, confirmedVerticalVelocity, confirmedYaw, targetParams);
+        ReceiveCorrectionClientRpc(confirmedSequence, confirmedPosition, confirmedVerticalVelocity, confirmedYaw, confirmedHorizontalVelocity, targetParams);
     }
 
     [ClientRpc]
-    private void ReceiveCorrectionClientRpc(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, ClientRpcParams clientRpcParams = default)
+    private void ReceiveCorrectionClientRpc(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, ClientRpcParams clientRpcParams = default)
     {
         if (!IsOwner) return;
 
+        // Le serveur envoie une correction à CHAQUE frame où il a traité des inputs, c'est-à-dire
+        // en permanence. Sans le seuil ci-dessous, chaque correction déclenchait un recalage + le
+        // rejeu de TOUS les inputs non confirmés : à 100 ms de RTT, ça représentait ~10 Move()
+        // supplémentaires par frame, soit plusieurs centaines de sweeps physiques par seconde,
+        // uniquement pour aboutir au même résultat. Et le toggle controller.enabled ci-dessous
+        // remettait isGrounded à false à chaque fois, faisant clignoter la détection de sol.
+        //
+        // On ne se recale donc QUE si la prédiction était réellement fausse. Pour le savoir, il
+        // faut comparer ce que le serveur confirme avec ce que le client avait prédit POUR LA MÊME
+        // SÉQUENCE — d'où predictedPosition/predictedYaw stockés dans PendingInput. Comparer avec
+        // la position actuelle du client n'aurait aucun sens : elle est en avance de tout le RTT.
+        int predictionIndex = unconfirmedInputs.FindIndex(p => p.sequence == confirmedSequence);
+        bool predictionWasCorrect = false;
+
+        if (predictionIndex >= 0)
+        {
+            PendingInput predicted = unconfirmedInputs[predictionIndex];
+            float positionError = Vector3.Distance(predicted.predictedPosition, confirmedPosition);
+            float yawError = Mathf.Abs(Mathf.DeltaAngle(predicted.predictedYaw, confirmedYaw));
+            predictionWasCorrect = positionError <= positionReconciliationThreshold
+                && yawError <= yawReconciliationThreshold;
+        }
+        // Si la séquence est introuvable (correction périmée, ou input jeté par le plafond de
+        // serverInputQueue), on ne peut rien conclure : on retombe sur le recalage systématique,
+        // qui reste le comportement SÛR. Mieux vaut un à-coup qu'une désynchronisation silencieuse.
+
         unconfirmedInputs.RemoveAll(p => p.sequence <= confirmedSequence);
 
+        if (predictionWasCorrect)
+        {
+            return;
+        }
+
         // IMPORTANT : le yaw doit être recalé sur la valeur confirmée AVANT le rejeu, exactement
-        // comme la position juste en dessous. Move() applique le yaw via transform.Rotate — une
-        // rotation RELATIVE/cumulative. Sans ce recalage, les inputs encore non confirmés (ceux
-        // qui restent dans la liste après le RemoveAll ci-dessus) se voient rejouer leur delta de
-        // yaw une SECONDE fois : une fois lors de la prédiction initiale (frame par frame), une
-        // fois ici. Le yaw dérivait donc en double à chaque correction serveur (fréquent sous
-        // latence), uniquement pour un vrai client distant (cas 2, jamais le Host qui ne passe
-        // jamais par ce chemin) — c'est ce qui donnait cette sensation de contrôle "en diagonale"
-        // et des tirs partant n'importe où (aimCamera hérite de cette rotation corrompue).
+        // comme la position. Move() applique le yaw via transform.Rotate — une rotation
+        // RELATIVE/cumulative. Sans ce recalage, les inputs encore non confirmés se voient rejouer
+        // leur delta de yaw une SECONDE fois : une fois lors de la prédiction initiale, une fois
+        // ici. Le yaw dérivait donc en double à chaque correction serveur — c'est ce qui donnait
+        // cette sensation de contrôle "en diagonale" et des tirs partant n'importe où.
+        //
+        // currentVelocity suit la MÊME règle et pour la MÊME raison : c'est une valeur cumulative
+        // (MoveTowards depuis sa propre valeur précédente). Sans recalage, le rejeu repartait de la
+        // vitesse lissée du client au lieu de celle du serveur, ce qui garantissait un désaccord
+        // permanent pendant chaque phase d'accélération/décélération — donc des corrections en
+        // boucle. Règle générale : toute valeur cumulative lue par Move() doit avoir son équivalent
+        // confirmé, renvoyé par le serveur et appliqué ici avant le rejeu.
         controller.enabled = false;
         transform.position = confirmedPosition;
         transform.rotation = Quaternion.Euler(0f, confirmedYaw, 0f);
         controller.enabled = true;
         verticalVelocity = confirmedVerticalVelocity;
+        currentVelocity = confirmedHorizontalVelocity;
 
-        foreach (PendingInput pending in unconfirmedInputs)
+        for (int i = 0; i < unconfirmedInputs.Count; i++)
         {
+            PendingInput pending = unconfirmedInputs[i];
             Move(pending.snapshot, pending.deltaTime);
+
+            // Le rejeu vient de produire un NOUVEL état prédit pour cet input, différent de celui
+            // calculé lors de la prédiction initiale puisqu'on est reparti d'une base corrigée.
+            // Il faut le réenregistrer, sinon la prochaine correction comparerait la confirmation
+            // du serveur à une prédiction périmée — et le seuil déclencherait n'importe comment.
+            // (PendingInput est une struct : il faut réécrire l'élément dans la liste.)
+            pending.predictedPosition = transform.position;
+            pending.predictedYaw = transform.eulerAngles.y;
+            unconfirmedInputs[i] = pending;
         }
     }
 
