@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -44,8 +45,11 @@ public class WeaponController : NetworkBehaviour
     [SerializeField, Range(0f, 100f)] private float recoilPercentWhileAiming = 50f;
 
     [Header("Garde-fous serveur (anti-triche)")]
-    [Tooltip("Distance max (m) tolérée entre l'origine de tir annoncée par le client et la position du joueur connue du SERVEUR. Au-delà, le tir est rejeté : c'est ce qui empêche un client modifié de tirer depuis n'importe où sur la carte. Doit couvrir la hauteur caméra + le lean + l'avance de prédiction du tireur sous latence — voir le détail dans FireServerRpc. À resserrer une fois le rewind en place. Si tu vois des tirs légitimes rejetés en Console pendant un test à fort ping, augmente cette valeur plutôt que de retirer le garde-fou.")]
+    [Tooltip("Distance max (m) tolérée entre l'origine de tir annoncée par le client et la position du joueur connue du SERVEUR. Au-delà, le tir est rejeté : c'est ce qui empêche un client modifié de tirer depuis n'importe où sur la carte. Doit couvrir la hauteur caméra + le lean + l'avance de prédiction du tireur sous latence — voir le détail dans FireServerRpc. Si tu vois des tirs légitimes rejetés en Console pendant un test à fort ping, augmente cette valeur plutôt que de retirer le garde-fou.")]
     [SerializeField] private float maxOriginDistanceFromPlayer = 4f;
+
+    [Tooltip("Rewind maximum (s) que le serveur accepte d'appliquer, quelle que soit la latence annoncée par le client. Couvre un ping légitime élevé (0,3 s ≈ 400 ms de ping avec le délai d'interpolation) sans permettre de tuer quelqu'un là où il était il y a une éternité — au-delà, c'est la VICTIME qui subit l'injustice, en mourant à couvert. Doit rester inférieur à 'Hitbox History Duration' sur PlayerLocomotion.")]
+    [SerializeField] private float maxRewindSeconds = 0.3f;
 
 #if UNITY_EDITOR
     // Tout ce bloc est compilé UNIQUEMENT dans l'Editor (#if UNITY_EDITOR) : il ne peut donc
@@ -169,7 +173,9 @@ public class WeaponController : NetworkBehaviour
             // donc bien à l'écran que le tir part d'où il devrait, alors que le serveur le rejette.
             if (debugFakeShotOrigin) sentOrigin = origin + direction * debugFakeShotOriginOffset;
 #endif
-            FireServerRpc(sentOrigin, direction);
+            // Le tireur annonce de combien il estime que sa vue est en retard. Le serveur clampe
+            // cette valeur : c'est une suggestion, pas une donnée de confiance.
+            FireServerRpc(sentOrigin, direction, locomotion.EstimatedRewindSeconds);
         }
         else if (hitSomething)
         {
@@ -200,24 +206,28 @@ public class WeaponController : NetworkBehaviour
         audioSource.PlayOneShot(clip, data.fireVolume);
     }
 
-    /// <summary>Autorité serveur du tir (SANS compensation de latence/rewind) : re-raycast
-    /// depuis origin/direction fournis par le tireur, contre l'état ACTUEL des colliders côté
-    /// serveur au moment où cette RPC est traitée — donc légèrement "en retard" par rapport à ce que
-    /// le tireur voyait sur son écran, d'autant plus que la latence est élevée. Compromis volontaire
-    /// et temporaire.
+    /// <summary>
+    /// Autorité serveur du tir, AVEC compensation de latence. Le serveur refait seul son raycast
+    /// depuis l'origin/direction fournis, mais contre l'état des adversaires tel qu'il était au
+    /// moment où le tireur a réellement visé — pas au moment où la RPC arrive.
     ///
-    /// TODO prochain incrément (rewind) : avant de raycaster, replacer temporairement les AUTRES
-    /// joueurs à la position qu'ils avaient au moment exact où LE TIREUR a appuyé sur la gâchette
-    /// (nécessite un historique de position par joueur tenu par le serveur pour TOUS les joueurs,
-    /// façon remoteSnapshots dans PlayerLocomotion, mais côté serveur plutôt que juste pour
-    /// l'affichage spectateur), puis les remettre à leur position actuelle juste après le raycast.
+    /// Sans ça, un tireur qui vise juste rate un adversaire en mouvement, parce que le serveur le
+    /// valide contre une position plus récente que celle affichée sur son écran. L'écart vaut à peu
+    /// près (RTT/2 + délai d'interpolation) × vitesse de la cible : à 150 ms de ping et 8 m/s, plus
+    /// d'un mètre, soit largement la largeur d'un joueur.
     ///
-    /// hitSomething/hitPoint/hitNormal ne sont PLUS reçus du client (ancienne version) : seuls
-    /// origin/direction le sont, tout le reste est recalculé ici — un client modifié ne peut donc
-    /// plus s'auto-déclarer un hit qu'il n'a pas réellement fait, ni forcer des dégâts sur une
-    /// cible qu'il n'a pas visée.</summary>
+    /// `rewindSeconds` est une SUGGESTION du client (voir PlayerLocomotion.EstimatedRewindSeconds),
+    /// jamais une donnée de confiance : le serveur la clampe. Sans ce clamp, un client modifié
+    /// annoncerait un ping énorme pour rewind ses adversaires très loin en arrière et les toucher
+    /// là où ils n'ont plus été depuis longtemps. C'est le seul paramètre "libre" accepté par cette
+    /// RPC — tout le reste (hit, dégâts, position des cibles) est recalculé ici.
+    ///
+    /// Le rewind ne déplace QUE les hitbox, jamais les joueurs eux-mêmes : la simulation en cours
+    /// continue sur les vraies positions, et tout se déroule de façon synchrone dans ce handler,
+    /// donc invisible pour le reste du jeu.
+    /// </summary>
     [ServerRpc]
-    private void FireServerRpc(Vector3 origin, Vector3 direction)
+    private void FireServerRpc(Vector3 origin, Vector3 direction, float rewindSeconds)
     {
         // Garde-fou anti-triche : cooldown/HandleFireInput ne sont que des CONVENTIONS côté
         // client — rien n'empêche un client modifié d'appeler cette RPC aussi vite qu'il veut.
@@ -274,8 +284,32 @@ public class WeaponController : NetworkBehaviour
         bool hitboxWasEnabled = ownHitbox != null && ownHitbox.enabled;
         if (hitboxWasEnabled) ownHitbox.enabled = false;
 
+        // Garde-fou anti-triche : la suggestion du client est bornée. maxRewindSeconds doit couvrir
+        // un ping élevé légitime sans permettre de toucher quelqu'un là où il était il y a une
+        // éternité — au-delà, c'est la VICTIME qui subirait l'injustice, en mourant à couvert.
+        float clampedRewind = Mathf.Clamp(rewindSeconds, 0f, maxRewindSeconds);
+        float targetTime = Time.time - clampedRewind;
+
+        var rewoundPlayers = new List<PlayerLocomotion>();
         try
         {
+            if (clampedRewind > 0f)
+            {
+                foreach (PlayerLocomotion other in PlayerLocomotion.SpawnedPlayers)
+                {
+                    if (other == null || other == locomotion) continue;
+                    other.ServerBeginRewind(targetTime);
+                    rewoundPlayers.Add(other);
+                }
+
+                // Indispensable : Physics.autoSyncTransforms vaut false par défaut depuis Unity
+                // 2018, donc déplacer un transform ne met PAS à jour la scène physique utilisée par
+                // les requêtes. Sans cette synchronisation, le raycast ci-dessous verrait encore les
+                // hitbox à leur position actuelle et tout le rewind serait silencieusement sans
+                // effet — le pire des échecs, parce qu'il ne se voit pas.
+                Physics.SyncTransforms();
+            }
+
             bool hitSomething = ResolveShot(origin, direction, out Vector3 end, out Vector3 hitNormal, out Collider bodyHit);
 
             if (bodyHit != null)
@@ -299,6 +333,15 @@ public class WeaponController : NetworkBehaviour
         }
         finally
         {
+            // Restauration garantie même si le raycast ou l'application des dégâts lève : un hitbox
+            // laissé dans le passé rendrait ce joueur touchable au mauvais endroit pour le reste de
+            // la partie, et un hitbox de tireur laissé désactivé le rendrait invulnérable.
+            foreach (PlayerLocomotion other in rewoundPlayers)
+            {
+                if (other != null) other.ServerEndRewind();
+            }
+            if (rewoundPlayers.Count > 0) Physics.SyncTransforms();
+
             if (hitboxWasEnabled) ownHitbox.enabled = true;
         }
     }

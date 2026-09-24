@@ -263,10 +263,69 @@ public class PlayerLocomotion : NetworkBehaviour
         // l'écart y est toujours grand, et un seuil dessus ne déclencherait jamais correctement.
         public Vector3 predictedPosition;
         public float predictedYaw;
+
+        /// <summary>Time.time au moment de l'envoi au serveur. Sert à mesurer le RTT GRATUITEMENT,
+        /// en chronométrant l'aller-retour prédiction/réconciliation qui existe déjà : aucune RPC
+        /// de ping dédiée, et aucune dépendance à la synchronisation d'horloge de Netcode.</summary>
+        public float sentAt;
     }
 
     // Côté propriétaire distant (cas 2) : inputs envoyés au serveur mais pas encore confirmés.
     private readonly List<PendingInput> unconfirmedInputs = new List<PendingInput>();
+
+    // ------------------------------------------------------------------
+    // Compensation de latence (rewind) — voir WeaponController.FireServerRpc
+    // ------------------------------------------------------------------
+
+    [Header("Réseau — compensation de latence")]
+    [Tooltip("Durée (s) de l'historique de pose conservé par le SERVEUR pour chaque joueur, afin de pouvoir le replacer dans le passé au moment de valider un tir. Doit couvrir le rewind maximum autorisé côté arme, avec de la marge.")]
+    [SerializeField] private float hitboxHistoryDuration = 1f;
+
+    /// <summary>RTT lissé du propriétaire distant, en secondes. Reste à 0 pour le Host, qui ne
+    /// passe jamais par la boucle prédiction/réconciliation — cohérent avec le fait qu'il n'a
+    /// aucune latence avec lui-même.</summary>
+    private float smoothedRtt;
+
+    /// <summary>
+    /// Délai de rewind que CE tireur suggère au serveur. Deux termes, qui approximent ensemble
+    /// l'âge de ce qu'il voit réellement à l'écran au moment où il vise :
+    ///   - la moitié du RTT : le temps que son tir mette à atteindre le serveur ;
+    ///   - le délai d'interpolation : les adversaires lui sont affichés volontairement en retard,
+    ///     pour toujours avoir deux points d'historique entre lesquels interpoler.
+    /// Vaut 0 pour le Host : il voit les autres joueurs à la position que LUI-MÊME simule (cas 3),
+    /// donc sans interpolation ni latence — il n'y a rien à compenser.
+    /// Le serveur ne fait jamais confiance à cette valeur : il la clampe (voir FireServerRpc).
+    /// </summary>
+    public float EstimatedRewindSeconds => IsServer ? 0f : smoothedRtt * 0.5f + interpolationDelay;
+
+    /// <summary>Pose passée d'un joueur, telle que le serveur l'a simulée. Contient TOUT ce dont
+    /// dépend la surface touchable — position, orientation, lean et posture. Historiser la seule
+    /// position ne corrigerait qu'une part du décalage : un adversaire penché ou accroupi au moment
+    /// du tir serait rewind avec la géométrie qu'il a MAINTENANT.</summary>
+    private struct HitboxPose
+    {
+        public float time;
+        public Vector3 position;
+        public float yaw;
+        public float leanOffset;
+        public Stance stance;
+    }
+
+    // Côté serveur : historique glissant, alimenté à chaque tick où le serveur fait autorité sur
+    // ce joueur (cas 1 et 3). Distinct de remoteSnapshots, qui n'existe que côté spectateur pour
+    // l'affichage.
+    private readonly List<HitboxPose> serverHitboxHistory = new List<HitboxPose>();
+
+    // État du hitbox sauvegardé avant un rewind, pour pouvoir le restaurer à l'identique.
+    private bool isRewound;
+    private Vector3 rewindSavedLocalPosition;
+    private Quaternion rewindSavedLocalRotation;
+
+    /// <summary>Tous les joueurs actuellement spawnés. Maintenu à l'inscription/désinscription
+    /// plutôt que recalculé par FindObjectsByType à chaque tir : le rewind parcourt cette liste
+    /// plusieurs fois par seconde et par tireur.</summary>
+    private static readonly List<PlayerLocomotion> spawnedPlayers = new List<PlayerLocomotion>();
+    public static IReadOnlyList<PlayerLocomotion> SpawnedPlayers => spawnedPlayers;
 
     // Côté serveur (cas 3) : inputs reçus des clients, en attente de traitement.
     private readonly Queue<PendingInput> serverInputQueue = new Queue<PendingInput>();
@@ -320,6 +379,7 @@ public class PlayerLocomotion : NetworkBehaviour
         }
 
         networkPosition.OnValueChanged += HandleNetworkPositionChanged;
+        if (!spawnedPlayers.Contains(this)) spawnedPlayers.Add(this);
         ApplyStanceImmediate(networkStance.Value);
 
         // Caméra/AudioListener : une seule instance de joueur doit "voir" et "entendre" par
@@ -346,6 +406,115 @@ public class PlayerLocomotion : NetworkBehaviour
     public override void OnNetworkDespawn()
     {
         networkPosition.OnValueChanged -= HandleNetworkPositionChanged;
+        spawnedPlayers.Remove(this);
+    }
+
+    // ------------------------------------------------------------------
+    // Rewind — historique serveur et replacement temporaire du hitbox
+    // ------------------------------------------------------------------
+
+    /// <summary>Enregistre la pose courante dans l'historique serveur. Appelée à chaque tick où le
+    /// serveur fait autorité sur ce joueur (cas 1 et 3).</summary>
+    private void ServerRecordHitboxPose()
+    {
+        serverHitboxHistory.Add(new HitboxPose
+        {
+            time = Time.time,
+            position = transform.position,
+            yaw = transform.eulerAngles.y,
+            leanOffset = LeanOffset,
+            stance = networkStance.Value,
+        });
+
+        float cutoff = Time.time - hitboxHistoryDuration;
+        // RemoveAll plutôt qu'une file : l'historique est court (~60 entrées) et on a besoin d'un
+        // accès indexé pour interpoler entre deux poses.
+        serverHitboxHistory.RemoveAll(p => p.time < cutoff);
+    }
+
+    /// <summary>
+    /// Replace TEMPORAIREMENT la surface touchable de ce joueur là où elle était à l'instant
+    /// demandé. Ne touche ni au transform du joueur ni à son CharacterController : la simulation
+    /// en cours continue sur les vraies positions, seul le collider de tir voyage dans le passé.
+    /// C'est précisément ce que le hitbox séparé rend possible.
+    /// </summary>
+    public void ServerBeginRewind(float targetTime)
+    {
+        if (!IsServer || isRewound || hitbox == null) return;
+        if (serverHitboxHistory.Count == 0) return;
+
+        if (!TrySampleHistory(targetTime, out HitboxPose pose)) return;
+
+        Transform t = hitbox.transform;
+        rewindSavedLocalPosition = t.localPosition;
+        rewindSavedLocalRotation = t.localRotation;
+        isRewound = true;
+
+        // Position et orientation MONDE : le hitbox est un enfant, mais on le sort volontairement
+        // de la pose de son parent le temps du tir.
+        t.SetPositionAndRotation(pose.position, Quaternion.Euler(0f, pose.yaw, 0f));
+
+        StanceProfile profile = GetStanceProfile(pose.stance);
+        hitbox.Apply(profile.controllerHeight, profile.controllerRadius, pose.leanOffset);
+    }
+
+    /// <summary>Remet la surface touchable dans sa pose courante. TOUJOURS appelée en finally par
+    /// l'appelant : un hitbox laissé dans le passé rendrait le joueur intouchable, ou touchable au
+    /// mauvais endroit, pour le reste de la partie.</summary>
+    public void ServerEndRewind()
+    {
+        if (!isRewound || hitbox == null) return;
+
+        Transform t = hitbox.transform;
+        t.localPosition = rewindSavedLocalPosition;
+        t.localRotation = rewindSavedLocalRotation;
+        isRewound = false;
+
+        // Les dimensions sont recalculées au prochain UpdateStanceVisuals (fonction pure de la
+        // posture courante), mais on les remet tout de suite pour qu'une requête intermédiaire ne
+        // voie pas la géométrie du passé.
+        StanceProfile profile = GetStanceProfile(networkStance.Value);
+        hitbox.Apply(profile.controllerHeight, profile.controllerRadius, LeanOffset);
+    }
+
+    /// <summary>Interpole la pose historique à l'instant demandé. Renvoie false si l'historique est
+    /// vide ; se rabat sur la pose la plus ancienne/récente si l'instant sort de sa fenêtre.</summary>
+    private bool TrySampleHistory(float targetTime, out HitboxPose result)
+    {
+        result = default;
+        if (serverHitboxHistory.Count == 0) return false;
+
+        if (targetTime <= serverHitboxHistory[0].time)
+        {
+            result = serverHitboxHistory[0];
+            return true;
+        }
+
+        for (int i = 0; i < serverHitboxHistory.Count - 1; i++)
+        {
+            HitboxPose a = serverHitboxHistory[i];
+            HitboxPose b = serverHitboxHistory[i + 1];
+            if (a.time > targetTime || targetTime > b.time) continue;
+
+            float span = b.time - a.time;
+            float t = span > 0.0001f ? (targetTime - a.time) / span : 0f;
+
+            result = new HitboxPose
+            {
+                time = targetTime,
+                position = Vector3.Lerp(a.position, b.position, t),
+                yaw = Mathf.LerpAngle(a.yaw, b.yaw, t),
+                leanOffset = Mathf.Lerp(a.leanOffset, b.leanOffset, t),
+                // La posture est discrète : on garde celle d'AVANT plutôt que d'inventer un état
+                // intermédiaire. Pendant une transition, le joueur est donc rewind avec la capsule
+                // qu'il quittait — le choix conservateur du point de vue de la cible.
+                stance = a.stance,
+            };
+            return true;
+        }
+
+        result = serverHitboxHistory[serverHitboxHistory.Count - 1];
+        return true;
     }
 
     /// <summary>
@@ -415,6 +584,7 @@ public class PlayerLocomotion : NetworkBehaviour
             ServerAdvanceFootsteps(dt);
             networkPosition.Value = transform.position;
             networkYaw.Value = transform.eulerAngles.y;
+            ServerRecordHitboxPose();
         }
         else if (IsOwner)
         {
@@ -498,6 +668,7 @@ public class PlayerLocomotion : NetworkBehaviour
             deltaTime = dt,
             predictedPosition = transform.position,
             predictedYaw = transform.eulerAngles.y,
+            sentAt = Time.time,
         });
 
         SubmitInputServerRpc(sequence, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, dt);
@@ -620,6 +791,10 @@ public class PlayerLocomotion : NetworkBehaviour
             networkYaw.Value = transform.eulerAngles.y;
             SendCorrectionToOwner(lastProcessedSequence, transform.position, verticalVelocity, transform.eulerAngles.y, currentVelocity);
         }
+
+        // Enregistré à CHAQUE frame serveur, même sans input traité : sinon l'historique aurait des
+        // trous pendant les micro-coupures réseau, précisément quand le rewind sert le plus.
+        ServerRecordHitboxPose();
     }
 
     private void SendCorrectionToOwner(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity)
@@ -657,6 +832,17 @@ public class PlayerLocomotion : NetworkBehaviour
             float yawError = Mathf.Abs(Mathf.DeltaAngle(predicted.predictedYaw, confirmedYaw));
             predictionWasCorrect = positionError <= positionReconciliationThreshold
                 && yawError <= yawReconciliationThreshold;
+
+            // RTT mesuré GRATUITEMENT : cet input est parti à `sentAt` et sa confirmation arrive
+            // maintenant. Aucune RPC de ping dédiée, aucune dépendance à la synchronisation
+            // d'horloge de Netcode — juste le chronométrage d'un aller-retour déjà présent dans
+            // l'architecture. Lissé pour qu'un pic isolé ne fasse pas sauter le rewind d'un coup.
+            //
+            // Inclut le temps d'attente de l'input dans la queue serveur, donc surestime un peu le
+            // RTT pur. C'est le bon biais ici : ce qu'on cherche à mesurer n'est pas la latence
+            // réseau théorique, mais l'âge réel de ce que le tireur voit à l'écran.
+            float measuredRtt = Time.time - predicted.sentAt;
+            smoothedRtt = smoothedRtt <= 0f ? measuredRtt : Mathf.Lerp(smoothedRtt, measuredRtt, 0.1f);
         }
         // Si la séquence est introuvable (correction périmée, ou input jeté par le plafond de
         // serverInputQueue), on ne peut rien conclure : on retombe sur le recalage systématique,

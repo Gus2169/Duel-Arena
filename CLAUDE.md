@@ -53,7 +53,7 @@ Conséquence directe du hitbox : le lean **déplace la surface touchable**, donc
 - Le **décalage** est calculé par le serveur (`ServerAdvanceLean`, avec le même anti-clipping que le client) et publié dans `networkLeanOffset`.
 - Le **propriétaire** utilise sa valeur locale prédite (`LeanOffset`), pour que sa caméra et son corps n'aient aucune latence.
 
-**Limite connue** : chez un spectateur, le lean d'un adversaire est en retard d'environ un RTT, exactement comme l'était la position avant le rewind. **Le rewind devra historiser le lean en même temps que la position**, sous peine de ne corriger qu'une moitié du problème.
+Chez un spectateur, le lean d'un adversaire est affiché avec un retard d'environ un RTT — comme la position. **Le rewind le compense** : l'historique serveur porte le décalage de lean au même titre que la position (voir plus bas).
 
 ### Hit registration
 
@@ -64,7 +64,25 @@ Le tireur raycast en local pour son feedback visuel instantané (**aucun dégât
 1. **Le monde** (`WeaponData.worldMask` = `Default`), qui arrête les balles. **Sans les joueurs** : leur `CharacterController` ne suit pas le lean, donc le laisser bloquer les tirs ferait réapparaître par la bande le trou que le hitbox ferme.
 2. **Les hitbox** (`WeaponData.hitboxMask` = layer `Hitbox`), limitée à la distance du mur touché — c'est ce qui fait qu'un adversaire derrière une caisse ne prend rien.
 
-Le tireur retire son propre hitbox de la requête le temps du tir (`try/finally` — un hitbox laissé désactivé rendrait le tireur invulnérable pour le reste de la partie). C'est aussi le patron que réutilisera le rewind.
+Le tireur retire son propre hitbox de la requête le temps du tir (`try/finally` — un hitbox laissé désactivé rendrait le tireur invulnérable pour le reste de la partie).
+
+### Compensation de latence — le rewind (2026-09-24)
+
+Le serveur valide chaque tir contre l'état des adversaires **au moment où le tireur a réellement visé**, pas au moment où la RPC arrive. Sans ça, un tireur qui vise juste rate une cible en mouvement : l'écart vaut à peu près `(RTT/2 + délai d'interpolation) × vitesse`, soit plus d'un mètre à 150 ms de ping et 8 m/s — largement la largeur d'un joueur.
+
+**Mesure du délai, sans horloge partagée.** Le RTT est chronométré **gratuitement**, en mesurant l'aller-retour prédiction/réconciliation qui existe déjà : un timestamp dans `PendingInput`, relu quand la correction de cette séquence revient, puis lissé. Aucune RPC de ping dédiée, aucune dépendance à la synchronisation d'horloge de Netcode. Le délai suggéré est `RTT/2 + interpolationDelay` (`EstimatedRewindSeconds`), et vaut **0 pour le Host**, qui voit les autres joueurs à la position qu'il simule lui-même (cas 3) — il n'a rien à compenser.
+
+Le RTT ainsi mesuré inclut l'attente de l'input dans la queue serveur, donc surestime légèrement le RTT réseau pur. **C'est le bon biais** : ce qu'on cherche n'est pas la latence théorique, mais l'âge réel de ce que le tireur voit.
+
+**Le client suggère, le serveur clampe.** `rewindSeconds` est le seul paramètre « libre » accepté par `FireServerRpc`, et il est borné par `maxRewindSeconds` (0,3 s — couvre ~400 ms de ping légitime). Sans ce clamp, un client modifié annoncerait un ping énorme pour tuer ses adversaires là où ils étaient il y a une éternité. Au-delà de cette borne, c'est la **victime** qui subit l'injustice, en mourant à couvert.
+
+**L'historique porte la pose COMPLÈTE** : position, yaw, décalage de lean et posture (`HitboxPose`, fenêtre glissante d'une seconde, alimentée à chaque frame serveur — même sans input traité, sinon l'historique aurait des trous pendant les micro-coupures, précisément quand le rewind sert le plus). Historiser la seule position ne corrigerait qu'une part du décalage : un adversaire penché ou accroupi au moment du tir serait rewind avec la géométrie qu'il a *maintenant*. La posture étant discrète, l'échantillonnage garde **celle d'avant** plutôt que d'inventer un état intermédiaire — le choix conservateur du point de vue de la cible.
+
+**Seuls les hitbox voyagent dans le passé**, jamais les joueurs : la simulation continue sur les vraies positions, et tout se déroule de façon synchrone dans le handler de la RPC, donc invisible pour le reste du jeu. C'est exactement ce que le hitbox séparé rend possible.
+
+🚨 **`Physics.SyncTransforms()` est obligatoire** avant ET après le déplacement des hitbox. `Physics.autoSyncTransforms` vaut **false** par défaut (vérifié dans ce projet) : déplacer un transform ne met pas à jour la scène physique utilisée par les requêtes. Sans cette synchronisation, le raycast verrait les hitbox à leur position actuelle et **tout le rewind serait silencieusement sans effet** — le pire des échecs, puisqu'il ne se voit pas.
+
+Contrainte de configuration : `maxRewindSeconds` (sur `WeaponController`) doit rester **inférieur** à `hitboxHistoryDuration` (sur `PlayerLocomotion`), sinon on demande à l'historique une pose qu'il a déjà jetée.
 
 ### Le hitbox (2026-09-24)
 
@@ -208,19 +226,18 @@ Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline
 
 ## Ordre de travail
 
-*(Livré le 2026-09-22, **pas encore testé à 2 joueurs réels** : seuil de réconciliation + `currentVelocity` confirmée. À valider au prochain test Host+Client — voir « Ce qu'il reste à valider » plus bas.)*
+*(Livré le 2026-09-24 : le hitbox séparé, puis le rewind. **Avec eux, la Phase 1 n'a plus de chantier structurel ouvert** — le duel 1v1 est techniquement solide. Ce qui suit est du contenu et du flow, plus des fondations.)*
 
-*(Livré le 2026-09-24 : le hitbox séparé. Voir « Le hitbox » plus haut.)*
-
-1. **Rewind / compensation de latence.** **Pas implémenté**, TODO détaillé dans `WeaponController.FireServerRpc`. Approche retenue : mesurer le RTT en piggybackant sur le round-trip prédiction/réconciliation existant (plutôt qu'une RPC de ping dédiée ou l'horloge de Netcode), historique glissant côté serveur, délai de rewind suggéré par le client mais **clampé serveur**, restauration en `try/finally`. **L'historique doit porter la position ET le décalage de lean ET la posture** — le hitbox dépend des trois, en historiser une seule ne corrigerait qu'une part du décalage.
-2. **Boucle de round / conditions de victoire (BO5)** — rien ne termine la partie aujourd'hui, seule la vie baisse. `Health.OnDeath` existe mais personne ne s'y abonne côté joueur. Les briques sont là : `ServerMoveToSpawnPoint()` pour replacer les joueurs, `Health.ResetHealth()` pour les soigner.
-3. **Vault réseauté** — le hitbox le débloque, voir ci-dessous.
-4. **Migrer le multijoueur vers `Arena.unity`.**
-5. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
+1. **Boucle de round / conditions de victoire (BO5)** — rien ne termine la partie aujourd'hui, seule la vie baisse. `Health.OnDeath` existe mais personne ne s'y abonne côté joueur. Les briques sont là : `ServerMoveToSpawnPoint()` pour replacer les joueurs, `Health.ResetHealth()` pour les soigner.
+2. **Vault réseauté** — le hitbox le débloque, voir ci-dessous.
+3. **Migrer le multijoueur vers `Arena.unity`.**
+4. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
 
 ## Ce qu'il reste à valider (test Host + Client)
 
-Le hitbox a été vérifié en Play Mode (géométrie, layer, trigger, suivi du lean, et tirs de contrôle qui touchent le corps penché et ratent l'ancien centre). Mais **le ressenti et le jeu à deux ne se vérifient qu'en jouant** — c'est un arbitrage qui revient à l'utilisateur.
+Le hitbox et le rewind ont été vérifiés en Play Mode : géométrie, layer, trigger, suivi du lean, tirs de contrôle qui touchent le corps penché et ratent l'ancien centre, et pour le rewind un déplacement de 3 m qui fait rater le tir sans compensation et le fait toucher avec — puis une restauration vérifiée dans les deux sens. Mais **le ressenti et le jeu à deux ne se vérifient qu'en jouant** — c'est un arbitrage qui revient à l'utilisateur.
+
+Pour le rewind, le test qui compte : **Packet Delay à 100-150 ms, viser un adversaire qui strafe**. Les tirs doivent toucher là où il est *affiché*, pas derrière lui. Et l'inverse à surveiller — c'est le prix du rewind, assumé par tous les FPS : en tant que cible, on peut désormais mourir *juste après* s'être mis à couvert. Si ça paraît excessif, c'est `maxRewindSeconds` qu'il faut baisser.
 
 À tester depuis l'instance **CLIENT** :
 1. **Peek en lean** — le test qui compte. Un adversaire qui penche derrière un angle doit être touchable sur le flanc qu'il expose, et *seulement* là. Tirer sur sa position « droite » (là où était l'ancien collider) ne doit plus rien faire.
