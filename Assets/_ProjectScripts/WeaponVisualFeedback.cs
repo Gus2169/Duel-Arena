@@ -66,10 +66,24 @@ public class WeaponVisualFeedback : MonoBehaviour
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         go.name = "ImpactMarker";
 
-        // Pas besoin de collider sur un marqueur purement visuel — et ça éviterait de fausser
-        // d'autres raycasts (dont les tiens) si on le laissait.
+        // CreatePrimitive livre TOUJOURS un collider. Il faut le neutraliser, et surtout le faire
+        // IMMÉDIATEMENT : Destroy() est différé à la fin de la frame, donc le collider reste bien
+        // vivant pour la physique entre-temps. C'est enabled = false qui prend effet tout de
+        // suite ; Destroy ne fait que le ménage ensuite.
+        //
+        // Ce marqueur apparaît pile à l'endroit touché, donc à la surface du corps de la cible.
+        // Un collider actif ne serait pas qu'un détail cosmétique :
+        //   - le CharacterController de la cible se pousserait hors de la sphère à son prochain
+        //     Move() — d'où un adversaire qui RECULE visiblement à chaque balle encaissée ;
+        //   - la sphère naît sur le layer Default, celui de worldMask, donc elle bloquerait les
+        //     tirs suivants comme un mur ;
+        //   - elle compterait aussi comme obstacle pour CanStandUp() et l'anti-clipping du lean.
         var col = go.GetComponent<Collider>();
-        if (col != null) Destroy(col);
+        if (col != null)
+        {
+            col.enabled = false;
+            Destroy(col);
+        }
 
         go.transform.position = point + normal * 0.01f; // léger décalage pour éviter le z-fighting
         go.transform.localScale = Vector3.one * impactSize;
