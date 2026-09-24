@@ -279,6 +279,10 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         if (IsServer)
         {
+            // Place le joueur sur un point de spawn AVANT de publier sa position : sans ça, tout
+            // le monde apparaît à la position du prefab, donc les uns sur les autres.
+            ServerMoveToSpawnPoint();
+
             // Le SERVEUR publie la position où il vient de faire apparaître ce joueur. Sans ça,
             // networkPosition vaut encore default = (0,0,0) à cet instant, et la branche cliente
             // ci-dessous téléportait tout le monde à l'origine du monde — y compris le serveur
@@ -326,6 +330,47 @@ public class PlayerLocomotion : NetworkBehaviour
     public override void OnNetworkDespawn()
     {
         networkPosition.OnValueChanged -= HandleNetworkPositionChanged;
+    }
+
+    /// <summary>
+    /// Replace ce joueur sur un point de spawn, côté SERVEUR uniquement, et publie le résultat.
+    /// Appelée au spawn, et prévue pour l'être aussi à chaque manche par la future boucle de round.
+    /// Sans `PlayerSpawnPoints` dans la scène, ne fait rien : le joueur garde la position que lui a
+    /// donnée le NetworkManager.
+    /// </summary>
+    public void ServerMoveToSpawnPoint()
+    {
+        if (!IsServer) return;
+
+        PlayerSpawnPoints points = PlayerSpawnPoints.Instance;
+        if (points == null) return;
+
+        // Positions des autres joueurs DÉJÀ présents, pour ne pas faire apparaître le nouveau venu
+        // dans les pieds de son adversaire. Le serveur spawne les joueurs séquentiellement, donc le
+        // second voit bien le premier.
+        var occupied = new List<Vector3>();
+        foreach (PlayerLocomotion other in FindObjectsByType<PlayerLocomotion>(FindObjectsSortMode.None))
+        {
+            if (other == this) continue;
+            occupied.Add(other.transform.position);
+        }
+
+        if (!points.TryGetSpawnPointFarthestFrom(occupied, out Vector3 spawnPosition, out float spawnYaw)) return;
+
+        // Le CharacterController doit être désactivé pour un repositionnement direct, sinon il
+        // écrase la nouvelle position au Move() suivant (même raison que dans la réconciliation).
+        controller.enabled = false;
+        transform.position = spawnPosition;
+        transform.rotation = Quaternion.Euler(0f, spawnYaw, 0f);
+        controller.enabled = true;
+
+        // Remise à zéro de l'inertie : réapparaître avec la vitesse accumulée avant la mort ferait
+        // glisser le joueur au début de la manche suivante.
+        currentVelocity = Vector3.zero;
+        verticalVelocity = 0f;
+
+        networkPosition.Value = transform.position;
+        networkYaw.Value = transform.eulerAngles.y;
     }
 
     // ------------------------------------------------------------------
