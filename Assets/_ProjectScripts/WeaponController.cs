@@ -123,7 +123,9 @@ public class WeaponController : NetworkBehaviour
         // jamais en sprint — PlayerLocomotion coupe déjà le sprint dès que Fire est appuyé, donc
         // ce garde-fou ne bloque en pratique que la frame où IsSprinting n'a pas encore été
         // remise à jour ce tick (WeaponController tourne avant PlayerLocomotion.Update()).
-        if (wantsToFire && cooldown <= 0f && !locomotion.IsSprinting)
+        // Confort local : on ne déclenche même pas le recul ni le son hors manche. Le vrai
+        // verrou est côté serveur dans FireServerRpc — celui-ci n'est qu'une convention client.
+        if (wantsToFire && cooldown <= 0f && !locomotion.IsSprinting && RoundManager.FiringAllowed)
         {
             // Le cooldown doit être posé AVANT Fire() : si Fire() lève une exception (ex.
             // référence non assignée dans l'inspecteur), on ne veut surtout pas rester avec
@@ -242,6 +244,11 @@ public class WeaponController : NetworkBehaviour
             return;
         }
         serverLastAcceptedFireTime = now;
+
+        // Garde-fou anti-triche : hors manche, aucun tir n'est accepté. Sans ce test serveur, un
+        // client modifié tirerait pendant le décompte ou après la mort de son adversaire — le test
+        // dans HandleFireInput n'est qu'une convention côté client.
+        if (!RoundManager.FiringAllowed) return;
 
         // Garde-fou anti-triche : une direction nulle (ou non fournie) ferait un Raycast dans une
         // direction indéfinie — .normalized d'un vecteur nul renvoie déjà Vector3.zero sans lever

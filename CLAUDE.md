@@ -188,6 +188,28 @@ Deux points posés dans l'arène : `Spawn A` en (0, 0, 2) face au +Z, `Spawn B` 
 
 Sans composant dans la scène ou sans point renseigné, les joueurs apparaissent à la position du prefab — le comportement d'avant, pas une erreur.
 
+## Boucle de manches — BO5 (2026-09-24)
+
+`RoundManager` (sur `/RoundManager` dans `MultiTestScene`, `NetworkObject` in-scene **actif**) pilote le duel. **Entièrement serveur-autoritaire** : phase, score et transitions sont décidés par le serveur et publiés en `NetworkVariable`. Aucune RPC client→serveur n'existe — même principe que pour les dégâts.
+
+Machine à états : `WaitingForPlayers` → `Starting` (décompte) → `Active` → `RoundOver` → manche suivante, jusqu'à `roundsToWin` (3 = BO5). Puis `MatchOver`, et un nouveau match repart automatiquement — pratique pour tester en continu.
+
+**Détection de mort par SONDAGE de `Health.IsDead`**, pas par abonnement à `OnDeath`. À deux joueurs le coût est nul, et ça évite toute la classe de bugs de cycle de vie des abonnements (déconnexion en pleine manche, objet détruit avant désabonnement, double abonnement au respawn).
+
+**Le survivant marque**, pas « celui qui a tiré » : en 1v1 c'est équivalent, et ça évite de faire remonter l'identité du tireur jusqu'ici. À revoir le jour où on pourra mourir autrement que sous les balles de l'adversaire (chute, zone).
+
+**Gel hors manche.** Pendant le décompte et après une mort, `RoundManager.MovementAllowed` coupe le déplacement dans `Move()` (le regard reste libre) et `FiringAllowed` bloque le tir — côté client pour le confort, et surtout **côté serveur dans `FireServerRpc`**, seul endroit qui compte. Le gel étant lu dans `Move()`, un rejeu de réconciliation utilise la valeur de *maintenant* et non celle de l'input rejoué : même compromis que pour la posture, acceptable pour la même raison (la transition arrive une fois par manche, joueurs immobiles, et le seuil de réconciliation rattrape l'écart).
+
+**`ServerMoveToSpawnPoint()` remet aussi à zéro la posture et le lean**, en plus de l'inertie. Sans ça, on reprenait la manche suivante dans l'état où on était mort : penché derrière un angle qui n'existe plus, ou allongé en plein milieu.
+
+⚠️ **Le lean est le seul état qui exige une RPC vers le propriétaire pour être annulé** (`ResetLeanClientRpc`). Son *décalage* est serveur, mais son **ÉTAT** (-1/0/+1) est une bascule qui vit sur le client : remettre le décalage à zéro côté serveur ne suffit pas, le propriétaire se repenche dès la frame suivante puisque sa touche est toujours considérée comme enclenchée. La posture, elle, vient d'une `NetworkVariable` et se remet directement.
+
+L'ordre dans `BeginRound()` compte : on **soigne avant de replacer**. `ServerMoveToSpawnPoint()` choisit le point le plus éloigné des autres joueurs, donc replacer le premier influence le choix du second — c'est ce qui garantit des extrémités opposées même si les deux sont morts au même endroit. Vérifié en Play Mode : (0, 2) et (0, 58).
+
+**Décision de design en attente** : `roundTimeLimit` (60 s) rend la manche **nulle** sans que personne ne marque. Face à deux joueurs passifs, ça peut se répéter indéfiniment. Le GDD vise des manches de 15-30 s ; à trancher par playtest (mort subite ? double défaite ? réduction de l'arène ?).
+
+L'affichage `OnGUI` du `RoundManager` est un **placeholder** au même titre que `NetworkBootstrapUI`, à remplacer par le HUD UI Toolkit.
+
 ## Dettes techniques (audit du 2026-09-21, vérifié dans le code)
 
 1. ✅ **Corrigé** — speedhack par flood d'inputs (borne par frame → budget sur le temps réel).
@@ -229,10 +251,11 @@ Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline
 
 *(Livré le 2026-09-24 : le hitbox séparé, puis le rewind. **Avec eux, la Phase 1 n'a plus de chantier structurel ouvert** — le duel 1v1 est techniquement solide. Ce qui suit est du contenu et du flow, plus des fondations.)*
 
-1. **Boucle de round / conditions de victoire (BO5)** — rien ne termine la partie aujourd'hui, seule la vie baisse. `Health.OnDeath` existe mais personne ne s'y abonne côté joueur. Les briques sont là : `ServerMoveToSpawnPoint()` pour replacer les joueurs, `Health.ResetHealth()` pour les soigner.
-2. **Vault réseauté** — le hitbox le débloque, voir ci-dessous.
-3. **Migrer le multijoueur vers `Arena.unity`.**
-4. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
+*(Livré le 2026-09-24 : la boucle de manches BO5. Voir la section dédiée plus haut.)*
+
+1. **Vault réseauté** — le hitbox le débloque, voir ci-dessous.
+2. **Migrer le multijoueur vers `Arena.unity`.**
+3. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
 
 ## Ce qu'il reste à valider (test Host + Client)
 

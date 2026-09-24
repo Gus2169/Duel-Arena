@@ -554,8 +554,44 @@ public class PlayerLocomotion : NetworkBehaviour
         currentVelocity = Vector3.zero;
         verticalVelocity = 0f;
 
+        // Remise à zéro de la POSTURE et du LEAN. Sans ça, on reprend la manche suivante dans
+        // l'état où on est mort : penché derrière un angle qui n'existe plus, ou allongé en plein
+        // milieu. La posture vient d'une NetworkVariable, donc la remettre ici suffit.
+        networkStance.Value = Stance.Standing;
+        ApplyStanceImmediate(Stance.Standing);
+
+        currentLeanOffset = 0f;
+        networkLeanOffset.Value = 0f;
+        leanState = 0;
+
+        // Le LEAN demande en plus une RPC vers le propriétaire, contrairement à tout le reste.
+        // Son ÉTAT (-1/0/+1) est une bascule qui vit sur le client : remettre le décalage à zéro
+        // côté serveur ne suffirait pas, le propriétaire se repencherait dès la frame suivante
+        // puisque sa touche est toujours considérée comme enclenchée.
+        ResetLeanClientRpc(new ClientRpcParams
+        {
+            Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
+        });
+
         networkPosition.Value = transform.position;
         networkYaw.Value = transform.eulerAngles.y;
+    }
+
+    /// <summary>Annule le lean chez le propriétaire — état, décalage et effet caméra. Envoyée par
+    /// le serveur au début de chaque manche (voir ServerMoveToSpawnPoint).</summary>
+    [ClientRpc]
+    private void ResetLeanClientRpc(ClientRpcParams clientRpcParams = default)
+    {
+        if (!IsOwner) return;
+
+        leanState = 0;
+        currentLeanOffset = 0f;
+
+        if (leanPivot != null)
+        {
+            leanPivot.localPosition = Vector3.zero;
+            leanPivot.localRotation = Quaternion.identity;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -955,7 +991,16 @@ public class PlayerLocomotion : NetworkBehaviour
         // recalage de la rotation au yaw confirmé, avant rejeu, est indispensable avec ce choix.
         transform.Rotate(0f, snap.lookX * yawSensitivity, 0f, Space.World);
 
-        Vector3 inputDir = new Vector3(snap.move.x, 0f, snap.move.y);
+        // Hors manche (décompte de départ, mort, fin de match), le déplacement est gelé pour que
+        // les deux joueurs repartent exactement en même temps. On ne coupe QUE le déplacement :
+        // regarder autour de soi et se pré-positionner visuellement reste permis.
+        //
+        // Appliqué ici, dans la fonction déterministe, donc identiquement côté client et serveur :
+        // un client modifié qui ignorerait le gel se ferait recaler, puisque le serveur applique le
+        // même test sur sa propre simulation.
+        Vector2 moveInput = RoundManager.MovementAllowed ? snap.move : Vector2.zero;
+
+        Vector3 inputDir = new Vector3(moveInput.x, 0f, moveInput.y);
         inputDir = Vector3.ClampMagnitude(inputDir, 1f);
         Vector3 worldDir = transform.TransformDirection(inputDir);
 
