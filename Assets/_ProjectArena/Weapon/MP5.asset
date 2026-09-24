@@ -17,9 +17,12 @@ MonoBehaviour:
   shotsPerSecond: 7
   isAutomatic: 1
   maxRange: 60
-  hittableMask:
+  worldMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 1
+  hitboxMask:
+    serializedVersion: 2
+    m_Bits: 128
   verticalRecoilPattern:
     serializedVersion: 2
     m_Curve:

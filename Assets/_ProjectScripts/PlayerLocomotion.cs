@@ -54,6 +54,9 @@ public class PlayerLocomotion : NetworkBehaviour
     [Tooltip("Transform de la capsule visuelle enfant (juste pour VOIR le joueur en jeu — n'affecte jamais la collision, qui reste gérée uniquement par le CharacterController). Assigne l'enfant 'Capsule'. Laisse vide si tu n'as pas de mesh visuel.")]
     [SerializeField] private Transform visualCapsule;
 
+    [Tooltip("Surface TOUCHABLE du joueur (enfant 'Hitbox'), distincte du CharacterController de mouvement : elle suit la posture ET le lean, et n'est jamais désactivée par le mouvement. Sans elle, le joueur est INTOUCHABLE — le tir serveur ne cherche que ce collider.")]
+    [SerializeField] private PlayerHitbox hitbox;
+
     [Header("Rotation (yaw)")]
     [Tooltip("Sensibilité horizontale de la souris pour le yaw du corps (doit correspondre à celle utilisée pour le pitch dans PlayerCameraLook). Réseauté via Move() : voir remarque dans HandleOwnerPrediction/Move.")]
     [SerializeField] private float yawSensitivity = 0.12f;
@@ -184,11 +187,6 @@ public class PlayerLocomotion : NetworkBehaviour
     private Vector3 currentVelocity;      // vitesse horizontale lissée (monde), pour l'accel/décel
     private float currentCameraHeight;    // hauteur de base liée à la posture, sans le kick d'atterrissage
 
-    // Dimensions de la capsule VISUELLE, volontairement distinctes de celles du
-    // CharacterController : la collision change instantanément avec la posture (pour rester
-    // déterministe, voir ApplySimulationCapsule), le mesh continue de glisser en douceur.
-    private float visualCapsuleHeight;
-    private float visualCapsuleRadius;
     private float landingDipOffset;       // décalage négatif temporaire appliqué par-dessus, qui remonte à 0
 
     private float bobPhase;
@@ -218,6 +216,23 @@ public class PlayerLocomotion : NetworkBehaviour
     private readonly NetworkVariable<float> networkYaw = new NetworkVariable<float>(
         default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+    /// <summary>Décalage latéral du lean, en mètres — écrit par le serveur. Le lean n'est plus
+    /// purement cosmétique depuis le hitbox séparé : il déplace la surface touchable, donc tout le
+    /// monde doit voir où penche un adversaire. Le PROPRIÉTAIRE, lui, utilise sa valeur locale
+    /// prédite (voir LeanOffset) pour que sa caméra et son corps ne subissent aucune latence.</summary>
+    private readonly NetworkVariable<float> networkLeanOffset = new NetworkVariable<float>(
+        default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    /// <summary>Décalage de lean à utiliser pour positionner la surface visible et la surface
+    /// touchable de CE joueur, sur CETTE machine : la valeur locale prédite chez le propriétaire,
+    /// la valeur publiée par le serveur partout ailleurs (serveur compris, puisqu'il est l'auteur
+    /// de cette valeur pour un client distant).</summary>
+    private float LeanOffset => IsOwner ? currentLeanOffset : networkLeanOffset.Value;
+
+    /// <summary>Collider de la surface touchable, pour que le tir serveur puisse exclure celle du
+    /// tireur — et, plus tard, pour que le rewind puisse la déplacer dans le passé.</summary>
+    public Collider HitboxCollider => hitbox != null ? hitbox.Collider : null;
+
     private int nextInputSequence;
 
     private struct MovementInputSnapshot
@@ -229,6 +244,7 @@ public class PlayerLocomotion : NetworkBehaviour
         public bool aimHeld;
         public bool fireHeld;
         public bool firePressedThisFrame;
+        public int leanState; // -1 gauche / 0 / +1 droite — voir UpdateLeanState
     }
 
     private struct PendingInput
@@ -380,6 +396,11 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private void Update()
     {
+        // L'état de lean (-1/0/+1) est lu AVANT le dispatch : il fait maintenant partie du
+        // snapshot d'input envoyé au serveur, puisque le hitbox doit suivre le lean. Le reste du
+        // lean (décalage caméra, anti-clipping) reste cosmétique et local, plus bas.
+        if (IsOwner) UpdateLeanState();
+
         if (IsOwner && IsServer)
         {
             // Cas 1 : Host sur son propre perso — autorité directe, comme en solo.
@@ -413,16 +434,20 @@ public class PlayerLocomotion : NetworkBehaviour
 
         if (IsOwner)
         {
-            // Catégories B (requête de son lean) et C (feel caméra local) : lues AVANT
-            // ConsumeFrameInputs, comme pour tout input "one-shot" du frame.
+            // Catégorie C (feel caméra local) : lue AVANT ConsumeFrameInputs, comme tout input
+            // "one-shot" du frame.
             HandleStanceInput();
-            HandleLean();
+            UpdateLeanVisual();
             UpdateHeadBob();
             UpdateLandingFeedback();
             ApplyCameraPivotPosition();
+
+            // Le Host publie son propre décalage de lean : il est à la fois propriétaire et
+            // serveur, donc sa valeur locale EST la valeur autoritaire.
+            if (IsServer) networkLeanOffset.Value = currentLeanOffset;
         }
 
-        // Habillage de la posture (hauteur caméra + capsule visuelle) — purement visuel, tourne
+        // Habillage de la posture (hauteur caméra) + surface visible + surface touchable — tourne
         // sur TOUTES les instances, y compris les spectateurs qui n'appellent jamais Move().
         // La capsule de COLLISION, elle, est appliquée dans Move() : c'est de la simulation.
         UpdateStanceVisuals();
@@ -444,6 +469,7 @@ public class PlayerLocomotion : NetworkBehaviour
             aimHeld = input.AimHeld,
             fireHeld = input.FireHeld,
             firePressedThisFrame = input.FirePressedThisFrame,
+            leanState = leanState,
         };
     }
 
@@ -474,7 +500,7 @@ public class PlayerLocomotion : NetworkBehaviour
             predictedYaw = transform.eulerAngles.y,
         });
 
-        SubmitInputServerRpc(sequence, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, dt);
+        SubmitInputServerRpc(sequence, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, dt);
 
 #if UNITY_EDITOR
         // Triche simulée : on renvoie le MÊME input plusieurs fois, avec des numéros de séquence
@@ -490,14 +516,14 @@ public class PlayerLocomotion : NetworkBehaviour
         {
             for (int i = 1; i < debugFloodMultiplier; i++)
             {
-                SubmitInputServerRpc(nextInputSequence++, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, dt);
+                SubmitInputServerRpc(nextInputSequence++, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, dt);
             }
         }
 #endif
     }
 
     [ServerRpc]
-    private void SubmitInputServerRpc(int sequence, Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, bool fireHeld, bool firePressedThisFrame, float deltaTime)
+    private void SubmitInputServerRpc(int sequence, Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, bool fireHeld, bool firePressedThisFrame, int leanState, float deltaTime)
     {
         // Garde-fou anti-flood (mémoire) : les ServerRpc sont livrées en Reliable, donc TOUT ce
         // qu'un client envoie finit par arriver. Sans plafond, un client qui spamme cette RPC fait
@@ -521,6 +547,7 @@ public class PlayerLocomotion : NetworkBehaviour
                 aimHeld = aimHeld,
                 fireHeld = fireHeld,
                 firePressedThisFrame = firePressedThisFrame,
+                leanState = leanState,
             },
             deltaTime = deltaTime,
         });
@@ -580,6 +607,7 @@ public class PlayerLocomotion : NetworkBehaviour
             ServerCheckAutoStand(next.snapshot);
             Move(next.snapshot, dt);
             ServerAdvanceFootsteps(dt);
+            ServerAdvanceLean(next.snapshot.leanState, dt);
             lastProcessedSequence = next.sequence;
         }
 
@@ -933,20 +961,37 @@ public class PlayerLocomotion : NetworkBehaviour
     /// </summary>
     private void UpdateStanceVisuals()
     {
-        StanceProfile targetProfile = GetStanceProfile(networkStance.Value);
-        float step = stanceTransitionSpeed * Time.deltaTime;
+        Stance stance = networkStance.Value;
+        StanceProfile profile = GetStanceProfile(stance);
 
-        currentCameraHeight = Mathf.MoveTowards(currentCameraHeight, targetProfile.cameraHeight, step);
-        visualCapsuleHeight = Mathf.MoveTowards(visualCapsuleHeight, targetProfile.controllerHeight, step);
-        visualCapsuleRadius = Mathf.MoveTowards(visualCapsuleRadius, targetProfile.controllerRadius, step);
+        // SEULE la hauteur caméra est interpolée : c'est le point de vue du propriétaire, et c'est
+        // ce lissage-là qui donne le confort de s'accroupir. Purement local, sans conséquence.
+        currentCameraHeight = Mathf.MoveTowards(currentCameraHeight, profile.cameraHeight, stanceTransitionSpeed * Time.deltaTime);
 
-        ApplyVisualCapsule(visualCapsuleHeight, visualCapsuleRadius);
+        // Le CORPS, lui, ne s'interpole plus : surface visible et surface touchable sont toutes
+        // deux une fonction PURE de (posture réseau, décalage de lean), donc identiques sur toutes
+        // les machines. C'est ce qui garantit qu'on touche ce qu'on voit.
+        //
+        // Un lissage local des dimensions du corps ferait diverger la silhouette d'un écran à
+        // l'autre pendant chaque transition : le tireur viserait un corps que le serveur n'a pas
+        // au même endroit. Le corps qui "claque" d'une posture à l'autre est le prix assumé tant
+        // que la capsule est un placeholder ; un vrai personnage animé réglera ça par l'animation,
+        // avec un hitbox qui suivra les os.
+        float lean = LeanOffset;
+        ApplyVisualCapsule(profile.controllerHeight, profile.controllerRadius, lean);
+        ApplyHitbox(profile.controllerHeight, profile.controllerRadius, lean);
 
         // Les spectateurs n'appellent jamais Move() : sans ça, leur CharacterController local
-        // garderait la capsule de la posture précédente. Sans effet sur les dégâts (le serveur
-        // seul raycaste pour ça), mais ça garde les colliders cohérents partout, notamment pour
-        // le raycast purement visuel du tireur.
-        ApplySimulationCapsule(networkStance.Value);
+        // garderait la capsule de la posture précédente.
+        ApplySimulationCapsule(stance);
+    }
+
+    /// <summary>Met la surface touchable en accord avec la posture et le lean. Tourne sur toutes
+    /// les instances, mais seule celle du SERVEUR décide des dégâts.</summary>
+    private void ApplyHitbox(float height, float radius, float lateralOffset)
+    {
+        if (hitbox == null) return;
+        hitbox.Apply(height, radius, lateralOffset);
     }
 
     private void ApplyStanceImmediate(Stance stance)
@@ -954,8 +999,6 @@ public class PlayerLocomotion : NetworkBehaviour
         StanceProfile profile = GetStanceProfile(stance);
         ApplySimulationCapsule(stance);
         currentCameraHeight = profile.cameraHeight;
-        visualCapsuleHeight = profile.controllerHeight;
-        visualCapsuleRadius = profile.controllerRadius;
         landingDipOffset = 0f;
 
         if (cameraPivot != null)
@@ -965,17 +1008,22 @@ public class PlayerLocomotion : NetworkBehaviour
             cameraPivot.localPosition = pos;
         }
 
-        ApplyVisualCapsule(visualCapsuleHeight, visualCapsuleRadius);
+        ApplyVisualCapsule(profile.controllerHeight, profile.controllerRadius, currentLeanOffset);
+        ApplyHitbox(profile.controllerHeight, profile.controllerRadius, currentLeanOffset);
     }
 
-    private void ApplyVisualCapsule(float height, float radius)
+    private void ApplyVisualCapsule(float height, float radius, float lateralOffset)
     {
         if (visualCapsule == null) return;
 
         // Capsule primitive par défaut d'Unity : 2 unités de haut / 0.5 de rayon à l'échelle 1,
-        // pivot au centre — d'où les facteurs /2 et *2. Purement cosmétique.
+        // pivot au centre — d'où les facteurs /2 et *2.
         visualCapsule.localScale = new Vector3(radius * 2f, height / 2f, radius * 2f);
-        visualCapsule.localPosition = new Vector3(0f, height / 2f, 0f);
+
+        // Le corps visible se décale avec le lean, exactement comme le hitbox : sans ça, un
+        // adversaire penché serait touchable à un endroit où on ne le voit pas, ce qui serait un
+        // trou d'exactitude symétrique de celui qu'on vient de fermer.
+        visualCapsule.localPosition = new Vector3(lateralOffset, height / 2f, 0f);
     }
 
     // ------------------------------------------------------------------
@@ -1060,7 +1108,16 @@ public class PlayerLocomotion : NetworkBehaviour
     // Catégorie C — cosmétique purement local, ne tourne QUE pour le propriétaire (voir Update()).
     // ------------------------------------------------------------------
 
-    private void HandleLean()
+    /// <summary>
+    /// Bascule l'ÉTAT de lean (-1 gauche / 0 / +1 droite) à partir de l'input. Propriétaire
+    /// uniquement, appelée en tête d'Update pour que l'état parte dans le snapshot du frame.
+    ///
+    /// Depuis le hitbox séparé, le lean n'est plus purement cosmétique : il déplace la surface
+    /// touchable, donc le serveur doit le connaître. L'état voyage dans le snapshot d'input
+    /// existant — aucune RPC supplémentaire, et un client ne peut mentir que sur son propre lean,
+    /// ce qui ne lui donne aucun avantage (se pencher expose son flanc).
+    /// </summary>
+    private void UpdateLeanState()
     {
         int previousLeanState = leanState;
 
@@ -1079,22 +1136,38 @@ public class PlayerLocomotion : NetworkBehaviour
             if (leanState != 0 && previousLeanState == 0) RequestPlayerSoundServerRpc(PlayerSoundEvent.LeanStart);
             else if (leanState == 0 && previousLeanState != 0) RequestPlayerSoundServerRpc(PlayerSoundEvent.LeanEnd);
         }
+    }
 
-        float targetOffset = leanState * maxLeanOffset;
+    /// <summary>
+    /// Décalage de lean effectivement autorisé pour un état donné, une fois l'anti-clipping
+    /// appliqué : se pencher contre un mur ne doit pas passer la tête à travers.
+    /// Partagée entre le propriétaire (prédiction locale, pour le feel caméra) et le serveur
+    /// (valeur autoritaire, celle qui déplace le hitbox).
+    /// </summary>
+    private float ComputeAllowedLeanOffset(int state)
+    {
+        float targetOffset = state * maxLeanOffset;
+        if (Mathf.Abs(targetOffset) <= 0.01f || cameraPivot == null) return targetOffset;
 
-        if (Mathf.Abs(targetOffset) > 0.01f && leanPivot != null)
+        Vector3 origin = cameraPivot.position;
+        Vector3 dir = transform.right * Mathf.Sign(targetOffset);
+        float desiredDistance = Mathf.Abs(targetOffset);
+
+        if (Physics.Raycast(origin, dir, out RaycastHit hit, desiredDistance + 0.1f, obstacleMask, QueryTriggerInteraction.Ignore))
         {
-            Vector3 origin = cameraPivot.position;
-            Vector3 dir = transform.right * Mathf.Sign(targetOffset);
-            float desiredDistance = Mathf.Abs(targetOffset);
-
-            if (Physics.Raycast(origin, dir, out RaycastHit hit, desiredDistance + 0.1f, obstacleMask, QueryTriggerInteraction.Ignore))
-            {
-                float allowed = Mathf.Max(0f, hit.distance - 0.15f);
-                targetOffset = Mathf.Sign(targetOffset) * allowed;
-            }
+            float allowed = Mathf.Max(0f, hit.distance - 0.15f);
+            targetOffset = Mathf.Sign(targetOffset) * allowed;
         }
 
+        return targetOffset;
+    }
+
+    /// <summary>Effet caméra du lean — catégorie C, propriétaire uniquement. Le décalage résultant
+    /// sert AUSSI à positionner la surface visible et la surface touchable du propriétaire, pour
+    /// qu'il voie son propre corps là où les autres le voient.</summary>
+    private void UpdateLeanVisual()
+    {
+        float targetOffset = ComputeAllowedLeanOffset(leanState);
         currentLeanOffset = Mathf.MoveTowards(currentLeanOffset, targetOffset, leanSpeed * Time.deltaTime);
 
         if (leanPivot != null)
@@ -1103,6 +1176,22 @@ public class PlayerLocomotion : NetworkBehaviour
             float tilt = (currentLeanOffset / maxLeanOffset) * -maxLeanTilt;
             leanPivot.localRotation = Quaternion.Euler(0f, 0f, tilt);
         }
+    }
+
+    /// <summary>
+    /// Avance le lean AUTORITAIRE pour un client distant (cas 3), à partir de l'état reçu dans son
+    /// snapshot d'input et du dt de ce même input. C'est cette valeur qui déplace son hitbox côté
+    /// serveur, donc celle qui décide s'il est touché quand il peek.
+    ///
+    /// Limite connue : ce décalage est en retard d'environ un RTT sur ce que le tireur voit à
+    /// l'écran, comme l'était la position avant le rewind. Le rewind devra donc historiser le lean
+    /// en même temps que la position, sous peine de ne corriger qu'une moitié du problème.
+    /// </summary>
+    private void ServerAdvanceLean(int state, float dt)
+    {
+        float targetOffset = ComputeAllowedLeanOffset(state);
+        currentLeanOffset = Mathf.MoveTowards(currentLeanOffset, targetOffset, leanSpeed * dt);
+        networkLeanOffset.Value = currentLeanOffset;
     }
 
     private void TriggerLandingKick(float fallSpeed)

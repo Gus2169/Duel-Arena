@@ -144,19 +144,17 @@ public class WeaponController : NetworkBehaviour
         Vector3 origin = aimCamera.transform.position;
         Vector3 direction = aimCamera.transform.forward;
 
-        // Raycast LOCAL : ne sert plus qu'au feedback visuel instantané du tireur (tracer/impact),
-        // plus du tout aux dégâts ni même à ce qui est envoyé au serveur — voir FireServerRpc.
-        // Le feedback visuel sort volontairement du "if (targetHealth ...)" d'avant : on veut voir
-        // où le tir a atterri même sur un mur/une caisse sans Health, sinon les tirs ratés
-        // resteraient invisibles en jeu.
-        bool hitSomething = Physics.Raycast(origin, direction, out RaycastHit localHit, data.maxRange, data.hittableMask);
-        Vector3 end = hitSomething ? localHit.point : origin + direction * data.maxRange;
+        // Raycast LOCAL : ne sert qu'au feedback visuel instantané du tireur (tracer/impact), pas
+        // aux dégâts ni à ce qui est envoyé au serveur — voir FireServerRpc. Il utilise la MÊME
+        // résolution que le serveur (ResolveShot) pour que ce que le tireur voit corresponde à ce
+        // que le serveur décide, aux différences de latence près.
+        bool hitSomething = ResolveShot(origin, direction, out Vector3 end, out Vector3 localNormal, out _);
 
         Debug.DrawLine(origin, end, hitSomething ? Color.red : Color.gray, 0.5f);
         if (visualFeedback != null)
         {
             visualFeedback.SpawnTracer(origin, end);
-            if (hitSomething) visualFeedback.SpawnImpact(localHit.point, localHit.normal);
+            if (hitSomething) visualFeedback.SpawnImpact(end, localNormal);
         }
 
         if (NetworkObject != null)
@@ -177,7 +175,8 @@ public class WeaponController : NetworkBehaviour
         {
             // Composant testé hors contexte réseau (pas de NetworkObject) : pas de serveur à qui
             // déléguer, on applique les dégâts directement en local comme avant le passage réseau.
-            Health targetHealth = localHit.collider.GetComponentInParent<Health>();
+            ResolveShot(origin, direction, out _, out _, out Collider localBody);
+            Health targetHealth = localBody != null ? localBody.GetComponentInParent<Health>() : null;
             if (targetHealth != null) targetHealth.ApplyDamage(data.damagePerHit, transform.root.gameObject);
         }
 
@@ -265,21 +264,72 @@ public class WeaponController : NetworkBehaviour
             return;
         }
 
-        bool hitSomething = Physics.Raycast(origin, direction, out RaycastHit hit, data.maxRange, data.hittableMask);
-        Vector3 end = hitSomething ? hit.point : origin + direction * data.maxRange;
-        Vector3 hitNormal = hitSomething ? hit.normal : Vector3.zero;
+        // Le tireur ne doit pas se tirer dessus : son propre hitbox entoure sa caméra, et en lean
+        // celle-ci peut carrément en sortir, ce qui mettrait son propre collider en travers du
+        // rayon. On le retire de la requête le temps du tir. Le try/finally garantit qu'il revient
+        // même si le raycast ou l'application des dégâts lève — un hitbox laissé désactivé rendrait
+        // le tireur invulnérable pour le reste de la partie. C'est aussi le patron que réutilisera
+        // le rewind, qui devra déplacer puis restaurer les hitbox des autres joueurs.
+        Collider ownHitbox = locomotion != null ? locomotion.HitboxCollider : null;
+        bool hitboxWasEnabled = ownHitbox != null && ownHitbox.enabled;
+        if (hitboxWasEnabled) ownHitbox.enabled = false;
 
-        if (hitSomething)
+        try
         {
-            Health targetHealth = hit.collider.GetComponentInParent<Health>();
-            if (targetHealth != null)
-            {
-                targetHealth.ApplyDamage(data.damagePerHit, transform.root.gameObject);
-                Debug.Log($"[Serveur] {data.weaponName} : {hit.collider.name} touché pour {data.damagePerHit} dégâts (vie restante : {targetHealth.Current}).");
-            }
-        }
+            bool hitSomething = ResolveShot(origin, direction, out Vector3 end, out Vector3 hitNormal, out Collider bodyHit);
 
-        BroadcastShotClientRpc(origin, end, hitSomething, end, hitNormal);
+            if (bodyHit != null)
+            {
+                Health targetHealth = bodyHit.GetComponentInParent<Health>();
+                if (targetHealth != null)
+                {
+                    targetHealth.ApplyDamage(data.damagePerHit, transform.root.gameObject);
+                    Debug.Log($"[Serveur] {data.weaponName} : {bodyHit.transform.root.name} touché pour {data.damagePerHit} dégâts (vie restante : {targetHealth.Current}).");
+                }
+                else
+                {
+                    // Un collider sur le layer Hitbox sans Health au-dessus : configuration
+                    // incohérente, silencieuse autrement, et qui se traduirait par des tirs qui
+                    // "ne font rien" sans la moindre trace.
+                    Debug.LogWarning($"[Serveur] {bodyHit.name} est sur le layer Hitbox mais n'a aucun Health parent — aucun dégât appliqué.", bodyHit);
+                }
+            }
+
+            BroadcastShotClientRpc(origin, end, hitSomething, end, hitNormal);
+        }
+        finally
+        {
+            if (hitboxWasEnabled) ownHitbox.enabled = true;
+        }
+    }
+
+    /// <summary>
+    /// Résout un tir en DEUX traces distinctes, au lieu d'un raycast unique contre « tout ».
+    ///
+    /// 1. Le MONDE, qui arrête les balles. Volontairement SANS les joueurs : leur
+    ///    `CharacterController` ne suit pas le lean, donc le laisser bloquer les tirs ferait
+    ///    réapparaître par la bande le trou que le hitbox vient de fermer — un joueur penché
+    ///    arrêterait des balles avec un collider resté droit.
+    /// 2. Les HITBOX, limitée à la distance du mur touché : c'est ce qui fait qu'un adversaire
+    ///    derrière une caisse ne prend rien.
+    ///
+    /// Les hitbox sont des triggers, pour ne perturber aucune collision physique — d'où
+    /// `QueryTriggerInteraction.Collide` sur la seconde trace seulement.
+    ///
+    /// Partagée entre le feedback visuel local du tireur et la décision serveur : une seule
+    /// logique, donc pas de dérive possible entre ce qu'on voit et ce qui compte.
+    /// </summary>
+    private bool ResolveShot(Vector3 origin, Vector3 direction, out Vector3 end, out Vector3 normal, out Collider bodyHit)
+    {
+        bool worldHit = Physics.Raycast(origin, direction, out RaycastHit world, data.maxRange, data.worldMask, QueryTriggerInteraction.Ignore);
+        float blockingDistance = worldHit ? world.distance : data.maxRange;
+
+        bool playerHit = Physics.Raycast(origin, direction, out RaycastHit body, blockingDistance, data.hitboxMask, QueryTriggerInteraction.Collide);
+
+        bodyHit = playerHit ? body.collider : null;
+        end = playerHit ? body.point : (worldHit ? world.point : origin + direction * data.maxRange);
+        normal = playerHit ? body.normal : (worldHit ? world.normal : Vector3.zero);
+        return worldHit || playerHit;
     }
 
     /// <summary>Rediffuse à tout le monde (sauf au tireur, déjà servi localement dans Fire()) le

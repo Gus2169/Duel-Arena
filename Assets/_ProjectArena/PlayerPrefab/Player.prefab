@@ -153,6 +153,7 @@ GameObject:
   - component: {fileID: 1648147835881795468}
   - component: {fileID: 4778785776251366436}
   - component: {fileID: 9223354944556659811}
+  - component: {fileID: 8499542872561817817}
   - component: {fileID: 7504234295997836428}
   m_Layer: 3
   m_Name: Player
@@ -177,6 +178,7 @@ Transform:
   - {fileID: 5710468390860605592}
   - {fileID: 7158746789988596724}
   - {fileID: 941186128114751685}
+  - {fileID: 7676811959572549074}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!143 &8434179274635392664
@@ -247,6 +249,7 @@ MonoBehaviour:
   cameraPivot: {fileID: 5710468390860605592}
   leanPivot: {fileID: 6982550759346618163}
   visualCapsule: {fileID: 941186128114751685}
+  hitbox: {fileID: 1775885712774057022}
   yawSensitivity: 0.12
   walkSpeed: 5
   sneakSpeed: 2
@@ -338,6 +341,10 @@ MonoBehaviour:
     m_PostInfinity: 2
     m_RotationOrder: 4
   debugDrawVaultRays: 1
+  debugFloodServerInputs: 0
+  debugFloodMultiplier: 10
+  positionReconciliationThreshold: 0.05
+  yawReconciliationThreshold: 1
   interpolationDelay: 0.1
 --- !u!114 &6943044066884809316
 MonoBehaviour:
@@ -405,6 +412,20 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerSoundEmitter
   audioSource: {fileID: 7504234295997836428}
   soundBank: {fileID: 11400000, guid: 772ac07e0f7c32340ad0fcd08213ad54, type: 2}
+--- !u!114 &8499542872561817817
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4948709451476686498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b4a3615f81d4bf7419f661925c73a567, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Health
+  ShowTopMostFoldoutHeaderGroup: 1
+  maxHealth: 100
 --- !u!82 &7504234295997836428
 AudioSource:
   m_ObjectHideFlags: 0
@@ -597,7 +618,6 @@ GameObject:
   - component: {fileID: 941186128114751685}
   - component: {fileID: 5698832706081254333}
   - component: {fileID: 8879788779494338379}
-  - component: {fileID: 8626789460219759111}
   m_Layer: 3
   m_Name: Capsule
   m_TagString: Untagged
@@ -677,29 +697,6 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!136 &8626789460219759111
-CapsuleCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6715540527808948304}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 2
-  m_Radius: 0.5
-  m_Height: 2
-  m_Direction: 1
-  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1 &7030491950063384188
 GameObject:
   m_ObjectHideFlags: 0
@@ -761,6 +758,9 @@ MonoBehaviour:
   recoilPercentProneSneaking: 20
   recoilPercentProneMoving: 30
   recoilPercentWhileAiming: 50
+  maxOriginDistanceFromPlayer: 4
+  debugFakeShotOrigin: 0
+  debugFakeShotOriginOffset: 50
 --- !u!82 &6143872881057716690
 AudioSource:
   m_ObjectHideFlags: 0
@@ -858,3 +858,71 @@ AudioSource:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+--- !u!1 &8010230197368220470
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7676811959572549074}
+  - component: {fileID: 9093046280410910017}
+  - component: {fileID: 1775885712774057022}
+  m_Layer: 7
+  m_Name: Hitbox
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7676811959572549074
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8010230197368220470}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 313573852267884122}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!136 &9093046280410910017
+CapsuleCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8010230197368220470}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 2
+  m_Radius: 0.5
+  m_Height: 1
+  m_Direction: 1
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &1775885712774057022
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8010230197368220470}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e827bcfb39fd5564c8d6bbbfc0691d1b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerHitbox

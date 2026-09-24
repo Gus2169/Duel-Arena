@@ -17,9 +17,11 @@ Aucun autre document technique n'est maintenu. Il y en a eu un, décrivant comme
 
 ## Outils
 
-- **Piloter l'Editor : le CLI `unity`.** L'Editor tourne en général déjà avec ce projet ouvert :
-  `unity command <nom> --project-path "D:\Documents\Unity\FPS Claude"` — `unity list` liste les commandes (scène, GameObjects, prefabs, build, tests, console...). Préférer ça à l'édition manuelle de `.unity`/`.prefab` (YAML) quand l'Editor est ouvert. Cycle de vérification standard après une modif de script : `recompile`, puis `recompile_status` en boucle, puis `console_status`.
+- **Piloter l'Editor : les outils MCP `unity-editor-mcp`** (vérifié le 2026-09-24). Même backend que le CLI (package Pipeline, Editor déjà ouvert sur ce projet), mais en appel direct plutôt qu'en aller-retour shell. Épinglé sur ce projet : `unity mcp --project-path "D:\Documents\Unity\FPS Claude"`, déclaré dans `~/.claude.json`.
+  Le CLI `unity` reste la porte d'entrée pour tout ce que MCP n'expose pas : `unity install/open/editors`, `unity pipeline`, `unity skill`, `unity mcp configure`. Équivalence : outil MCP `<nom>` = `unity command <nom> --project-path "..."`.
+  Cycle de vérification standard après une modif de script : `recompile`, puis `recompile_status` en boucle, puis `console_status`. Préférer ces outils à l'édition manuelle de `.unity`/`.prefab` (YAML) quand l'Editor est ouvert.
   ⚠️ Le buffer de `console` garde les entrées des compilations précédentes. Se fier à `groundTruth` / `recompile_status`, pas au comptage brut.
+  Un second serveur MCP existait (`unity-mcp`, le pont in-Editor du package AI Assistant via `relay_win.exe`) : **supprimé le 2026-09-24**, il faisait doublon et n'était épinglé à aucun projet — il s'attachait à l'Editor qui tournait, piège assuré le jour où deux Editors tournent en parallèle. Le pont reste activable dans Project Settings > AI > Unity MCP si un besoin apparaît (son seul apport unique était la génération d'assets par IA, qui demande un abonnement Unity AI absent ici).
 - **Git** : dépôt local, pas de remote. **Committer seulement sur demande explicite.**
 
 ## Architecture réseau
@@ -41,11 +43,71 @@ La posture est **confirm-only, pas prédite** (compromis assumé, à revoir si �
 - **(B) Événements sonores de gameplay** (`OnPlayerSound`), diffusés à tous par ClientRpc — décidés côté serveur (pas, ramper, posture, relevé auto) ou demandés par le client avec garde-fou (lean uniquement).
 - **(C) Cosmétique pur**, ne tourne que si `IsOwner` : head bob, kick caméra à l'atterrissage, offset visuel du lean.
 
-Le lean est **hybride** : effet caméra en C, son en B (les adversaires doivent l'entendre). Le yaw est en A et non en C : il affecte la direction de déplacement ET de tir, donc c'est du gameplay, pas de la caméra.
+Le yaw est en A et non en C : il affecte la direction de déplacement ET de tir, donc c'est du gameplay, pas de la caméra.
+
+### Le lean n'est plus cosmétique (2026-09-24)
+
+Conséquence directe du hitbox : le lean **déplace la surface touchable**, donc le serveur doit le connaître. Il a quitté la catégorie C pure — c'est désormais **A pour son décalage, B pour son son, C pour l'inclinaison caméra**.
+
+- L'**état** (-1/0/+1) voyage dans le snapshot d'input existant — aucune RPC ajoutée. Un client ne peut mentir que sur son propre lean, ce qui ne lui donne aucun avantage (se pencher expose son flanc).
+- Le **décalage** est calculé par le serveur (`ServerAdvanceLean`, avec le même anti-clipping que le client) et publié dans `networkLeanOffset`.
+- Le **propriétaire** utilise sa valeur locale prédite (`LeanOffset`), pour que sa caméra et son corps n'aient aucune latence.
+
+**Limite connue** : chez un spectateur, le lean d'un adversaire est en retard d'environ un RTT, exactement comme l'était la position avant le rewind. **Le rewind devra historiser le lean en même temps que la position**, sous peine de ne corriger qu'une moitié du problème.
 
 ### Hit registration
 
 Le tireur raycast en local pour son feedback visuel instantané (**aucun dégât associé**), envoie `origin`/`direction` au serveur qui refait SEUL le raycast et décide SEUL des dégâts. `Health` est un `NetworkBehaviour` dont `Current` est une `NetworkVariable<float>` en écriture serveur uniquement (avec un mode de secours non-réseauté pour une cible de test isolée) ; `ApplyDamage` refuse tout appel client direct sur un objet réseauté.
+
+**Résolution en DEUX traces** (`WeaponController.ResolveShot`, partagée entre le feedback local et la décision serveur, pour qu'elles ne puissent pas diverger) :
+
+1. **Le monde** (`WeaponData.worldMask` = `Default`), qui arrête les balles. **Sans les joueurs** : leur `CharacterController` ne suit pas le lean, donc le laisser bloquer les tirs ferait réapparaître par la bande le trou que le hitbox ferme.
+2. **Les hitbox** (`WeaponData.hitboxMask` = layer `Hitbox`), limitée à la distance du mur touché — c'est ce qui fait qu'un adversaire derrière une caisse ne prend rien.
+
+Le tireur retire son propre hitbox de la requête le temps du tir (`try/finally` — un hitbox laissé désactivé rendrait le tireur invulnérable pour le reste de la partie). C'est aussi le patron que réutilisera le rewind.
+
+### Le hitbox (2026-09-24)
+
+`PlayerHitbox` (enfant `Hitbox` du prefab joueur) porte un `CapsuleCollider` **trigger** sur le layer **`Hitbox` (7)**. Trigger et layer sont forcés dans `Awake()`, pas laissés à l'inspecteur : ce sont des invariants, et les deux se règlent silencieusement mal en un clic (un hitbox non-trigger repousserait physiquement les joueurs, un mauvais layer le rendrait invisible au tir ou bloquerait les balles comme un mur).
+
+Ses dimensions et sa position sont une **fonction pure de (posture réseau, décalage de lean)** — aucune interpolation locale, donc une surface identique sur toutes les machines. La **capsule visible utilise exactement les mêmes valeurs** : on touche ce qu'on voit.
+
+Ce que ça débloque, au-delà du lean : le `CharacterController` peut être désactivé (vault) sans que le joueur cesse d'être touchable, et le rewind aura une surface dédiée à déplacer dans le passé sans toucher à la simulation.
+
+⚠️ **Le corps ne s'interpole plus entre postures** — il claque. Seule la hauteur caméra garde son lissage. C'est assumé : un lissage local des dimensions ferait diverger la silhouette d'un écran à l'autre, donc viser un corps que le serveur n'a pas au même endroit. Un vrai personnage animé rendra la transition fluide visuellement.
+
+### Passer à un lean humanoïde plus tard — ce qui change et ce qui ne change pas
+
+Le lean actuel fait *glisser toute la capsule* sur le côté. Avec un vrai personnage, on voudra que **seul le haut du corps se penche**, les jambes restant en place.
+
+**Ce qui ne bouge pas** : la grandeur réseautée reste **un seul scalaire**. Qu'il pilote un glissement latéral ou une rotation du buste est une question de géométrie et d'affichage, pas de réseau. Le travail difficile (faire connaître le lean au serveur) ne sera pas à refaire, et le rewind n'aura pas plus d'état à historiser.
+
+**La couture** est `PlayerHitbox.Apply(...)`. Elle prendra une posture + un scalaire de lean et produira *plusieurs* capsules (jambes fixes, buste/tête pivotant) au lieu d'une. `PlayerLocomotion` et `WeaponController` n'ont pas à changer.
+
+🚨 **Règle à ne pas enfreindre : ne JAMAIS dériver le hitbox des os animés.** Un Animator n'est pas déterministe entre machines (blending, vitesse d'animation, `LateUpdate`, root motion), donc un hitbox accroché aux os ferait diverger la surface touchable d'un écran à l'autre — exactement le problème qu'on vient de fermer, réintroduit par la porte de derrière. **L'animation AFFICHE le lean ; le hitbox se CALCULE à partir du même scalaire réseauté.** Les deux lisent la même source, aucun ne lit l'autre.
+
+**Conséquence de gameplay, à arbitrer côté GDD** : aujourd'hui, pencher met le corps *entier* à l'abri — les jambes se téléportent derrière la couverture avec le reste, ce qui rend le peek un peu trop généreux. Un lean humanoïde exposerait la tête et l'épaule en laissant les jambes vulnérables : plus honnête, et plus proche du peek des FPS compétitifs.
+
+### Ragdoll et hitbox par zone — position tranchée (2026-09-24)
+
+**Le ragdoll Unity n'est PAS le bon outil pour les hitbox.** Piste évaluée et écartée, pour quatre raisons :
+
+1. Ses colliders sont **accrochés aux os animés** — exactement ce que la règle ci-dessus interdit.
+2. Il ajoute **un Rigidbody par os** (une dizaine par joueur) plus des `CharacterJoint`. Du coût physique permanent pour un besoin qui n'est que de la requête de raycast.
+3. Ses colliders sont **non-trigger par nature** (ils doivent heurter le monde en ragdollant), donc ils perturberaient la collision de mouvement — précisément ce que le hitbox trigger évite.
+4. Le **rewind** devrait historiser une dizaine de transforms par joueur et par tick au lieu de trois scalaires.
+
+**En revanche il a deux usages légitimes** : la mort physique (le GDD veut des impacts exagérés), et une **source de proportions** au moment d'auteur la géométrie des zones — le Ragdoll Wizard place des volumes crédibles qu'on peut relever pour dimensionner les capsules à la main.
+
+La forme retenue : des hitbox **calculés** à partir des scalaires réseautés (posture, lean, et plus tard le pitch de visée), en triggers sur le layer `Hitbox` ; le ragdoll activé **uniquement à la mort**, hitbox désactivés à ce moment-là.
+
+Note : les FPS AAA utilisent bien des hitbox accrochés aux os, mais au prix d'une simulation d'animation côté serveur — c'est la source d'une grande partie des bugs de hit registration de CS:GO. Pour un duel 1v1 avec une poignée de poses, calculer les zones depuis quelques scalaires est plus simple, déterministe par construction, et largement suffisant.
+
+**Multiplicateurs de dégâts par zone (tête/torse/jambes)** : techniquement trivial une fois les zones là (un multiplicateur par collider, appliqué côté serveur, aucune surface de triche). Deux conditions de séquencement, en revanche :
+- **Après le vrai modèle de personnage.** Sur une capsule lisse, le joueur ne peut pas *voir* où est la tête : viser deviendrait une devinette, ce qui contredit le pilier « lisibilité » du GDD.
+- **Après le rewind.** Une petite zone à fort gain est exactement là où la compensation de latence manque le plus. Livrer les multiplicateurs avant rendrait le hit registration *moins* satisfaisant, pas plus.
+
+L'ampleur des multiplicateurs est une **décision de design** : elle touche directement le TTK de 0,7 s (une tête à ×2 le ferait tomber à 3 balles). À trancher par playtest, pas par calcul.
 
 ### Garde-fous serveur
 
@@ -95,7 +157,17 @@ Les deux référencent un asset Terrain à la racine d'`Assets/` (`New Terrain.a
 
 `CubeTest` (dans `MultiTestScene`) est un `NetworkObject` in-scene **désactivé**, donc `TestSpin.cs` ne tourne jamais. Il n'est pas impliqué dans le bug du joueur fantôme (il n'est pas le `PlayerPrefab`), mais c'est la même famille de piège : à supprimer au prochain nettoyage, ce qui rendra `TestSpin.cs` mort à son tour.
 
-Les objets `/Spawn` et `/Spawn Enemy` de `MultiTestScene` **ne sont câblés à rien** — voir dette n°7.
+⚠️ **Piège de nommage** : `/Spawn` et `/Spawn Enemy` dans `MultiTestScene` **ne sont PAS des points d'apparition** — ce sont des groupes de géométrie ProBuilder (caisses, cubes) situés *dans* les zones de spawn. Les vrais points d'apparition sont sous `/SpawnPoints`.
+
+### Points de spawn
+
+`PlayerSpawnPoints` (sur `/SpawnPoints`) liste un `Transform` par point : sa **position** donne les pieds du joueur, sa **rotation Y** la direction du regard à l'apparition. Un `OnDrawGizmos` dessine une capsule debout et une flèche, pour vérifier d'un coup d'œil qu'un point n'est pas dans un mur.
+
+Deux points posés dans l'arène : `Spawn A` en (0, 0, 2) face au +Z, `Spawn B` en (0, 0, 58) face au −Z — les deux extrémités, à ~56 m l'une de l'autre, validés au sol et dégagés pour une capsule debout.
+
+`PlayerLocomotion.ServerMoveToSpawnPoint()` est **serveur uniquement** (aucun client ne choisit son point, même principe que pour les dégâts) : il retient le point le plus **éloigné des joueurs déjà présents**, remet l'inertie à zéro, puis publie position et yaw. Appelé depuis `OnNetworkSpawn`, il est **public exprès** : la boucle de round (BO5) devra replacer les deux joueurs à chaque manche et pourra l'appeler tel quel.
+
+Sans composant dans la scène ou sans point renseigné, les joueurs apparaissent à la position du prefab — le comportement d'avant, pas une erreur.
 
 ## Dettes techniques (audit du 2026-09-21, vérifié dans le code)
 
@@ -109,9 +181,12 @@ Les objets `/Spawn` et `/Spawn Enemy` de `MultiTestScene` **ne sont câblés à 
    **Choix assumé** : supprimer l'état cumulatif plutôt que d'ajouter une hauteur confirmée de plus dans la RPC de correction. Conséquence : bref décalage (~0,1 s) entre la capsule visible et celle qui entre en collision pendant une transition. Se relever reste protégé par `CanStandUp()`, donc la capsule debout instantanée ne peut pas faire traverser un plafond.
 5. ✅ **Corrigé le 2026-09-22** — spawn téléporté à l'origine du monde. `OnNetworkSpawn` appliquait `transform.position = networkPosition.Value` inconditionnellement, alors que la `NetworkVariable` vaut encore `default` = (0,0,0) à cet instant. Le serveur publie désormais sa position de spawn, et seuls les clients s'y alignent.
 
-7. **Les deux joueurs spawnent encore au MÊME endroit.** Plus par téléport à l'origine (dette n°5 corrigée), mais parce que rien n'assigne de position de spawn : `NetworkManager` instancie le prefab à sa propre position, pour tout le monde. Les deux `CharacterController` se chevauchent puis se repoussent — c'est visible en test à 2 joueurs. La scène contient déjà des objets `/Spawn` et `/Spawn Enemy` **qui ne sont câblés à rien**. Fix : côté serveur, positionner le joueur sur un point de spawn libre au moment du spawn (naturellement lié à la boucle de round, qui devra de toute façon replacer les joueurs à chaque manche).
+7. ✅ **Corrigé le 2026-09-22** — les deux joueurs apparaissaient au même endroit, `NetworkManager` instanciant le prefab à sa propre position pour tout le monde. Voir « Points de spawn » ci-dessous.
 
 6. ✅ **Corrigé le 2026-09-22** — GPU Resident Drawer incompatible avec la géométrie ProBuilder. `PC_RPAsset.asset` avait `m_GPUResidentDrawerMode: 1`, ce qui noyait la Console sous ~150 erreurs `BatchDrawCommand was submitted with an invalid Batch, Mesh, or Material ID` à chaque ouverture de scène — sans effet visible en jeu, mais ça masquait les vraies erreurs. Passé à 0 ; son gain est nul à l'échelle d'une arène de duel. **À reconsidérer seulement si la géométrie finale n'est plus du ProBuilder et que le nombre d'objets explose.**
+
+8. ✅ **Corrigé le 2026-09-24** — le collider accidentel sur l'enfant `Capsule` (reste de la primitive Unity) a été supprimé. La surface touchable est désormais le seul `PlayerHitbox`, explicite et dédié.
+9. ✅ **Corrigé le 2026-09-24** — `hittableMask` valait `Everything` ; remplacé par deux masques explicites, `worldMask` (géométrie) et `hitboxMask` (layer `Hitbox`), utilisés par deux traces distinctes.
 
 **Hygiène** : aucun `.asmdef` → tout dans `Assembly-CSharp`, recompilation complète à chaque modif. **Aucun test**, alors que `Move()` est une fonction pure paramétrée par un snapshot : un test EditMode « même snapshot × 2 → même position » attraperait les régressions de déterminisme de la dette n°4 automatiquement.
 
@@ -135,26 +210,27 @@ Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline
 
 *(Livré le 2026-09-22, **pas encore testé à 2 joueurs réels** : seuil de réconciliation + `currentVelocity` confirmée. À valider au prochain test Host+Client — voir « Ce qu'il reste à valider » plus bas.)*
 
-1. **Hitbox de tir séparé du `CharacterController` de mouvement.** Aujourd'hui le raycast serveur touche le `CharacterController`, qui suit la posture mais **jamais le lean** (le lean ne déplace que la caméra/`leanPivot`) : un joueur qui penche pour peek est partiellement intouchable sur son flanc exposé. Le hitbox doit suivre posture ET lean, être synchronisé et **rewindable**. Le `CharacterController`, lui, ne doit jamais bouger avec le lean (ça casserait la collision monde).
-2. **Rewind / compensation de latence** — à traiter avec le point 1, même cause racine. **Pas implémenté**, TODO détaillé dans `WeaponController.FireServerRpc`. Approche retenue : mesurer le RTT en piggybackant sur le round-trip prédiction/réconciliation existant (plutôt qu'une RPC de ping dédiée ou l'horloge de Netcode), historique de position glissant côté serveur, délai de rewind suggéré par le client mais **clampé serveur**, restauration en `try/finally`.
-3. **Boucle de round / conditions de victoire (BO5)** — rien ne termine la partie aujourd'hui, seule la vie baisse. C'est ce qui fera remonter la dette n°5 (spawns).
-4. **Vault réseauté** — voir ci-dessous.
-5. **Migrer le multijoueur vers `Arena.unity`.**
-6. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
+*(Livré le 2026-09-24 : le hitbox séparé. Voir « Le hitbox » plus haut.)*
+
+1. **Rewind / compensation de latence.** **Pas implémenté**, TODO détaillé dans `WeaponController.FireServerRpc`. Approche retenue : mesurer le RTT en piggybackant sur le round-trip prédiction/réconciliation existant (plutôt qu'une RPC de ping dédiée ou l'horloge de Netcode), historique glissant côté serveur, délai de rewind suggéré par le client mais **clampé serveur**, restauration en `try/finally`. **L'historique doit porter la position ET le décalage de lean ET la posture** — le hitbox dépend des trois, en historiser une seule ne corrigerait qu'une part du décalage.
+2. **Boucle de round / conditions de victoire (BO5)** — rien ne termine la partie aujourd'hui, seule la vie baisse. `Health.OnDeath` existe mais personne ne s'y abonne côté joueur. Les briques sont là : `ServerMoveToSpawnPoint()` pour replacer les joueurs, `Health.ResetHealth()` pour les soigner.
+3. **Vault réseauté** — le hitbox le débloque, voir ci-dessous.
+4. **Migrer le multijoueur vers `Arena.unity`.**
+5. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
 
 ## Ce qu'il reste à valider (test Host + Client)
 
-Le seuil de réconciliation compile et la logique est vérifiée, mais **le ressenti ne se vérifie qu'en jouant** — et c'est un arbitrage qui revient à l'utilisateur, pas à Claude.
+Le hitbox a été vérifié en Play Mode (géométrie, layer, trigger, suivi du lean, et tirs de contrôle qui touchent le corps penché et ratent l'ancien centre). Mais **le ressenti et le jeu à deux ne se vérifient qu'en jouant** — c'est un arbitrage qui revient à l'utilisateur.
 
-À tester depuis l'instance **CLIENT** (le Host ne passe jamais par ce code) :
-1. **Packet Delay à 0** — déplacement continu, zigzags, demi-tours. Doit être au moins aussi fluide qu'avant, idéalement plus.
-2. **Packet Delay à 100-150 ms** — c'est là que le gain doit se voir : avant, le client subissait un recalage + rejeu à chaque frame. Chercher une éventuelle sensation de « flottement » : elle signifierait que le seuil de 5 cm est trop permissif.
-3. **Changements de posture en mouvement** — le point le plus suspect. La hauteur de capsule n'est pas encore déterministe (dette n°4), donc c'est là que des recalages résiduels devraient subsister. Si ça accroche *uniquement* en changeant de posture, le diagnostic est confirmé et c'est le prochain chantier.
-4. **Tirs sous latence** — vérifier qu'aucun `[Serveur] Tir rejeté` n'apparaît en Console.
+À tester depuis l'instance **CLIENT** :
+1. **Peek en lean** — le test qui compte. Un adversaire qui penche derrière un angle doit être touchable sur le flanc qu'il expose, et *seulement* là. Tirer sur sa position « droite » (là où était l'ancien collider) ne doit plus rien faire.
+2. **Tirs derrière une couverture** — un adversaire derrière une caisse ne doit rien prendre (la trace monde borne la trace hitbox).
+3. **Tir sur soi-même** — impossible par construction, mais à confirmer : aucun dégât ne doit s'appliquer au tireur, même en lean appuyé.
+4. **Postures** — accroupi et prone doivent être plus difficiles à toucher, proportionnellement à leur capsule. Le corps « claque » désormais entre postures au lieu de glisser : à confirmer que ça ne choque pas visuellement.
+5. **Sous latence (100-150 ms)** — le lean d'un adversaire est en retard d'un RTT chez le spectateur. Attendu tant que le rewind n'est pas là ; à mesurer pour savoir si c'est gênant en duel.
+6. **Console** — aucun `[Serveur] Tir rejeté`, aucun warning `layer Hitbox mais aucun Health parent`.
 
-S'y ajoutent les correctifs du 2026-09-22 (joueur fantôme, caméra de secours, spawn) : côté Client, il ne doit plus y avoir qu'**un seul adversaire visible**, **aucun warning « audio listeners »**, et le Host ne devrait plus ramer davantage que le Client à cause du rendu en double. Les deux joueurs apparaîtront encore au même endroit tant que la dette n°7 n'est pas traitée.
-
-Réglages si besoin : `positionReconciliationThreshold` (baisser si ça flotte, monter si ça saccade) et `yawReconciliationThreshold`, tous deux sur `PlayerLocomotion`.
+Réglages si besoin : `positionReconciliationThreshold` / `yawReconciliationThreshold` sur `PlayerLocomotion`, `maxOriginDistanceFromPlayer` sur `WeaponController`.
 
 ## Vault : désactivé, pas cassé
 
@@ -163,3 +239,21 @@ Réglages si besoin : `positionReconciliationThreshold` (baisser si ça flotte, 
 Ce n'est pas une régression. La raison : le vault est un mouvement scripté à durée fixe qui fait `controller.enabled = false` pendant un lerp de position — un état « hors contrôle » incompatible avec le `Move()` par frame que la prédiction/réconciliation rejoue. Le réactiver demande un vrai incrément réseau (vault prédit côté propriétaire + confirmé serveur), pas juste de rappeler la fonction.
 
 **À ne pas oublier** : l'utilisateur y tient, c'est une mécanique du GDD.
+
+### Le blocage est levé (2026-09-24)
+
+Le hitbox séparé existe et **n'est plus lié au `CharacterController`** : vérifié en Play Mode, un joueur dont le `CharacterController` est désactivé reste parfaitement touchable. La fenêtre d'invulnérabilité de 0,45 s décrite ci-dessous n'existe donc plus.
+
+Reste à faire pour le vault lui-même : l'intégrer à la simulation avec ses 4 états cumulatifs (`IsVaulting`, `vaultTimer`, `vaultStart`, `vaultEnd`), chacun devant avoir son équivalent confirmé renvoyé par le serveur avant rejeu — le patron est établi (yaw, `currentVelocity`). Sans rewind, toucher un joueur en plein arc restera peu fiable sous latence : c'est l'argument pour faire le rewind d'abord, mais ce n'est plus un blocage de sécurité, juste un ordre préférable.
+
+### L'analyse qui l'avait reporté (2026-09-22, conservée pour mémoire)
+
+Les fondations nécessaires existent désormais — `Move()` est strictement déterministe, et le pattern « valeur cumulative → équivalent confirmé renvoyé par le serveur » est établi et documenté. Le vault pourrait donc techniquement entrer dans la simulation.
+
+Ce qui bloque n'est pas le mouvement, c'est **ce qu'il fait au collider** : `StartVault()` pose `controller.enabled = false` pendant 0,45 s. Or le `CharacterController` est aujourd'hui la surface de tir principale. Ajouter le vault maintenant reviendrait à livrer une mécanique qui, à chaque usage, retire du monde physique le collider par lequel on encaisse — en ne laissant que le `CapsuleCollider` accidentel de la dette n°8 pour rattraper le coup. Avec un TTK de 0,7 s, une fenêtre de 0,45 s déclenchable à volonté près de n'importe quel obstacle bas est un trou béant.
+
+S'y ajoutent deux raisons de séquencement :
+- Le vault introduit 4 états cumulatifs de plus dans la réconciliation (`IsVaulting`, `vaultTimer`, `vaultStart`, `vaultEnd`). Les câbler avant le hitbox/rewind, c'est les recâbler après.
+- Sans compensation de latence, toucher un adversaire lancé sur un arc rapide serait très peu fiable — le vault mettrait en lumière le manque de rewind au pire endroit.
+
+**Condition de déblocage** : un hitbox indépendant, toujours actif, qui ne dépend pas de l'état du `CharacterController`. À ce moment-là, désactiver le collider de mouvement pendant le vault n'aura plus aucun effet sur la capacité à être touché, et le vault redevient un incrément de mouvement ordinaire.

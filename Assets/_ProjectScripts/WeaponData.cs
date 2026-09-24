@@ -22,7 +22,12 @@ public class WeaponData : ScriptableObject
     public float shotsPerSecond = 7f;
     public bool isAutomatic = true; // maintenir Fire pour tirer en rafale, sinon un appui = un coup
     public float maxRange = 60f;
-    public LayerMask hittableMask = ~0;
+
+    [Tooltip("Layers qui ARRÊTENT une balle : la géométrie du monde. NE DOIT PAS contenir le layer des joueurs ni celui des hitbox — le tir est résolu en deux traces distinctes (voir WeaponController.FireServerRpc), et mélanger les deux ferait bloquer les balles par le collider de MOUVEMENT des joueurs, qui ne suit pas le lean.")]
+    public LayerMask worldMask = 1; // Default
+
+    [Tooltip("Layers des surfaces TOUCHABLES des joueurs — en pratique le seul layer \"Hitbox\". C'est la seule chose que le serveur accepte comme cible de dégâts.")]
+    public LayerMask hitboxMask = 1 << 7; // Hitbox
 
     [Header("Recul (déterministe, pas de RNG)")]
     [Tooltip("Multiplicateur du kick vertical à chaque tir. L'axe X de la courbe = numéro du tir dans la rafale (0, 1, 2...). Monte vite sur les premiers tirs puis plafonne, comme une vraie arme.")]
