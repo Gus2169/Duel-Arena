@@ -58,8 +58,43 @@ public class PlayerInputReader : MonoBehaviour
         controls.Gameplay.Disable();
     }
 
+#if UNITY_EDITOR
+    /// <summary>
+    /// AUTOPILOTE DE TEST — Editor uniquement, jamais embarqué en build.
+    ///
+    /// Fait faire au joueur un va-et-vient latéral déterministe à la place de l'input clavier.
+    /// Sert à tester le rewind : une seule personne ne peut pas à la fois se déplacer sur une
+    /// instance et viser sur l'autre, or c'est exactement la situation que la compensation de
+    /// latence existe pour couvrir. L'autopilote tient le rôle de la cible mouvante.
+    ///
+    /// Déterministe (fonction du temps, sans aléatoire) pour que deux essais soient comparables.
+    /// </summary>
+    public static bool AutopilotStrafe;
+
+    [Tooltip("Période (s) d'un aller-retour complet de l'autopilote de test.")]
+    public static float AutopilotPeriod = 2f;
+#endif
+
     private void Update()
     {
+#if UNITY_EDITOR
+        if (AutopilotStrafe)
+        {
+            // Créneau plutôt que sinusoïde : on veut une vitesse latérale CONSTANTE, donc un
+            // décalage bien franc entre ce que voit le tireur et ce que le serveur connaît —
+            // c'est ce décalage que le rewind doit annuler. Une sinusoïde ralentirait aux
+            // extrémités, là où l'erreur est justement la plus faible.
+            float phase = Mathf.Repeat(Time.time / Mathf.Max(0.1f, AutopilotPeriod), 1f);
+            MoveInput = new Vector2(phase < 0.5f ? 1f : -1f, 0f);
+            LookInput = Vector2.zero;
+            SprintHeld = false;
+            SneakHeld = false;
+            AimHeld = false;
+            FireHeld = false;
+            return;
+        }
+#endif
+
         MoveInput = controls.Gameplay.Move.ReadValue<Vector2>();
         LookInput = controls.Gameplay.Look.ReadValue<Vector2>();
         SprintHeld = controls.Gameplay.Sprint.IsPressed();

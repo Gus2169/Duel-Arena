@@ -409,6 +409,53 @@ public class PlayerLocomotion : NetworkBehaviour
         spawnedPlayers.Remove(this);
     }
 
+#if UNITY_EDITOR
+    // ------------------------------------------------------------------
+    // Diagnostics de session — Editor uniquement, jamais embarqué en build.
+    //
+    // Mesure la SANTÉ DE LA PRÉDICTION, qui ne se voit pas à l'œil nu : un client dont la
+    // prédiction est juste ne déclenche presque aucun resync. Un taux élevé signale une divergence
+    // entre la simulation locale et celle du serveur — exactement la classe de bug qui a coûté le
+    // plus cher ici (yaw, currentVelocity, capsule).
+    //
+    // Tourne uniquement chez le PROPRIÉTAIRE DISTANT : c'est le seul qui prédit.
+    // ------------------------------------------------------------------
+    private int diagCorrections;
+    private int diagResyncs;
+    private float diagErrorSum;
+    private float diagMaxError;
+    private float diagNextReportAt;
+
+    private void DiagRecordCorrection(bool resynced, float positionError)
+    {
+        diagCorrections++;
+        if (resynced) diagResyncs++;
+        diagErrorSum += positionError;
+        if (positionError > diagMaxError) diagMaxError = positionError;
+    }
+
+    private void DiagReportIfDue()
+    {
+        if (!IsOwner || IsServer) return;
+        if (Time.time < diagNextReportAt) return;
+
+        diagNextReportAt = Time.time + 3f;
+        if (diagCorrections == 0) return;
+
+        float resyncRate = 100f * diagResyncs / diagCorrections;
+        float avgError = diagErrorSum / diagCorrections;
+
+        Debug.Log($"[DIAG-CLIENT] corrections={diagCorrections} resync={diagResyncs} ({resyncRate:F1}%) " +
+                  $"erreur_moy={avgError * 100f:F1}cm erreur_max={diagMaxError * 100f:F1}cm " +
+                  $"rtt={smoothedRtt * 1000f:F0}ms rewind={EstimatedRewindSeconds * 1000f:F0}ms " +
+                  $"file_serveur={serverInputQueue.Count}");
+
+        diagCorrections = 0;
+        diagResyncs = 0;
+        diagErrorSum = 0f;
+        diagMaxError = 0f;
+    }
+#endif
 
     // ------------------------------------------------------------------
     // Rewind — historique serveur et replacement temporaire du hitbox
@@ -673,6 +720,9 @@ public class PlayerLocomotion : NetworkBehaviour
             input.ConsumeFrameInputs();
         }
 
+#if UNITY_EDITOR
+        DiagReportIfDue();
+#endif
     }
 
     private MovementInputSnapshot ReadLocalInput()
@@ -891,6 +941,9 @@ public class PlayerLocomotion : NetworkBehaviour
             float measuredRtt = Time.time - predicted.sentAt;
             smoothedRtt = smoothedRtt <= 0f ? measuredRtt : Mathf.Lerp(smoothedRtt, measuredRtt, 0.1f);
 
+#if UNITY_EDITOR
+            DiagRecordCorrection(!predictionWasCorrect, positionError);
+#endif
         }
         // Si la séquence est introuvable (correction périmée, ou input jeté par le plafond de
         // serverInputQueue), on ne peut rien conclure : on retombe sur le recalage systématique,

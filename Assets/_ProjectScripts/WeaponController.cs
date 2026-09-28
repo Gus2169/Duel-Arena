@@ -78,6 +78,59 @@ public class WeaponController : NetworkBehaviour
     private float verticalRecoilAccumulated;
     private float horizontalRecoilAccumulated;
 
+#if UNITY_EDITOR
+    // Diagnostics de session (Editor uniquement). Comptés côté SERVEUR, seul endroit qui décide.
+    // Ce qu'on cherche : des tirs rejetés qui ne devraient pas l'être (garde-fous trop serrés) et
+    // la part réelle du rewind, invisibles autrement.
+    private static int diagAccepted, diagRejectedRate, diagRejectedOrigin, diagRejectedPhase, diagHits;
+    private static float diagRewindSum, diagRewindMax;
+    private static float diagNextReportAt;
+
+    // Mesure différentielle : combien de tirs le rewind fait BASCULER, et dans quel sens.
+    // diagRewindLost devrait rester à 0 — le rewind ne doit jamais faire rater un tir qui
+    // touchait sans lui.
+    private static int diagRewindGained, diagRewindLost, diagBothHit, diagNeitherHit;
+
+    // Mesure CONTINUE : à quelle distance du rayon se trouve la cible, à sa position PASSÉE
+    // (celle que le tireur voyait) et à sa position ACTUELLE. Bien plus informative que le
+    // binaire touché/raté, qui demande des centaines de tirs pour sortir du bruit.
+    //
+    // Si le tireur vise ce qu'il VOIT — l'hypothèse sur laquelle tout le rewind repose — la
+    // distance à la position passée doit être systématiquement plus petite. Si c'est l'inverse,
+    // c'est qu'il anticipe le déplacement, et le rewind travaille alors contre lui.
+    private static float diagDistPastSum, diagDistNowSum;
+    private static int diagDistSamples;
+
+    private static void DiagReportIfDue()
+    {
+        if (Time.time < diagNextReportAt) return;
+        diagNextReportAt = Time.time + 3f;
+
+        int total = diagAccepted + diagRejectedRate + diagRejectedOrigin + diagRejectedPhase;
+        if (total == 0) return;
+
+        float avgRewind = diagAccepted > 0 ? diagRewindSum / diagAccepted : 0f;
+        int compared = diagRewindGained + diagRewindLost + diagBothHit + diagNeitherHit;
+
+        Debug.Log($"[DIAG-SERVEUR] tirs={total} acceptes={diagAccepted} touches={diagHits} " +
+                  $"rejets(cadence={diagRejectedRate} origine={diagRejectedOrigin} hors_manche={diagRejectedPhase}) " +
+                  $"rewind_moy={avgRewind * 1000f:F0}ms rewind_max={diagRewindMax * 1000f:F0}ms | " +
+                  $"DIFFERENTIEL sur {compared} tirs : gagnes_par_rewind={diagRewindGained} " +
+                  $"perdus_par_rewind={diagRewindLost} touches_dans_les_2_cas={diagBothHit} " +
+                  $"rates_dans_les_2_cas={diagNeitherHit}" +
+                  (diagDistSamples > 0
+                      ? $" | VISEE : distance_au_corps_PASSE={diagDistPastSum / diagDistSamples:F2}m " +
+                        $"distance_au_corps_ACTUEL={diagDistNowSum / diagDistSamples:F2}m"
+                      : ""));
+
+        diagAccepted = diagRejectedRate = diagRejectedOrigin = diagRejectedPhase = diagHits = 0;
+        diagRewindSum = diagRewindMax = 0f;
+        diagRewindGained = diagRewindLost = diagBothHit = diagNeitherHit = 0;
+        diagDistPastSum = diagDistNowSum = 0f;
+        diagDistSamples = 0;
+    }
+#endif
+
     private void Awake()
     {
         input = GetComponentInParent<PlayerInputReader>();
@@ -241,6 +294,10 @@ public class WeaponController : NetworkBehaviour
         float now = Time.time;
         if (now - serverLastAcceptedFireTime < minInterval * 0.85f)
         {
+#if UNITY_EDITOR
+            diagRejectedRate++;
+            DiagReportIfDue();
+#endif
             return;
         }
         serverLastAcceptedFireTime = now;
@@ -248,7 +305,14 @@ public class WeaponController : NetworkBehaviour
         // Garde-fou anti-triche : hors manche, aucun tir n'est accepté. Sans ce test serveur, un
         // client modifié tirerait pendant le décompte ou après la mort de son adversaire — le test
         // dans HandleFireInput n'est qu'une convention côté client.
-        if (!RoundManager.FiringAllowed) return;
+        if (!RoundManager.FiringAllowed)
+        {
+#if UNITY_EDITOR
+            diagRejectedPhase++;
+            DiagReportIfDue();
+#endif
+            return;
+        }
 
         // Garde-fou anti-triche : une direction nulle (ou non fournie) ferait un Raycast dans une
         // direction indéfinie — .normalized d'un vecteur nul renvoie déjà Vector3.zero sans lever
@@ -278,6 +342,10 @@ public class WeaponController : NetworkBehaviour
         if ((origin - transform.root.position).sqrMagnitude > maxOriginDistanceFromPlayer * maxOriginDistanceFromPlayer)
         {
             Debug.LogWarning($"[Serveur] Tir rejeté : origine invalide (à {Vector3.Distance(origin, transform.root.position):F1} m du joueur, max {maxOriginDistanceFromPlayer} m). Soit un client modifié, soit la tolérance est trop serrée pour la latence testée.", this);
+#if UNITY_EDITOR
+            diagRejectedOrigin++;
+            DiagReportIfDue();
+#endif
             return;
         }
 
@@ -295,9 +363,20 @@ public class WeaponController : NetworkBehaviour
         // un ping élevé légitime sans permettre de toucher quelqu'un là où il était il y a une
         // éternité — au-delà, c'est la VICTIME qui subirait l'injustice, en mourant à couvert.
         float clampedRewind = Mathf.Clamp(rewindSeconds, 0f, maxRewindSeconds);
+
+#if UNITY_EDITOR
+        diagAccepted++;
+        diagRewindSum += clampedRewind;
+        if (clampedRewind > diagRewindMax) diagRewindMax = clampedRewind;
+        DiagReportIfDue();
+#endif
         float targetTime = Time.time - clampedRewind;
 
         var rewoundPlayers = new List<PlayerLocomotion>();
+#if UNITY_EDITOR
+        bool diagHitWithRewind = false;
+        Vector3 diagPastCenter = Vector3.zero;
+#endif
         try
         {
             if (clampedRewind > 0f)
@@ -315,9 +394,21 @@ public class WeaponController : NetworkBehaviour
                 // hitbox à leur position actuelle et tout le rewind serait silencieusement sans
                 // effet — le pire des échecs, parce qu'il ne se voit pas.
                 Physics.SyncTransforms();
+
+#if UNITY_EDITOR
+                // Centre du hitbox à sa position PASSÉE, capturé pendant que le rewind est appliqué.
+                foreach (PlayerLocomotion other in rewoundPlayers)
+                {
+                    Collider c = other != null ? other.HitboxCollider : null;
+                    if (c != null) diagPastCenter = c.bounds.center;
+                }
+#endif
             }
 
             bool hitSomething = ResolveShot(origin, direction, out Vector3 end, out Vector3 hitNormal, out Collider bodyHit);
+#if UNITY_EDITOR
+            diagHitWithRewind = bodyHit != null;
+#endif
 
             if (bodyHit != null)
             {
@@ -325,6 +416,9 @@ public class WeaponController : NetworkBehaviour
                 if (targetHealth != null)
                 {
                     targetHealth.ApplyDamage(data.damagePerHit, transform.root.gameObject);
+#if UNITY_EDITOR
+                    diagHits++;
+#endif
                     Debug.Log($"[Serveur] {data.weaponName} : {bodyHit.transform.root.name} touché pour {data.damagePerHit} dégâts (vie restante : {targetHealth.Current}).");
                 }
                 else
@@ -348,6 +442,45 @@ public class WeaponController : NetworkBehaviour
                 if (other != null) other.ServerEndRewind();
             }
             if (rewoundPlayers.Count > 0) Physics.SyncTransforms();
+
+#if UNITY_EDITOR
+            // MESURE DIFFÉRENTIELLE DU REWIND (Editor uniquement, sans aucun effet sur le jeu).
+            //
+            // Les hitbox viennent d'être remis à leur position ACTUELLE : on refait donc exactement
+            // la même trace, et on compare au résultat rewind. Ça répond sans ambiguïté à « à quoi
+            // sert le rewind », là où comparer des taux de touche entre deux sessions humaines ne
+            // répond à rien — un joueur vise instinctivement devant une cible mobile et compense
+            // donc l'absence de compensation, ce qui masque l'effet qu'on cherche à mesurer.
+            //
+            // Faite AVANT de réactiver le hitbox du tireur, pour que les deux traces excluent les
+            // mêmes colliders et restent comparables.
+            if (rewoundPlayers.Count > 0)
+            {
+                ResolveShot(origin, direction, out _, out _, out Collider bodyHitLive);
+                bool hitWithoutRewind = bodyHitLive != null;
+
+                if (diagHitWithRewind && !hitWithoutRewind) diagRewindGained++;
+                else if (!diagHitWithRewind && hitWithoutRewind) diagRewindLost++;
+                else if (diagHitWithRewind) diagBothHit++;
+                else diagNeitherHit++;
+
+                // Distance perpendiculaire du rayon au centre de la cible, passée vs actuelle.
+                // `direction` est normalisée, donc la norme du produit vectoriel donne
+                // directement cette distance.
+                foreach (PlayerLocomotion other in rewoundPlayers)
+                {
+                    Collider c = other != null ? other.HitboxCollider : null;
+                    if (c == null) continue;
+
+                    float dPast = Vector3.Cross(direction, diagPastCenter - origin).magnitude;
+                    float dNow = Vector3.Cross(direction, c.bounds.center - origin).magnitude;
+
+                    diagDistPastSum += dPast;
+                    diagDistNowSum += dNow;
+                    diagDistSamples++;
+                }
+            }
+#endif
 
             if (hitboxWasEnabled) ownHitbox.enabled = true;
         }

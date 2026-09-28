@@ -59497,6 +59497,7 @@ GameObject:
   - component: {fileID: 2093603941}
   - component: {fileID: 2093603944}
   - component: {fileID: 2093603943}
+  - component: {fileID: 2093603945}
   m_Layer: 0
   m_Name: NetworkManager
   m_TagString: Untagged
@@ -59542,6 +59543,7 @@ MonoBehaviour:
     NetworkTopology: 0
     UseCMBService: 0
     AutoSpawnPlayerPrefabClientSide: 1
+    NetworkMessageMetrics: 1
     NetworkProfilingMetrics: 1
     OldPrefabList: []
   RunInBackground: 1
@@ -59602,9 +59604,33 @@ MonoBehaviour:
     ServerListenAddress: 127.0.0.1
     ClientBindPort: 0
   DebugSimulator:
-    PacketDelayMS: 0
-    PacketJitterMS: 0
+    PacketDelayMS: 75
+    PacketJitterMS: 10
     PacketDropRate: 0
+--- !u!114 &2093603945
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2093603940}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 98d9db9626104da59357651088226725, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Multiplayer.Tools.NetworkSimulator.Runtime::Unity.Multiplayer.Tools.NetworkSimulator.Runtime.NetworkSimulator
+  m_PresetAsset: {fileID: 11400000, guid: f969340c6492cc84da3dc831047cb67f, type: 2}
+  m_PresetReference:
+    rid: -2
+  m_Scenario:
+    rid: -2
+  m_IsScenarioSettingsFolded: 0
+  AutoRunScenario: 0
+  references:
+    version: 2
+    RefIds:
+    - rid: -2
+      type: {class: , ns: , asm: }
 --- !u!43 &2103872786
 Mesh:
   m_ObjectHideFlags: 0

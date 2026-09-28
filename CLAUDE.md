@@ -155,7 +155,8 @@ Deux interrupteurs de triche simulée dans l'inspecteur, sous le header `Debug �
 - **La caméra de secours de la scène doit être éteinte au démarrage d'une session.** Deux caméras plein écran actives à la même `depth` = la scène rendue DEUX FOIS par frame (et un `AudioListener` de trop). C'est `NetworkBootstrapUI` qui s'en charge, pas `PlayerLocomotion` : la garde de ce dernier ne voit que les enfants du Player, et cette caméra n'en est pas un. Cause identifiée le 2026-09-22 d'un Host qui ramait par rapport au Client.
 - **Warning « N audio listeners in the scene »** : la garde dans `OnNetworkSpawn` ne voit que les enfants du Player. Un `AudioListener` orphelin ailleurs dans la scène ne sera jamais désactivé par ce code — voir les deux points ci-dessus, qui en sont les deux causes déjà rencontrées.
 - **Un champ `[SerializeField]` assigné dans l'inspecteur PENDANT le Play Mode n'est jamais sauvegardé.** Symptôme typique : un fix qui marche dans un contexte mais pas l'autre alors que le code est identique. Toujours assigner en mode Édition puis sauvegarder.
-- **Ressenti « saccadé » en build** : vérifier d'abord le Packet Delay Ms du Debug Simulator avant de soupçonner le réseau ou le code. Contrainte réelle séparée : 2 instances complètes sur une machine coûtent cher en perf.
+- 🚨 **Le `DebugSimulator` d'`UnityTransport` NE FAIT RIEN** en Netcode 2.13.2 — il est marqué `[Obsolete("no longer supported and has no effect")]`. Régler son `Packet Delay Ms` n'a aucun effet : mesuré le 2026-09-28, RTT de 5 ms avec le champ à 75 ms. **Conséquence historique : tous les « tests sous latence » de ce projet antérieurs à cette date se sont en réalité déroulés à ~5 ms de RTT.** Et l'ancien piège documenté ici (« un Packet Delay oublié à 100-150 ms explique un ressenti saccadé ») était faux — ce réglage ne peut rien causer. Voir « Tester sous latence » pour la méthode qui marche.
+- **Ressenti « saccadé » en build** : 2 instances complètes sur une machine coûtent cher en perf, c'est la piste réelle à examiner avant de soupçonner le réseau ou le code.
 - **`obstacleMask`** (utilisé par `CheckCapsule`/`CheckSphere`, pas seulement des raycasts) doit exclure le layer du joueur : `obstacleMask &= ~(1 << gameObject.layer)` dans `Awake`.
 - **`Destroy()` est DIFFÉRÉ à la fin de la frame — la physique, elle, voit encore l'objet.** `GameObject.CreatePrimitive` livre toujours un collider ; le détruire ne suffit pas, il faut le **désactiver immédiatement** (`col.enabled = false`), ce qui prend effet tout de suite. Symptôme vécu le 2026-09-24 : l'adversaire **reculait visiblement à chaque balle encaissée**, parce que le marqueur d'impact naissait à la surface de son corps avec un `SphereCollider` vivant une frame, dont son `CharacterController` se poussait au `Move()` suivant. Conséquences plus sournoises encore : la sphère naissant sur le layer `Default` (celui de `worldMask`), elle **bloquait les tirs suivants comme un mur**, et comptait comme obstacle pour `CanStandUp()` et l'anti-clipping du lean. **Tout objet purement visuel créé pendant le jeu doit naître sans collider actif.**
 - **Ordre recul/raycast dans `Fire()`** : le recul s'applique APRÈS avoir déterminé où le tir atterrit, sinon chaque tir est décalé par son propre recul.
@@ -230,6 +231,27 @@ L'affichage `OnGUI` du `RoundManager` est un **placeholder** au même titre que 
 9. ✅ **Corrigé le 2026-09-24** — `hittableMask` valait `Everything` ; remplacé par deux masques explicites, `worldMask` (géométrie) et `hitboxMask` (layer `Hitbox`), utilisés par deux traces distinctes.
 
 **Hygiène** : ✅ **assemblies et tests posés le 2026-09-28** — voir la section ci-dessous.
+
+## Tester sous latence, et l'outillage de diagnostic (2026-09-28)
+
+**Simulateur réseau.** `com.unity.multiplayer.tools` 2.2.12 est installé pour ça (le `DebugSimulator` d'`UnityTransport` est obsolète et sans effet, voir les pièges). Un composant `NetworkSimulator` est posé sur `/NetworkManager` avec le preset `Assets/_ProjectScenes/NetSim_Test150ms.asset` : **75 ms par sens + 10 ms de gigue**, soit un RTT mesuré d'environ **165 ms**. Le preset s'applique aux deux instances puisqu'elles partagent la scène.
+
+**Diagnostics de session**, tous en `#if UNITY_EDITOR`, jamais embarqués :
+- `[DIAG-CLIENT]` (dans `PlayerLocomotion`) — **santé de la prédiction** : taux de resynchronisation, erreur moyenne et max, RTT, profondeur de la file serveur. Le chiffre qui compte est le **taux de resync** : une prédiction saine est à 0 %.
+- `[DIAG-SERVEUR]` (dans `WeaponController`) — tirs acceptés, touchés, **rejetés par motif**, rewind réellement appliqué, plus la mesure différentielle décrite plus bas.
+- `PlayerInputReader.AutopilotStrafe` — fait faire au joueur un va-et-vient latéral déterministe à la place du clavier. Indispensable pour tester le rewind : une seule personne ne peut pas à la fois se déplacer sur une instance et viser sur l'autre.
+
+**Lire le journal du joueur virtuel** : `Library/VP/<clone>/Logs/Editor.log`. C'est ce qui permet d'observer le côté CLIENT sans y avoir accès autrement. Attention, il contient des octets binaires et des fins de ligne `CR` seules : `tr '\r' '\n' < log | grep -a "DIAG-CLIENT"`.
+
+### Résultats mesurés le 2026-09-28 (RTT ~165 ms, 2 joueurs réels)
+
+- **Prédiction : 0 % de resynchronisation**, erreur moyenne 0,0 cm, file serveur à 0. Vérifié sur des dizaines de fenêtres, en mouvement et en tirant. C'est la première validation réelle sous latence du projet.
+- **Garde-fous : aucun rejet abusif** sur ~150 tirs (cadence, origine). Les seuls rejets étaient des tirs pendant une transition de manche — le gel qui fonctionne.
+- **Rewind : validé, avec une réserve de méthode.** Un A/B « avec / sans rewind » sur les taux de touche s'est révélé **inconcluant** : le joueur anticipe instinctivement le déplacement d'une cible mobile et compense donc l'absence de compensation, ce qui masque l'effet. La mesure qui a tranché est **continue** : la distance perpendiculaire entre le rayon et le centre de la cible, à sa position passée et actuelle. Résultat reproductible sur trois séries : **la position PASSÉE est systématiquement plus proche du rayon, d'environ 0,4-0,5 m** — cohérent avec 4,4 m/s × 182 ms. Le tireur vise bien ce qu'il voit, et le rewind corrige le bon écart.
+
+**Leçon de méthode** : pour juger une fonctionnalité qui corrige un décalage, mesurer le décalage lui-même, pas un taux de réussite. Le taux mélange la compétence du joueur, son adaptation et le bruit ; la mesure continue donne un signal exploitable dès une vingtaine de tirs.
+
+⚠️ Un `gagnes_par_rewind=0 perdus_par_rewind=2` a été observé lors d'une série où le joueur anticipait encore. Ce n'est **pas** un bug : quand le rewind fonctionne, anticiper est contre-productif. Ne pas partir en chasse d'une régression sur ce signal sans d'abord vérifier la consigne de visée.
 
 ## Assemblies et tests (2026-09-28)
 
