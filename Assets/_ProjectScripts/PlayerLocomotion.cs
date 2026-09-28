@@ -302,7 +302,7 @@ public class PlayerLocomotion : NetworkBehaviour
     /// dépend la surface touchable — position, orientation, lean et posture. Historiser la seule
     /// position ne corrigerait qu'une part du décalage : un adversaire penché ou accroupi au moment
     /// du tir serait rewind avec la géométrie qu'il a MAINTENANT.</summary>
-    private struct HitboxPose
+    public struct HitboxPose
     {
         public float time;
         public Vector3 position;
@@ -409,6 +409,7 @@ public class PlayerLocomotion : NetworkBehaviour
         spawnedPlayers.Remove(this);
     }
 
+
     // ------------------------------------------------------------------
     // Rewind — historique serveur et replacement temporaire du hitbox
     // ------------------------------------------------------------------
@@ -477,23 +478,32 @@ public class PlayerLocomotion : NetworkBehaviour
         hitbox.Apply(profile.controllerHeight, profile.controllerRadius, LeanOffset);
     }
 
-    /// <summary>Interpole la pose historique à l'instant demandé. Renvoie false si l'historique est
-    /// vide ; se rabat sur la pose la plus ancienne/récente si l'instant sort de sa fenêtre.</summary>
     private bool TrySampleHistory(float targetTime, out HitboxPose result)
+        => SampleHitboxHistory(serverHitboxHistory, targetTime, out result);
+
+    /// <summary>
+    /// Interpole la pose historique à l'instant demandé. Renvoie false si l'historique est vide ;
+    /// se rabat sur la pose la plus ancienne/récente si l'instant sort de sa fenêtre.
+    ///
+    /// Fonction PURE et statique, séparée de l'état du composant exprès : c'est le cœur du rewind,
+    /// donc l'endroit où une régression coûterait le plus cher, et sous cette forme elle se teste
+    /// sans Editor, sans réseau et sans scène (voir les tests EditMode).
+    /// </summary>
+    public static bool SampleHitboxHistory(IReadOnlyList<HitboxPose> history, float targetTime, out HitboxPose result)
     {
         result = default;
-        if (serverHitboxHistory.Count == 0) return false;
+        if (history == null || history.Count == 0) return false;
 
-        if (targetTime <= serverHitboxHistory[0].time)
+        if (targetTime <= history[0].time)
         {
-            result = serverHitboxHistory[0];
+            result = history[0];
             return true;
         }
 
-        for (int i = 0; i < serverHitboxHistory.Count - 1; i++)
+        for (int i = 0; i < history.Count - 1; i++)
         {
-            HitboxPose a = serverHitboxHistory[i];
-            HitboxPose b = serverHitboxHistory[i + 1];
+            HitboxPose a = history[i];
+            HitboxPose b = history[i + 1];
             if (a.time > targetTime || targetTime > b.time) continue;
 
             float span = b.time - a.time;
@@ -513,7 +523,7 @@ public class PlayerLocomotion : NetworkBehaviour
             return true;
         }
 
-        result = serverHitboxHistory[serverHitboxHistory.Count - 1];
+        result = history[history.Count - 1];
         return true;
     }
 
@@ -662,6 +672,7 @@ public class PlayerLocomotion : NetworkBehaviour
         {
             input.ConsumeFrameInputs();
         }
+
     }
 
     private MovementInputSnapshot ReadLocalInput()
@@ -879,6 +890,7 @@ public class PlayerLocomotion : NetworkBehaviour
             // réseau théorique, mais l'âge réel de ce que le tireur voit à l'écran.
             float measuredRtt = Time.time - predicted.sentAt;
             smoothedRtt = smoothedRtt <= 0f ? measuredRtt : Mathf.Lerp(smoothedRtt, measuredRtt, 0.1f);
+
         }
         // Si la séquence est introuvable (correction périmée, ou input jeté par le plafond de
         // serverInputQueue), on ne peut rien conclure : on retombe sur le recalage systématique,
@@ -1104,7 +1116,7 @@ public class PlayerLocomotion : NetworkBehaviour
     /// <summary>Son à jouer pour une transition de posture donnée, quelle que soit la touche qui
     /// l'a déclenchée (Crouch, Prone, ou relevé auto en sprint) : entrer dans une posture basse
     /// joue son "Down", en sortir vers Standing joue le "Up" de la posture quittée.</summary>
-    private static PlayerSoundEvent? GetStanceSound(Stance from, Stance to)
+    public static PlayerSoundEvent? GetStanceSound(Stance from, Stance to)
     {
         if (from == to) return null;
         if (to == Stance.Crouching) return PlayerSoundEvent.CrouchDown;
@@ -1299,7 +1311,7 @@ public class PlayerLocomotion : NetworkBehaviour
     /// <summary>Choisit le bon type de pas selon la posture/l'allure : PlayerSoundEvent n'a plus
     /// de type "Footstep" générique depuis son éclatement en Walk/Run/Crouch (+ Crawl en prone,
     /// déjà existant) pour permettre des clips distincts par cadence.</summary>
-    private static PlayerSoundEvent GetFootstepSoundEvent(Stance stance, bool sprinting)
+    public static PlayerSoundEvent GetFootstepSoundEvent(Stance stance, bool sprinting)
     {
         if (stance == Stance.Prone) return PlayerSoundEvent.Crawl;
         if (stance == Stance.Crouching) return PlayerSoundEvent.FootstepCrouch;

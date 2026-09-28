@@ -229,7 +229,26 @@ L'affichage `OnGUI` du `RoundManager` est un **placeholder** au même titre que 
 8. ✅ **Corrigé le 2026-09-24** — le collider accidentel sur l'enfant `Capsule` (reste de la primitive Unity) a été supprimé. La surface touchable est désormais le seul `PlayerHitbox`, explicite et dédié.
 9. ✅ **Corrigé le 2026-09-24** — `hittableMask` valait `Everything` ; remplacé par deux masques explicites, `worldMask` (géométrie) et `hitboxMask` (layer `Hitbox`), utilisés par deux traces distinctes.
 
-**Hygiène** : aucun `.asmdef` → tout dans `Assembly-CSharp`, recompilation complète à chaque modif. **Aucun test**, alors que `Move()` est une fonction pure paramétrée par un snapshot : un test EditMode « même snapshot × 2 → même position » attraperait les régressions de déterminisme de la dette n°4 automatiquement.
+**Hygiène** : ✅ **assemblies et tests posés le 2026-09-28** — voir la section ci-dessous.
+
+## Assemblies et tests (2026-09-28)
+
+Le code de jeu a quitté `Assembly-CSharp` pour deux assemblies : `DuelArena.Input` (`_ProjectInput`, l'asset Input Actions généré) et `DuelArena.Runtime` (`_ProjectScripts`, qui référence la première, Netcode et l'Input System).
+
+Ce n'était pas qu'une question de temps de compilation : **un assembly de test ne peut pas référencer `Assembly-CSharp`**, l'assembly prédéfini. Sans asmdef, aucun test ne pouvait voir le code du jeu. Vérifié après coup : toutes les références de scripts dans le prefab joueur et la scène ont survécu (les GUID de fichiers ne changent pas), et le jeu tourne.
+
+**Tests EditMode** sous `Assets/Tests/EditMode` (`DuelArena.Tests.EditMode`). Lancer : `unity command run_tests --project-path "..." --mode EditMode`. 23 tests au 2026-09-28, tous verts.
+
+Ils couvrent volontairement la **logique pure**, là où une régression est à la fois probable et silencieuse :
+- `SampleHitboxHistory` — le cœur du rewind. Un échantillonnage cassé ne lève aucune erreur, il fait juste rater des tirs qui auraient dû toucher. Couvre l'interpolation position/lean, le `LerpAngle` du yaw (un `Lerp` ferait tourner le hitbox à l'envers entre 350° et 10°), la posture non interpolée, les bornes, la division par zéro et l'historique vide/null.
+- `PlayerSpawnPoints` — dont le cas réel de la boucle BO5 : deux joueurs morts au même endroit doivent repartir à deux extrémités.
+- Les tables son ↔ posture/allure : le GDD fait du son une information de gameplay, donc un mauvais mapping est une information *fausse*, pas un détail cosmétique.
+
+`SampleHitboxHistory` a été **extraite en fonction pure statique** pour cette raison : sous cette forme elle se teste sans Editor, sans réseau et sans scène.
+
+🚨 **Un test qui passe ne prouve rien tant qu'on ne l'a pas vu échouer.** Les tests ont été validés par mutation : en remplaçant `Mathf.LerpAngle` par `Mathf.Lerp` dans l'échantillonnage du yaw, `YawInterpole_ParLePlusCourtChemin` échoue bien (22/23), puis repasse au vert une fois le code restauré. À refaire pour tout nouveau test non trivial.
+
+**Ce qui n'est PAS couvert** : le déterminisme de `Move()` lui-même, qui demanderait un test PlayMode avec une session Netcode. C'est la garantie la plus précieuse du projet et elle reste vérifiée à la main.
 
 ## Configuration Git (posée le 2026-09-22)
 
