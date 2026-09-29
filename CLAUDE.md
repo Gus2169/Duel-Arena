@@ -334,7 +334,9 @@ Le kick caméra d'atterrissage passe par un drapeau (`vaultJustLanded`) consomm�
 
 Un obstacle n'est franchissable qu'entre `vaultMinHeight` (0,3 m) et `vaultMaxHeight` (1,3 m). Les caisses d'origine font 2 m et ne sont donc PAS franchissables — refus normal, pas un bug.
 
-**Obstacles de test posés dans `MultiTestScene` (2026-09-29, par l'utilisateur)** : `Barricade 0.5`, `Barricade 1.25` et `Barricade 1.6`, nommées d'après leur hauteur. Les deux premières sont franchissables ; **`Barricade 1.6` dépasse la limite de 1,3 m et sera toujours refusée** — utile comme couverture non franchissable, mais à ne pas prendre pour un bug si le vault n'y répond pas.
+**Obstacles de test posés dans `MultiTestScene` (2026-09-29, par l'utilisateur)** : `Barricade 0.5`, `Barricade 1.25` et `Barricade 1.6`, nommées d'après leur hauteur. Les deux premières sont franchissables. **`Barricade 1.6` dépasse la limite de 1,3 m et est toujours refusée** : c'est un **test négatif délibéré**, confirmé en jeu le 2026-09-29. Vérifier qu'une borne refuse vaut autant que vérifier qu'elle accepte — c'est la moitié qu'on oublie, et la seule qui prouve que la borne existe vraiment. Ne pas la prendre pour un bug si le vault n'y répond pas.
+
+**Les gardes `#if UNITY_EDITOR` sont prouvées par le build.** Une build du projet est passée sans erreur le 2026-09-29, compteurs de diagnostic et autopilote inclus. C'est la vérification qui compte pour ce fencing : une garde mal placée casse la build plutôt que de passer inaperçue. À refaire après tout ajout de code de diagnostic.
 
 ### Défauts trouvés au premier test à deux (2026-09-29, RTT ~318 ms) — corrigés
 
