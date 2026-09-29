@@ -319,6 +319,37 @@ Le script est de **catégorie C stricte** : il LIT, il n'écrit jamais rien que 
 
 **Le propriétaire ne voit pas son propre modèle** : ses renderers passent en `ShadowsOnly` dans `OnNetworkSpawn` (sa caméra est à hauteur de tête, il verrait l'intérieur du crâne). `ShadowsOnly` plutôt que désactivés, parce qu'il continue ainsi de projeter une **ombre**, qui est une information de jeu — voir sa propre ombre dépasser d'un angle renseigne sur ce que l'adversaire voit. Ciblé sur le seul sous-arbre `Model`, pour qu'une arme en vue première personne reste visible.
 
+### 🚨 Root motion : « Bake Into Pose » fait l'INVERSE de ce qu'on croit (2026-09-29)
+
+Le personnage s'éloignait de sa racine pendant chaque cycle d'animation puis **claquait en arrière à la boucle**. Défaut livré DEUX fois, et deux fois déclaré corrigé par une mesure qui portait à côté.
+
+**La sémantique.** « Bake Into Pose » (`lockRootPositionXZ = true`) ne supprime pas le déplacement : il le **garde dans la pose** et l'enlève seulement du *delta* de root motion. Le corps voyage donc à l'écran pendant que le GameObject reste immobile. Le réglage correct ici est de **NE PAS baker** : le déplacement devient du root motion, que `applyRootMotion = false` jette purement et simplement. Vaut pour la position XZ comme pour la rotation.
+
+**Pourquoi les deux vérifications ont menti**, et c'est la vraie leçon :
+
+- `AnimationClip.averageSpeed` mesure le **delta de root motion**. Baker le fait tomber à zéro *tout en laissant le corps dériver* : la mesure annonçait « plus de déplacement » pendant que le personnage se téléportait.
+- `AnimationClip.SampleAnimation` applique les **courbes brutes**, sans la gestion de root motion de l'Animator. `Sprint Forward`, réellement *In Place*, y affichait 3,5 m de dérive.
+
+Les deux mesurent quelque chose de vrai, mais **pas ce qui se voit à l'écran**. La séparation racine/pose est un travail que fait **l'Animator au runtime**, pas le clip : aucune mesure hors runtime ne peut trancher.
+
+**`Assets/Tests/PlayMode/CharacterDriftTests.cs`** existe pour ça — il fait tourner le vrai Animator avec le vrai controller et relève la position des hanches par rapport à la racine, frame par frame, en course, sprint et marche accroupie. Il journalise `[DRIFT]` avec la valeur mesurée et pas seulement le verdict : un test vert dit « sous le seuil » sans dire de combien.
+
+🚨 **Le fichier `.meta` n'est PAS une source fiable pour les réglages d'import.** Après une mutation qui bakait bel et bien `Rifle Run` — prouvé par le test qui échouait — un `grep lockRootPositionXZ: 1` dans son `.meta` ne renvoyait **rien**. La seule source qui fait autorité est `ModelImporter`, lu par script. Troisième fois dans la même session qu'une vérification par proxy a menti, après `averageSpeed` et `SampleAnimation` : **vérifier un réglage d'import, c'est interroger l'importeur, pas lire un fichier.**
+
+**Validé par mutation le 2026-09-29** : en remettant « Bake Into Pose » sur la seule `Rifle Run`, `CourseDebout_LeCorpsResteSurSaRacine` échoue avec **1,33 m de dérive** pour un seuil de 0,50 m, pendant que les deux autres tests restent verts — il détecte le défaut ET désigne le bon clip. Marges à l'état sain : 3,6 cm en course, 15,3 cm accroupi, 8,5 cm en sprint.
+
+⚠️ **Un `SaveAndReimport` bloque le lanceur de tests PlayMode jusqu'au redémarrage de l'Editor.** Reproduit deux fois : après un réimport d'asset, `run_tests --mode PlayMode` renvoie **0 test avec un statut « réussi »** (encore un échec qui se lit comme un succès). `cancel_tests` révèle une exécution fantôme mais ne suffit pas à débloquer. EditMode n'est pas affecté. **Conséquence pratique : valider par mutation un réglage d'IMPORT demande un redémarrage entre chaque essai.**
+
+### La cadence de lecture
+
+Un arbre de mélange **ne modifie pas la cadence de ses clips**. À mi-vitesse il mélange l'attente et la course, mais la course joue à 100 % de sa cadence pendant que le corps n'avance qu'à moitié — les jambes s'agitent sans que le personnage suive. `SpeedMult` accorde donc la vitesse de lecture au déplacement réel.
+
+🚨 **Plafonné à 1, et ce n'était pas évident.** Au-delà de l'allure nominale ce n'est pas la cadence qui doit monter mais le **clip** qui change : à `MoveY = 2` l'arbre joue `Sprint Forward`, déjà authorée pour sprinter. Une première version plafonnait à 1,5 et accélérait donc de 50 % une animation qui n'en avait aucun besoin.
+
+Le plancher ne descend pas à zéro : le multiplicateur pilote l'état entier, animation d'attente comprise, qui doit continuer de respirer à l'arrêt.
+
+**`standingPlaybackScale` / `crouchingPlaybackScale` / `pronePlaybackScale`** accordent chaque posture à ses clips, Mixamo n'authorant pas ses animations à l'échelle des vitesses de ce jeu. C'est un réglage de **ressenti**, à ajuster en jouant.
+
 ### Ce qui n'est PAS encore branché
 
 - **`Airborne` et `Vaulting`** : les paramètres existent, l'Animator a les états, mais rien ne les alimente. `IsVaulting` et `controller.isGrounded` ne sont vrais que là où la simulation tourne — un spectateur ne les voit pas. Il leur faut un signal réseauté, ce qui est l'incrément suivant.

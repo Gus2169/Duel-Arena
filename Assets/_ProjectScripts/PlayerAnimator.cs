@@ -33,9 +33,19 @@ public class PlayerAnimator : MonoBehaviour
     [Tooltip("Lissage des paramètres de mélange. Purement visuel : évite qu'un à-coup d'une frame ne fasse claquer l'animation.")]
     [SerializeField] private float blendSmoothing = 12f;
 
+    [Header("Cadence de lecture")]
+    [Tooltip("Plancher du multiplicateur de vitesse de lecture. Ne descend pas à 0 : il s'applique aussi à l'animation d'attente, qui doit continuer de respirer à l'arrêt.")]
+    [SerializeField] private float minPlaybackSpeed = 0.75f;
+
+    [Tooltip("Cadence à l'allure nominale, par posture. Les clips Mixamo ne sont pas authorés à la même échelle que les vitesses du jeu : c'est le réglage à toucher si les pieds patinent ou si la foulée paraît frénétique.")]
+    [SerializeField] private float standingPlaybackScale = 0.85f;
+    [SerializeField] private float crouchingPlaybackScale = 1f;
+    [SerializeField] private float pronePlaybackScale = 1.4f;
+
     private static readonly int MoveXId = Animator.StringToHash("MoveX");
     private static readonly int MoveYId = Animator.StringToHash("MoveY");
     private static readonly int StanceId = Animator.StringToHash("Stance");
+    private static readonly int SpeedMultId = Animator.StringToHash("SpeedMult");
 
     private PlayerLocomotion locomotion;
     private Vector3 previousPosition;
@@ -65,7 +75,11 @@ public class PlayerAnimator : MonoBehaviour
 
         Vector3 local = transform.InverseTransformDirection(delta / dt);
 
-        float reference = ReferenceSpeed(locomotion.CurrentStance);
+        // NetworkedStance et non CurrentStance : cette dernière n'est mise à jour que dans Move(),
+        // qu'un spectateur n'appelle jamais. Elle y resterait bloquée sur Standing, et l'adversaire
+        // n'aurait jamais d'animation accroupie ni allongée. Symptôme vécu le 2026-09-29.
+        PlayerLocomotion.Stance stance = locomotion.NetworkedStance;
+        float reference = ReferenceSpeed(stance);
         Vector2 target = new Vector2(local.x, local.z) / Mathf.Max(0.01f, reference);
 
         // Borne volontaire. Une resynchronisation de réconciliation TÉLÉPORTE le propriétaire de
@@ -79,9 +93,35 @@ public class PlayerAnimator : MonoBehaviour
         animator.SetFloat(MoveXId, smoothedMove.x);
         animator.SetFloat(MoveYId, smoothedMove.y);
 
-        // La posture vient d'une NetworkVariable, donc elle est juste sur toutes les instances
-        // sans traitement particulier.
-        animator.SetInteger(StanceId, (int)locomotion.CurrentStance);
+        animator.SetInteger(StanceId, (int)stance);
+
+        // Un arbre de mélange NE modifie PAS la cadence de ses clips. À mi-vitesse il mélange
+        // l'attente et la course, mais la course joue à 100 % de sa cadence pendant que le corps
+        // n'avance qu'à moitié : les jambes s'agitent sans que le personnage suive. On accorde
+        // donc la vitesse de LECTURE au déplacement réel.
+        //
+        // 🚨 PLAFONNÉ À 1, et c'est le point qui n'était pas évident. Au-delà de l'allure
+        // nominale, ce n'est pas la cadence qui doit monter mais le CLIP qui change : à MoveY=2
+        // l'arbre joue Sprint Forward, déjà authorée pour sprinter. Une première version plafonnait
+        // à 1,5 et accélérait donc de 50 % une animation qui n'en avait aucun besoin — le sprint
+        // paraissait frénétique.
+        //
+        // Le plancher, lui, ne descend pas à zéro : ce multiplicateur pilote l'état entier,
+        // animation d'attente comprise, qui doit continuer de respirer à l'arrêt.
+        float cadence = Mathf.Clamp(smoothedMove.magnitude, minPlaybackSpeed, 1f)
+                        * PlaybackScale(stance);
+        animator.SetFloat(SpeedMultId, cadence);
+    }
+
+    /// <summary>Accorde la cadence d'une posture à ses clips. Mixamo n'authore pas ses animations
+    /// à l'échelle des vitesses de ce jeu : le ramper est plus lent que la vitesse prone réelle,
+    /// la course debout plus rapide que la marche. C'est un réglage de RESSENTI, à ajuster en
+    /// jouant et non par calcul.</summary>
+    private float PlaybackScale(PlayerLocomotion.Stance stance)
+    {
+        if (stance == PlayerLocomotion.Stance.Crouching) return crouchingPlaybackScale;
+        if (stance == PlayerLocomotion.Stance.Prone) return pronePlaybackScale;
+        return standingPlaybackScale;
     }
 
     private float ReferenceSpeed(PlayerLocomotion.Stance stance)

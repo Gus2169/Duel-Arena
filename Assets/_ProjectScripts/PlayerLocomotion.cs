@@ -166,6 +166,11 @@ public class PlayerLocomotion : NetworkBehaviour
     [SerializeField] private float interpolationDelay = 0.1f;
 
     public Stance CurrentStance { get; private set; } = Stance.Standing;
+
+    /// <summary>Posture telle que le SERVEUR la publie. Contrairement à CurrentStance, elle est
+    /// juste sur les quatre cas réseau, y compris chez un spectateur qui n'appelle jamais Move().
+    /// C'est la source à utiliser pour tout affichage (animation, capsule visible, hitbox).</summary>
+    public Stance NetworkedStance => networkStance.Value;
     public NoiseLevel CurrentNoise { get; private set; } = NoiseLevel.Silent;
     public bool IsAiming { get; private set; }
     public bool IsVaulting { get; private set; } // état simulé : confirmé par le serveur, restauré avant rejeu
@@ -1203,6 +1208,11 @@ public class PlayerLocomotion : NetworkBehaviour
         IsSneaking = wantsSneak;
         IsMoving = currentVelocity.sqrMagnitude > 0.04f;
         CurrentStance = stance; // lu par WeaponController sur l'instance du propriétaire
+
+        // 🚨 CurrentStance n'est JUSTE que là où Move() tourne, c'est-à-dire chez le propriétaire
+        // et sur le serveur. Un spectateur n'appelle jamais Move() : la valeur y reste figée sur
+        // celle de l'Awake. Tout ce qui doit connaître la posture sur TOUTES les instances doit
+        // lire NetworkedStance ci-dessous, pas cette propriété.
     }
 
     // ------------------------------------------------------------------
