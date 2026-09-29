@@ -1770,6 +1770,96 @@ public class PlayerLocomotion : NetworkBehaviour
         controller.enabled = !vaulting;
     }
 
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+    // ------------------------------------------------------------------
+    // SURFACE DE TEST — jamais embarquée dans une build de jeu.
+    //
+    // La garde couvre UNITY_INCLUDE_TESTS en plus d'UNITY_EDITOR : l'assembly de test PlayMode
+    // ne peut pas être Editor-only (Unity classerait ses tests en EditMode et ne les
+    // découvrirait jamais), donc elle compile aussi dans une build "avec tests". Sans ce second
+    // symbole, cette build casserait à la compilation.
+    //
+    // Ouverte pour une seule raison : vérifier automatiquement que Move() est déterministe, ce
+    // qui était jusqu'ici la garantie la plus précieuse du projet ET la seule vérifiée à la main.
+    // Même principe que SampleHitboxHistory, extraite en fonction pure pour être testable : on
+    // ouvre le strict nécessaire, et on dit pourquoi.
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Photo de TOUT l'état cumulatif lu par Move().
+    ///
+    /// 🚨 Cette structure est un INVARIANT, pas un utilitaire de test. Toute valeur cumulative
+    /// lue par Move() doit y figurer — c'est la même liste que celle des valeurs qui doivent
+    /// avoir un équivalent confirmé par le serveur dans la RPC de correction. Le projet s'est
+    /// fait piéger QUATRE fois sur cette règle (yaw, currentVelocity, hauteur de capsule, état
+    /// de vault) ; le test de déterminisme échoue désormais si une cinquième est oubliée, parce
+    /// qu'une restauration incomplète fait diverger le rejeu.
+    /// </summary>
+    public struct SimulationState
+    {
+        public Vector3 position;
+        public Quaternion rotation;
+        public float verticalVelocity;
+        public Vector3 currentVelocity;
+        public bool vaulting;
+        public float vaultTimer;
+        public Vector3 vaultStart;
+        public Vector3 vaultEnd;
+    }
+
+    public SimulationState TestCaptureState()
+    {
+        return new SimulationState
+        {
+            position = transform.position,
+            rotation = transform.rotation,
+            verticalVelocity = verticalVelocity,
+            currentVelocity = currentVelocity,
+            vaulting = IsVaulting,
+            vaultTimer = vaultTimer,
+            vaultStart = vaultStart,
+            vaultEnd = vaultEnd,
+        };
+    }
+
+    public void TestRestoreState(SimulationState state)
+    {
+        // Le controller doit être coupé pour téléporter : sinon il réapplique sa propre
+        // résolution de collision et la position restaurée n'est plus exactement celle demandée.
+        bool wasEnabled = controller.enabled;
+        controller.enabled = false;
+        transform.position = state.position;
+        transform.rotation = state.rotation;
+        controller.enabled = wasEnabled;
+
+        verticalVelocity = state.verticalVelocity;
+        currentVelocity = state.currentVelocity;
+        RestoreVaultState(state.vaulting, state.vaultTimer, state.vaultStart, state.vaultEnd);
+
+        // La scène physique doit voir la nouvelle position AVANT le prochain Move(), sinon le
+        // premier sweep part de l'ancienne (autoSyncTransforms vaut false dans ce projet).
+        Physics.SyncTransforms();
+    }
+
+    /// <summary>Appelle Move() avec un input construit de toutes pièces, sans passer par le
+    /// clavier ni par le réseau.</summary>
+    public void TestMove(Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, bool jumpPressed, int leanState, float dt)
+    {
+        Move(new MovementInputSnapshot
+        {
+            move = move,
+            lookX = lookX,
+            sprintHeld = sprintHeld,
+            sneakHeld = sneakHeld,
+            aimHeld = aimHeld,
+            fireHeld = false,
+            firePressedThisFrame = false,
+            leanState = leanState,
+            jumpPressed = jumpPressed,
+        }, dt);
+    }
+#endif
+
     private static AnimationCurve BuildDefaultVaultArc()
     {
         var curve = new AnimationCurve(

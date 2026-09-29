@@ -270,7 +270,26 @@ Ils couvrent volontairement la **logique pure**, là où une régression est à 
 
 🚨 **Un test qui passe ne prouve rien tant qu'on ne l'a pas vu échouer.** Les tests ont été validés par mutation : en remplaçant `Mathf.LerpAngle` par `Mathf.Lerp` dans l'échantillonnage du yaw, `YawInterpole_ParLePlusCourtChemin` échoue bien (22/23), puis repasse au vert une fois le code restauré. À refaire pour tout nouveau test non trivial.
 
-**Ce qui n'est PAS couvert** : le déterminisme de `Move()` lui-même, qui demanderait un test PlayMode avec une session Netcode. C'est la garantie la plus précieuse du projet et elle reste vérifiée à la main.
+### Tests PlayMode — le déterminisme de `Move()` (2026-09-29)
+
+`Assets/Tests/PlayMode` (`DuelArena.Tests.PlayMode`), 3 tests. Lancer : `unity command run_tests --project-path "..." --mode PlayMode --async_tests`, puis sonder `test_status`. **Le mode synchrone ne marche pas** : entrer en Play Mode déclenche un rechargement de domaine qui coupe la requête HTTP.
+
+Ils verrouillent l'**équivalence entre une simulation en avant et un REJEU depuis le même état** — exactement ce que suppose la réconciliation. C'était jusqu'ici « la garantie la plus précieuse du projet, vérifiée à la main ».
+
+**Volontairement SANS session Netcode**, contrairement à ce que cette page prévoyait. Monter un host réel rendrait le test asynchrone et instable (connexion, ports, timing) pour prouver une propriété qui n'a rien de réseau : `Move()` est une fonction de (état, input, dt), le réseau décide seulement *quand* on l'appelle. Attaquer l'invariant directement le rend rapide et reproductible.
+
+🚨 **`PlayerLocomotion.SimulationState` est un INVARIANT, pas un utilitaire.** Elle énumère tout l'état cumulatif lu par `Move()` — la même liste que celle des valeurs devant avoir un équivalent confirmé dans la RPC de correction. Le projet s'est fait piéger **quatre** fois dessus (yaw, `currentVelocity`, hauteur de capsule, état de vault). Si une cinquième apparaît sans être ajoutée ici, la restauration sera partielle et les tests échoueront — au lieu de laisser le bug se manifester en jeu en désynchronisation aléatoire.
+
+**Validés par mutation** : en retirant la restauration de `currentVelocity`, les 3 tests échouent avec des écarts de 3,9 à 7,3 cm, puis repassent au vert une fois le code restauré.
+
+**Trois pièges rencontrés en les écrivant**, tous silencieux :
+- ⚠️ **Une asmdef de test avec `includePlatforms: ["Editor"]` est classée EditMode par Unity**, quel que soit son nom. Les tests PlayMode n'étaient découverts par personne — 0 test trouvé, et un rapport « réussi ». C'est `defineConstraints: ["UNITY_INCLUDE_TESTS"]` qui les exclut des builds, pas `includePlatforms`. Conséquence : la surface de test dans `PlayerLocomotion` est gardée par `#if UNITY_EDITOR || UNITY_INCLUDE_TESTS`, sans quoi une build « avec tests » casserait.
+- ⚠️ **Un joueur de test doit être sur le layer `Player` (3)**, comme le prefab. `Awake()` fait `obstacleMask &= ~(1 << gameObject.layer)` : resté sur `Default`, il retirait `Default` du masque, donc l'obstacle lui-même. Aucun vault ne se déclenchait.
+- ⚠️ **`Physics.SyncTransforms()` après avoir créé ou déplacé de la géométrie de test.** Même piège que pour le rewind : `autoSyncTransforms` vaut false, les raycasts ne voyaient pas l'obstacle.
+
+**Chaque test porte une garde anti-vacuité** (le joueur a bougé d'au moins 1 m ; un vault s'est réellement déclenché). Elles ne sont pas décoratives : la garde du vault a **effectivement échoué** à la première exécution et révélé le piège du layer. Sans elle, le test aurait été vert en ne testant rien — c'est exactement ce qui était arrivé au premier test de vault manuel.
+
+**Ce qui reste NON couvert** : l'accord client/serveur sous vraie latence (mesuré à la main via `[DIAG-CLIENT]`), et tout ce qui dépend d'une `NetworkVariable` en écriture serveur — la posture notamment, qui reste à `Standing` dans ces tests.
 
 ## Configuration Git (posée le 2026-09-22)
 
