@@ -7696,7 +7696,7 @@ GameObject:
   - component: {fileID: 368528086}
   - component: {fileID: 368528085}
   m_Layer: 0
-  m_Name: Stairs (1)
+  m_Name: Stairs tour
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -11969,8 +11969,8 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 2139210735}
   - {fileID: 879110594}
+  - {fileID: 2139210735}
   - {fileID: 2116152223}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -18164,7 +18164,7 @@ GameObject:
   - component: {fileID: 719294559}
   - component: {fileID: 719294558}
   m_Layer: 0
-  m_Name: Caisse (14)
+  m_Name: Barricade 1.25
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -18699,7 +18699,7 @@ GameObject:
   - component: {fileID: 720746301}
   - component: {fileID: 720746300}
   m_Layer: 0
-  m_Name: Cube (10)
+  m_Name: Mur
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -20162,7 +20162,7 @@ GameObject:
   - component: {fileID: 762775491}
   - component: {fileID: 762775490}
   m_Layer: 0
-  m_Name: Conteneur (1)
+  m_Name: Tour
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -22514,7 +22514,7 @@ GameObject:
   - component: {fileID: 879110596}
   - component: {fileID: 879110595}
   m_Layer: 0
-  m_Name: Caisse (12)
+  m_Name: Barricade 1.6
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -27506,7 +27506,7 @@ GameObject:
   - component: {fileID: 1059827567}
   - component: {fileID: 1059827566}
   m_Layer: 0
-  m_Name: Caisse (15)
+  m_Name: Mur tour
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -28220,7 +28220,7 @@ GameObject:
   - component: {fileID: 1101064518}
   - component: {fileID: 1101064517}
   m_Layer: 0
-  m_Name: Caisse (13)
+  m_Name: Mur tour
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -29292,7 +29292,7 @@ GameObject:
   - component: {fileID: 1156825159}
   - component: {fileID: 1156825158}
   m_Layer: 0
-  m_Name: Caisse (14)
+  m_Name: Mur tour
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -31557,7 +31557,7 @@ GameObject:
   - component: {fileID: 1242621662}
   - component: {fileID: 1242621661}
   m_Layer: 0
-  m_Name: Cube (10)
+  m_Name: Mur
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -34653,7 +34653,7 @@ GameObject:
   - component: {fileID: 1353513968}
   - component: {fileID: 1353513967}
   m_Layer: 0
-  m_Name: Caisse (13)
+  m_Name: Mur tour
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -35546,7 +35546,7 @@ GameObject:
   - component: {fileID: 1394375395}
   - component: {fileID: 1394375394}
   m_Layer: 0
-  m_Name: Caisse (12)
+  m_Name: Barricade 1.25
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -37581,7 +37581,7 @@ Mesh:
     vertexCount: 24
     localAABB:
       m_Center: {x: 0, y: 0, z: 0}
-      m_Extent: {x: 1.5, y: 0.6, z: 0.25}
+      m_Extent: {x: 1.5, y: 0.625, z: 0.25}
   m_Shapes:
     vertices: []
     shapes: []
@@ -37660,7 +37660,7 @@ Mesh:
       format: 0
       dimension: 0
     m_DataSize: 1152
-    _typelessdata: 0000c0bf9a9919bf0000803e00000000000000000000803f000080bf0000000000000000000080bf00004040d0cc4cbe0000c03f9a9919bf0000803e00000000000000000000803f000080bf0000000000000000000080bf00000000d0cc4cbe0000c0bf9a99193f0000803e00000000000000000000803f000080bf0000000000000000000080bf000040400000803f0000c03f9a99193f0000803e00000000000000000000803f000080bf0000000000000000000080bf000000000000803f0000c03f9a9919bf0000803e0000803f000000000000000000000000000000000000803f000080bf0000003fd0cc4cbe0000c03f9a9919bf000080be0000803f000000000000000000000000000000000000803f000080bf00000000d0cc4cbe0000c03f9a99193f0000803e0000803f000000000000000000000000000000000000803f000080bf0000003f0000803f0000c03f9a99193f000080be0000803f000000000000000000000000000000000000803f000080bf000000000000803f0000c03f9a9919bf000080be0000000000000000000080bf0000803f0000000000000000000080bf00004040d0cc4cbe0000c0bf9a9919bf000080be0000000000000000000080bf0000803f0000000000000000000080bf00000000d0cc4cbe0000c03f9a99193f000080be0000000000000000000080bf0000803f0000000000000000000080bf000040400000803f0000c0bf9a99193f000080be0000000000000000000080bf0000803f0000000000000000000080bf000000000000803f0000c0bf9a9919bf000080be000080bf00000000000000000000000000000000000080bf000080bf0000003fd0cc4cbe0000c0bf9a9919bf0000803e000080bf00000000000000000000000000000000000080bf000080bf00000000d0cc4cbe0000c0bf9a99193f000080be000080bf00000000000000000000000000000000000080bf000080bf0000003f0000803f0000c0bf9a99193f0000803e000080bf00000000000000000000000000000000000080bf000080bf000000000000803f0000c0bf9a99193f0000803e000000000000803f000000000000803f0000000000000000000080bf000000000000803f0000c03f9a99193f0000803e000000000000803f000000000000803f0000000000000000000080bf000040400000803f0000c0bf9a99193f000080be000000000000803f000000000000803f0000000000000000000080bf000000000000003f0000c03f9a99193f000080be000000000000803f000000000000803f0000000000000000000080bf000040400000003f0000c0bf9a9919bf000080be00000000000080bf00000000000080bf0000000000000000000080bf000040400000003f0000c03f9a9919bf000080be00000000000080bf00000000000080bf0000000000000000000080bf000000000000003f0000c0bf9a9919bf0000803e00000000000080bf00000000000080bf0000000000000000000080bf000040400000803f0000c03f9a9919bf0000803e00000000000080bf00000000000080bf0000000000000000000080bf000000000000803f
+    _typelessdata: 0000c0bf000020bf0000803e00000000000000000000803f000080bf0000000000000000000080bf00004040000080be0000c03f000020bf0000803e00000000000000000000803f000080bf0000000000000000000080bf00000000000080be0000c0bf0000203f0000803e00000000000000000000803f000080bf0000000000000000000080bf000040400000803f0000c03f0000203f0000803e00000000000000000000803f000080bf0000000000000000000080bf000000000000803f0000c03f000020bf0000803e0000803f000000000000000000000000000000000000803f000080bf0000003f000080be0000c03f000020bf000080be0000803f000000000000000000000000000000000000803f000080bf00000000000080be0000c03f0000203f0000803e0000803f000000000000000000000000000000000000803f000080bf0000003f0000803f0000c03f0000203f000080be0000803f000000000000000000000000000000000000803f000080bf000000000000803f0000c03f000020bf000080be0000000000000000000080bf0000803f0000000000000000000080bf00004040000080be0000c0bf000020bf000080be0000000000000000000080bf0000803f0000000000000000000080bf00000000000080be0000c03f0000203f000080be0000000000000000000080bf0000803f0000000000000000000080bf000040400000803f0000c0bf0000203f000080be0000000000000000000080bf0000803f0000000000000000000080bf000000000000803f0000c0bf000020bf000080be000080bf00000000000000000000000000000000000080bf000080bf0000003f000080be0000c0bf000020bf0000803e000080bf00000000000000000000000000000000000080bf000080bf00000000000080be0000c0bf0000203f000080be000080bf00000000000000000000000000000000000080bf000080bf0000003f0000803f0000c0bf0000203f0000803e000080bf00000000000000000000000000000000000080bf000080bf000000000000803f0000c0bf0000203f0000803e000000000000803f000000000000803f0000000000000000000080bf000000000000803f0000c03f0000203f0000803e000000000000803f000000000000803f0000000000000000000080bf000040400000803f0000c0bf0000203f000080be000000000000803f000000000000803f0000000000000000000080bf000000000000003f0000c03f0000203f000080be000000000000803f000000000000803f0000000000000000000080bf000040400000003f0000c0bf000020bf000080be00000000000080bf00000000000080bf0000000000000000000080bf000040400000003f0000c03f000020bf000080be00000000000080bf00000000000080bf0000000000000000000080bf000000000000003f0000c0bf000020bf0000803e00000000000080bf00000000000080bf0000000000000000000080bf000040400000803f0000c03f000020bf0000803e00000000000080bf00000000000080bf0000000000000000000080bf000000000000803f
   m_CompressedMesh:
     m_Vertices:
       m_NumItems: 0
@@ -37715,7 +37715,7 @@ Mesh:
     m_UVInfo: 0
   m_LocalAABB:
     m_Center: {x: 0, y: 0, z: 0}
-    m_Extent: {x: 1.5, y: 0.6, z: 0.25}
+    m_Extent: {x: 1.5, y: 0.625, z: 0.25}
   m_CookingOptions: 30
   m_PreBakeConvexCollisionMesh: 0
   m_PreBakeTriangleCollisionMesh: 0
@@ -43847,7 +43847,7 @@ GameObject:
   - component: {fileID: 1676518154}
   - component: {fileID: 1676518153}
   m_Layer: 0
-  m_Name: Conteneur (1)
+  m_Name: Tour
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -47637,7 +47637,7 @@ GameObject:
   - component: {fileID: 1770534820}
   - component: {fileID: 1770534819}
   m_Layer: 0
-  m_Name: Caisse (15)
+  m_Name: Mur tour
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -49600,7 +49600,7 @@ GameObject:
   - component: {fileID: 1829170542}
   - component: {fileID: 1829170541}
   m_Layer: 0
-  m_Name: Stairs (1)
+  m_Name: Stairs tour
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -59144,7 +59144,7 @@ GameObject:
   - component: {fileID: 2087211052}
   - component: {fileID: 2087211051}
   m_Layer: 0
-  m_Name: Caisse (14)
+  m_Name: Mur tour
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -60718,7 +60718,7 @@ GameObject:
   - component: {fileID: 2116152225}
   - component: {fileID: 2116152224}
   m_Layer: 0
-  m_Name: Caisse (13)
+  m_Name: Barricade 0.5
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -61253,7 +61253,7 @@ GameObject:
   - component: {fileID: 2139210737}
   - component: {fileID: 2139210736}
   m_Layer: 0
-  m_Name: Caisse (11)
+  m_Name: Barricade 1.25
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -61268,7 +61268,7 @@ Transform:
   m_GameObject: {fileID: 2139210734}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.1, z: 0}
+  m_LocalPosition: {x: 0, y: 0.100000024, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -61368,8 +61368,8 @@ MonoBehaviour:
   m_Shape:
     rid: 8973711490159738880
   m_ShapeRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_UnmodifiedMeshVersion: 2984
-  m_Size: {x: 3, y: 1.2, z: 0.5}
+  m_UnmodifiedMeshVersion: 2995
+  m_Size: {x: 3, y: 1.25, z: 0.5}
   m_LocalCenter: {x: 0, y: 0, z: 0}
   references:
     version: 2
@@ -61504,45 +61504,45 @@ MonoBehaviour:
   - m_Vertices: 0b0000000e00000012000000i
   m_SharedTextures: []
   m_Positions:
-  - {x: -1.5, y: -0.6, z: 0.25}
-  - {x: 1.5, y: -0.6, z: 0.25}
-  - {x: -1.5, y: 0.6, z: 0.25}
-  - {x: 1.5, y: 0.6, z: 0.25}
-  - {x: 1.5, y: -0.6, z: 0.25}
-  - {x: 1.5, y: -0.6, z: -0.25}
-  - {x: 1.5, y: 0.6, z: 0.25}
-  - {x: 1.5, y: 0.6, z: -0.25}
-  - {x: 1.5, y: -0.6, z: -0.25}
-  - {x: -1.5, y: -0.6, z: -0.25}
-  - {x: 1.5, y: 0.6, z: -0.25}
-  - {x: -1.5, y: 0.6, z: -0.25}
-  - {x: -1.5, y: -0.6, z: -0.25}
-  - {x: -1.5, y: -0.6, z: 0.25}
-  - {x: -1.5, y: 0.6, z: -0.25}
-  - {x: -1.5, y: 0.6, z: 0.25}
-  - {x: -1.5, y: 0.6, z: 0.25}
-  - {x: 1.5, y: 0.6, z: 0.25}
-  - {x: -1.5, y: 0.6, z: -0.25}
-  - {x: 1.5, y: 0.6, z: -0.25}
-  - {x: -1.5, y: -0.6, z: -0.25}
-  - {x: 1.5, y: -0.6, z: -0.25}
-  - {x: -1.5, y: -0.6, z: 0.25}
-  - {x: 1.5, y: -0.6, z: 0.25}
+  - {x: -1.5, y: -0.625, z: 0.25}
+  - {x: 1.5, y: -0.625, z: 0.25}
+  - {x: -1.5, y: 0.625, z: 0.25}
+  - {x: 1.5, y: 0.625, z: 0.25}
+  - {x: 1.5, y: -0.625, z: 0.25}
+  - {x: 1.5, y: -0.625, z: -0.25}
+  - {x: 1.5, y: 0.625, z: 0.25}
+  - {x: 1.5, y: 0.625, z: -0.25}
+  - {x: 1.5, y: -0.625, z: -0.25}
+  - {x: -1.5, y: -0.625, z: -0.25}
+  - {x: 1.5, y: 0.625, z: -0.25}
+  - {x: -1.5, y: 0.625, z: -0.25}
+  - {x: -1.5, y: -0.625, z: -0.25}
+  - {x: -1.5, y: -0.625, z: 0.25}
+  - {x: -1.5, y: 0.625, z: -0.25}
+  - {x: -1.5, y: 0.625, z: 0.25}
+  - {x: -1.5, y: 0.625, z: 0.25}
+  - {x: 1.5, y: 0.625, z: 0.25}
+  - {x: -1.5, y: 0.625, z: -0.25}
+  - {x: 1.5, y: 0.625, z: -0.25}
+  - {x: -1.5, y: -0.625, z: -0.25}
+  - {x: 1.5, y: -0.625, z: -0.25}
+  - {x: -1.5, y: -0.625, z: 0.25}
+  - {x: 1.5, y: -0.625, z: 0.25}
   m_Textures0:
-  - {x: 3, y: -0.20000005}
-  - {x: 0, y: -0.20000005}
+  - {x: 3, y: -0.25}
+  - {x: 0, y: -0.25}
   - {x: 3, y: 1}
   - {x: 0, y: 1}
-  - {x: 0.5, y: -0.20000005}
-  - {x: 0, y: -0.20000005}
+  - {x: 0.5, y: -0.25}
+  - {x: 0, y: -0.25}
   - {x: 0.5, y: 1}
   - {x: 0, y: 1}
-  - {x: 3, y: -0.20000005}
-  - {x: 0, y: -0.20000005}
+  - {x: 3, y: -0.25}
+  - {x: 0, y: -0.25}
   - {x: 3, y: 1}
   - {x: 0, y: 1}
-  - {x: 0.5, y: -0.20000005}
-  - {x: 0, y: -0.20000005}
+  - {x: 0.5, y: -0.25}
+  - {x: 0, y: -0.25}
   - {x: 0.5, y: 1}
   - {x: 0, y: 1}
   - {x: 0, y: 1}
@@ -61589,7 +61589,7 @@ MonoBehaviour:
   m_PreserveMeshAssetOnDestroy: 0
   assetGuid: 
   m_Mesh: {fileID: 1506634343}
-  m_VersionIndex: 2984
+  m_VersionIndex: 2995
   m_IsSelectable: 1
   m_SelectedFaces: 
   m_SelectedEdges: []
