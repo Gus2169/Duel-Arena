@@ -13,9 +13,9 @@ using UnityEngine.InputSystem;
 /// machine. C'est aux consommateurs (PlayerLocomotion, WeaponController) de se garder avec
 /// IsOwner — sans quoi chaque instance de joueur affichée localement réagirait à ces inputs.
 ///
-/// NOTE : JumpPressedThisFrame n'est actuellement lu par PERSONNE — le vault, son seul
-/// consommateur, est débranché (voir le bloc Vault dans PlayerLocomotion). La touche de saut
-/// ne fait donc rien pour l'instant. C'est voulu, pas un oubli.
+/// NOTE : JumpPressedThisFrame n'est PAS lu depuis Update() mais recopié dans le snapshot d'input
+/// envoyé au serveur — le vault, son seul consommateur, vit dans Move() pour rester déterministe.
+/// Il faut donc le consommer APRÈS la construction du snapshot, pas avant.
 /// </summary>
 [DisallowMultipleComponent]
 public class PlayerInputReader : MonoBehaviour

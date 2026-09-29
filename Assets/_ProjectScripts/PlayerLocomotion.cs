@@ -12,9 +12,9 @@ using UnityEngine;
 ///
 /// A. SIMULÉ / AUTORITAIRE (réseauté via le pattern 4-cas ci-dessous) :
 ///    position, vitesse, gravité, posture (Debout/Accroupi/Prone), vitesses de déplacement, yaw.
-///    Le VAULT est volontairement EXCLU de cette passe (voir bloc "Vault" plus bas) : c'est un
-///    mouvement scripté à durée fixe (controller.enabled = false pendant le lerp), fondamentalement
-///    différent d'un Move() par frame — il aura son propre incrément réseau dédié.
+///    Le VAULT en fait partie depuis le 2026-09-28 : son déclenchement ET son avancement vivent
+///    dans Move(), donc il est prédit chez le propriétaire, rejoué à la réconciliation et identique
+///    côté serveur, comme tout le reste de cette catégorie (voir le bloc "Vault" plus bas).
 ///
 /// B. ÉVÉNEMENTS SONORES DE GAMEPLAY (décidés par le serveur, diffusés à tous via ClientRpc) :
 ///    pas, ramper, changements de posture, lean start/end. Un adversaire proche doit pouvoir les
@@ -117,7 +117,7 @@ public class PlayerLocomotion : NetworkBehaviour
     [SerializeField] private float landingKickPerSpeed = 0.03f;
     [SerializeField] private float landingKickMax = 0.35f;
     [SerializeField] private float landingRecoverySpeed = 1.8f;
-    [Tooltip("Dip caméra dédié à l'atterrissage d'un vault. Conservé pour quand le vault sera réintégré.")]
+    [Tooltip("Dip caméra dédié à l'atterrissage d'un vault (cosmétique, catégorie C).")]
     [SerializeField] private float vaultLandingKick = 0.16f;
 
     [Header("Footsteps")]
@@ -133,7 +133,7 @@ public class PlayerLocomotion : NetworkBehaviour
     [Header("Obstacles (partagé lean / stand-up / vault)")]
     [SerializeField] private LayerMask obstacleMask = ~0;
 
-    [Header("Vault (DÉSACTIVÉ — attend son incrément réseau dédié, voir le bloc Vault plus bas)")]
+    [Header("Vault (réseauté — voir le bloc Vault plus bas)")]
     [SerializeField] private float vaultCheckDistance = 0.8f;
     [SerializeField] private float vaultMinHeight = 0.3f;
     [SerializeField] private float vaultMaxHeight = 1.3f;
@@ -168,7 +168,7 @@ public class PlayerLocomotion : NetworkBehaviour
     public Stance CurrentStance { get; private set; } = Stance.Standing;
     public NoiseLevel CurrentNoise { get; private set; } = NoiseLevel.Silent;
     public bool IsAiming { get; private set; }
-    public bool IsVaulting { get; private set; } // reste toujours false tant que le vault réseau n'existe pas
+    public bool IsVaulting { get; private set; } // état simulé : confirmé par le serveur, restauré avant rejeu
     public bool IsSprinting { get; private set; }
     public bool IsSneaking { get; private set; }
     public bool IsMoving { get; private set; }
@@ -245,6 +245,7 @@ public class PlayerLocomotion : NetworkBehaviour
         public bool fireHeld;
         public bool firePressedThisFrame;
         public int leanState; // -1 gauche / 0 / +1 droite — voir UpdateLeanState
+        public bool jumpPressed; // déclenche un vault si un obstacle franchissable est devant
     }
 
     private struct PendingInput
@@ -263,6 +264,12 @@ public class PlayerLocomotion : NetworkBehaviour
         // l'écart y est toujours grand, et un seuil dessus ne déclencherait jamais correctement.
         public Vector3 predictedPosition;
         public float predictedYaw;
+
+        /// <summary>IsVaulting tel que le client l'avait prédit POUR CETTE SÉQUENCE. Comparer
+        /// l'IsVaulting courant à la confirmation serveur était un bug : le client est en avance
+        /// d'un RTT, donc il a déjà fini son franchissement quand arrivent les confirmations des
+        /// séquences du milieu de l'arc. Le désaccord était alors systématique et faux.</summary>
+        public bool predictedVaulting;
 
         /// <summary>Time.time au moment de l'envoi au serveur. Sert à mesurer le RTT GRATUITEMENT,
         /// en chronométrant l'aller-retour prédiction/réconciliation qui existe déjà : aucune RPC
@@ -422,6 +429,18 @@ public class PlayerLocomotion : NetworkBehaviour
     // ------------------------------------------------------------------
     private int diagCorrections;
     private int diagResyncs;
+
+    // CUMULATIFS sur toute la session, volontairement PAS remis à zéro à chaque fenêtre : un
+    // franchissement et son kick d'atterrissage peuvent tomber de part et d'autre d'une bordure
+    // de fenêtre, ce qui rendrait le rapprochement des deux illisible.
+    //
+    // Ces deux compteurs existent parce que le test du 2026-09-29 a révélé un angle mort : un
+    // taux de resync à 0 % pendant un vault est indiscernable d'un vault qui n'a jamais eu lieu.
+    // Les lire ensemble tranche les deux questions d'un coup — vaults > 0 prouve que le
+    // franchissement s'est produit, et kicks == vaults prouve que le kick caméra ne se rejoue
+    // plus (c'est lui qui faisait saccader la caméra, jusqu'à une vingtaine de fois par vault).
+    private int diagVaultsTotal;
+    private int diagLandingKicksTotal;
     private float diagErrorSum;
     private float diagMaxError;
     private float diagNextReportAt;
@@ -447,6 +466,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
         Debug.Log($"[DIAG-CLIENT] corrections={diagCorrections} resync={diagResyncs} ({resyncRate:F1}%) " +
                   $"erreur_moy={avgError * 100f:F1}cm erreur_max={diagMaxError * 100f:F1}cm " +
+                  $"vaults={diagVaultsTotal} kicks={diagLandingKicksTotal} " +
                   $"rtt={smoothedRtt * 1000f:F0}ms rewind={EstimatedRewindSeconds * 1000f:F0}ms " +
                   $"file_serveur={serverInputQueue.Count}");
 
@@ -703,6 +723,17 @@ public class PlayerLocomotion : NetworkBehaviour
             UpdateLeanVisual();
             UpdateHeadBob();
             UpdateLandingFeedback();
+
+            if (vaultJustLanded)
+            {
+                vaultJustLanded = false;
+#if UNITY_EDITOR
+                diagLandingKicksTotal++;
+#endif
+                landingDipOffset -= vaultLandingKick;
+                StartLandingBob(1f);
+            }
+
             ApplyCameraPivotPosition();
 
             // Le Host publie son propre décalage de lean : il est à la fois propriétaire et
@@ -737,6 +768,7 @@ public class PlayerLocomotion : NetworkBehaviour
             fireHeld = input.FireHeld,
             firePressedThisFrame = input.FirePressedThisFrame,
             leanState = leanState,
+            jumpPressed = input.JumpPressedThisFrame,
         };
     }
 
@@ -765,10 +797,11 @@ public class PlayerLocomotion : NetworkBehaviour
             deltaTime = dt,
             predictedPosition = transform.position,
             predictedYaw = transform.eulerAngles.y,
+            predictedVaulting = IsVaulting,
             sentAt = Time.time,
         });
 
-        SubmitInputServerRpc(sequence, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, dt);
+        SubmitInputServerRpc(sequence, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, snap.jumpPressed, dt);
 
 #if UNITY_EDITOR
         // Triche simulée : on renvoie le MÊME input plusieurs fois, avec des numéros de séquence
@@ -784,14 +817,14 @@ public class PlayerLocomotion : NetworkBehaviour
         {
             for (int i = 1; i < debugFloodMultiplier; i++)
             {
-                SubmitInputServerRpc(nextInputSequence++, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, dt);
+                SubmitInputServerRpc(nextInputSequence++, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, snap.jumpPressed, dt);
             }
         }
 #endif
     }
 
     [ServerRpc]
-    private void SubmitInputServerRpc(int sequence, Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, bool fireHeld, bool firePressedThisFrame, int leanState, float deltaTime)
+    private void SubmitInputServerRpc(int sequence, Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, bool fireHeld, bool firePressedThisFrame, int leanState, bool jumpPressed, float deltaTime)
     {
         // Garde-fou anti-flood (mémoire) : les ServerRpc sont livrées en Reliable, donc TOUT ce
         // qu'un client envoie finit par arriver. Sans plafond, un client qui spamme cette RPC fait
@@ -816,6 +849,7 @@ public class PlayerLocomotion : NetworkBehaviour
                 fireHeld = fireHeld,
                 firePressedThisFrame = firePressedThisFrame,
                 leanState = leanState,
+                jumpPressed = jumpPressed,
             },
             deltaTime = deltaTime,
         });
@@ -886,7 +920,7 @@ public class PlayerLocomotion : NetworkBehaviour
         {
             networkPosition.Value = transform.position;
             networkYaw.Value = transform.eulerAngles.y;
-            SendCorrectionToOwner(lastProcessedSequence, transform.position, verticalVelocity, transform.eulerAngles.y, currentVelocity);
+            SendCorrectionToOwner(lastProcessedSequence, transform.position, verticalVelocity, transform.eulerAngles.y, currentVelocity, IsVaulting, vaultTimer, vaultStart, vaultEnd);
         }
 
         // Enregistré à CHAQUE frame serveur, même sans input traité : sinon l'historique aurait des
@@ -894,17 +928,17 @@ public class PlayerLocomotion : NetworkBehaviour
         ServerRecordHitboxPose();
     }
 
-    private void SendCorrectionToOwner(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity)
+    private void SendCorrectionToOwner(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, bool confirmedVaulting, float confirmedVaultTimer, Vector3 confirmedVaultStart, Vector3 confirmedVaultEnd)
     {
         var targetParams = new ClientRpcParams
         {
             Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
         };
-        ReceiveCorrectionClientRpc(confirmedSequence, confirmedPosition, confirmedVerticalVelocity, confirmedYaw, confirmedHorizontalVelocity, targetParams);
+        ReceiveCorrectionClientRpc(confirmedSequence, confirmedPosition, confirmedVerticalVelocity, confirmedYaw, confirmedHorizontalVelocity, confirmedVaulting, confirmedVaultTimer, confirmedVaultStart, confirmedVaultEnd, targetParams);
     }
 
     [ClientRpc]
-    private void ReceiveCorrectionClientRpc(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, ClientRpcParams clientRpcParams = default)
+    private void ReceiveCorrectionClientRpc(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, bool confirmedVaulting, float confirmedVaultTimer, Vector3 confirmedVaultStart, Vector3 confirmedVaultEnd, ClientRpcParams clientRpcParams = default)
     {
         if (!IsOwner) return;
 
@@ -927,8 +961,12 @@ public class PlayerLocomotion : NetworkBehaviour
             PendingInput predicted = unconfirmedInputs[predictionIndex];
             float positionError = Vector3.Distance(predicted.predictedPosition, confirmedPosition);
             float yawError = Mathf.Abs(Mathf.DeltaAngle(predicted.predictedYaw, confirmedYaw));
+            // Un désaccord sur le FAIT d'être en train de franchir n'est jamais tolérable, même
+            // si les positions coïncident : les deux côtés ne simuleraient plus la même chose au
+            // pas suivant.
             predictionWasCorrect = positionError <= positionReconciliationThreshold
-                && yawError <= yawReconciliationThreshold;
+                && yawError <= yawReconciliationThreshold
+                && predicted.predictedVaulting == confirmedVaulting;
 
             // RTT mesuré GRATUITEMENT : cet input est parti à `sentAt` et sa confirmation arrive
             // maintenant. Aucune RPC de ping dédiée, aucune dépendance à la synchronisation
@@ -975,20 +1013,32 @@ public class PlayerLocomotion : NetworkBehaviour
         controller.enabled = true;
         verticalVelocity = confirmedVerticalVelocity;
         currentVelocity = confirmedHorizontalVelocity;
+        RestoreVaultState(confirmedVaulting, confirmedVaultTimer, confirmedVaultStart, confirmedVaultEnd);
 
-        for (int i = 0; i < unconfirmedInputs.Count; i++)
+        isReplayingInputs = true;
+        try
         {
-            PendingInput pending = unconfirmedInputs[i];
-            Move(pending.snapshot, pending.deltaTime);
+            for (int i = 0; i < unconfirmedInputs.Count; i++)
+            {
+                PendingInput pending = unconfirmedInputs[i];
+                Move(pending.snapshot, pending.deltaTime);
 
-            // Le rejeu vient de produire un NOUVEL état prédit pour cet input, différent de celui
-            // calculé lors de la prédiction initiale puisqu'on est reparti d'une base corrigée.
-            // Il faut le réenregistrer, sinon la prochaine correction comparerait la confirmation
-            // du serveur à une prédiction périmée — et le seuil déclencherait n'importe comment.
-            // (PendingInput est une struct : il faut réécrire l'élément dans la liste.)
-            pending.predictedPosition = transform.position;
-            pending.predictedYaw = transform.eulerAngles.y;
-            unconfirmedInputs[i] = pending;
+                // Le rejeu vient de produire un NOUVEL état prédit pour cet input, différent de celui
+                // calculé lors de la prédiction initiale puisqu'on est reparti d'une base corrigée.
+                // Il faut le réenregistrer, sinon la prochaine correction comparerait la confirmation
+                // du serveur à une prédiction périmée — et le seuil déclencherait n'importe comment.
+                // (PendingInput est une struct : il faut réécrire l'élément dans la liste.)
+                pending.predictedPosition = transform.position;
+                pending.predictedYaw = transform.eulerAngles.y;
+                pending.predictedVaulting = IsVaulting;
+                unconfirmedInputs[i] = pending;
+            }
+        }
+        finally
+        {
+            // Sans finally, une exception en plein rejeu laisserait le drapeau levé et le kick
+            // d'atterrissage serait muet pour le reste de la partie.
+            isReplayingInputs = false;
         }
     }
 
@@ -1055,6 +1105,30 @@ public class PlayerLocomotion : NetworkBehaviour
         // Rotation RELATIVE (transform.Rotate) : voir ReceiveCorrectionClientRpc pour pourquoi le
         // recalage de la rotation au yaw confirmé, avant rejeu, est indispensable avec ce choix.
         transform.Rotate(0f, snap.lookX * yawSensitivity, 0f, Space.World);
+
+        // VAULT — traité ICI, dans la fonction déterministe, et pas dans Update() comme avant la
+        // passe réseau. C'est ce qui le rend prédictible et rejouable comme le reste.
+        //
+        // Le franchissement est un mouvement scripté à durée fixe : tant qu'il dure, il REMPLACE
+        // le déplacement normal (d'où le return). Ses points de départ et d'arrivée ne sont PAS
+        // réseautés : ils sont recalculés de part et d'autre par TryFindVaultTarget, qui ne dépend
+        // que de la position, de l'orientation, de la posture et de la géométrie STATIQUE du
+        // monde — tout ce qui est déjà déterministe. Réseauter ce que les deux côtés savent
+        // calculer serait du poids inutile dans la RPC de correction.
+        if (IsVaulting)
+        {
+            AdvanceVault(dt);
+            return;
+        }
+
+        // Un vault ne démarre que pendant une manche : sinon on franchirait un obstacle pendant
+        // le décompte, alors que le déplacement normal est gelé.
+        if (snap.jumpPressed && RoundManager.MovementAllowed && TryFindVaultTarget(out Vector3 vaultLanding, false))
+        {
+            BeginVault(vaultLanding);
+            AdvanceVault(dt);
+            return;
+        }
 
         // Hors manche (décompte de départ, mort, fin de match), le déplacement est gelé pour que
         // les deux joueurs repartent exactement en même temps. On ne coupe QUE le déplacement :
@@ -1561,21 +1635,10 @@ public class PlayerLocomotion : NetworkBehaviour
     }
 
     // ------------------------------------------------------------------
-    // Vault — DÉSACTIVÉ pour cette passe réseau (voir en-tête de classe). Le code est conservé
-    // tel quel (tuning inclus) pour minimiser le travail lors de son incrément réseau dédié, mais
-    // HandleVaultInput/ProcessVault ne sont plus appelés depuis Update() : IsVaulting reste donc
-    // toujours false. Prédire/réconcilier un vault demanderait de répliquer un état "hors
-    // contrôle" (controller.enabled = false pendant le lerp), différent du pattern Move() ci-dessus.
+    // Vault — réseauté depuis le 2026-09-28. Le déclenchement et l'avancement vivent dans Move()
+    // (fonction déterministe), pas dans Update() : c'est ce qui le rend prédit, rejouable et
+    // identique côté serveur. Ne restent ici que la RECHERCHE de cible et les données de tuning.
     // ------------------------------------------------------------------
-
-    private void HandleVaultInput()
-    {
-        bool canVault = TryFindVaultTarget(out Vector3 landingPoint, debugDrawVaultRays);
-        if (input.JumpPressedThisFrame && canVault)
-        {
-            StartVault(landingPoint);
-        }
-    }
 
     private bool TryFindVaultTarget(out Vector3 landingPoint, bool drawDebug)
     {
@@ -1628,8 +1691,21 @@ public class PlayerLocomotion : NetworkBehaviour
     private Vector3 vaultStart;
     private Vector3 vaultEnd;
 
-    private void StartVault(Vector3 landingPoint)
+    /// <summary>Levé par AdvanceVault à l'atterrissage, consommé par Update() chez le propriétaire.
+    /// Le kick caméra est cosmétique : le déclencher depuis Move() le rejouerait à chaque
+    /// réconciliation.</summary>
+    private bool vaultJustLanded;
+
+    /// <summary>Vrai pendant le rejeu de réconciliation. Un rejeu RE-SIMULE des inputs déjà
+    /// prédits : tout effet cosmétique déclenché depuis Move() doit s'y taire, sinon il se
+    /// rejoue autant de fois que le client se resynchronise.</summary>
+    private bool isReplayingInputs;
+
+    private void BeginVault(Vector3 landingPoint)
     {
+#if UNITY_EDITOR
+        if (!isReplayingInputs) diagVaultsTotal++;
+#endif
         IsVaulting = true;
         vaultTimer = 0f;
         vaultStart = transform.position;
@@ -1637,32 +1713,61 @@ public class PlayerLocomotion : NetworkBehaviour
         verticalVelocity = 0f;
         currentVelocity = Vector3.zero;
         footstepDistanceAccumulator = 0f;
-        controller.enabled = false;
     }
 
-    private void ProcessVault()
+    /// <summary>
+    /// Avance le franchissement d'un pas de simulation. Appelée UNIQUEMENT depuis Move(), donc avec
+    /// le dt de l'input traité et non Time.deltaTime : c'est ce qui permet à un rejeu de
+    /// réconciliation de reproduire exactement la même trajectoire.
+    ///
+    /// Le CharacterController est coupé pendant l'arc — c'est tout l'intérêt du vault, franchir un
+    /// obstacle que la collision refuserait. Son état est piloté ici comme une fonction de
+    /// IsVaulting, jamais laissé à la charge d'un appelant : un controller resté désactivé
+    /// figerait le joueur pour le reste de la partie.
+    ///
+    /// Depuis le hitbox séparé, couper ce collider n'a plus aucun effet sur la capacité à être
+    /// touché — c'était la condition qui bloquait la réactivation du vault.
+    /// </summary>
+    private void AdvanceVault(float dt)
     {
-        vaultTimer += Time.deltaTime;
+        vaultTimer += dt;
         float t = Mathf.Clamp01(vaultTimer / vaultDuration);
 
         Vector3 horizontal = Vector3.Lerp(vaultStart, vaultEnd, t);
         float arc = vaultHeightCurve.Evaluate(t) * vaultArcHeight;
+
+        controller.enabled = false;
         transform.position = horizontal + Vector3.up * arc;
 
-        if (t >= 1f)
-        {
-            transform.position = vaultEnd;
-            controller.enabled = true;
-            IsVaulting = false;
-            verticalVelocity = 0f;
+        if (t < 1f) return;
 
-            bool grounded = controller.isGrounded;
-            if (grounded)
-            {
-                landingDipOffset -= vaultLandingKick;
-                StartLandingBob(1f);
-            }
-        }
+        transform.position = vaultEnd;
+        controller.enabled = true;
+        IsVaulting = false;
+        verticalVelocity = 0f;
+
+        // Le kick caméra d'atterrissage est de la catégorie C : il ne doit surtout pas être
+        // appliqué depuis Move(), qui est rejouée. On lève un drapeau que Update() consommera,
+        // côté propriétaire uniquement.
+        //
+        // Le drapeau NE SUFFIT PAS à lui seul : il est levé depuis Move(), donc un rejeu qui
+        // retraverse l'atterrissage le relève. Mesuré le 2026-09-29 à 318 ms de RTT : jusqu'à
+        // une vingtaine de kicks empilés pour un seul franchissement, d'où une caméra qui
+        // saccade violemment à la réception. Le rejeu re-simule du DÉJÀ prédit, donc du déjà
+        // ressenti : il doit rester muet.
+        if (!isReplayingInputs) vaultJustLanded = true;
+    }
+
+    /// <summary>Remet le vault à zéro depuis une valeur confirmée par le serveur, avant un rejeu.
+    /// Même règle que le yaw et currentVelocity : tout état cumulatif lu par Move() doit pouvoir
+    /// être recalé, sinon il dérive à chaque correction.</summary>
+    private void RestoreVaultState(bool vaulting, float timer, Vector3 start, Vector3 end)
+    {
+        IsVaulting = vaulting;
+        vaultTimer = timer;
+        vaultStart = start;
+        vaultEnd = end;
+        controller.enabled = !vaulting;
     }
 
     private static AnimationCurve BuildDefaultVaultArc()

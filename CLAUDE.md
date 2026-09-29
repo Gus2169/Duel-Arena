@@ -294,7 +294,9 @@ Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline
 
 *(Livré le 2026-09-24 : la boucle de manches BO5. Voir la section dédiée plus haut.)*
 
-1. **Vault réseauté** — le hitbox le débloque, voir ci-dessous.
+*(Livré le 2026-09-28 : le vault réseauté. **Toutes les mécaniques du GDD sont désormais en place.**)*
+
+1. ~~Poser des obstacles franchissables~~ — fait le 2026-09-29 (`Barricade 0.5` / `1.25` / `1.6`).
 2. **Migrer le multijoueur vers `Arena.unity`.**
 3. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
 
@@ -302,7 +304,7 @@ Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline
 
 Le hitbox et le rewind ont été vérifiés en Play Mode : géométrie, layer, trigger, suivi du lean, tirs de contrôle qui touchent le corps penché et ratent l'ancien centre, et pour le rewind un déplacement de 3 m qui fait rater le tir sans compensation et le fait toucher avec — puis une restauration vérifiée dans les deux sens. Mais **le ressenti et le jeu à deux ne se vérifient qu'en jouant** — c'est un arbitrage qui revient à l'utilisateur.
 
-Pour le rewind, le test qui compte : **Packet Delay à 100-150 ms, viser un adversaire qui strafe**. Les tirs doivent toucher là où il est *affiché*, pas derrière lui. Et l'inverse à surveiller — c'est le prix du rewind, assumé par tous les FPS : en tant que cible, on peut désormais mourir *juste après* s'être mis à couvert. Si ça paraît excessif, c'est `maxRewindSeconds` qu'il faut baisser.
+Pour le rewind, le test qui compte : **preset `NetSim_Test150ms` actif (PAS le `Packet Delay` d'`UnityTransport`, qui est inerte — voir les pièges), viser un adversaire qui strafe**. Les tirs doivent toucher là où il est *affiché*, pas derrière lui. Et l'inverse à surveiller — c'est le prix du rewind, assumé par tous les FPS : en tant que cible, on peut désormais mourir *juste après* s'être mis à couvert. Si ça paraît excessif, c'est `maxRewindSeconds` qu'il faut baisser.
 
 À tester depuis l'instance **CLIENT** :
 1. **Peek en lean** — le test qui compte. Un adversaire qui penche derrière un angle doit être touchable sur le flanc qu'il expose, et *seulement* là. Tirer sur sa position « droite » (là où était l'ancien collider) ne doit plus rien faire.
@@ -314,13 +316,55 @@ Pour le rewind, le test qui compte : **Packet Delay à 100-150 ms, viser un adve
 
 Réglages si besoin : `positionReconciliationThreshold` / `yawReconciliationThreshold` sur `PlayerLocomotion`, `maxOriginDistanceFromPlayer` sur `WeaponController`.
 
-## Vault : désactivé, pas cassé
+## Vault réseauté (2026-09-28)
 
-`HandleVaultInput()` et `ProcessVault()` existent toujours dans `PlayerLocomotion.cs` mais **ne sont appelés depuis nulle part** — débranchés d'`Update()` pendant la fusion réseau. `IsVaulting` reste donc toujours `false`, et comme le vault était la seule chose branchée sur l'action Jump, **la touche de saut ne fait plus rien** : `JumpPressedThisFrame` est positionné puis consommé sans que personne ne le lise.
+Le franchissement d'obstacle est **rebranché et intégré à la simulation déterministe**. Le déclenchement et l'avancement vivent dans `Move()`, pas dans `Update()` : c'est ce qui le rend prédit côté propriétaire, rejouable à la réconciliation, et identique côté serveur. Tant qu'il dure, il **remplace** le déplacement normal.
 
-Ce n'est pas une régression. La raison : le vault est un mouvement scripté à durée fixe qui fait `controller.enabled = false` pendant un lerp de position — un état « hors contrôle » incompatible avec le `Move()` par frame que la prédiction/réconciliation rejoue. Le réactiver demande un vrai incrément réseau (vault prédit côté propriétaire + confirmé serveur), pas juste de rappeler la fonction.
+**Ce qui n'est PAS réseauté, et pourquoi.** Les points de départ et d'arrivée sont recalculés de part et d'autre par `TryFindVaultTarget`, qui ne dépend que de la position, de l'orientation, de la posture et de la géométrie **statique** du monde — tout ce qui est déjà déterministe. Les réseauter aurait alourdi la RPC de correction pour transmettre ce que les deux côtés savent calculer.
 
-**À ne pas oublier** : l'utilisateur y tient, c'est une mécanique du GDD.
+**Ce qui EST confirmé par le serveur** : `IsVaulting`, `vaultTimer`, `vaultStart`, `vaultEnd`, appliqués avant le rejeu (`RestoreVaultState`). Règle habituelle — tout état cumulatif lu par `Move()` doit pouvoir être recalé. Un **désaccord sur `IsVaulting` force un resync même si les positions coïncident** : sinon les deux côtés cesseraient de simuler la même chose au pas suivant.
+
+Le `CharacterController` est coupé pendant l'arc — c'est tout l'intérêt, franchir ce que la collision refuserait. Son état est piloté comme une fonction de `IsVaulting`, jamais laissé à un appelant : un controller resté désactivé figerait le joueur pour la partie. **Vérifié en Play Mode : le joueur reste parfaitement touchable pendant tout l'arc**, controller coupé — c'était la condition qui bloquait cette réactivation, levée par le hitbox séparé.
+
+Le kick caméra d'atterrissage passe par un drapeau (`vaultJustLanded`) consommé par `Update()` chez le propriétaire : le déclencher depuis `Move()` le rejouerait à chaque réconciliation.
+
+**Déterminisme vérifié** : trois exécutions du même franchissement depuis le même état donnent une position finale identique **au bit près**.
+
+⚠️ **Limite connue** : `TryFindVaultTarget` exige `controller.isGrounded`, qui vaut false juste après un repositionnement (réconciliation, spawn, début de manche). Un input de vault tombant exactement sur cette frame est ignoré. Le désaccord est rattrapé par le resync forcé sur `IsVaulting`, donc pas de désynchronisation — au pire un vault qui « ne passe pas » une fois de temps en temps. À revoir si ça se ressent en jeu.
+
+Un obstacle n'est franchissable qu'entre `vaultMinHeight` (0,3 m) et `vaultMaxHeight` (1,3 m). Les caisses d'origine font 2 m et ne sont donc PAS franchissables — refus normal, pas un bug.
+
+**Obstacles de test posés dans `MultiTestScene` (2026-09-29, par l'utilisateur)** : `Barricade 0.5`, `Barricade 1.25` et `Barricade 1.6`, nommées d'après leur hauteur. Les deux premières sont franchissables ; **`Barricade 1.6` dépasse la limite de 1,3 m et sera toujours refusée** — utile comme couverture non franchissable, mais à ne pas prendre pour un bug si le vault n'y répond pas.
+
+### Défauts trouvés au premier test à deux (2026-09-29, RTT ~318 ms) — corrigés
+
+Le vault a fonctionné du premier coup côté client, mais les journaux ont révélé deux défauts que la vérification solo n'avait pas pu voir.
+
+**1. La comparaison de `IsVaulting` ne se faisait pas à séquence égale.** Le test de prédiction comparait l'`IsVaulting` **courant** du client à la valeur confirmée par le serveur pour une séquence vieille d'un RTT. Le client étant en avance, il avait déjà fini son arc quand arrivaient les confirmations du milieu du franchissement : désaccord systématique et **faux**. Signature dans les journaux, très reconnaissable : **taux de resync à 27-36 % avec une erreur de position de 0,0 cm** — une prédiction qui se recale sans jamais se tromper.
+
+C'est le piège « comparer à séquence ÉGALE » pris une **quatrième** fois, après le yaw, `currentVelocity` et la hauteur de capsule. `predictedVaulting` rejoint donc `predictedPosition`/`predictedYaw` dans `PendingInput`, avec la même obligation d'être **réécrit après un rejeu**.
+
+**2. Le kick caméra d'atterrissage se rejouait.** Le drapeau `vaultJustLanded` était censé l'éviter, mais il est levé **depuis `Move()`** : chaque rejeu qui retraversait l'atterrissage le relevait. Combiné au défaut n°1, cela empilait jusqu'à une vingtaine de kicks pour un seul franchissement — **c'était la caméra qui saccadait à la réception**. Un drapeau `isReplayingInputs` (posé en `try/finally`) fait taire les effets cosmétiques pendant un rejeu.
+
+🚨 **Règle qui en découle, pour toute mécanique future** : un rejeu de réconciliation re-simule du **déjà prédit**, donc du **déjà ressenti**. Tout effet de catégorie C déclenché depuis `Move()` doit se taire pendant un rejeu. Le drapeau seul ne protège de rien s'il est levé depuis le code rejoué.
+
+**Observation à surveiller** : à 318 ms de RTT mesuré, le rewind suggéré atteignait 259 ms, proche du plafond `maxRewindSeconds` de 0,3 s. Au-delà, c'est la victime qui encaisse l'injustice. Si le ping de test monte encore, ce plafond devient le facteur limitant.
+
+**Vérification après correctif (2026-09-29, tour + `Barricade 1.25` + `Barricade 0.5`, ~318 ms de RTT)** : **19 fenêtres consécutives à 0,0 % de resync**, soit ~4 000 corrections sans un seul recalage, console vierge. La signature « resync élevé / erreur nulle » a disparu. Caméra confirmée sans saccade par l'utilisateur.
+
+Une chute depuis la tour coûte **une** resynchronisation isolée à ~8 cm d'erreur — la gravité amplifie l'écart de prédiction, le seuil de 5 cm est franchi une fois, le client se recale. Comportement normal d'un seuil qui fonctionne, déjà présent avant le correctif : ce n'est pas une régression. L'hypothèse d'un kick parasite déclenché en vol par le clignotement d'`isGrounded` lors d'un recalage est donc **écartée par la mesure**.
+
+🚨 **Angle mort d'instrumentation, comblé.** Un taux de resync à 0 % pendant un vault est **indiscernable d'un vault qui n'a jamais eu lieu** : la validation ci-dessus reposait donc en partie sur la parole du testeur. `[DIAG-CLIENT]` porte désormais deux compteurs CUMULATIFS, `vaults=` et `kicks=`, qui tranchent les deux questions d'un coup — `vaults > 0` prouve que le franchissement a eu lieu, `kicks == vaults` prouve que le kick caméra ne se rejoue plus. Ils ne sont volontairement pas remis à zéro à chaque fenêtre, un vault et son atterrissage pouvant tomber de part et d'autre d'une bordure.
+
+C'est la même leçon que pour le rewind, sous une autre forme : **une mesure doit pouvoir distinguer « ça marche » de « ça ne s'est pas produit »**. Sans ça, l'absence de symptôme se lit comme un succès.
+
+## Historique : pourquoi le vault est resté désactivé six jours
+
+**Résolu le 2026-09-28** — voir la section « Vault réseauté ». Ce qui suit est conservé pour mémoire du raisonnement, parce qu'il illustre une règle qui resservira : une mécanique qui touche au collider n'est pas qu'un problème de mouvement.
+
+`HandleVaultInput()` et `ProcessVault()` étaient restés dans `PlayerLocomotion.cs` sans être appelés de nulle part — débranchés d'`Update()` pendant la fusion réseau. `IsVaulting` valait donc toujours `false`, et comme le vault était la seule chose branchée sur l'action Jump, **la touche de saut ne faisait rien**. Les deux fonctions ont été supprimées en réintégrant le vault ; leur logique de détection vit désormais dans `TryFindVaultTarget` / `AdvanceVault`, appelées depuis `Move()`.
+
+Ce n'était pas une régression. La raison : le vault est un mouvement scripté à durée fixe qui fait `controller.enabled = false` pendant un lerp de position — un état « hors contrôle » incompatible avec le `Move()` par frame que la prédiction/réconciliation rejoue. Le réactiver demandait un vrai incrément réseau (vault prédit côté propriétaire + confirmé serveur), pas juste de rappeler la fonction.
 
 ### Le blocage est levé (2026-09-24)
 
