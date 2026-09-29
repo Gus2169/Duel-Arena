@@ -291,6 +291,40 @@ Ils verrouillent l'**équivalence entre une simulation en avant et un REJEU depu
 
 **Ce qui reste NON couvert** : l'accord client/serveur sous vraie latence (mesuré à la main via `[DIAG-CLIENT]`), et tout ce qui dépend d'une `NetworkVariable` en écriture serveur — la posture notamment, qui reste à `Standing` dans ces tests.
 
+## Le personnage et l'animation (2026-09-29)
+
+`SwattSolider_T_Pose` (Mixamo) est attaché au prefab joueur sous un enfant **`Model`**, à (0,0,0) et **sans mise à l'échelle**. 30 animations dans `Assets/_ProjectArt/Animations`, toutes en Humanoid retargetées sur l'avatar du personnage.
+
+**L'origine du Player est aux PIEDS** — `CameraPivot` est à 1,65, qui est la hauteur caméra debout mesurée depuis les pieds. Un Mixamo ayant lui aussi sa racine aux pieds, il s'attache sans décalage.
+
+⚠️ **`SkinnedMeshRenderer.bounds` n'est PAS la taille du personnage.** C'est une boîte englobante *statique*, gonflée pour couvrir n'importe quelle pose d'animation : elle annonçait 1,92 m. La vraie mesure passe par `BakeMesh`, qui tient compte de la pose courante — **1,797 m en T-pose, 1,764 m en pose d'attente**, contre 1,80 m pour la capsule debout. L'écart est d'un demi-centimètre, donc aucune mise à l'échelle n'est nécessaire. Mesurer en T-pose reste d'ailleurs trompeur : on est naturellement plus petit en garde.
+
+### Conformité d'import — trois propriétés non négociables
+
+Tout FBX d'animation ajouté doit avoir : **rig Humanoid** en `Copy From Other Avatar` pointant l'avatar du personnage, **`lockRootPositionXZ`** (Bake Into Pose), et un **bouclage correct**.
+
+- Sans Humanoid, Mecanim ne peut pas retargeter — or les animations viennent d'un AUTRE personnage (`Ch35_nonPBR`) que le modèle. Elles ne joueraient tout simplement pas.
+- `lockRootPositionXZ` neutralise la root motion. **La position horizontale appartient exclusivement à `Move()`** ; une animation qui déplace aussi le personnage entrerait en conflit avec la simulation, et la vitesse d'un Animator n'est pas déterministe entre machines.
+- Le bouclage se classe sur le bon critère : un état **continu** boucle (attente, déplacement, phase aérienne), un **événement** ponctuel non (tir, transition de posture, atterrissage, vault). Une première version déduisait « transition » du `" To "` des noms Mixamo — juste au début, faux dès l'arrivée des tirs et des sauts.
+
+### L'Animator
+
+`Assets/_ProjectArt/PlayerAnimator.controller`, piloté par `PlayerAnimator.cs`.
+
+**Convention des paramètres** : `MoveX`/`MoveY` sont la vitesse **locale divisée par la vitesse de référence de la posture**. Donc 0 = immobile, 1 = allure nominale, 2 = sprint. Le sneak (0,5) tombe naturellement entre l'attente et la marche, ce qui donne une foulée ralentie **sans clip dédié**. `Stance` (0/1/2) vient de la `NetworkVariable`, donc juste partout.
+
+🚨 **`PlayerAnimator` dérive la vitesse du DÉPLACEMENT DU TRANSFORM, pas de `currentVelocity`.** Cette dernière n'existe que là où la simulation tourne (propriétaire et serveur) : chez un spectateur elle vaudrait zéro en permanence et l'adversaire glisserait sans bouger les jambes. Le delta de transform est juste dans les **quatre** cas réseau, interpolation du spectateur comprise — ce qui est précisément ce qu'on veut montrer. Il est borné à 2,5× la référence, sinon la téléportation de quelques centimètres d'une resynchronisation se dériverait en plusieurs mètres par seconde et ferait sursauter l'animation à chaque recalage.
+
+Le script est de **catégorie C stricte** : il LIT, il n'écrit jamais rien que la simulation relise. C'est ce qui rend inoffensif le non-déterminisme de l'Animator.
+
+**Le propriétaire ne voit pas son propre modèle** : ses renderers passent en `ShadowsOnly` dans `OnNetworkSpawn` (sa caméra est à hauteur de tête, il verrait l'intérieur du crâne). `ShadowsOnly` plutôt que désactivés, parce qu'il continue ainsi de projeter une **ombre**, qui est une information de jeu — voir sa propre ombre dépasser d'un angle renseigne sur ce que l'adversaire voit. Ciblé sur le seul sous-arbre `Model`, pour qu'une arme en vue première personne reste visible.
+
+### Ce qui n'est PAS encore branché
+
+- **`Airborne` et `Vaulting`** : les paramètres existent, l'Animator a les états, mais rien ne les alimente. `IsVaulting` et `controller.isGrounded` ne sont vrais que là où la simulation tourne — un spectateur ne les voit pas. Il leur faut un signal réseauté, ce qui est l'incrément suivant.
+- **La couche haute du corps** (visée + tir, via masque d'avatar). C'est elle qui permettra de tirer en strafant, les jambes jouant le déplacement pendant que le torse joue le tir — et donc d'utiliser les animations génériques `Run Left/Right/Backward`, qui ne tiennent pas d'arme.
+- Note de cadence : le MP5 tire toutes les **143 ms** (7 coups/s) alors que les animations de tir durent 270 ms (debout), 430 ms (couché) et **1030 ms (accroupi)**. Elles sont authorées pour un tir visé isolé. Celle d'accroupi ne passera probablement pas telle quelle.
+
 ## Configuration Git (posée le 2026-09-22)
 
 `.gitattributes` couvre trois choses : normalisation des fins de ligne (`* text=auto`), **Unity Smart Merge** sur les fichiers YAML d'Unity, et **Git LFS** sur les binaires (audio, images, modèles 3D, vidéo, polices, DLL).

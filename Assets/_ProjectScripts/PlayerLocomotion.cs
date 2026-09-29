@@ -403,6 +403,26 @@ public class PlayerLocomotion : NetworkBehaviour
             listener.enabled = IsOwner;
         }
 
+        // Le propriétaire est À L'INTÉRIEUR de son personnage : sa caméra est à hauteur de tête,
+        // donc il verrait l'intérieur du crâne. Ses renderers passent en ShadowsOnly plutôt que
+        // d'être désactivés — il continue ainsi de projeter une ombre, qui est une INFORMATION DE
+        // JEU et pas de la décoration : voir sa propre ombre dépasser d'un angle renseigne sur ce
+        // que l'adversaire peut voir de soi. Le GDD fait de l'information un pilier.
+        //
+        // Ciblé sur le seul sous-arbre "Model" : une arme en vue première personne, elle, doit
+        // rester visible pour son propriétaire.
+        Transform modelRoot = transform.Find("Model");
+        if (modelRoot != null)
+        {
+            var mode = IsOwner
+                ? UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly
+                : UnityEngine.Rendering.ShadowCastingMode.On;
+            foreach (Renderer r in modelRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                r.shadowCastingMode = mode;
+            }
+        }
+
         // Si un jour le warning "There are N audio listeners in the scene" revient : la boucle
         // ci-dessus ne voit QUE les enfants de ce GameObject. Un AudioListener orphelin posé
         // ailleurs dans la scène (typiquement une Main Camera de secours affichée avant le spawn
