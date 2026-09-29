@@ -169,7 +169,7 @@ Deux interrupteurs de triche simulée dans l'inspecteur, sous le header `Debug �
 
 **Scènes** :
 - `Assets/_ProjectScenes/MultiTestScene.unity` — seule scène avec un `NetworkManager` (UnityTransport, 127.0.0.1:7777, local uniquement). Scène de test multijoueur.
-- `Assets/_ProjectScenes/Arena.unity` — scène de jeu d'origine, **pas encore migrée au multijoueur**.
+- `Assets/_ProjectScenes/Arena.unity` — scène de jeu d'origine, **conservée pour mémoire seulement**. Sa géométrie d'arène a été reportée dans `MultiTestScene`, qui est donc la scène de travail unique. Aucune migration à prévoir (tranché le 2026-09-29) : il n'y a rien dans `Arena.unity` qui n'existe déjà ailleurs.
 
 Les deux référencent un asset Terrain à la racine d'`Assets/` (`New Terrain.asset`, `New Terrain 1.asset`) — ils ont l'air de traîner mais **ils sont utilisés**, ne pas les supprimer sans vérifier.
 
@@ -297,8 +297,19 @@ Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline
 *(Livré le 2026-09-28 : le vault réseauté. **Toutes les mécaniques du GDD sont désormais en place.**)*
 
 1. ~~Poser des obstacles franchissables~~ — fait le 2026-09-29 (`Barricade 0.5` / `1.25` / `1.6`).
-2. **Migrer le multijoueur vers `Arena.unity`.**
-3. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD).
+2. ~~Migrer le multijoueur vers `Arena.unity`~~ — **abandonné le 2026-09-29**, sans objet : l'arène a été reportée dans `MultiTestScene`.
+3. **Un vrai personnage (humanoïde placeholder), puis les hitbox par zone, puis les multiplicateurs de dégâts.** Voir l'arbitrage ci-dessous.
+4. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD). Volontairement APRÈS le personnage.
+
+### Pourquoi le personnage passe avant le Lobby/Relay (tranché le 2026-09-29)
+
+**Le report du réseau est peu coûteux, et c'est vérifiable.** L'autorité est déjà entièrement côté serveur : dégâts, position, posture, rewind, boucle de manches. Le Host n'est qu'un serveur qui possède en plus un joueur — le passage au serveur dédié retire un cas (le cas 1), il n'en réécrit aucun. Aucun code écrit d'ici là ne suppose que le serveur a un joueur, donc la dette n'enfle pas en attendant.
+
+**Le report du personnage coûte cher, tout de suite.** Sur une capsule lisse, le joueur ne peut pas *voir* où se trouve une tête : les multiplicateurs par zone y seraient une devinette, ce qui contredit le pilier « lisibilité » du GDD. Or presque toutes les décisions de design encore ouvertes — TTK, générosité du lean, `roundTimeLimit` — se tranchent au ressenti, et un ressenti ne se juge pas sur des capsules. Tant que le jeu n'est pas lisible, les playtests ne peuvent pas produire de réponses fiables.
+
+**Le placeholder suffit.** Ce qu'il faut n'est pas de l'art final mais des **proportions** (tête / torse / jambes) et une silhouette lisible. Un humanoïde générique les donne.
+
+🚨 Rappel du garde-fou, qui devient actif à ce moment précis : **ne JAMAIS dériver le hitbox des os animés.** L'animation AFFICHE, le hitbox se CALCULE depuis les mêmes scalaires réseautés. La couture est `PlayerHitbox.Apply(...)`, qui produira plusieurs capsules au lieu d'une ; `PlayerLocomotion` et `WeaponController` n'ont pas à changer.
 
 ## Ce qu'il reste à valider (test Host + Client)
 
