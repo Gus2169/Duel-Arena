@@ -138,6 +138,8 @@ public class PlayerLocomotion : NetworkBehaviour
     [SerializeField] private float vaultMinHeight = 0.3f;
     [SerializeField] private float vaultMaxHeight = 1.3f;
     [SerializeField] private float vaultLandingProbeDistance = 0.6f;
+    [Tooltip("Chute maximale acceptée à l'arrivée d'un franchissement. Borne volontaire : sans elle, vaulter une barricade au bord d'un vide téléporterait au fond.")]
+    [SerializeField] private float vaultMaxLandingDrop = 1.5f;
     [SerializeField] private float vaultDuration = 0.45f;
     [SerializeField] private float vaultArcHeight = 0.35f;
     [SerializeField] private AnimationCurve vaultHeightCurve = BuildDefaultVaultArc();
@@ -1712,8 +1714,35 @@ public class PlayerLocomotion : NetworkBehaviour
             return false;
         }
 
-        landingPoint = topHit.point + forward * vaultLandingProbeDistance;
-        if (drawDebug) Debug.DrawLine(topHit.point, landingPoint, Color.green);
+        // Le point d'arrivée horizontal, au-delà de l'obstacle.
+        Vector3 horizontalLanding = topHit.point + forward * vaultLandingProbeDistance;
+
+        // SONDE DE SOL. Sans elle, on atterrissait à l'ALTITUDE DU SOMMET de l'obstacle : le
+        // joueur restait perché dessus dès que sa capsule débordait encore un peu au-dessus.
+        // Avec une barricade de 0,50 m de profondeur et un rayon de capsule de 0,35 m, arriver
+        // 0,25 m derrière la laisse mordre de 10 cm sur le dessus — assez pour que le
+        // CharacterController y trouve du sol et s'y arrête. La variable s'appelait pourtant
+        // déjà "LandingProbeDistance" : la sonde était prévue, elle n'avait jamais été écrite.
+        //
+        // La chute est BORNÉE : sans plafond, franchir une barricade au bord d'un vide
+        // téléporterait au fond. Au-delà de la borne on garde l'arrivée haute et c'est la
+        // gravité qui fait le reste, ce qui est le comportement sûr.
+        Vector3 probeOrigin = horizontalLanding + Vector3.up * 0.1f;
+        if (Physics.Raycast(probeOrigin, Vector3.down, out RaycastHit groundHit,
+                            vaultMaxLandingDrop + 0.1f, obstacleMask, QueryTriggerInteraction.Ignore))
+        {
+            landingPoint = groundHit.point;
+        }
+        else
+        {
+            landingPoint = horizontalLanding;
+        }
+
+        if (drawDebug)
+        {
+            Debug.DrawLine(topHit.point, horizontalLanding, Color.green);
+            Debug.DrawLine(horizontalLanding, landingPoint, Color.magenta);
+        }
         return true;
     }
 

@@ -161,6 +161,54 @@ public class MoveDeterminismTests
     }
 
     [UnityTest]
+    public IEnumerator VaultParDessusUnObstacleFin_AtterritAuSolEtPasDessus()
+    {
+        yield return null;
+
+        // Profondeur 0,50 m : les dimensions réelles des barricades de l'arène. C'est le cas qui
+        // a révélé le défaut — le joueur restait PERCHÉ sur la barricade au lieu de retomber
+        // derrière, parce que l'arrivée était calculée à l'altitude du SOMMET et que sa capsule
+        // (0,35 m de rayon) débordait encore assez pour y trouver du sol.
+        obstacle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        obstacle.name = "TestBarricadeFine";
+        obstacle.transform.position = new Vector3(0f, 0.4f, 3f);
+        obstacle.transform.localScale = new Vector3(4f, 0.8f, 0.5f);
+        Physics.SyncTransforms();
+
+        Settle();
+
+        // 🚨 On relève la hauteur À L'INSTANT EXACT où le vault se termine, pas à la fin de la
+        // boucle. Le joueur garde son input avant : si on le laisse courir, il DESCEND tout seul
+        // de la barricade et la hauteur finale redevient basse, avec ou sans le défaut. Une
+        // première version faisait ça et passait sous mutation — donc ne testait rien.
+        bool vaultObserve = false;
+        bool vaultTermine = false;
+        float hauteurALArrivee = -1f;
+
+        for (int i = 0; i < 200 && !vaultTermine; i++)
+        {
+            bool vaultaitAvant = player.IsVaulting;
+            player.TestMove(Vector2.up, 0f, false, false, false, true, 0, Dt);
+
+            if (player.IsVaulting) vaultObserve = true;
+            if (vaultaitAvant && !player.IsVaulting)
+            {
+                vaultTermine = true;
+                hauteurALArrivee = player.TestCaptureState().position.y;
+            }
+        }
+
+        Assert.IsTrue(vaultObserve, "Aucun vault ne s'est déclenché : le test est vide.");
+        Assert.IsTrue(vaultTermine, "Le vault ne s'est jamais terminé.");
+
+        const float SommetObstacle = 0.8f;
+        Assert.Less(hauteurALArrivee, SommetObstacle * 0.5f,
+            "Le joueur arrive à y=" + hauteurALArrivee.ToString("F2") + " m, donc PERCHÉ sur "
+            + "l'obstacle (sommet à " + SommetObstacle.ToString("F2") + " m) au lieu de retomber "
+            + "au sol derrière lui.");
+    }
+
+    [UnityTest]
     public IEnumerator VaultRejoue_SuitExactementLeMemeArc()
     {
         yield return null;
