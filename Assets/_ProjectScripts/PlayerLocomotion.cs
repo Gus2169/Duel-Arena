@@ -142,6 +142,8 @@ public class PlayerLocomotion : NetworkBehaviour
     [SerializeField] private float vaultMaxLandingDrop = 1.5f;
     [SerializeField] private float vaultDuration = 0.45f;
     [SerializeField] private float vaultArcHeight = 0.35f;
+    [Tooltip("Marge au-dessus du sommet de l'obstacle au point haut de l'arc. L'arc est elargi si besoin pour l'atteindre : sans ca, un franchissement dont le depart ET l'arrivee sont au sol traverserait l'obstacle au lieu de passer dessus.")]
+    [SerializeField] private float vaultObstacleClearance = 0.15f;
     [SerializeField] private AnimationCurve vaultHeightCurve = BuildDefaultVaultArc();
     [SerializeField] private bool debugDrawVaultRays = true;
 
@@ -995,7 +997,7 @@ public class PlayerLocomotion : NetworkBehaviour
         {
             networkPosition.Value = transform.position;
             networkYaw.Value = transform.eulerAngles.y;
-            SendCorrectionToOwner(lastProcessedSequence, transform.position, verticalVelocity, transform.eulerAngles.y, currentVelocity, IsVaulting, vaultTimer, vaultStart, vaultEnd);
+            SendCorrectionToOwner(lastProcessedSequence, transform.position, verticalVelocity, transform.eulerAngles.y, currentVelocity, IsVaulting, vaultTimer, vaultStart, vaultEnd, vaultPeakY);
         }
 
         // Enregistrés à CHAQUE frame serveur, même sans input traité : sinon l'historique aurait
@@ -1006,17 +1008,17 @@ public class PlayerLocomotion : NetworkBehaviour
         ServerRecordHitboxPose();
     }
 
-    private void SendCorrectionToOwner(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, bool confirmedVaulting, float confirmedVaultTimer, Vector3 confirmedVaultStart, Vector3 confirmedVaultEnd)
+    private void SendCorrectionToOwner(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, bool confirmedVaulting, float confirmedVaultTimer, Vector3 confirmedVaultStart, Vector3 confirmedVaultEnd, float confirmedVaultPeakY)
     {
         var targetParams = new ClientRpcParams
         {
             Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
         };
-        ReceiveCorrectionClientRpc(confirmedSequence, confirmedPosition, confirmedVerticalVelocity, confirmedYaw, confirmedHorizontalVelocity, confirmedVaulting, confirmedVaultTimer, confirmedVaultStart, confirmedVaultEnd, targetParams);
+        ReceiveCorrectionClientRpc(confirmedSequence, confirmedPosition, confirmedVerticalVelocity, confirmedYaw, confirmedHorizontalVelocity, confirmedVaulting, confirmedVaultTimer, confirmedVaultStart, confirmedVaultEnd, confirmedVaultPeakY, targetParams);
     }
 
     [ClientRpc]
-    private void ReceiveCorrectionClientRpc(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, bool confirmedVaulting, float confirmedVaultTimer, Vector3 confirmedVaultStart, Vector3 confirmedVaultEnd, ClientRpcParams clientRpcParams = default)
+    private void ReceiveCorrectionClientRpc(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, bool confirmedVaulting, float confirmedVaultTimer, Vector3 confirmedVaultStart, Vector3 confirmedVaultEnd, float confirmedVaultPeakY, ClientRpcParams clientRpcParams = default)
     {
         if (!IsOwner) return;
 
@@ -1091,7 +1093,7 @@ public class PlayerLocomotion : NetworkBehaviour
         controller.enabled = true;
         verticalVelocity = confirmedVerticalVelocity;
         currentVelocity = confirmedHorizontalVelocity;
-        RestoreVaultState(confirmedVaulting, confirmedVaultTimer, confirmedVaultStart, confirmedVaultEnd);
+        RestoreVaultState(confirmedVaulting, confirmedVaultTimer, confirmedVaultStart, confirmedVaultEnd, confirmedVaultPeakY);
 
         isReplayingInputs = true;
         try
@@ -1211,9 +1213,9 @@ public class PlayerLocomotion : NetworkBehaviour
 
         // Un vault ne démarre que pendant une manche : sinon on franchirait un obstacle pendant
         // le décompte, alors que le déplacement normal est gelé.
-        if (snap.jumpPressed && RoundManager.MovementAllowed && TryFindVaultTarget(out Vector3 vaultLanding, false))
+        if (snap.jumpPressed && RoundManager.MovementAllowed && TryFindVaultTarget(out Vector3 vaultLanding, out float vaultTop, false))
         {
-            BeginVault(vaultLanding);
+            BeginVault(vaultLanding, vaultTop);
             AdvanceVault(dt);
             return;
         }
@@ -1733,9 +1735,10 @@ public class PlayerLocomotion : NetworkBehaviour
     // identique côté serveur. Ne restent ici que la RECHERCHE de cible et les données de tuning.
     // ------------------------------------------------------------------
 
-    private bool TryFindVaultTarget(out Vector3 landingPoint, bool drawDebug)
+    private bool TryFindVaultTarget(out Vector3 landingPoint, out float obstacleTopY, bool drawDebug)
     {
         landingPoint = default;
+        obstacleTopY = 0f;
 
         if (CurrentStance != Stance.Standing || !controller.isGrounded)
         {
@@ -1799,6 +1802,8 @@ public class PlayerLocomotion : NetworkBehaviour
             landingPoint = horizontalLanding;
         }
 
+        obstacleTopY = topHit.point.y;
+
         if (drawDebug)
         {
             Debug.DrawLine(topHit.point, horizontalLanding, Color.green);
@@ -1811,6 +1816,12 @@ public class PlayerLocomotion : NetworkBehaviour
     private Vector3 vaultStart;
     private Vector3 vaultEnd;
 
+    /// <summary>Altitude que le point haut de l'arc doit atteindre : le sommet de l'obstacle
+    /// plus une marge. CINQUIEME valeur cumulative lue par Move(), donc soumise a la regle du
+    /// projet : elle doit etre confirmee par le serveur et restauree avant tout rejeu, au meme
+    /// titre que vaultStart et vaultEnd.</summary>
+    private float vaultPeakY;
+
     /// <summary>Levé par AdvanceVault à l'atterrissage, consommé par Update() chez le propriétaire.
     /// Le kick caméra est cosmétique : le déclencher depuis Move() le rejouerait à chaque
     /// réconciliation.</summary>
@@ -1821,7 +1832,7 @@ public class PlayerLocomotion : NetworkBehaviour
     /// rejoue autant de fois que le client se resynchronise.</summary>
     private bool isReplayingInputs;
 
-    private void BeginVault(Vector3 landingPoint)
+    private void BeginVault(Vector3 landingPoint, float obstacleTopY)
     {
 #if UNITY_EDITOR
         if (!isReplayingInputs) diagVaultsTotal++;
@@ -1830,6 +1841,7 @@ public class PlayerLocomotion : NetworkBehaviour
         vaultTimer = 0f;
         vaultStart = transform.position;
         vaultEnd = landingPoint;
+        vaultPeakY = obstacleTopY + vaultObstacleClearance;
         verticalVelocity = 0f;
         currentVelocity = Vector3.zero;
         footstepDistanceAccumulator = 0f;
@@ -1854,7 +1866,22 @@ public class PlayerLocomotion : NetworkBehaviour
         float t = Mathf.Clamp01(vaultTimer / vaultDuration);
 
         Vector3 horizontal = Vector3.Lerp(vaultStart, vaultEnd, t);
-        float arc = vaultHeightCurve.Evaluate(t) * vaultArcHeight;
+
+        // L'amplitude de l'arc n'est PAS une constante : elle est elargie autant qu'il faut
+        // pour que le point haut depasse le sommet de l'obstacle.
+        //
+        // Tant que l'arrivee etait posee AU SOMMET de l'obstacle, c'etait l'interpolation
+        // elle-meme qui faisait monter le joueur, et un arc fixe de 0,35 m suffisait a
+        // l'habiller. Depuis que la sonde de sol pose l'arrivee AU SOL derriere l'obstacle,
+        // les deux bouts sont bas : 0,35 m ne franchit plus rien et le joueur TRAVERSAIT la
+        // barricade.
+        //
+        // La reference est le point BAS des deux extremites, pas leur moyenne : c'est le choix
+        // conservateur, il garantit le franchissement meme quand depart et arrivee sont a des
+        // hauteurs differentes.
+        float basDeLArc = Mathf.Min(vaultStart.y, vaultEnd.y);
+        float amplitude = Mathf.Max(vaultArcHeight, vaultPeakY - basDeLArc);
+        float arc = vaultHeightCurve.Evaluate(t) * amplitude;
 
         controller.enabled = false;
         transform.position = horizontal + Vector3.up * arc;
@@ -1881,12 +1908,13 @@ public class PlayerLocomotion : NetworkBehaviour
     /// <summary>Remet le vault à zéro depuis une valeur confirmée par le serveur, avant un rejeu.
     /// Même règle que le yaw et currentVelocity : tout état cumulatif lu par Move() doit pouvoir
     /// être recalé, sinon il dérive à chaque correction.</summary>
-    private void RestoreVaultState(bool vaulting, float timer, Vector3 start, Vector3 end)
+    private void RestoreVaultState(bool vaulting, float timer, Vector3 start, Vector3 end, float peakY)
     {
         IsVaulting = vaulting;
         vaultTimer = timer;
         vaultStart = start;
         vaultEnd = end;
+        vaultPeakY = peakY;
         controller.enabled = !vaulting;
     }
 
@@ -1925,6 +1953,7 @@ public class PlayerLocomotion : NetworkBehaviour
         public float vaultTimer;
         public Vector3 vaultStart;
         public Vector3 vaultEnd;
+        public float vaultPeakY;
     }
 
     public SimulationState TestCaptureState()
@@ -1939,6 +1968,7 @@ public class PlayerLocomotion : NetworkBehaviour
             vaultTimer = vaultTimer,
             vaultStart = vaultStart,
             vaultEnd = vaultEnd,
+            vaultPeakY = vaultPeakY,
         };
     }
 
@@ -1954,7 +1984,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
         verticalVelocity = state.verticalVelocity;
         currentVelocity = state.currentVelocity;
-        RestoreVaultState(state.vaulting, state.vaultTimer, state.vaultStart, state.vaultEnd);
+        RestoreVaultState(state.vaulting, state.vaultTimer, state.vaultStart, state.vaultEnd, state.vaultPeakY);
 
         // La scène physique doit voir la nouvelle position AVANT le prochain Move(), sinon le
         // premier sweep part de l'ancienne (autoSyncTransforms vaut false dans ce projet).

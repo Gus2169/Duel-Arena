@@ -33,6 +33,7 @@ public class MoveDeterminismTests
 
     private GameObject ground;
     private GameObject obstacle;
+    private GameObject obstacle2;
     private GameObject playerObject;
     private PlayerLocomotion player;
 
@@ -67,6 +68,7 @@ public class MoveDeterminismTests
         if (playerObject != null) Object.DestroyImmediate(playerObject);
         if (ground != null) Object.DestroyImmediate(ground);
         if (obstacle != null) Object.DestroyImmediate(obstacle);
+        if (obstacle2 != null) Object.DestroyImmediate(obstacle2);
     }
 
     /// <summary>Laisse le joueur tomber au sol et s'y stabiliser. Indispensable : un test qui
@@ -158,6 +160,115 @@ public class MoveDeterminismTests
             RunSequence(120);
             AssertBitIdentical(reference, player.TestCaptureState());
         }
+    }
+
+    [UnityTest]
+    public IEnumerator EtatDeSimulation_SeRestaureEntierement()
+    {
+        yield return null;
+
+        // 🚨 CE TEST GARDE L'INVARIANT LE PLUS FRAGILE DU PROJET : SimulationState doit énumérer
+        // TOUT l'état cumulatif lu par Move(). Le projet s'est fait piéger cinq fois par une
+        // valeur oubliée (yaw, currentVelocity, hauteur de capsule, état de vault, hauteur d'arc).
+        //
+        // Les autres tests de déterminisme ne suffisent PAS à l'attraper : ils restaurent un état
+        // d'AVANT le franchissement, si bien que le rejeu rappelle BeginVault, qui recalcule tout.
+        // Vérifié par mutation — retirer la restauration de vaultPeakY les laissait tous verts.
+        //
+        // Ici on restaure un état pris EN PLEIN VAULT, après qu'un SECOND franchissement d'une
+        // hauteur différente a écrasé les valeurs. C'est exactement ce que fait une réconciliation,
+        // et le seul cas où une restauration incomplète se voit.
+        obstacle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        obstacle.transform.position = new Vector3(0f, 0.40f, 3f);
+        obstacle.transform.localScale = new Vector3(4f, 0.80f, 0.5f);
+
+        obstacle2 = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        obstacle2.transform.position = new Vector3(0f, 0.60f, 9f);
+        obstacle2.transform.localScale = new Vector3(4f, 1.20f, 0.5f);
+
+        Physics.SyncTransforms();
+        Settle();
+
+        PlayerLocomotion.SimulationState pendantPremierVault = default;
+        bool premierCapture = false;
+        int vaultsVus = 0;
+        bool vaultaitAvant = false;
+
+        for (int i = 0; i < 600; i++)
+        {
+            player.TestMove(Vector2.up, 0f, false, false, false, true, 0, Dt);
+
+            bool vaulteMaintenant = player.IsVaulting;
+            if (vaulteMaintenant && !vaultaitAvant) vaultsVus++;
+            vaultaitAvant = vaulteMaintenant;
+
+            // Photo prise au milieu du PREMIER franchissement.
+            if (vaultsVus == 1 && vaulteMaintenant && !premierCapture)
+            {
+                pendantPremierVault = player.TestCaptureState();
+                premierCapture = true;
+            }
+
+            // Dès que le SECOND est en cours, ses valeurs ont écrasé celles du premier.
+            if (vaultsVus == 2 && vaulteMaintenant) break;
+        }
+
+        Assert.IsTrue(premierCapture, "Le premier vault ne s'est pas déclenché : le test est vide.");
+        Assert.AreEqual(2, vaultsVus, "Le second vault ne s'est pas déclenché : le test est vide.");
+
+        player.TestRestoreState(pendantPremierVault);
+        PlayerLocomotion.SimulationState relu = player.TestCaptureState();
+
+        Assert.AreEqual(pendantPremierVault.position.x, relu.position.x, "position.x non restaurée");
+        Assert.AreEqual(pendantPremierVault.position.y, relu.position.y, "position.y non restaurée");
+        Assert.AreEqual(pendantPremierVault.position.z, relu.position.z, "position.z non restaurée");
+        Assert.AreEqual(pendantPremierVault.verticalVelocity, relu.verticalVelocity, "verticalVelocity non restaurée");
+        Assert.AreEqual(pendantPremierVault.currentVelocity.x, relu.currentVelocity.x, "currentVelocity.x non restaurée");
+        Assert.AreEqual(pendantPremierVault.currentVelocity.z, relu.currentVelocity.z, "currentVelocity.z non restaurée");
+        Assert.AreEqual(pendantPremierVault.vaulting, relu.vaulting, "IsVaulting non restauré");
+        Assert.AreEqual(pendantPremierVault.vaultTimer, relu.vaultTimer, "vaultTimer non restauré");
+        Assert.AreEqual(pendantPremierVault.vaultStart.y, relu.vaultStart.y, "vaultStart non restauré");
+        Assert.AreEqual(pendantPremierVault.vaultEnd.y, relu.vaultEnd.y, "vaultEnd non restauré");
+        Assert.AreEqual(pendantPremierVault.vaultPeakY, relu.vaultPeakY, "vaultPeakY non restauré");
+    }
+
+    [UnityTest]
+    public IEnumerator VaultPasseAuDessusDeLObstacle_EtPasAuTravers()
+    {
+        yield return null;
+
+        const float SommetObstacle = 0.8f;
+
+        obstacle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        obstacle.name = "TestBarricadeFine";
+        obstacle.transform.position = new Vector3(0f, SommetObstacle * 0.5f, 3f);
+        obstacle.transform.localScale = new Vector3(4f, SommetObstacle, 0.5f);
+        Physics.SyncTransforms();
+
+        Settle();
+
+        // On relève le point HAUT atteint pendant le franchissement. C'est la seule mesure qui
+        // dit si le joueur passe PAR-DESSUS ou À TRAVERS : la position finale, elle, est au sol
+        // dans les deux cas — ce qui avait déjà rendu un test précédent inopérant.
+        bool vaultObserve = false;
+        float pointHaut = float.MinValue;
+
+        for (int i = 0; i < 200; i++)
+        {
+            player.TestMove(Vector2.up, 0f, false, false, false, true, 0, Dt);
+            if (player.IsVaulting)
+            {
+                vaultObserve = true;
+                float y = player.TestCaptureState().position.y;
+                if (y > pointHaut) pointHaut = y;
+            }
+        }
+
+        Assert.IsTrue(vaultObserve, "Aucun vault ne s'est déclenché : le test est vide.");
+
+        Assert.Greater(pointHaut, SommetObstacle,
+            "L'arc culmine à y=" + pointHaut.ToString("F2") + " m alors que l'obstacle monte à "
+            + SommetObstacle.ToString("F2") + " m : le joueur le TRAVERSE au lieu de le franchir.");
     }
 
     [UnityTest]

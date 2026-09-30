@@ -409,17 +409,25 @@ Le raycast ne porte que sur de la géométrie **statique**, donc `Move()` reste 
 
 **Couvert par `VaultParDessusUnObstacleFin_AtterritAuSolEtPasDessus`**, validé par mutation : sans la sonde, le joueur arrive à y = 0,80 m, exactement le sommet de l'obstacle de test.
 
-### ⚠️ DETTE OUVERTE — l'arc de vault ne franchit plus l'obstacle (2026-09-30)
+### L'arc de vault franchit désormais l'obstacle (2026-09-30)
 
-Constaté en jeu juste après la sonde de sol : le personnage **traverse la barricade** au lieu de passer par-dessus.
+Le personnage **traversait la barricade** au lieu de passer dessus. `AdvanceVault` ajoutait un arc d'amplitude **fixe** (`vaultArcHeight`, 0,35 m) à une interpolation entre départ et arrivée. Tant que l'arrivée était posée au SOMMET de l'obstacle, c'était l'interpolation elle-même qui faisait monter le joueur et 0,35 m suffisait à l'habiller. Depuis que la sonde de sol pose l'arrivée AU SOL derrière l'obstacle, les deux bouts sont bas — et 0,35 m ne franchit plus rien.
 
-`AdvanceVault` calcule `Lerp(vaultStart, vaultEnd, t) + up * courbe(t) * vaultArcHeight`, avec `vaultArcHeight` = **0,35 m**. Avant la sonde de sol, l'arrivée était au SOMMET de l'obstacle : c'est l'interpolation elle-même qui faisait monter le joueur. Maintenant que l'arrivée est au sol derrière, l'interpolation reste au sol et l'arc culmine à 35 cm — très en dessous d'une barricade de 1,25 m.
+**Les deux correctifs s'étaient annulés** : « perché dessus » avait été échangé contre « à travers ».
 
-**Les deux correctifs se sont annulés** : « perché dessus » a été échangé contre « à travers ». Ce n'est pas que visuel — le GDD fait de la lisibilité un pilier, et un corps qui traverse un obstacle ne raconte pas un franchissement à l'adversaire.
+L'amplitude est désormais **élargie autant qu'il faut** pour que le point haut dépasse le sommet : `max(vaultArcHeight, vaultPeakY - min(départ.y, arrivée.y))`. La référence est le point BAS des deux extrémités et non leur moyenne — choix conservateur, qui garantit le franchissement même quand départ et arrivée sont à des hauteurs différentes.
 
-**Le correctif propre** : l'arc doit passer au-dessus du sommet de l'obstacle, donc `AdvanceVault` doit CONNAÎTRE cette hauteur. C'est une **cinquième valeur cumulative** lue par `Move()`, et la règle du projet s'applique intégralement — elle doit rejoindre `SimulationState`, la RPC de correction et `RestoreVaultState`. Les tests de déterminisme échoueront d'eux-mêmes si la restauration est incomplète, ce qui est précisément leur raison d'être.
+🚨 **`vaultPeakY` est la CINQUIÈME valeur cumulative** lue par `Move()`, après le yaw, `currentVelocity`, la hauteur de capsule et l'état de vault. Elle suit donc la règle complète : confirmée par le serveur dans la RPC de correction, restaurée par `RestoreVaultState` avant tout rejeu, et présente dans `SimulationState`.
 
-Reporté à la demande de l'utilisateur le 2026-09-30, en connaissance de cause.
+### 🚨 Correction d'une affirmation fausse de cette page
+
+Il était écrit que « les tests de déterminisme échoueront d'eux-mêmes si la restauration est incomplète ». **C'était faux, et la mutation l'a prouvé** : en retirant la restauration de `vaultPeakY`, les 11 tests restaient verts.
+
+La raison : `VaultRejoue_SuitExactementLeMemeArc` et ses voisins restaurent un état pris **AVANT** le franchissement. Le rejeu rappelle donc `BeginVault`, qui recalcule tout — une valeur non restaurée n'a aucune occasion de diverger. Ils ne testaient jamais une restauration **en plein vault**, qui est pourtant exactement ce que fait une réconciliation.
+
+**`EtatDeSimulation_SeRestaureEntierement` comble le trou** : il prend une photo au milieu d'un premier franchissement, laisse un SECOND franchissement d'une hauteur différente écraser les valeurs, restaure la photo et compare champ par champ. Validé par mutation — sans la restauration de `vaultPeakY`, il échoue en annonçant 1,35 au lieu de 0,95, soit la hauteur d'arc du mauvais obstacle.
+
+C'est lui, et lui seul, qui garde réellement l'invariant `SimulationState`. **Toute nouvelle valeur cumulative doit y être ajoutée**, sans quoi le prochain oubli passera de nouveau inaperçu.
 
 ### Ce qui n'est PAS encore branché
 
