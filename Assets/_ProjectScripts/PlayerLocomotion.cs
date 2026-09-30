@@ -173,6 +173,34 @@ public class PlayerLocomotion : NetworkBehaviour
     /// juste sur les quatre cas réseau, y compris chez un spectateur qui n'appelle jamais Move().
     /// C'est la source à utiliser pour tout affichage (animation, capsule visible, hitbox).</summary>
     public Stance NetworkedStance => networkStance.Value;
+
+    /// <summary>Le joueur est-il en train de franchir, du point de vue de l'AFFICHAGE ?
+    ///
+    /// Même patron que LeanOffset : celui qui SIMULE utilise sa valeur locale, donc sans latence,
+    /// et seul le spectateur lit la valeur réseautée. Le propriétaire voit ainsi son propre
+    /// franchissement instantanément — ce qui compte pour son ombre, la seule partie de son
+    /// modèle qu'il voit.</summary>
+    public bool DisplayVaulting => (IsOwner || IsServer) ? IsVaulting : networkVaulting.Value;
+
+    /// <summary>Durée d'un franchissement, en secondes. Exposée pour que l'ANIMATION puisse s'y
+    /// accorder : son clip est lu à la vitesse qu'il faut pour tenir exactement dans cet
+    /// intervalle. Sans ça, retoucher la durée du vault désaccorderait silencieusement le geste.</summary>
+    public float VaultDuration => vaultDuration;
+
+    /// <summary>Le joueur est-il en l'air, du point de vue de l'AFFICHAGE ?
+    ///
+    /// Le franchissement en est EXCLU explicitement : il coupe le CharacterController, donc
+    /// isGrounded y vaut false et un vault passerait pour une chute. S'en remettre à l'ordre des
+    /// transitions de l'Animator marcherait aujourd'hui et casserait au premier réagencement.</summary>
+    public bool DisplayAirborne
+    {
+        get
+        {
+            if (DisplayVaulting) return false;
+            bool grounded = (IsOwner || IsServer) ? controller.isGrounded : networkGrounded.Value;
+            return !grounded;
+        }
+    }
     public NoiseLevel CurrentNoise { get; private set; } = NoiseLevel.Silent;
     public bool IsAiming { get; private set; }
     public bool IsVaulting { get; private set; } // état simulé : confirmé par le serveur, restauré avant rejeu
@@ -215,6 +243,25 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private readonly NetworkVariable<Stance> networkStance = new NetworkVariable<Stance>(
         Stance.Standing, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    // ------------------------------------------------------------------
+    // Réseau — état d'AFFICHAGE (catégorie C réseautée)
+    //
+    // Ces deux drapeaux ne servent QU'À L'ANIMATION : rien dans la simulation ne les relit, et
+    // un client ne peut donc rien en tirer. Ils existent parce qu'un SPECTATEUR n'a aucun moyen
+    // de les connaître — il n'appelle jamais Move(), et son CharacterController n'est pas
+    // simulé, donc son isGrounded ne veut rien dire. Sans eux, un adversaire qui tombe ou qui
+    // franchit un obstacle garderait son animation de course.
+    //
+    // C'est la même règle que pour la posture, apprise à ses dépens : tout ce qu'un spectateur
+    // doit VOIR doit venir d'une source réseautée, jamais d'un champ mis à jour par la simulation.
+    // ------------------------------------------------------------------
+
+    private readonly NetworkVariable<bool> networkGrounded = new NetworkVariable<bool>(
+        true, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    private readonly NetworkVariable<bool> networkVaulting = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     /// <summary>Yaw (degrés, monde) — écrit par le serveur juste après avoir fait autorité sur le
     /// mouvement (cas 1 et 3), lu uniquement par les purs spectateurs (cas 4) pour orienter
@@ -724,6 +771,7 @@ public class PlayerLocomotion : NetworkBehaviour
             ServerAdvanceFootsteps(dt);
             networkPosition.Value = transform.position;
             networkYaw.Value = transform.eulerAngles.y;
+            ServerPublishDisplayState();
             ServerRecordHitboxPose();
         }
         else if (IsOwner)
@@ -950,8 +998,11 @@ public class PlayerLocomotion : NetworkBehaviour
             SendCorrectionToOwner(lastProcessedSequence, transform.position, verticalVelocity, transform.eulerAngles.y, currentVelocity, IsVaulting, vaultTimer, vaultStart, vaultEnd);
         }
 
-        // Enregistré à CHAQUE frame serveur, même sans input traité : sinon l'historique aurait des
-        // trous pendant les micro-coupures réseau, précisément quand le rewind sert le plus.
+        // Enregistrés à CHAQUE frame serveur, même sans input traité : sinon l'historique aurait
+        // des trous pendant les micro-coupures réseau, précisément quand le rewind sert le plus —
+        // et l'état d'affichage resterait figé, donc un adversaire garderait son animation de
+        // chute après avoir atterri. Hors du bloc ci-dessus, volontairement.
+        ServerPublishDisplayState();
         ServerRecordHitboxPose();
     }
 
@@ -1081,6 +1132,16 @@ public class PlayerLocomotion : NetworkBehaviour
 
         float cutoff = Time.time - 1f;
         remoteSnapshots.RemoveAll(s => s.time < cutoff);
+    }
+
+    /// <summary>Publie l'état d'affichage. Appelée à CHAQUE frame serveur, même sans input traité —
+    /// même raison que pour l'historique de pose : sans ça, un drapeau resterait figé pendant une
+    /// micro-coupure réseau, et l'adversaire garderait une animation de chute après avoir atterri.
+    /// Une NetworkVariable n'émet que sur changement, donc écrire chaque frame ne coûte rien.</summary>
+    private void ServerPublishDisplayState()
+    {
+        networkGrounded.Value = controller.enabled && controller.isGrounded;
+        networkVaulting.Value = IsVaulting;
     }
 
     private void UpdateRemoteInterpolation()

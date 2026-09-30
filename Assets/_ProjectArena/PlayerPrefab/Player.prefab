@@ -307,7 +307,7 @@ MonoBehaviour:
   vaultMinHeight: 0.3
   vaultMaxHeight: 1.3
   vaultLandingProbeDistance: 0.6
-  vaultDuration: 0.45
+  vaultDuration: 0.55
   vaultArcHeight: 0.35
   vaultHeightCurve:
     serializedVersion: 2
@@ -543,6 +543,11 @@ MonoBehaviour:
   crouchingReference: 2.64
   proneReference: 1.1
   blendSmoothing: 12
+  vaultClipLength: 1.17
+  minPlaybackSpeed: 0.75
+  standingPlaybackScale: 0.85
+  crouchingPlaybackScale: 1
+  pronePlaybackScale: 1.4
 --- !u!1 &4953124100940397496
 GameObject:
   m_ObjectHideFlags: 0
@@ -644,7 +649,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &941186128114751685
 Transform:
   m_ObjectHideFlags: 0

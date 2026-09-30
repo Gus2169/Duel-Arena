@@ -33,6 +33,9 @@ public class PlayerAnimator : MonoBehaviour
     [Tooltip("Lissage des paramètres de mélange. Purement visuel : évite qu'un à-coup d'une frame ne fasse claquer l'animation.")]
     [SerializeField] private float blendSmoothing = 12f;
 
+    [Tooltip("Durée de la partie UTILE du clip de vault, en secondes — pas sa durée totale. Le contrôleur entre dans l'état à 20 % du clip pour sauter la préparation, et la réception est coupée par la sortie d'état. Sert à lire le geste à la vitesse qui le fait tenir dans la durée du vault.")]
+    [SerializeField] private float vaultClipLength = 0.70f;
+
     [Header("Cadence de lecture")]
     [Tooltip("Plancher du multiplicateur de vitesse de lecture. Ne descend pas à 0 : il s'applique aussi à l'animation d'attente, qui doit continuer de respirer à l'arrêt.")]
     [SerializeField] private float minPlaybackSpeed = 0.75f;
@@ -46,6 +49,9 @@ public class PlayerAnimator : MonoBehaviour
     private static readonly int MoveYId = Animator.StringToHash("MoveY");
     private static readonly int StanceId = Animator.StringToHash("Stance");
     private static readonly int SpeedMultId = Animator.StringToHash("SpeedMult");
+    private static readonly int AirborneId = Animator.StringToHash("Airborne");
+    private static readonly int VaultingId = Animator.StringToHash("Vaulting");
+    private static readonly int VaultSpeedId = Animator.StringToHash("VaultSpeed");
 
     private PlayerLocomotion locomotion;
     private Vector3 previousPosition;
@@ -111,6 +117,25 @@ public class PlayerAnimator : MonoBehaviour
         float cadence = Mathf.Clamp(smoothedMove.magnitude, minPlaybackSpeed, 1f)
                         * PlaybackScale(stance);
         animator.SetFloat(SpeedMultId, cadence);
+
+        // Chute et franchissement passent par des accesseurs qui choisissent eux-mêmes entre la
+        // valeur locale et la valeur réseautée selon le cas réseau. Ce script n'a donc pas à
+        // connaître la notion de propriétaire — et il ne peut pas se tromper de source, ce qui
+        // est exactement l'erreur commise sur la posture.
+        animator.SetBool(AirborneId, locomotion.DisplayAirborne);
+        animator.SetBool(VaultingId, locomotion.DisplayVaulting);
+
+        // Le clip de vault est lu à la vitesse qui fait tenir sa partie UTILE dans la durée
+        // réelle du franchissement.
+        //
+        // Deux pièges déjà payés ici. Le premier clip avait son geste à mi-course : sur 0,45 s on
+        // n'en voyait que l'élan, d'où un personnage qui restait debout en passant l'obstacle. Le
+        // second, joué en entier, était comprimé 2,6x et devenait illisible — alors que 40 % de
+        // sa durée sont une préparation et une réception quasi immobiles. On entre donc dans
+        // l'état à 20 % du clip et on n'étale que l'arc, ce qui tombe à 1,56x sans toucher au
+        // gameplay. Au-delà, c'est vaultDuration qu'il faut allonger, et ça change le jeu.
+        float duree = Mathf.Max(0.05f, locomotion.VaultDuration);
+        animator.SetFloat(VaultSpeedId, vaultClipLength / duree);
     }
 
     /// <summary>Accorde la cadence d'une posture à ses clips. Mixamo n'authore pas ses animations

@@ -268,6 +268,14 @@ Ils couvrent volontairement la **logique pure**, là où une régression est à 
 
 `SampleHitboxHistory` a été **extraite en fonction pure statique** pour cette raison : sous cette forme elle se teste sans Editor, sans réseau et sans scène.
 
+🚨 **Le piège du test vide : asserter un ÉTAT FINAL quand le défaut est TRANSITOIRE.** Trois fois le même jour (2026-09-29/30), un test écrit pour couvrir un défaut réel s'est révélé vert AVEC et SANS ce défaut :
+
+- Le retour de posture après une chute : attendre 0,6 s laissait l'enchaînement `EnLAir → Debout → Accroupi` se terminer, donc l'état final était juste dans les deux cas. Le défaut était le passage **fugitif** par `Debout`.
+- L'arrivée d'un vault : mesurer la hauteur après 200 pas de simulation laissait le joueur, qui gardait son input avant, **descendre tout seul** de l'obstacle sur lequel il était perché.
+- Le déterminisme du vault, à sa première écriture : le joueur n'était pas au sol, aucun vault ne se déclenchait, et comparer deux immobilités passait au vert.
+
+**La règle** : quand le défaut est un état ou un passage TEMPORAIRE, il faut échantillonner pendant, pas conclure après. Et à chaque fois, c'est la mutation qui l'a dit — jamais la lecture du test.
+
 🚨 **Un test qui passe ne prouve rien tant qu'on ne l'a pas vu échouer.** Les tests ont été validés par mutation : en remplaçant `Mathf.LerpAngle` par `Mathf.Lerp` dans l'échantillonnage du yaw, `YawInterpole_ParLePlusCourtChemin` échoue bien (22/23), puis repasse au vert une fois le code restauré. À refaire pour tout nouveau test non trivial.
 
 ### Tests PlayMode — le déterminisme de `Move()` (2026-09-29)
@@ -338,7 +346,11 @@ Les deux mesurent quelque chose de vrai, mais **pas ce qui se voit à l'écran**
 
 **Validé par mutation le 2026-09-29** : en remettant « Bake Into Pose » sur la seule `Rifle Run`, `CourseDebout_LeCorpsResteSurSaRacine` échoue avec **1,33 m de dérive** pour un seuil de 0,50 m, pendant que les deux autres tests restent verts — il détecte le défaut ET désigne le bon clip. Marges à l'état sain : 3,6 cm en course, 15,3 cm accroupi, 8,5 cm en sprint.
 
-⚠️ **Un `SaveAndReimport` bloque le lanceur de tests PlayMode jusqu'au redémarrage de l'Editor.** Reproduit deux fois : après un réimport d'asset, `run_tests --mode PlayMode` renvoie **0 test avec un statut « réussi »** (encore un échec qui se lit comme un succès). `cancel_tests` révèle une exécution fantôme mais ne suffit pas à débloquer. EditMode n'est pas affecté. **Conséquence pratique : valider par mutation un réglage d'IMPORT demande un redémarrage entre chaque essai.**
+⚠️ **Le lanceur de tests PlayMode se bloque parfois, et seul un redémarrage de l'Editor le débloque.** `run_tests --mode PlayMode` renvoie alors **0 test avec un statut « réussi »** — encore un échec qui se lit comme un succès. `cancel_tests` révèle une exécution fantôme mais ne suffit pas. EditMode n'est jamais affecté.
+
+**Le déclencheur exact n'est PAS établi.** Observé quatre fois après une écriture d'asset par script (`SaveAndReimport` sur un modèle, `SaveAssets` sur un AnimatorController) — mais une cinquième écriture de contrôleur, dans les mêmes conditions apparentes, n'a rien bloqué. C'est donc **intermittent**, pas déterministe. Une première version de cette page affirmait « toute écriture d'asset bloque le lanceur » : c'était une généralisation à partir de quatre cas, contredite au cinquième.
+
+**Conséquence pratique** : ne pas s'étonner d'un « 0 test » après avoir modifié un asset, et ne pas chercher la cause dans le code de test — redémarrer et relancer. Prévoir ce redémarrage quand on valide par mutation quelque chose qui vit dans un ASSET. Une mutation qui ne touche qu'au CODE n'a jamais posé de problème.
 
 ### La cadence de lecture
 
@@ -349,6 +361,65 @@ Un arbre de mélange **ne modifie pas la cadence de ses clips**. À mi-vitesse i
 Le plancher ne descend pas à zéro : le multiplicateur pilote l'état entier, animation d'attente comprise, qui doit continuer de respirer à l'arrêt.
 
 **`standingPlaybackScale` / `crouchingPlaybackScale` / `pronePlaybackScale`** accordent chaque posture à ses clips, Mixamo n'authorant pas ses animations à l'échelle des vitesses de ce jeu. C'est un réglage de **ressenti**, à ajuster en jouant.
+
+### Chute et franchissement chez le spectateur (2026-09-30)
+
+`Airborne` et `Vaulting` sont désormais alimentés. Ils ne pouvaient pas l'être depuis `IsVaulting` ou `controller.isGrounded` : un **spectateur** n'appelle jamais `Move()` et son `CharacterController` n'est pas simulé, donc son `isGrounded` ne veut rien dire. Sans signal réseauté, un adversaire qui tombe ou franchit un obstacle garderait son animation de course.
+
+Deux `NetworkVariable<bool>` en écriture serveur, `networkGrounded` et `networkVaulting`, publiées par `ServerPublishDisplayState()` **à chaque frame serveur** — hors du bloc « si des inputs ont été traités », exactement comme l'historique de pose. Sinon un drapeau resterait figé pendant une micro-coupure, et l'adversaire garderait son animation de chute après avoir atterri. Une `NetworkVariable` n'émet que sur changement, donc écrire chaque frame ne coûte rien.
+
+**Catégorie C réseautée** : rien dans la simulation ne relit ces drapeaux, donc un client ne peut rien en tirer.
+
+`DisplayVaulting` et `DisplayAirborne` font l'aiguillage, **même patron que `LeanOffset`** : celui qui simule (propriétaire ou serveur) utilise sa valeur locale, donc sans latence ; seul le spectateur lit la valeur réseautée. Le propriétaire voit ainsi son propre franchissement instantanément — ce qui compte pour son ombre, la seule partie de son modèle qu'il voit. `PlayerAnimator` ne connaît donc pas la notion de propriétaire et **ne peut pas se tromper de source**, ce qui est précisément l'erreur commise sur la posture.
+
+🚨 **`DisplayAirborne` exclut explicitement le franchissement.** Un vault coupe le `CharacterController`, donc `isGrounded` y vaut false et le vault passerait pour une chute. S'en remettre à l'ordre des transitions de l'Animator marcherait aujourd'hui et casserait au premier réagencement.
+
+**Les états `EnLAir` et `Vault` reviennent vers la posture RÉELLE**, pas vers `Debout`. La première version ne renvoyait que vers `Debout` : atterrir accroupi faisait clignoter la posture debout pendant 0,15 s. Défaut purement visuel, donc silencieux. `AnimatorStateTests` le couvre.
+
+⚠️ **Dans un test PlayMode, attendre en TEMPS et non en FRAMES.** Atteindre `EnLAir` depuis l'état par défaut enchaîne DEUX transitions (0,20 s puis 0,15 s), une transition n'étant pas interruptible par défaut. Or les frames défilent bien plus vite qu'à 60 Hz en PlayMode : une première version attendait 40 frames, ce qui ne faisait même pas 0,35 s, et les trois tests échouaient dès leur première assertion — en accusant à tort le graphe, qui était correct.
+
+### L'animation de vault — choisie par la mesure (2026-09-30)
+
+Premier essai avec `Jumping Over Into Combat` : en jeu, **le personnage restait debout et passait par-dessus l'obstacle sans le moindre geste**. Ce n'était pas un état non atteint, mais un clip mal choisi.
+
+En échantillonnant la hauteur des hanches sur toute la durée des clips candidats :
+
+```
+Jumping Over Into Combat (4,17 s)  0,00 -0,01 -0,03 -0,12 -0,18  0,39  0,20 ...
+Jumping                  (1,17 s)  0,00  0,08  0,09  0,30  0,41  0,44  0,47  0,32 ...
+```
+
+Le franchissement de `Jumping Over Into Combat` culmine à **50 % du clip**, soit 2,08 s. Sur les 0,45 s d'un vault et à vitesse 1, on n'en voyait que les **11 premiers pour cent** — une zone parfaitement plate. `Jumping` porte au contraire un arc complet du début à la fin.
+
+**La vitesse de lecture est pilotée par `VaultSpeed`**, calculé comme `vaultClipLength / PlayerLocomotion.VaultDuration`. Le geste tient donc toujours exactement dans la durée du franchissement, même si celle-ci est retouchée pour le ressenti — sans ce lien, l'animation se désaccorderait en silence.
+
+**Leçon** : pour choisir un clip, mesurer où le geste utile s'y trouve. Un nom d'animation ne dit ni sa durée utile ni sa position dans le clip, et « le personnage ne s'anime pas » se lit à tort comme un problème de machine à états.
+
+### La sonde de sol à l'arrivée d'un vault (2026-09-30)
+
+Symptôme : en franchissant une barricade, le joueur **restait perché dessus** au lieu de retomber derrière.
+
+`TryFindVaultTarget` posait l'arrivée à `topHit.point + forward * vaultLandingProbeDistance` — donc à l'**altitude du SOMMET** de l'obstacle, avancée de 60 cm. Aucune sonde de sol n'existait, alors que la variable s'appelait déjà `LandingProbeDistance` : elle était prévue, jamais écrite.
+
+La géométrie explique tout : les barricades font **0,50 m de profondeur**, `topHit` tombe 0,15 m après la face avant, donc l'arrivée est 0,25 m derrière la face arrière. Mais la capsule a **0,35 m de rayon** : elle déborde encore de 10 cm au-dessus de l'obstacle, assez pour que le `CharacterController` y trouve du sol.
+
+Corrigé par un raycast vers le bas depuis le point d'arrivée horizontal, **borné par `vaultMaxLandingDrop`** (1,5 m) : sans cette borne, franchir une barricade au bord d'un vide téléporterait au fond. Au-delà de la borne on garde l'arrivée haute et la gravité fait le reste, ce qui est le comportement sûr.
+
+Le raycast ne porte que sur de la géométrie **statique**, donc `Move()` reste déterministe et les deux côtés calculent la même arrivée — la règle du vault réseauté est préservée.
+
+**Couvert par `VaultParDessusUnObstacleFin_AtterritAuSolEtPasDessus`**, validé par mutation : sans la sonde, le joueur arrive à y = 0,80 m, exactement le sommet de l'obstacle de test.
+
+### ⚠️ DETTE OUVERTE — l'arc de vault ne franchit plus l'obstacle (2026-09-30)
+
+Constaté en jeu juste après la sonde de sol : le personnage **traverse la barricade** au lieu de passer par-dessus.
+
+`AdvanceVault` calcule `Lerp(vaultStart, vaultEnd, t) + up * courbe(t) * vaultArcHeight`, avec `vaultArcHeight` = **0,35 m**. Avant la sonde de sol, l'arrivée était au SOMMET de l'obstacle : c'est l'interpolation elle-même qui faisait monter le joueur. Maintenant que l'arrivée est au sol derrière, l'interpolation reste au sol et l'arc culmine à 35 cm — très en dessous d'une barricade de 1,25 m.
+
+**Les deux correctifs se sont annulés** : « perché dessus » a été échangé contre « à travers ». Ce n'est pas que visuel — le GDD fait de la lisibilité un pilier, et un corps qui traverse un obstacle ne raconte pas un franchissement à l'adversaire.
+
+**Le correctif propre** : l'arc doit passer au-dessus du sommet de l'obstacle, donc `AdvanceVault` doit CONNAÎTRE cette hauteur. C'est une **cinquième valeur cumulative** lue par `Move()`, et la règle du projet s'applique intégralement — elle doit rejoindre `SimulationState`, la RPC de correction et `RestoreVaultState`. Les tests de déterminisme échoueront d'eux-mêmes si la restauration est incomplète, ce qui est précisément leur raison d'être.
+
+Reporté à la demande de l'utilisateur le 2026-09-30, en connaissance de cause.
 
 ### Ce qui n'est PAS encore branché
 
