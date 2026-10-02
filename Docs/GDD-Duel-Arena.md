@@ -2,21 +2,27 @@
 
 *L'âme du jeu. Ce document dit ce que Duel Arena **est** et ce qu'il refuse d'être — pas où en est le code. L'état technique, les priorités et les dettes vivent dans `CLAUDE.md`, à la racine du projet.*
 
+*Refondu le 2026-10-02 à partir du questionnaire de conception. Les réponses brutes, avec leurs hésitations, sont archivées dans `Docs/Questionnaire-GDD.md`. En cas de désaccord, c'est ce document-ci qui fait foi.*
+
+*« Duel Arena » est un nom **provisoire**.*
+
 ---
 
 ## 1. Vision
 
-**Un jeu de duel 1v1 nerveux, lisible, compétitif et fun**, où chaque match est rapide, intense, et influencé — optionnellement — par les spectateurs présents dans le lobby.
+**Un jeu de duel 1v1 nerveux, lisible, compétitif et fun.** Deux joueurs s'affrontent dans une arène fermée, sous les yeux d'un public qui attend son tour, depuis une tribune qui surplombe le combat.
 
-À la manière d'un « goulag » de Call of Duty ou d'un CS 1v1 : une boucle simple à comprendre, profonde à maîtriser. Mais avec sa propre identité.
+Le modèle est un **combat de gladiateurs ou de boxe** : le duel est le spectacle, et ceux qui regardent font partie de la soirée. Ils peuvent même, selon les réglages, s'en mêler. La référence de format est le goulag de Call of Duty (mode de jeu et arène fermée) ; la référence de contrôles est Rainbow Six Siege.
 
 **Ton** : sérieux dans le gameplay, avec une bizarrerie assumée (7/10). La compétition ne plaisante pas ; l'univers, si.
+
+**Le jeu qu'on relance.** Une session dure une heure ou plus. L'objectif est qu'à la fin d'un match, on ait envie d'en relancer un autre.
 
 ## 2. Les quatre piliers
 
 1. **Lisibilité** — aucun chaos visuel. On doit toujours comprendre ce qui vient de se passer.
-2. **Compétition** — skill pur. Pas de RNG, hit registration fiable, aucun avantage structurel.
-3. **Fun** — spectateurs, touches visuelles, rythme.
+2. **Compétition** — skill pur. Hit registration fiable, aucun avantage structurel.
+3. **Fun** — spectateurs, touches visuelles, rythme, célébrations.
 4. **Rapidité** — boucle courte, addictive.
 
 ## 3. Règles non négociables
@@ -24,74 +30,248 @@
 Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les contredit, c'est la décision qui change.
 
 - **Le skill prime sur tout.**
-- **Pas de RNG dans la précision.** Deux joueurs qui tirent la même rafale dans les mêmes conditions subissent exactement le même recul. Le recul est une courbe apprenable, jamais une dispersion aléatoire.
-- **Pas d'avantage de latence structurel.** Personne ne gagne parce qu'il héberge la partie.
+- **Personne ne commence avec un avantage.** Ni en début de partie, ni en début de manche. Seule exception : un mode ou un réglage de partie qui l'annonce explicitement.
+- **Pas de pay-to-win.** Ce qui s'achète ou se débloque est cosmétique.
+- **Pas de RNG dans la précision.** Deux joueurs qui tirent la même rafale dans les mêmes conditions subissent exactement le même recul. Le recul est une courbe apprenable, jamais une dispersion aléatoire. Les armes à gerbe (fusil à pompe) tirent selon un **motif fixe**, identique à chaque tir : large et lisible au jugé, mais jamais aléatoire (tranché le 2026-10-02).
+- **En classé, aucun avantage de latence structurel.** Les parties classées tournent sur serveur dédié. Entre amis, le mode hôte est accepté.
 - **Le son est une information de gameplay**, au même titre que le visuel. Jamais un habillage.
-- **Les spectateurs ne décident jamais d'un duel.** Ils l'assaisonnent.
+- **En classé, le duel est pur** : pas de spectateurs, pas d'interventions. Ailleurs, les spectateurs peuvent peser sur le duel (voir § 9), mais toujours par un **geste physique imparfait** : courir, ramasser, viser, lancer. Jamais par un simple bouton qui donnerait un avantage à coup sûr.
+- **Tout ce qui sort du duel pur se règle par partie** : spectateurs, power-ups, chat vocal, événements. Le classé les désactive.
 
-## 4. Gameplay core
+## 4. Structure d'une session
 
-**Format** — 1v1 uniquement. Rounds de 15 à 30 secondes. Respawn instantané dans le lobby après la mort.
+**Un lobby de plusieurs joueurs, deux duellistes à la fois.** Les autres sont spectateurs, dans la tribune, et attendent leur tour. Le nombre de spectateurs est plafonné.
 
-**Ce que fait le joueur** — éliminer l'adversaire le plus vite possible, lire ses intentions (mindgames), gérer les distances close / medium / long que l'arène impose.
+**L'organisation des duels se règle par partie** :
+- **Roi de la colline** — le format par défaut. Le gagnant reste, le perdant retourne dans la file, le suivant prend sa place.
+- **Tournoi** — arbre à élimination dans le lobby.
+- **Hasard** — l'adversaire suivant est tiré au sort.
 
-**TTK** — cible ≈ **0,7 seconde** de tir soutenu. Ni trop long (ça devient une guerre d'usure), ni trop court (ça devient une loterie du premier coup d'œil). C'est une valeur de départ validée en jeu, pas un dogme : elle vit dans l'inspecteur, pas en dur dans le code.
+**Un match** se joue en BO5 ou en BO3, selon le mode. Une manche dure rarement plus d'une minute, donc un BO5 reste court même pour ceux qui attendent.
 
-**Mouvement** — trois paliers de vitesse : **sneak** (lent, silencieux) < **marche** < **course** (rapide, bruyante). Le compromis vitesse/discrétion est un vrai choix tactique, pas un confort.
+**Tout le monde repart à 100 PV** à chaque manche, gagnant compris. Exception : le mode *Until Death* (§ 11), où les blessures restent.
 
-Postures complètes Debout / Accroupi / Prone, chacune avec sa vitesse, sa hauteur de vue et son empreinte. Se relever est bloqué s'il n'y a pas la place. Lean gauche/droite avec anti-clipping. Vault pour franchir un obstacle bas.
+**Abandon en plein match** : forfait automatique.
 
-**Pas de mouvement à momentum** (bhop, slide, air-strafe) : ça favorise l'exécution mécanique sur la lecture, et ça rend le hit registration beaucoup plus dur à rendre honnête. Le jour où ce sera envisagé, ce sera une décision de design consciente, pas une dérive.
+**Matchmaking** : lobby privé entre amis avec un code, file publique non classée, et file publique classée (sans spectateurs, sur serveur dédié). Matchmaking par région, pour limiter le ping.
 
-**Armes** — une à deux au début. Recul stylisé et lisible : montée rapide sur les premiers tirs puis plafonnement, avec un pattern horizontal en « S » quand la rafale s'allonge. L'arme doit se sentir **domptable** après quelques balles. Le recul est modulé par la posture, le déplacement et la visée — une arme est bien plus stable en prone statique qu'en sprint-stop debout, et l'ADS stabilise toujours.
+**Le réglage des parties doit être complet sans être pénible.** Il y aura beaucoup d'options, et le risque est un écran de configuration indigeste. Piste : des **préréglages** nommés (classique, arcade…) qui couvrent 90 % des cas, avec un onglet avancé pour le reste.
 
-## 5. Le son comme information
+## 5. La manche
 
-Un adversaire proche doit pouvoir **entendre** les pas, le ramper, les changements de posture, le lean et les tirs — en 3D, localisable. Ce n'est pas du décor : c'est la moitié de l'information disponible dans un duel où on ne voit pas son adversaire la plupart du temps.
+**Pas de limite de temps.** Une manche se termine par une mort. Le chrono actuel du code était un outil de test, il disparaît.
 
-Le sneak est volontairement **silencieux**. C'est la contrepartie de sa lenteur, et ce qui rend le triangle vitesse / bruit / discrétion réellement tactique.
+*Le risque connu : deux joueurs passifs peuvent faire durer une manche indéfiniment. Ce n'est pas un problème tant que les playtests ne le montrent pas. Si ça arrive, la piste privilégiée est la **révélation** : au bout d'un moment, chaque joueur émet un son de sa position. La règle devient une mécanique sonore plutôt qu'une sanction.*
 
-Les sons forts (tirs, explosions) formeront plus tard un **canal séparé** des sons de contexte — c'est ce canal qui alimentera le mode « arène dans le noir ».
+**Spawns** : plusieurs points différents dans l'arène, avec échange de côté d'une manche à l'autre.
 
-## 6. Arène & level design
+**Décompte** : 3 à 5 secondes. Le regard et le changement de posture sont libres, le déplacement non.
 
-Arène de taille intermédiaire, comparable au goulag CoD. Des zones pour les trois distances de combat : close, medium, long.
+**À 2-2**, la manche décisive est une manche normale.
 
-Pas de destruction totale — la lisibilité prime. En revanche, certains éléments traversables par les balles mais pas par la vue, ou l'inverse : c'est ce qui crée des angles où tirer sans voir, et voir sans pouvoir tirer.
+**Le kill** déclenche une **mini-célébration** : une phrase écrite à l'écran pour le gagnant, et une autre pour le perdant.
 
-Le layout se valide par playtest avant de recevoir son habillage visuel définitif. Un beau niveau injouable ne se rattrape pas.
+**Entre deux manches** : fondu au noir. Toutes les lumières de l'arène s'éteignent, les deux joueurs sont replacés dans l'obscurité, puis la lumière revient et la manche suivante démarre. Le replacement n'est jamais vu, pas même par les spectateurs. Une killcam pour les deux joueurs est envisagée, à condition de ne pas casser le rythme.
 
-## 7. Spectateurs
+**Fin de match** : un écran de victoire mis en scène pour le gagnant (mouvement de caméra, musique, animation, dans l'esprit d'un montage « aura farming »), puis un tableau récapitulatif pour les deux.
 
-Optionnel, mais c'est une partie de l'identité du jeu : **personne n'attend sans rien faire**.
+## 6. Combat et armes
 
-Leurs actions doivent améliorer l'expérience sans altérer la compétition : mini-influences, effets temporaires, interactions légères. Petits bonus environnementaux, buffs légers, effets visuels amusants. Jamais un renversement de match, jamais un handicap frustrant pour les duellistes.
+**TTK** — la cible de départ est ≈ **0,7 seconde** de tir soutenu, mais elle est **à retravailler**, notamment avec l'arrivée des headshots. Elle vit dans l'inspecteur, pas en dur dans le code.
 
-Activable / désactivable par lobby.
+**Le MP5 actuel est une arme de test.** Le choix des armes dépend de la direction artistique (§ 13).
 
-## 8. Tonalité & humour
+**L'identité « insolite »** : des armes qui jouent sur le décalage entre leur apparence et leur effet. Exemples cités : un énorme pistolet bionique démesuré qui tire un minuscule rayon paralysant (ralentit beaucoup, blesse peu), ou à l'inverse un petit pistolet qui tire un énorme trou noir.
 
-Le jeu reste nerveux, cadré, sérieux dans son gameplay. La bizarrerie vit ailleurs : dans les réactions du public, certains éléments de décor, quelques animations stylisées.
+**Obtenir son arme — pas encore tranché.** La piste la plus avancée : avant le match, un tirage à pile ou face désigne un joueur, qui choisit une **classe d'arme** (sniper, fusil d'assaut, pompe, pistolet…) et l'**impose aussi à l'adversaire**. À la manche suivante, c'est le perdant qui choisit. Le risque à étudier : la frustration de jouer une arme qu'on n'a pas choisie. Les spectateurs peuvent aussi, selon les réglages, voter l'arme ou en lancer une dans l'arène.
 
-L'objectif est une identité unique qui ne coûte rien à la compétition.
+**Headshots** : nécessaires pour certaines armes. Punitifs sur le papier, mais très satisfaisants en jeu. Multiplicateur à trancher par playtest.
 
-## 9. Identité artistique
+**Munitions** : chargeur limité, rechargement.
 
-**Visuel** — stylisé réaliste : proportions humaines, mouvement lisible, silhouettes claires. Des touches d'exagération pour accentuer la lisibilité et la personnalité. Un monde cohérent, avec des détails légèrement étranges.
+**Visée (ADS)** : ralentit le déplacement. Viser en courant **coupe le sprint** et lance la visée. On ne tire pas en sprintant.
 
-**Animations** — stylisées et fluides, avec la réactivité comme priorité absolue (peu d'anticipation, gameplay first). Impacts et feedbacks visuels exagérés pour renforcer la sensation de skill.
+**Tir à la hanche** : possible, et c'est là que les armes à gerbe brillent. Leur gerbe suit un motif fixe (§ 3) : un tir au jugé au fusil à pompe couvre un grand angle, de façon lisible, et deux tirs identiques donnent toujours le même résultat.
 
-## 10. Public cible
+**Dégâts selon la distance** : constants par défaut, à définir arme par arme.
 
-Joueurs compétitifs. Amateurs de FPS skill-based. Fans de duels rapides.
+**Matériaux traversables** : aucun pour l'instant, à voir selon les arènes.
 
-## 11. Questions de design encore ouvertes
+**Utilitaires** : des grenades, soit cachées dans l'arène, soit données par les spectateurs.
 
-Ce qui n'est pas tranché, et qui mérite de l'être avant de construire par-dessus.
+**Mêlée** : couteau, **mort instantanée**. Il sort **automatiquement** quand l'arme est vide.
 
-- **Deuxième arme** : laquelle, et son identité « insolite ».
-- **Pré-round vs pickups** : comment le joueur obtient son arme.
-- **Interactions spectateurs** : la liste précise, pas seulement le principe.
-- **Power-ups d'arène vs pouvoirs de personnage** : préférence actuelle pour des power-ups d'arène, moins risqués pour l'équilibre d'un 1v1.
-- **Modes alternatifs** : « arène dans le noir » (écho/sonar) et « Hack & Defend » sont des pistes, pas des engagements.
-- **Boucle UX complète** : lobby → file d'attente → duel → résultats.
+**Recul** — référence de sensation : la R-301 d'Apex. **Les rafales longues doivent être viables et agréables** : pas de jeu qui force les rafales courtes, sauf pour une DMR au coup par coup. Le recul est stylisé et lisible : montée rapide sur les premiers tirs puis plafonnement, avec un pattern horizontal en « S » quand la rafale s'allonge. Il est modulé par la posture, le déplacement et la visée.
+
+**Retour de touche** : hitmarker, un son de touche, et un son différent pour la tête.
+
+**Recevoir une balle** : un écran qui rougit, un son d'impact, et un **très léger** sursaut de caméra. Rien d'exagéré : le sursaut punit déjà le joueur touché en premier.
+
+**La mort** : ragdoll projeté, son signature, et un **replay instantané exagéré au ralenti**, dans l'esprit de la killcam de *Sniper Elite* ou des finish de *Mortal Kombat*.
+
+## 7. Mouvement
+
+**Trois paliers de vitesse** : **sneak** (lent, très discret) < **marche** < **course** (rapide, bruyante). Le compromis vitesse/discrétion est un vrai choix tactique. La sensation visée : nerveux et rapide, sans excès, à régler en jouant.
+
+**Sprint illimité**, pas d'endurance.
+
+**Postures** Debout / Accroupi / Prone, chacune avec sa vitesse, sa hauteur de vue et son empreinte. Se relever est bloqué s'il n'y a pas la place. **On peut tirer en rampant.**
+
+**Le lean façon Rainbow Six** : seul le **buste** se penche. Derrière un mur, en visant et en se penchant, on n'expose que le haut du corps ; les jambes restent à couvert. Le lean actuel, qui fait glisser tout le corps, est trop généreux et va changer.
+
+**Pas de saut libre.** La touche de saut sert au **vault** : un obstacle assez bas, du sol derrière, et on passe par-dessus. C'est un choix assumé.
+
+**Pas de dégâts de chute**, pas de mort hors-arène.
+
+**Pas de mouvement à momentum** (bhop, slide, air-strafe) : ça favorise l'exécution mécanique sur la lecture, et ça rend le hit registration beaucoup plus dur à rendre honnête.
+
+## 8. Le son
+
+Un adversaire proche doit pouvoir **entendre** les pas, le ramper, les changements de posture, le lean et les tirs — en 3D, localisable. C'est la moitié de l'information disponible dans un duel.
+
+**Portée par allure** (ordre d'idée, à régler en jouant) : la course s'entend de partout, la marche à peu près à moitié de cette distance, le sneak à peine. Le sneak est **très faible**, pas totalement muet.
+
+**Pas de musique pendant la manche.** La musique vit dans les menus, entre les manches et sur l'écran de victoire. Pendant le combat : quelques sons d'ambiance, et ceux des spectateurs.
+
+**Les spectateurs font du bruit, et c'est voulu.** Leur chat vocal parvient faiblement aux duellistes (si la partie l'active). Leurs cailloux font du bruit en tombant, et **peuvent tromper** les duellistes : un caillou est un leurre sonore. Le son reste une information, mais une information qu'on peut falsifier.
+
+**Chat vocal entre duellistes** : possible, si la partie l'active.
+
+**Accessibilité** : pas d'indicateur visuel des sons dans le prototype. À reconsidérer plus tard.
+
+Les sons forts (tirs, explosions) formeront un **canal séparé** des sons de contexte. C'est ce canal qui alimentera le mode **Arène dans le noir**, une envie forte (§ 11).
+
+## 9. Les spectateurs
+
+C'est le système qui fait l'identité du jeu : **personne n'attend sans rien faire.**
+
+**Qui** : les joueurs du lobby qui attendent leur tour, et, à terme, des viewers Twitch. Nombre plafonné. **Toutes leurs actions se règlent avant la partie**, et le classé n'en a aucune.
+
+**Où** : une **tribune physique**, une plateforme circulaire fermée et surélevée qui fait le tour de l'arène, comme au goulag de CoD. Chaque spectateur y est **incarné** par un avatar, **à mains nues**.
+
+**Ce qu'ils font** — un petit jeu à eux, conçu pour les occuper sans dicter le duel. Ils agissent **pendant les manches**, si le mode et les réglages de la partie le permettent :
+- **Dons de matériel.** Du matériel (armes, grenades, accessoires) tombe au hasard sur leurs plateformes. Il faut **courir** pour le ramasser, puis le **lancer** à un duelliste. Un mauvais lancer peut l'envoyer au mauvais duelliste. On peut aussi le garder, sans pouvoir s'en servir, pour en priver les autres.
+- **Jets de cailloux.** Il faut d'abord **casser** un morceau de la plateforme pour en récupérer un, ce qui prend du temps. Un caillou se lance sur un duelliste, pour le déstabiliser, ou sur un autre spectateur.
+- **Bagarre.** Les spectateurs peuvent se frapper à coups de poing (ou se lancer des cailloux) pour s'étourdir, et voler le matériel que tient un autre.
+- **Chat vocal**, faiblement audible des duellistes.
+- **Votes entre les manches**, si la partie le permet : l'arme, les power-ups de la manche suivante.
+
+**Favoriser un camp est permis**, hors classé. Ce qui garde l'équilibre, c'est la friction : il faut courir, ramasser, viser, et les autres spectateurs peuvent intercepter, frapper ou voler. Le geste peut rater, et il peut profiter à l'adversaire.
+
+**Ce que voient les spectateurs** : les deux duellistes, en temps réel.
+
+**Le ghosting est un risque accepté.** Hors classé, un spectateur en vocal Discord peut annoncer la position de l'adversaire à son ami. Aucune parade n'a été jugée satisfaisante (un délai sur la vue des spectateurs, une vue limitée à un seul duelliste) : elles abîment toutes le spectacle, qui est la raison d'être de la tribune. En classé, le problème ne se pose pas, puisqu'il n'y a pas de spectateurs. *(Tranché le 2026-10-02.)*
+
+**Pas de paris.**
+
+## 10. Arène et level design
+
+**Plusieurs arènes**, une seule par partie. Symétriques ou asymétriques selon l'arène.
+
+Taille intermédiaire, comparable au goulag de CoD, avec des zones pour les trois distances de combat : close, medium, long. **Un niveau de hauteur** au-dessus du sol, et l'avantage de la hauteur est **voulu**.
+
+**Power-ups d'arène** — à des **emplacements prédéfinis**, **annoncés avant la manche** avec un compte à rebours avant leur apparition. Aucun hasard : c'est un objectif de contrôle de l'arène, pas une loterie.
+
+**Éléments dynamiques** : les lumières (déjà au cœur de la transition entre manches).
+
+**L'événement légendaire.** Une surprise qui ne tombe presque jamais, dans l'esprit de la légende de Herobrine dans Minecraft : pendant une manche, au hasard, toutes les lumières s'éteignent, une musique étrange se lance avec des bruits terrifiants, et une créature mystérieuse traverse l'arène pour effrayer les joueurs. **Uniquement dans les modes arcade**, jamais en classé : c'est du hasard, assumé parce qu'il est rare et qu'il ne touche pas au compétitif.
+
+Pas de destruction totale — la lisibilité prime.
+
+Le layout se valide par playtest avant de recevoir son habillage visuel définitif. **Le blocking actuel**, inspiré du goulag de CoD, est un premier jet bien avancé : suffisant pour tester les mécaniques principales, rien n'est fait visuellement.
+
+## 11. Modes de jeu
+
+Le **classique** est le cœur, et le seul du premier prototype. Les autres sont des pistes, sans engagement.
+
+**Les deux familles** : les modes **arcade** (spectateurs, power-ups, événements, réglages libres) et le **classé** (duel pur, sans spectateurs, serveur dédié).
+
+- **Classique** — 1v1 en BO5 ou BO3, un joueur de chaque côté de l'arène.
+- **Variante à respawn continu** — au lieu d'arrêter le jeu à chaque mort, le perdant réapparaît ailleurs dans l'arène et le combat continue. Évite les coupures qui cassent le rythme. *Point faible identifié : les points de réapparition. S'ils sont exploitables, le joueur qui réapparaît se fait tuer en boucle.*
+- **Until Death** — tournoi roi de la colline où les blessures restent d'une manche à l'autre : le gagnant reste avec les PV qu'il lui reste, un spectateur prend la place du perdant.
+- **Hack & Defend** — un point dans l'arène, à prendre en y plantant un *spike*, comme dans Valorant. Celui qui a planté défend le point jusqu'à la fin du timer ; l'autre doit désamorcer, puis planter le sien. Respawn illimité avec temps de recharge. Deux variantes à étudier : soit la fin du timer termine une manche d'un BO5 ; soit la partie dure 3 à 5 minutes, la zone change de place plusieurs fois, et le joueur qui a tenu le plus longtemps gagne aux points.
+- **Arène dans le noir** — envie forte. Le son devient l'information principale.
+- **Tag Team** — un 2v2 façon catch : quand un joueur meurt, son coéquipier prend sa place. Communication entre coéquipiers ouverte ou fermée (fermée se contourne facilement par Discord). Victoire au plus de kills en temps donné, ou au premier à 100 points.
+- **Golden Gun** — une seule arme, une balle tue, munitions illimitées. En temps donné ou à un objectif de points.
+- **Gun Game** — chaque kill fait passer à l'arme suivante, dans un ordre fixe. Se faire tuer au couteau fait redescendre d'un cran. Le premier à tuer avec la dernière arme gagne.
+- *Coop Zombie* — deux joueurs contre des vagues de zombies, comme dans Call of Duty. Noté pour mémoire : ce n'est pas du duel, donc hors de l'identité du jeu.
+
+## 12. Univers et ton
+
+**Pourquoi ces gens se battent-ils — pas encore tranché.** Pistes : des prisonniers (jugé trop classique), des combattants clandestins, des gladiateurs modernes.
+
+**Un présentateur en voix off** est envisagé, une fois le lore établi. Référence : le présentateur de *The Finals*, qui présente les parties comme un jeu télévisé.
+
+**Les personnages** sont **différents** les uns des autres mais ont **tous le même gabarit**, pour que les hitbox restent équitables. Ils sont **très distinctifs**, à commencer par la couleur, pour que les spectateurs ne confondent jamais les deux duellistes.
+
+La bizarrerie vit dans les réactions du public, certains éléments de décor, quelques animations stylisées et l'événement légendaire. Le gameplay, lui, reste nerveux, cadré, sérieux.
+
+## 13. Direction artistique
+
+**Pas encore choisie.** L'envie penche vers un style **entre cartoon et fantasy** plutôt que réaliste : plus lisible, plus distinctif, et plus cohérent avec des armes insolites et des power-ups.
+
+**Le principe directeur** (le plus important de cette section) : **transformer les contraintes techniques, budgétaires et d'animation en choix artistiques assumés.** Le jeu est développé par une seule personne. La DA doit être simple à produire, peu coûteuse en modélisation et en animation, et rendre les imperfections acceptables, voire naturelles. Exemple : si les personnages sont des robots, un lean qui ne fait pivoter que le buste, ou un mouvement légèrement saccadé, n'a plus rien d'anormal. Il fait partie de ce qu'ils sont.
+
+Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touches d'exagération, animations réactives (peu d'anticipation, gameplay d'abord), impacts et feedbacks exagérés.
+
+**La lisibilité des joueurs** (contour, couleur de tenue) sera tranchée avec la DA.
+
+**Pistes proposées par Claude le 2026-10-02**, rien n'est choisi :
+
+- **A — Gladiateurs mécaniques.** *Ne convainc pas l'utilisateur (2026-10-02) : piste mise de côté, conservée pour mémoire de son raisonnement technique.* Des robots aux membres rigides et articulés, peints à des couleurs franches. C'est la piste qui colle le mieux au principe directeur. Animer des pièces rigides demande peu de travail, et la mort prend un vrai sens : le robot vole en éclats, ce qui donne les impacts exagérés voulus sans gore. Avantage technique majeur : un robot fait de segments rigides **est** son hitbox. La règle « on touche ce qu'on voit » devient littérale, et un lean qui fait pivoter le buste est la chose la plus naturelle du monde pour une machine. Référence à regarder : *Clone Drone in the Danger Zone* (des robots en arène, devant un public, par une petite équipe).
+- **B — Figurines et jouets.** Des soldats en plastique ou des figurines articulées, dans une arène qui est un décor miniature. Les articulations raides sont celles d'un jouet, et l'étrangeté vient de l'échelle : des objets du quotidien deviennent des couvertures géantes.
+- **C — Plateau de jeu télévisé.** L'arène est un studio, le public est celui de l'émission, le présentateur commente. Ce n'est pas un style de personnage en soi, mais un cadre qui se combine bien avec A ou B, et qui donne d'un coup un lore au système de spectateurs, au présentateur et à la mise en scène de la victoire.
+
+**Où chercher des références** : Pinterest et ArtStation (chercher « stylized robot », « low poly character », « toy soldier diorama »), et dans le jeu vidéo *Clone Drone in the Danger Zone*, *The Finals* (le show), *Splitgate* et *Overwatch* (la lisibilité stylisée), *Hi-Fi Rush* (le cel shading).
+
+## 14. Progression et méta
+
+**Progression** : rangs, niveaux, et cosmétiques à débloquer. Jamais d'avantage de jeu.
+
+**Statistiques de fin de match** : précision, headshots, manches gagnées et perdues, manche la plus courte (avec son chrono). Chaque joueur reçoit un **titre** selon son style : *Sniper* s'il a beaucoup visé la tête, *Bourrin* s'il a fait beaucoup de kills au fusil à pompe, etc.
+
+**Replays** de duels : oui.
+
+**Classements** : oui, pour les tournois et les modes où des spectateurs prennent la place des duellistes.
+
+## 15. Interface et prise en main
+
+**HUD** : PV en chiffre, munitions, temps écoulé dans la manche, et les manches du match sous forme de cercles (vert pour une manche gagnée, rouge pour une perdue).
+
+**Apprentissage** : un tutoriel, sous la forme d'une arène avec des cibles en carton et des étapes scriptées, plus un stand de tir.
+
+**Réglages** : les classiques d'un FPS — touches personnalisables, sensibilité, FOV, réticule personnalisable, graphismes, son.
+
+**Le flow des écrans** : écran titre → menu (jouer, paramètres…) → choix du mode, avec ses réglages à côté → lobby → duel → écran de victoire et résultats → retour au lobby ou au menu.
+
+## 16. Le produit
+
+- **Sortie Steam payante, autour de 5 €** (prix indicatif). Modèle « payé une fois » : pas de free-to-play.
+- **PC, clavier-souris uniquement.** Aide à la visée minimale, comme sur Rainbow Six.
+- **Cible de performance** : 60 fps.
+- **Langues** : français et anglais au minimum, le plus possible à terme.
+- **Réseau** : mode hôte (Relay) pour les parties entre amis, serveur dédié pour le classé. Budget serveur à évaluer selon les tarifs.
+- **Anti-triche côté client**, en plus de l'autorité serveur.
+- **Pensé pour être regardé** : intégration Twitch, pour le mode arcade comme pour le classé.
+- **Équipe** : un développeur seul, sans échéance.
+- **Assets** : à choisir une fois la DA fixée.
+
+**Playtest.** Le premier jalon : un mini prototype fini, testé par un groupe de 5 ou 6 amis qui travaillent tous dans le jeu vidéo.
+
+**Le périmètre de ce prototype** (validé le 2026-10-02) : le mode classique, la rotation roi de la colline, une tribune où les spectateurs regardent, et un lobby privé avec code. Les interactions des spectateurs (cailloux, dons, bagarre) arrivent après ce premier test : il doit d'abord dire si le duel lui-même tient. Objectif : remonter les bugs techniques, et faire naître d'autres idées de règles. Leurs avis seront recueillis en discussion libre, avec prise de notes. Plus tard, avec plus de monde : un Discord, et des questionnaires.
+
+**Public cible** : joueurs compétitifs, amateurs de FPS skill-based, fans de duels rapides. Et, côté arcade, des groupes d'amis qui veulent passer une soirée ensemble.
+
+## 17. Questions encore ouvertes
+
+*Les trois tensions relevées dans le questionnaire ont été tranchées le 2026-10-02 : la gerbe à motif fixe (§ 3), les spectateurs qui agissent pendant les manches (§ 9), le ghosting accepté comme un risque (§ 9).*
+
+**À observer en playtest** :
+- **Les manches passives**, maintenant qu'il n'y a plus de limite de temps (§ 5).
+
+**Toujours ouvert** :
+- **La direction artistique** (§ 13) — la question la plus structurante qui reste, puisque le lore, les armes et la lisibilité des joueurs en dépendent. La piste des robots ne convainc pas : à reprendre.
+- Comment le joueur obtient son arme (§ 6).
+- Le multiplicateur des headshots, et le TTK qui en découle.
+- Les power-ups concrets : lesquels, et leurs effets.
+- L'ordre de priorité entre les modes, au-delà du classique.

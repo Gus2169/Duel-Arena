@@ -104,7 +104,7 @@ Le lean actuel fait *glisser toute la capsule* sur le côté. Avec un vrai perso
 
 🚨 **Règle à ne pas enfreindre : ne JAMAIS dériver le hitbox des os animés.** Un Animator n'est pas déterministe entre machines (blending, vitesse d'animation, `LateUpdate`, root motion), donc un hitbox accroché aux os ferait diverger la surface touchable d'un écran à l'autre — exactement le problème qu'on vient de fermer, réintroduit par la porte de derrière. **L'animation AFFICHE le lean ; le hitbox se CALCULE à partir du même scalaire réseauté.** Les deux lisent la même source, aucun ne lit l'autre.
 
-**Conséquence de gameplay, à arbitrer côté GDD** : aujourd'hui, pencher met le corps *entier* à l'abri — les jambes se téléportent derrière la couverture avec le reste, ce qui rend le peek un peu trop généreux. Un lean humanoïde exposerait la tête et l'épaule en laissant les jambes vulnérables : plus honnête, et plus proche du peek des FPS compétitifs.
+**Conséquence de gameplay — tranchée le 2026-10-02** : aujourd'hui, pencher met le corps *entier* à l'abri — les jambes se téléportent derrière la couverture avec le reste, ce qui rend le peek trop généreux. **Le GDD retient le lean façon Rainbow Six** : seul le buste se penche et s'expose, les jambes restent derrière le mur. L'utilisateur y travaille. La couture reste `PlayerHitbox.Apply(...)`, avec la règle ci-dessous.
 
 ### Ragdoll et hitbox par zone — position tranchée (2026-09-24)
 
@@ -207,7 +207,9 @@ Machine à états : `WaitingForPlayers` → `Starting` (décompte) → `Active` 
 
 L'ordre dans `BeginRound()` compte : on **soigne avant de replacer**. `ServerMoveToSpawnPoint()` choisit le point le plus éloigné des autres joueurs, donc replacer le premier influence le choix du second — c'est ce qui garantit des extrémités opposées même si les deux sont morts au même endroit. Vérifié en Play Mode : (0, 2) et (0, 58).
 
-**Décision de design en attente** : `roundTimeLimit` (60 s) rend la manche **nulle** sans que personne ne marque. Face à deux joueurs passifs, ça peut se répéter indéfiniment. Le GDD vise des manches de 15-30 s ; à trancher par playtest (mort subite ? double défaite ? réduction de l'arène ?).
+**Tranché le 2026-10-02 : pas de limite de temps.** Une manche se termine par une mort, le chrono n'était qu'un outil de test. Le code le supporte déjà : `roundTimeLimit = 0` désactive la limite (test `roundTimeLimit > 0f` dans `TickActiveRound`). Reste à passer le champ à 0 dans `MultiTestScene`, ce dont l'utilisateur se charge. Le « chrono » du futur HUD est le **temps écoulé** dans la manche, pas un compte à rebours. Si des manches passives apparaissent en playtest, la piste retenue par le GDD est la révélation sonore, pas le retour d'une limite.
+
+⚠️ **`RoundManager` suppose exactement deux joueurs connectés**, vérifié dans le code le 2026-10-02 : la manche démarre dès que `CountAlivePlayers() >= 2`, et à une mort `AddWin` est appelé pour **chaque** joueur non mort. À trois clients, deux joueurs marqueraient à chaque mort, et tous seraient armés dans l'arène. C'est le point qui bloque le modèle de session du GDD (voir « Ordre de travail »).
 
 L'affichage `OnGUI` du `RoundManager` est un **placeholder** au même titre que `NetworkBootstrapUI`, à remplacer par le HUD UI Toolkit.
 
@@ -487,8 +489,21 @@ Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline
 
 1. ~~Poser des obstacles franchissables~~ — fait le 2026-09-29 (`Barricade 0.5` / `1.25` / `1.6`).
 2. ~~Migrer le multijoueur vers `Arena.unity`~~ — **abandonné le 2026-09-29**, sans objet : l'arène a été reportée dans `MultiTestScene`.
-3. **Un vrai personnage (humanoïde placeholder), puis les hitbox par zone, puis les multiplicateurs de dégâts.** Voir l'arbitrage ci-dessous.
-4. **Lobby / Relay** (Unity Services), puis serveur dédié — le mode host-joueur donne un avantage de latence à l'hôte, inacceptable en 1v1 compétitif (règle du GDD). Volontairement APRÈS le personnage.
+3. **Un vrai personnage (humanoïde placeholder), puis les hitbox par zone, puis les multiplicateurs de dégâts.** Voir l'arbitrage ci-dessous. Le lean façon R6 (buste seul) en fait partie, l'utilisateur y travaille.
+4. **Le modèle de session : N joueurs, deux duellistes.** Voir ci-dessous.
+5. **Lobby avec code + Relay** (Unity Services), pour le playtest entre amis. Le serveur dédié vient après, et seulement pour le classé.
+
+### Ce que le questionnaire GDD change au plan (2026-10-02)
+
+Le GDD a été refondu à partir de 86 réponses. Trois décisions ont des conséquences d'architecture :
+
+**1. Un lobby de N joueurs, pas un duel à deux.** Deux duellistes s'affrontent pendant que les autres attendent dans une **tribune physique**, incarnés par un avatar à mains nues qui court, ramasse, lance des objets et se bat. Aujourd'hui, chaque client reçoit un joueur armé dans l'arène, et `RoundManager` suppose deux joueurs (voir sa section). Il faut une notion de **rôle** (duelliste / spectateur), attribuée par le serveur seul, et une rotation (roi de la colline par défaut). Le spectateur incarné n'est pas un duelliste désarmé : il n'a ni arme ni hitbox de duel, et ne doit jamais entrer dans l'arène. Ce chantier passe **avant** le Relay, parce que le premier playtest réunit 5 ou 6 personnes : à deux, on ne testerait ni la rotation ni la tribune.
+
+**2. Le mode hôte est désormais acceptable hors classé.** Le GDD n'interdit plus l'avantage de l'hôte que pour le classé, qui tournera sur serveur dédié. Entre amis, le Relay suffit. Rien ne change dans le code (il ne suppose déjà pas que le serveur a un joueur, voir plus bas), mais le serveur dédié n'est plus un prérequis du premier playtest. Le Relay, lui, en devient un : les testeurs ne sont pas sur le même réseau.
+
+**3. Les objets lancés par les spectateurs touchent les duellistes.** Cailloux et matériel seront des objets physiques **simulés par le serveur seul**, sur le modèle des dégâts. Le client demande un lancer (direction, force), le serveur le borne et le simule, jamais l'inverse. Le bruit d'un caillou qui tombe est un **événement sonore de catégorie B**, qui peut tromper un duelliste : c'est voulu par le GDD.
+
+**Périmètre recommandé pour le premier prototype** (le jalon « tester entre amis » du GDD) : le mode classique, la rotation roi de la colline, la tribune avec des spectateurs qui regardent, et le Relay avec code. Les interactions des spectateurs (cailloux, dons, bagarre) arrivent après ce premier test : elles demandent un vrai système d'objets lancés, et le test dira d'abord si le duel lui-même tient. **Validé par l'utilisateur le 2026-10-02.**
 
 ### Pourquoi le personnage passe avant le Lobby/Relay (tranché le 2026-09-29)
 
