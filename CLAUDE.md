@@ -429,11 +429,37 @@ La raison : `VaultRejoue_SuitExactementLeMemeArc` et ses voisins restaurent un �
 
 C'est lui, et lui seul, qui garde réellement l'invariant `SimulationState`. **Toute nouvelle valeur cumulative doit y être ajoutée**, sans quoi le prochain oubli passera de nouveau inaperçu.
 
-### Ce qui n'est PAS encore branché
+### La couche haut du corps (2026-09-30)
 
-- **`Airborne` et `Vaulting`** : les paramètres existent, l'Animator a les états, mais rien ne les alimente. `IsVaulting` et `controller.isGrounded` ne sont vrais que là où la simulation tourne — un spectateur ne les voit pas. Il leur faut un signal réseauté, ce qui est l'incrément suivant.
-- **La couche haute du corps** (visée + tir, via masque d'avatar). C'est elle qui permettra de tirer en strafant, les jambes jouant le déplacement pendant que le torse joue le tir — et donc d'utiliser les animations génériques `Run Left/Right/Backward`, qui ne tiennent pas d'arme.
-- Note de cadence : le MP5 tire toutes les **143 ms** (7 coups/s) alors que les animations de tir durent 270 ms (debout), 430 ms (couché) et **1030 ms (accroupi)**. Elles sont authorées pour un tir visé isolé. Celle d'accroupi ne passera probablement pas telle quelle.
+Une seconde couche d'Animator, `HautDuCorps`, pilote le torse, les bras et la tête indépendamment des jambes, via `Assets/_ProjectArt/MasqueHautDuCorps.mask`.
+
+**Ce qu'elle débloque** : tirer en strafant — les jambes jouent le déplacement pendant que le buste joue la visée ou le tir — et l'usage des animations génériques `Run Left/Right/Backward`, qui ne tiennent pas d'arme. Le masque les écrase au-dessus de la taille. Sans elle, il aurait fallu une animation par combinaison de direction, posture, visée et tir.
+
+🚨 **La racine est EXCLUE du masque.** Le déplacement racine appartient à `Move()` ; laisser une couche d'animation y toucher rouvrirait exactement le défaut de dérive réglé la veille.
+
+**Trois états, chacun aiguillé par la POSTURE** : `Arme` (arme basse), `Vise`, `Tir`. Un buste debout plaqué sur des jambes allongées serait grotesque, donc chaque état est un arbre 1D sur la posture, dont les seuils tombent sur 0/1/2 — un aiguillage exact, pas un mélange.
+
+⚠️ **Un arbre de mélange n'accepte qu'un paramètre FLOAT.** `Stance` est un entier, parce que les transitions de la couche de déplacement le comparent exactement (`Equals`), ce qu'un float ne permet pas proprement. D'où **`StanceF`**, miroir flottant alimenté par le même pilote. Duplication imposée par Unity, pas un choix — et une erreur muette si on l'oublie : l'Editor refuse l'arbre avec « uses parameter which is not float type » et l'exécution des tests part en NullReference.
+
+**Le tir passe par un ÉVÉNEMENT, pas par un sondage** (`WeaponController.OnShotFired`). Tirer est un instant, pas une condition qui dure : sonder un état raterait les coups tombant entre deux frames. L'événement est levé **des deux côtés** — chez le tireur depuis `Fire()`, chez tous les autres depuis `BroadcastShotClientRpc`, qui existait déjà pour le son et le tracer. **Aucun réseau supplémentaire n'a été nécessaire**, seulement un point d'accroche.
+
+La transition `Tir → Tir` sur soi-même est volontaire : chaque coup relance le recul depuis le début. Sans elle, un tir arrivant pendant l'état serait ignoré et l'arme paraîtrait tirer une fois sur deux.
+
+**La visée suit le même aiguillage que la posture** : `IsAiming` est affectée dans `Move()`, qu'un spectateur n'appelle jamais, donc l'adversaire n'épaulerait jamais. `networkAiming` + `DisplayAiming` referment le trou — troisième application du même patron, après la posture puis la chute et le franchissement.
+
+🚨 **`BlendTree.useAutomaticThresholds` vaut TRUE par défaut, et RÉÉCRIT les seuils passés à `AddChild`.** Les seuils 0/1/2 d'un aiguillage par posture deviennent **0 / 0,5 / 1**, répartis uniformément. `StanceF = 1` — accroupi — désignait donc le TROISIÈME enfant, celui du prone.
+
+Le symptôme en jeu : accroupi, le personnage avait **les bras pointés en l'air**. Un buste allongé (buste à 72° d'inclinaison) greffé sur des hanches accroupies. Et le tir accroupi jouait l'animation de tir couché.
+
+**Rien ne le signale** : ni le compilateur, ni la console, ni les tests d'états — qui ne regardent que le nom de l'état, pas le clip réellement joué. `LeHautDuCorps_JoueLeClipDeLaPostureCourante` comble ce trou en lisant le clip DOMINANT de la couche via `GetCurrentAnimatorClipInfo`.
+
+**Toujours poser `useAutomaticThresholds = false` avant d'écrire des seuils qui ont un sens.**
+
+⚠️ **Les clips accroupis de Mixamo ne sont pas tous la même posture.** Mesuré : `Rifle Kneel Idle` est un GENOU À TERRE (hanches à 0,38 m, bassin à +5°) tandis qu'`Idle Crouching Aiming` est un SQUAT (0,46 m, −14°). Le masque excluant la racine, greffer le buste de l'un sur les hanches de l'autre laisse une trentaine de degrés d'erreur. **Les deux couches doivent servir la même famille de pose** — c'est pourquoi l'attente accroupie de la couche de déplacement utilise elle aussi `Idle Crouching Aiming`.
+
+⚠️ **Les deux couches doivent partager la même cadence** (`SpeedMult` sur `Arme` et `Vise` comme sur les états de déplacement). Quand elles jouent le MÊME clip — c'est le cas en prone, où les deux servent `Prone Idle` — une différence de vitesse les désynchronise en permanence et le personnage paraît bouger alors qu'il est immobile. Le tir garde sa cadence propre : c'est un geste ponctuel, pas une allure.
+
+⚠️ **Limite connue, à éprouver en jeu** : le MP5 tire toutes les **143 ms** alors que les animations de tir durent 270 ms (debout), 430 ms (couché) et **1030 ms (accroupi)**. Elles sont authorées pour un tir visé isolé. Debout, relancer le geste à chaque coup devrait donner une pulsation de recul crédible ; accroupi, on ne verra jamais que les 14 premiers pour cent du clip. Si ça ne passe pas, la méthode est connue — mesurer où le recul se situe dans le clip, puis décaler l'entrée et accorder la vitesse, comme pour le vault.
 
 ## Configuration Git (posée le 2026-09-22)
 

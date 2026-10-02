@@ -52,8 +52,12 @@ public class PlayerAnimator : MonoBehaviour
     private static readonly int AirborneId = Animator.StringToHash("Airborne");
     private static readonly int VaultingId = Animator.StringToHash("Vaulting");
     private static readonly int VaultSpeedId = Animator.StringToHash("VaultSpeed");
+    private static readonly int StanceFId = Animator.StringToHash("StanceF");
+    private static readonly int AimingId = Animator.StringToHash("Aiming");
+    private static readonly int FireId = Animator.StringToHash("Fire");
 
     private PlayerLocomotion locomotion;
+    private WeaponController weapon;
     private Vector3 previousPosition;
     private Vector2 smoothedMove;
 
@@ -61,7 +65,30 @@ public class PlayerAnimator : MonoBehaviour
     {
         locomotion = GetComponent<PlayerLocomotion>();
         if (animator == null) animator = GetComponentInChildren<Animator>();
+        weapon = GetComponentInChildren<WeaponController>();
         previousPosition = transform.position;
+    }
+
+    private void OnEnable()
+    {
+        if (weapon != null) weapon.OnShotFired += DeclencherAnimationDeTir;
+    }
+
+    private void OnDisable()
+    {
+        if (weapon != null) weapon.OnShotFired -= DeclencherAnimationDeTir;
+    }
+
+    /// <summary>Un coup part : on relance le geste de tir sur le haut du corps.
+    ///
+    /// Piloté par ÉVÉNEMENT et non par sondage d'un état, parce que tirer est un instant et
+    /// non une condition qui dure — sonder raterait les coups tombant entre deux frames.
+    /// L'événement est levé des deux côtés par WeaponController : chez le tireur depuis Fire(),
+    /// chez tous les autres depuis la diffusion serveur qui existait déjà pour le son et le
+    /// tracer. Aucun réseau supplémentaire n'a été nécessaire.</summary>
+    private void DeclencherAnimationDeTir()
+    {
+        if (animator != null) animator.SetTrigger(FireId);
     }
 
     /// <summary>
@@ -101,6 +128,11 @@ public class PlayerAnimator : MonoBehaviour
 
         animator.SetInteger(StanceId, (int)stance);
 
+        // Miroir FLOTTANT de la posture. Un arbre de melange n'accepte qu'un parametre float,
+        // alors que les transitions de la couche de deplacement ont besoin d'un entier pour
+        // comparer exactement. Duplication imposee par Unity, pas un choix.
+        animator.SetFloat(StanceFId, (int)stance);
+
         // Un arbre de mélange NE modifie PAS la cadence de ses clips. À mi-vitesse il mélange
         // l'attente et la course, mais la course joue à 100 % de sa cadence pendant que le corps
         // n'avance qu'à moitié : les jambes s'agitent sans que le personnage suive. On accorde
@@ -136,6 +168,10 @@ public class PlayerAnimator : MonoBehaviour
         // gameplay. Au-delà, c'est vaultDuration qu'il faut allonger, et ça change le jeu.
         float duree = Mathf.Max(0.05f, locomotion.VaultDuration);
         animator.SetFloat(VaultSpeedId, vaultClipLength / duree);
+
+        // La visée passe par le même aiguillage que le reste : IsAiming est affectée dans
+        // Move(), qu'un spectateur n'appelle jamais, donc l'adversaire n'épaulerait jamais.
+        animator.SetBool(AimingId, locomotion.DisplayAiming);
     }
 
     /// <summary>Accorde la cadence d'une posture à ses clips. Mixamo n'authore pas ses animations

@@ -192,6 +192,7 @@ public class WeaponController : NetworkBehaviour
     private void Fire()
     {
         timeSinceLastShot = 0f;
+        OnShotFired?.Invoke();
         PlayFireSound();
 
         // IMPORTANT : on lit origin/direction AVANT d'appliquer le recul de CE tir. Sinon
@@ -252,6 +253,14 @@ public class WeaponController : NetworkBehaviour
     /// <summary>Joue le son de tir de l'arme équipée (data.fireSounds). Appelé localement par le
     /// tireur dans Fire(), et rediffusé aux autres clients par BroadcastShotClientRpc — sinon,
     /// comme pour le visuel avant l'ajout du ClientRpc, seul le tireur entendrait ses propres tirs.</summary>
+    /// <summary>Leve a chaque tir VU depuis cette machine : chez le tireur depuis Fire(), chez
+    /// tous les autres depuis BroadcastShotClientRpc. Purement cosmetique — il sert a declencher
+    /// l'animation de tir, qui doit etre visible sur l'adversaire comme sur soi.
+    ///
+    /// Le tir etait deja diffuse a tout le monde pour le son et le tracer : aucun reseau
+    /// supplementaire n'a ete necessaire, seulement un point d'accroche.</summary>
+    public event System.Action OnShotFired;
+
     private void PlayFireSound()
     {
         if (audioSource == null || data.fireSounds == null || data.fireSounds.Length == 0) return;
@@ -521,6 +530,8 @@ public class WeaponController : NetworkBehaviour
     private void BroadcastShotClientRpc(Vector3 origin, Vector3 end, bool hitSomething, Vector3 hitPoint, Vector3 hitNormal)
     {
         if (IsOwner) return; // déjà joué/affiché localement par le tireur, dans Fire()
+
+        OnShotFired?.Invoke();
 
         PlayFireSound();
 

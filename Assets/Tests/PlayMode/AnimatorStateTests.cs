@@ -95,6 +95,141 @@ public class AnimatorStateTests
         }
     }
 
+    private void AssertStateSurCouche(int couche, string attendu)
+    {
+        var info = animator.GetCurrentAnimatorStateInfo(couche);
+        Assert.IsTrue(info.IsName(attendu),
+            "Couche " + couche + " : état attendu « " + attendu + " », mais ce n'est pas celui joué.");
+    }
+
+    /// <summary>Renvoie le nom du clip DOMINANT sur une couche, celui dont le poids de mélange
+    /// est le plus fort.</summary>
+    private string ClipDominant(int couche)
+    {
+        var infos = animator.GetCurrentAnimatorClipInfo(couche);
+        Assert.Greater(infos.Length, 0, "Aucun clip joué sur la couche " + couche + ".");
+
+        string meilleur = null;
+        float poidsMax = -1f;
+        foreach (var info in infos)
+        {
+            if (info.weight > poidsMax) { poidsMax = info.weight; meilleur = info.clip.name; }
+        }
+        return meilleur;
+    }
+
+    /// <summary>
+    /// Le haut du corps doit jouer le clip de LA POSTURE COURANTE.
+    ///
+    /// 🚨 CE TEST EXISTE À CAUSE D'UN PIÈGE UNITY COÛTEUX : BlendTree.useAutomaticThresholds vaut
+    /// TRUE par défaut, et RÉÉCRIT les seuils passés à AddChild en les répartissant uniformément.
+    /// Les seuils 0/1/2 devenaient 0/0,5/1, si bien que StanceF=1 — accroupi — désignait le
+    /// TROISIÈME enfant, celui du prone. Un buste allongé greffé sur des hanches accroupies donnait
+    /// un personnage bras au ciel, et le tir accroupi jouait l'animation de tir couché.
+    ///
+    /// Rien ne le signale : ni le compilateur, ni la console, ni les tests d'états, qui ne
+    /// regardent que le nom de l'état et pas le clip réellement joué.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator LeHautDuCorps_JoueLeClipDeLaPostureCourante()
+    {
+        yield return Setup();
+
+        animator.SetFloat("SpeedMult", 1f);
+
+        animator.SetInteger("Stance", 0);
+        animator.SetFloat("StanceF", 0f);
+        yield return Settle();
+        StringAssert.Contains("Rifle Idle", ClipDominant(1));
+
+        animator.SetInteger("Stance", 1);
+        animator.SetFloat("StanceF", 1f);
+        yield return Settle();
+        StringAssert.Contains("Crouching", ClipDominant(1));
+
+        animator.SetInteger("Stance", 2);
+        animator.SetFloat("StanceF", 2f);
+        yield return Settle();
+        StringAssert.Contains("Prone", ClipDominant(1));
+    }
+
+    [UnityTest]
+    public IEnumerator Viser_BasculeLeHautDuCorpsEnPositionDeVisee()
+    {
+        yield return Setup();
+
+        animator.SetInteger("Stance", 0);
+        animator.SetFloat("SpeedMult", 1f);
+        yield return Settle();
+        AssertStateSurCouche(1, "Arme");
+
+        animator.SetBool("Aiming", true);
+        yield return Settle();
+        AssertStateSurCouche(1, "Vise");
+
+        animator.SetBool("Aiming", false);
+        yield return Settle();
+        AssertStateSurCouche(1, "Arme");
+    }
+
+    [UnityTest]
+    public IEnumerator UnTir_DeclencheLeGesteSurLeHautDuCorps()
+    {
+        yield return Setup();
+
+        animator.SetInteger("Stance", 0);
+        animator.SetFloat("SpeedMult", 1f);
+        yield return Settle();
+
+        animator.SetTrigger("Fire");
+
+        // Court : le geste de tir doit partir TOUT DE SUITE. Attendre Settle() le laisserait
+        // se terminer et revenir à Arme, ce qui ne prouverait rien — c'est le piège du test vide
+        // déjà payé trois fois sur ce projet.
+        yield return new WaitForSeconds(0.1f);
+        AssertStateSurCouche(1, "Tir");
+    }
+
+    /// <summary>
+    /// Le masque doit laisser les JAMBES à la couche de déplacement.
+    ///
+    /// C'est toute la raison d'être de cette couche : pouvoir tirer en strafant. Si le masque
+    /// incluait les jambes par erreur, la visée les figerait et le personnage glisserait, jambes
+    /// immobiles — un défaut qui se voit mal en jeu et que rien d'autre n'attraperait.
+    ///
+    /// On vérifie donc que la cuisse continue de BOUGER pendant une course visée.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator LeMasque_LaisseLesJambesALaCoucheDeDeplacement()
+    {
+        yield return Setup();
+
+        animator.SetInteger("Stance", 0);
+        animator.SetFloat("MoveY", 1f);        // course
+        animator.SetFloat("SpeedMult", 1f);
+        animator.SetBool("Aiming", true);      // et visée en même temps
+        yield return Settle();
+
+        Transform cuisse = animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg);
+        Assert.IsNotNull(cuisse, "Os LeftUpperLeg introuvable.");
+
+        Quaternion reference = cuisse.localRotation;
+        float amplitudeMax = 0f;
+
+        float ecoule = 0f;
+        while (ecoule < 0.6f)
+        {
+            ecoule += Time.deltaTime;
+            yield return null;
+            float ecart = Quaternion.Angle(reference, cuisse.localRotation);
+            if (ecart > amplitudeMax) amplitudeMax = ecart;
+        }
+
+        Assert.Greater(amplitudeMax, 10f,
+            "La cuisse n'a bougé que de " + amplitudeMax.ToString("F1") + "° pendant une course "
+            + "visée : le haut du corps a figé les jambes, donc le masque les inclut à tort.");
+    }
+
     [UnityTest]
     public IEnumerator ApresUneChute_RevientALaPostureAccroupie()
     {

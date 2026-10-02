@@ -189,6 +189,13 @@ public class PlayerLocomotion : NetworkBehaviour
     /// intervalle. Sans ça, retoucher la durée du vault désaccorderait silencieusement le geste.</summary>
     public float VaultDuration => vaultDuration;
 
+    /// <summary>Le joueur est-il en visee, du point de vue de l'AFFICHAGE ?
+    ///
+    /// IsAiming est affectee DANS Move(), qu'un spectateur n'appelle jamais : lue telle quelle
+    /// elle resterait false en permanence et l'adversaire n'epaulerait jamais son arme. Meme
+    /// aiguillage que pour la posture, la chute et le franchissement.</summary>
+    public bool DisplayAiming => (IsOwner || IsServer) ? IsAiming : networkAiming.Value;
+
     /// <summary>Le joueur est-il en l'air, du point de vue de l'AFFICHAGE ?
     ///
     /// Le franchissement en est EXCLU explicitement : il coupe le CharacterController, donc
@@ -263,6 +270,9 @@ public class PlayerLocomotion : NetworkBehaviour
         true, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     private readonly NetworkVariable<bool> networkVaulting = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    private readonly NetworkVariable<bool> networkAiming = new NetworkVariable<bool>(
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     /// <summary>Yaw (degrés, monde) — écrit par le serveur juste après avoir fait autorité sur le
@@ -1144,6 +1154,7 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         networkGrounded.Value = controller.enabled && controller.isGrounded;
         networkVaulting.Value = IsVaulting;
+        networkAiming.Value = IsAiming;
     }
 
     private void UpdateRemoteInterpolation()
