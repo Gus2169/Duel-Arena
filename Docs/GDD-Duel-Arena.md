@@ -2,7 +2,9 @@
 
 *L'âme du jeu. Ce document dit ce que Duel Arena **est** et ce qu'il refuse d'être — pas où en est le code. L'état technique, les priorités et les dettes vivent dans `CLAUDE.md`, à la racine du projet.*
 
-*Refondu le 2026-10-02 à partir du questionnaire de conception. Les réponses brutes, avec leurs hésitations, sont archivées dans `Docs/Questionnaire-GDD.md`. En cas de désaccord, c'est ce document-ci qui fait foi.*
+*Refondu le 2026-10-02 à partir du questionnaire de conception. Les réponses brutes, avec leurs hésitations, sont archivées dans `Docs/Questionnaire-GDD.md`.*
+
+*Le monde et l'apparence du jeu (lore, personnages, armes, arènes, ton, direction artistique) vivent dans la bible, `Docs/Bible-Lore-DA.md`. **Ce document-ci fait foi pour les règles du jeu, la bible pour le monde et l'apparence.** En cas de conflit sur une règle de jeu, c'est le GDD qui gagne (tranché le 2026-10-04).*
 
 *« Duel Arena » est un nom **provisoire**.*
 
@@ -12,9 +14,11 @@
 
 **Un jeu de duel 1v1 nerveux, lisible, compétitif et fun.** Deux joueurs s'affrontent dans une arène fermée, sous les yeux d'un public qui attend son tour, depuis une tribune qui surplombe le combat.
 
-Le modèle est un **combat de gladiateurs ou de boxe** : le duel est le spectacle, et ceux qui regardent font partie de la soirée. Ils peuvent même, selon les réglages, s'en mêler. La référence de format est le goulag de Call of Duty (mode de jeu et arène fermée) ; la référence de contrôles est Rainbow Six Siege.
+Le modèle est un **combat clandestin**, façon boxe ou gladiateurs : le duel est le spectacle, et ceux qui regardent font partie de la soirée. Ils peuvent même, selon les réglages, s'en mêler. La référence de format est le goulag de Call of Duty (mode de jeu et arène fermée) ; la référence de contrôles est Rainbow Six Siege.
 
-**Ton** : sérieux dans le gameplay, avec une bizarrerie assumée (7/10). La compétition ne plaisante pas ; l'univers, si.
+**Le monde** : des prototypes de soldats robotisés, rafistolés, qui s'affrontent en duels clandestins dans un complexe militaire souterrain, oublié après la disparition de l'humanité. L'ancienne IA de supervision commente les matchs. Le détail est dans la bible.
+
+**Ton** : sérieux dans le gameplay, le ton et le thème, avec une bizarrerie assumée (7/10). Drôle quand même, jamais enfantin.
 
 **Le jeu qu'on relance.** Une session dure une heure ou plus. L'objectif est qu'à la fin d'un match, on ait envie d'en relancer un autre.
 
@@ -25,6 +29,8 @@ Le modèle est un **combat de gladiateurs ou de boxe** : le duel est le spectacl
 3. **Fun** — spectateurs, touches visuelles, rythme, célébrations.
 4. **Rapidité** — boucle courte, addictive.
 
+Ce sont les piliers du jeu. La bible a ses propres piliers, qui guident la direction artistique et le lore (tranché le 2026-10-04).
+
 ## 3. Règles non négociables
 
 Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les contredit, c'est la décision qui change.
@@ -33,14 +39,14 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 - **Personne ne commence avec un avantage.** Ni en début de partie, ni en début de manche. Seule exception : un mode ou un réglage de partie qui l'annonce explicitement.
 - **Pas de pay-to-win.** Ce qui s'achète ou se débloque est cosmétique.
 - **Pas de RNG dans la précision.** Deux joueurs qui tirent la même rafale dans les mêmes conditions subissent exactement le même recul. Le recul est une courbe apprenable, jamais une dispersion aléatoire. Les armes à gerbe (fusil à pompe) tirent selon un **motif fixe**, identique à chaque tir : large et lisible au jugé, mais jamais aléatoire (tranché le 2026-10-02).
-- **En classé, aucun avantage de latence structurel.** Les parties classées tournent sur serveur dédié. Entre amis, le mode hôte est accepté.
+- **En classé, aucun avantage de latence structurel.** Le classé arrivera **après la sortie**, sur serveur dédié. D'ici là, toutes les parties tournent en mode hôte, qui donne un léger avantage à celui qui héberge : accepté entre amis.
 - **Le son est une information de gameplay**, au même titre que le visuel. Jamais un habillage.
 - **En classé, le duel est pur** : pas de spectateurs, pas d'interventions. Ailleurs, les spectateurs peuvent peser sur le duel (voir § 9), mais toujours par un **geste physique imparfait** : courir, ramasser, viser, lancer. Jamais par un simple bouton qui donnerait un avantage à coup sûr.
 - **Tout ce qui sort du duel pur se règle par partie** : spectateurs, power-ups, chat vocal, événements. Le classé les désactive.
 
 ## 4. Structure d'une session
 
-**Un lobby de plusieurs joueurs, deux duellistes à la fois.** Les autres sont spectateurs, dans la tribune, et attendent leur tour. Le nombre de spectateurs est plafonné.
+**Un lobby de plusieurs joueurs, deux duellistes à la fois.** Les autres sont spectateurs, dans la tribune, et attendent leur tour. Le nombre de spectateurs dépend du mode : **deux pour le prototype** (4 joueurs au total), peut-être jusqu'à six plus tard.
 
 **L'organisation des duels se règle par partie** :
 - **Roi de la colline** — le format par défaut. Le gagnant reste, le perdant retourne dans la file, le suivant prend sa place.
@@ -53,7 +59,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Abandon en plein match** : forfait automatique.
 
-**Matchmaking** : lobby privé entre amis avec un code, file publique non classée, et file publique classée (sans spectateurs, sur serveur dédié). Matchmaking par région, pour limiter le ping.
+**Matchmaking** : à la sortie, **uniquement des lobbys privés avec un code**, sans file publique : sans serveur dédié, une file publique mettrait des inconnus face à un hôte qui a l'avantage de la latence (tranché le 2026-10-04). **Après la sortie** : la file classée (sans spectateurs, sur serveur dédié), avec un matchmaking par région pour limiter le ping.
 
 **Le réglage des parties doit être complet sans être pénible.** Il y aura beaucoup d'options, et le risque est un écran de configuration indigeste. Piste : des **préréglages** nommés (classique, arcade…) qui couvrent 90 % des cas, avec un onglet avancé pour le reste.
 
@@ -71,17 +77,21 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Le kill** déclenche une **mini-célébration** : une phrase écrite à l'écran pour le gagnant, et une autre pour le perdant.
 
-**Entre deux manches** : fondu au noir. Toutes les lumières de l'arène s'éteignent, les deux joueurs sont replacés dans l'obscurité, puis la lumière revient et la manche suivante démarre. Le replacement n'est jamais vu, pas même par les spectateurs. Une killcam pour les deux joueurs est envisagée, à condition de ne pas casser le rythme.
+**Entre deux manches** : fondu au noir. Toutes les lumières de l'arène s'éteignent, les deux joueurs sont replacés dans l'obscurité, puis la lumière revient et la manche suivante démarre. Le replacement n'est jamais vu, pas même par les spectateurs. Dans le noir, **on entend la reconstruction des châssis** (perceuses, servomoteurs). Une killcam pour les deux joueurs est envisagée, à condition de ne pas casser le rythme.
 
-**Fin de match** : un écran de victoire mis en scène pour le gagnant (mouvement de caméra, musique, animation, dans l'esprit d'un montage « aura farming »), puis un tableau récapitulatif pour les deux.
+**Fin de match** : un écran de victoire mis en scène pour le gagnant (mouvement de caméra, musique, animation, dans l'esprit d'un montage « aura farming »), puis un tableau récapitulatif pour les deux. Drôle, jamais enfantin (confirmé le 2026-10-04).
 
 ## 6. Combat et armes
 
 **TTK** — la cible de départ est ≈ **0,7 seconde** de tir soutenu, mais elle est **à retravailler**, notamment avec l'arrivée des headshots. Elle vit dans l'inspecteur, pas en dur dans le code.
 
-**Le MP5 actuel est une arme de test.** Le choix des armes dépend de la direction artistique (§ 13).
+**Le MP5 actuel est une arme de test.** L'apparence des armes est décrite dans la bible (§ 12 de la bible) : conventionnelles, prototypes, bricolées, absurdes.
 
 **L'identité « insolite »** : des armes qui jouent sur le décalage entre leur apparence et leur effet. Exemples cités : un énorme pistolet bionique démesuré qui tire un minuscule rayon paralysant (ralentit beaucoup, blesse peu), ou à l'inverse un petit pistolet qui tire un énorme trou noir.
+
+**Les armes bricolées sont un style visuel**, pas une mécanique : elles fonctionnent comme les autres, sans défaut ni enrayement (tranché le 2026-10-04).
+
+**Pas de pouvoirs propres aux personnages.** Seulement des power-ups, ramassés dans l'arène (tranché le 2026-10-04).
 
 **Obtenir son arme — pas encore tranché.** La piste la plus avancée : avant le match, un tirage à pile ou face désigne un joueur, qui choisit une **classe d'arme** (sniper, fusil d'assaut, pompe, pistolet…) et l'**impose aussi à l'adversaire**. À la manche suivante, c'est le perdant qui choisit. Le risque à étudier : la frustration de jouer une arme qu'on n'a pas choisie. Les spectateurs peuvent aussi, selon les réglages, voter l'arme ou en lancer une dans l'arène.
 
@@ -105,9 +115,9 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Retour de touche** : hitmarker, un son de touche, et un son différent pour la tête.
 
-**Recevoir une balle** : un écran qui rougit, un son d'impact, et un **très léger** sursaut de caméra. Rien d'exagéré : le sursaut punit déjà le joueur touché en premier.
+**Recevoir une balle** : des **parasites et des interférences** à l'écran (un robot ne saigne pas), un son d'impact, et un **très léger** sursaut de caméra. Rien d'exagéré : le sursaut punit déjà le joueur touché en premier.
 
-**La mort** : ragdoll projeté, son signature, et un **replay instantané exagéré au ralenti**, dans l'esprit de la killcam de *Sniper Elite* ou des finish de *Mortal Kombat*.
+**La mort** : le châssis vole en pièces (ragdoll, pas de gore), un son signature, et un **replay instantané exagéré au ralenti**, dans l'esprit de la killcam de *Sniper Elite* ou des finish de *Mortal Kombat*.
 
 ## 7. Mouvement
 
@@ -137,6 +147,12 @@ Un adversaire proche doit pouvoir **entendre** les pas, le ramper, les changemen
 
 **Chat vocal entre duellistes** : possible, si la partie l'active.
 
+**La voix de l'IA** : pendant une manche, elle peut parler, mais **rarement, brièvement, et jamais fort** : juste assez pour que les deux joueurs l'entendent (tranché le 2026-10-04). Les deux l'entendent donc au même volume, quelle que soit leur position. Le reste (présentation, résultats, piques) vit avant et après la manche.
+
+**Tous les robots font exactement les mêmes bruits.** Les cosmétiques changent la peinture et la forme, jamais le son : un robot plus discret qu'un autre serait un avantage (tranché le 2026-10-04).
+
+**Les sons de reconstruction** du fondu au noir (§ 5) s'arrêtent avant que la manche démarre, pour qu'elle commence dans un silence où l'on entend les pas.
+
 **Accessibilité** : pas d'indicateur visuel des sons dans le prototype. À reconsidérer plus tard.
 
 Les sons forts (tirs, explosions) formeront un **canal séparé** des sons de contexte. C'est ce canal qui alimentera le mode **Arène dans le noir**, une envie forte (§ 11).
@@ -145,9 +161,9 @@ Les sons forts (tirs, explosions) formeront un **canal séparé** des sons de co
 
 C'est le système qui fait l'identité du jeu : **personne n'attend sans rien faire.**
 
-**Qui** : les joueurs du lobby qui attendent leur tour, et, à terme, des viewers Twitch. Nombre plafonné. **Toutes leurs actions se règlent avant la partie**, et le classé n'en a aucune.
+**Qui** : les joueurs du lobby qui attendent leur tour. Leur nombre dépend du mode, deux pour le prototype (§ 4). **Toutes leurs actions se règlent avant la partie**, et le classé n'en a aucune. L'intégration Twitch est abandonnée pour l'instant : un bonus possible, pas un besoin (tranché le 2026-10-04).
 
-**Où** : une **tribune physique**, une plateforme circulaire fermée et surélevée qui fait le tour de l'arène, comme au goulag de CoD. Chaque spectateur y est **incarné** par un avatar, **à mains nues**.
+**Où** : une **tribune physique**, une plateforme circulaire fermée et surélevée qui fait le tour de l'arène, comme au goulag de CoD (confirmé le 2026-10-04). Chaque spectateur y est **incarné** par un robot, **à mains nues**.
 
 **Ce qu'ils font** — un petit jeu à eux, conçu pour les occuper sans dicter le duel. Ils agissent **pendant les manches**, si le mode et les réglages de la partie le permettent :
 - **Dons de matériel.** Du matériel (armes, grenades, accessoires) tombe au hasard sur leurs plateformes. Il faut **courir** pour le ramasser, puis le **lancer** à un duelliste. Un mauvais lancer peut l'envoyer au mauvais duelliste. On peut aussi le garder, sans pouvoir s'en servir, pour en priver les autres.
@@ -166,7 +182,7 @@ C'est le système qui fait l'identité du jeu : **personne n'attend sans rien fa
 
 ## 10. Arène et level design
 
-**Plusieurs arènes**, une seule par partie. Symétriques ou asymétriques selon l'arène.
+**Plusieurs arènes**, une seule par partie. Symétriques ou asymétriques selon l'arène. Ce sont d'anciennes salles du complexe souterrain ; leurs typologies (salle de test balistique, hangar de maintenance…) sont dans la bible.
 
 Taille intermédiaire, comparable au goulag de CoD, avec des zones pour les trois distances de combat : close, medium, long. **Un niveau de hauteur** au-dessus du sol, et l'avantage de la hauteur est **voulu**.
 
@@ -174,7 +190,7 @@ Taille intermédiaire, comparable au goulag de CoD, avec des zones pour les troi
 
 **Éléments dynamiques** : les lumières (déjà au cœur de la transition entre manches).
 
-**L'événement légendaire.** Une surprise qui ne tombe presque jamais, dans l'esprit de la légende de Herobrine dans Minecraft : pendant une manche, au hasard, toutes les lumières s'éteignent, une musique étrange se lance avec des bruits terrifiants, et une créature mystérieuse traverse l'arène pour effrayer les joueurs. **Uniquement dans les modes arcade**, jamais en classé : c'est du hasard, assumé parce qu'il est rare et qu'il ne touche pas au compétitif.
+**L'événement légendaire.** Une surprise qui ne tombe presque jamais, dans l'esprit de la légende de Herobrine dans Minecraft : pendant une manche, au hasard, toutes les lumières s'éteignent, une musique étrange se lance avec des bruits terrifiants, et une créature mystérieuse traverse l'arène pour effrayer les joueurs (sa nature reste à définir, dans la bible). **Uniquement dans les modes arcade**, jamais en classé : c'est du hasard, assumé parce qu'il est rare et qu'il ne touche pas au compétitif.
 
 Pas de destruction totale — la lisibilité prime.
 
@@ -184,7 +200,7 @@ Le layout se valide par playtest avant de recevoir son habillage visuel définit
 
 Le **classique** est le cœur, et le seul du premier prototype. Les autres sont des pistes, sans engagement.
 
-**Les deux familles** : les modes **arcade** (spectateurs, power-ups, événements, réglages libres) et le **classé** (duel pur, sans spectateurs, serveur dédié).
+**Les deux familles** : les modes **arcade** (spectateurs, power-ups, événements, réglages libres) et le **classé** (duel pur, sans spectateurs, serveur dédié), qui arrivera après la sortie.
 
 - **Classique** — 1v1 en BO5 ou BO3, un joueur de chaque côté de l'arène.
 - **Variante à respawn continu** — au lieu d'arrêter le jeu à chaque mort, le perdant réapparaît ailleurs dans l'arène et le combat continue. Évite les coupures qui cassent le rythme. *Point faible identifié : les points de réapparition. S'ils sont exploitables, le joueur qui réapparaît se fait tuer en boucle.*
@@ -198,37 +214,39 @@ Le **classique** est le cœur, et le seul du premier prototype. Les autres sont 
 
 ## 12. Univers et ton
 
-**Pourquoi ces gens se battent-ils — pas encore tranché.** Pistes : des prisonniers (jugé trop classique), des combattants clandestins, des gladiateurs modernes.
+*Résumé. La référence est la bible ; ce qui suit n'est là que pour les règles qui en découlent.*
 
-**Un présentateur en voix off** est envisagé, une fois le lore établi. Référence : le présentateur de *The Finals*, qui présente les parties comme un jeu télévisé.
+**Pourquoi ils se battent** : ils n'ont plus de mission militaire. Les duels sont devenus une activité auto-organisée : défi, divertissement, reconnaissance, entretien des compétences. Il n'y a pas de « dernière directive ».
 
-**Les personnages** sont **différents** les uns des autres mais ont **tous le même gabarit**, pour que les hitbox restent équitables. Ils sont **très distinctifs**, à commencer par la couleur, pour que les spectateurs ne confondent jamais les deux duellistes.
+**La voix des matchs** est l'ancienne IA de supervision : froide, au vocabulaire militaire, mais elle a évolué comme les robots et glisse de petites piques. **Elle ne se trompe jamais**, ses informations de jeu sont toujours exactes. Elle remplace le présentateur façon *The Finals* envisagé avant la bible.
 
-La bizarrerie vit dans les réactions du public, certains éléments de décor, quelques animations stylisées et l'événement légendaire. Le gameplay, lui, reste nerveux, cadré, sérieux.
+**Les combattants** sont tous bâtis sur le **même châssis**, pour que les hitbox restent équitables. Ils se distinguent par leur peinture et leurs formes cosmétiques, jamais par le son (§ 8).
+
+**Ton** : sérieux dans le ton et le thème, drôle quand même, jamais enfantin. La bizarrerie vit dans le contexte, les armes, les annonces de l'IA, les réactions du public et l'événement légendaire. Le gameplay, lui, reste nerveux, cadré, sérieux.
 
 ## 13. Direction artistique
 
-**Pas encore choisie.** L'envie penche vers un style **entre cartoon et fantasy** plutôt que réaliste : plus lisible, plus distinctif, et plus cohérent avec des armes insolites et des power-ups.
+*Résumé. La référence est la bible (§ 10 et suivants de la bible).*
 
-**Le principe directeur** (le plus important de cette section) : **transformer les contraintes techniques, budgétaires et d'animation en choix artistiques assumés.** Le jeu est développé par une seule personne. La DA doit être simple à produire, peu coûteuse en modélisation et en animation, et rendre les imperfections acceptables, voire naturelles. Exemple : si les personnages sont des robots, un lean qui ne fait pivoter que le buste, ou un mouvement légèrement saccadé, n'a plus rien d'anormal. Il fait partie de ce qu'ils sont.
+**Industrielle dystopique stylisée**, en low-poly propre ou en cel-shading discret (à prototyper). La piste « cartoon et fantasy » est abandonnée (tranché le 2026-10-04).
+
+**Le principe directeur** : **transformer les contraintes techniques, budgétaires et d'animation en choix artistiques assumés.** Le jeu est développé par une seule personne. Des robots aux pièces rigides rendent naturels un lean qui ne fait pivoter que le buste, ou un mouvement légèrement saccadé.
+
+**La lisibilité des joueurs** (tranché le 2026-10-04) : un décor **sombre et terne**, presque sans jaune, et des robots de **couleur vive**. **Chaque robot a sa propre couleur**, pour que les spectateurs reconnaissent vite chaque duelliste, même après l'avoir perdu de vue. C'est la peinture qui l'identifie. Les réparations (plaques rapportées) sont de couleur libre.
+
+**La personnalisation viendra après le prototype.** Quand elle arrivera, les peintures seront **limitées à des couleurs vives**, pour que personne ne puisse se camoufler dans le décor (tranché le 2026-10-04). Dans le prototype, c'est le jeu qui donne une couleur différente à chaque joueur.
 
 Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touches d'exagération, animations réactives (peu d'anticipation, gameplay d'abord), impacts et feedbacks exagérés.
 
-**La lisibilité des joueurs** (contour, couleur de tenue) sera tranchée avec la DA.
-
-**Pistes proposées par Claude le 2026-10-02**, rien n'est choisi :
-
-- **A — Gladiateurs mécaniques.** *Ne convainc pas l'utilisateur (2026-10-02) : piste mise de côté, conservée pour mémoire de son raisonnement technique.* Des robots aux membres rigides et articulés, peints à des couleurs franches. C'est la piste qui colle le mieux au principe directeur. Animer des pièces rigides demande peu de travail, et la mort prend un vrai sens : le robot vole en éclats, ce qui donne les impacts exagérés voulus sans gore. Avantage technique majeur : un robot fait de segments rigides **est** son hitbox. La règle « on touche ce qu'on voit » devient littérale, et un lean qui fait pivoter le buste est la chose la plus naturelle du monde pour une machine. Référence à regarder : *Clone Drone in the Danger Zone* (des robots en arène, devant un public, par une petite équipe).
-- **B — Figurines et jouets.** Des soldats en plastique ou des figurines articulées, dans une arène qui est un décor miniature. Les articulations raides sont celles d'un jouet, et l'étrangeté vient de l'échelle : des objets du quotidien deviennent des couvertures géantes.
-- **C — Plateau de jeu télévisé.** L'arène est un studio, le public est celui de l'émission, le présentateur commente. Ce n'est pas un style de personnage en soi, mais un cadre qui se combine bien avec A ou B, et qui donne d'un coup un lore au système de spectateurs, au présentateur et à la mise en scène de la victoire.
-
-**Où chercher des références** : Pinterest et ArtStation (chercher « stylized robot », « low poly character », « toy soldier diorama »), et dans le jeu vidéo *Clone Drone in the Danger Zone*, *The Finals* (le show), *Splitgate* et *Overwatch* (la lisibilité stylisée), *Hi-Fi Rush* (le cel shading).
+*Les pistes proposées par Claude le 2026-10-02 (gladiateurs mécaniques, figurines, plateau télé) sont dépassées par la bible.*
 
 ## 14. Progression et méta
 
 **Progression** : rangs, niveaux, et cosmétiques à débloquer. Jamais d'avantage de jeu.
 
-**Statistiques de fin de match** : précision, headshots, manches gagnées et perdues, manche la plus courte (avec son chrono). Chaque joueur reçoit un **titre** selon son style : *Sniper* s'il a beaucoup visé la tête, *Bourrin* s'il a fait beaucoup de kills au fusil à pompe, etc.
+**Une monnaie de pièces détachées** sert à embellir son robot, de façon purement esthétique. Le rafistolage devient ainsi la progression visible : un robot porte la trace de ses parties. **Pour l'instant, elle se gagne seulement en jouant.** La vendre contre de l'argent réel reste une possibilité, à décider plus tard (2026-10-04).
+
+**Statistiques de fin de match** : précision, headshots, manches gagnées et perdues, manche la plus courte (avec son chrono). Chaque joueur reçoit un **profil de combat** établi par l'IA selon son style (par exemple un profil de tireur de précision pour celui qui a beaucoup visé la tête, un profil d'assaut pour celui qui a fait beaucoup de kills au fusil à pompe).
 
 **Replays** de duels : oui.
 
@@ -250,17 +268,17 @@ Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touch
 - **PC, clavier-souris uniquement.** Aide à la visée minimale, comme sur Rainbow Six.
 - **Cible de performance** : 60 fps.
 - **Langues** : français et anglais au minimum, le plus possible à terme.
-- **Réseau** : mode hôte (Relay) pour les parties entre amis, serveur dédié pour le classé. Budget serveur à évaluer selon les tarifs.
-- **Anti-triche côté client**, en plus de l'autorité serveur.
-- **Pensé pour être regardé** : intégration Twitch, pour le mode arcade comme pour le classé.
+- **Réseau** : à la sortie, mode hôte (Relay), avec des lobbys privés à code seulement. Après la sortie, serveur dédié pour le classé ; budget serveur à évaluer selon les tarifs à ce moment-là.
+- **Anti-triche côté client** : avec le classé, après la sortie. Entre amis, l'autorité serveur suffit.
+- **Twitch** : abandonné pour l'instant, un bonus possible plus tard.
 - **Équipe** : un développeur seul, sans échéance.
 - **Assets** : à choisir une fois la DA fixée.
 
 **Playtest.** Le premier jalon : un mini prototype fini, testé par un groupe de 5 ou 6 amis qui travaillent tous dans le jeu vidéo.
 
-**Le périmètre de ce prototype** (validé le 2026-10-02) : le mode classique, la rotation roi de la colline, une tribune où les spectateurs regardent, et un lobby privé avec code. Les interactions des spectateurs (cailloux, dons, bagarre) arrivent après ce premier test : il doit d'abord dire si le duel lui-même tient. Objectif : remonter les bugs techniques, et faire naître d'autres idées de règles. Leurs avis seront recueillis en discussion libre, avec prise de notes. Plus tard, avec plus de monde : un Discord, et des questionnaires.
+**Le périmètre de ce prototype** (validé le 2026-10-02) : le mode classique, la rotation roi de la colline, une tribune où les spectateurs regardent, et un lobby privé avec code. Quatre joueurs à la fois : deux duellistes, deux spectateurs. Si le groupe de testeurs est plus grand, les autres attendent leur tour hors du jeu (2026-10-04). Les interactions des spectateurs (cailloux, dons, bagarre) arrivent après ce premier test : il doit d'abord dire si le duel lui-même tient. Objectif : remonter les bugs techniques, et faire naître d'autres idées de règles. Leurs avis seront recueillis en discussion libre, avec prise de notes. Plus tard, avec plus de monde : un Discord, et des questionnaires.
 
-**Public cible** : joueurs compétitifs, amateurs de FPS skill-based, fans de duels rapides. Et, côté arcade, des groupes d'amis qui veulent passer une soirée ensemble.
+**Public cible** : des groupes d'amis qui veulent tester leur skill et passer une soirée ensemble ; amateurs de FPS skill-based et de duels rapides. Le jeu ne cherche pas nécessairement à devenir une discipline esport : le classé est une extension, après la sortie (2026-10-04).
 
 ## 17. Questions encore ouvertes
 
@@ -269,9 +287,17 @@ Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touch
 **À observer en playtest** :
 - **Les manches passives**, maintenant qu'il n'y a plus de limite de temps (§ 5).
 
+*Les 29 arbitrages entre la bible et le GDD ont été tranchés le 2026-10-04 ; les deux documents en tiennent compte.*
+
+*Les points en suspens relevés ensuite ont été tranchés le même jour : peintures limitées à des couleurs vives (§ 13), lobbys privés seulement à la sortie (§ 4), quatre places pour le prototype (§ 16), monnaie gagnée en jouant (§ 14), voix de l'IA rare et discrète pendant la manche (§ 8).*
+
+**À garder en tête pour la personnalisation** (après le prototype) :
+- **Deux duellistes de la même couleur.** Limiter les peintures aux couleurs vives empêche le camouflage, mais pas que deux joueurs choisissent le même rouge, alors que chaque duelliste doit garder sa propre couleur (§ 13).
+- **Les réparations de couleur libre** : suivent-elles la même limite que les peintures ? Un robot couvert de plaques grises se camouflerait autant qu'un robot peint en gris.
+
 **Toujours ouvert** :
-- **La direction artistique** (§ 13) — la question la plus structurante qui reste, puisque le lore, les armes et la lisibilité des joueurs en dépendent. La piste des robots ne convainc pas : à reprendre.
 - Comment le joueur obtient son arme (§ 6).
 - Le multiplicateur des headshots, et le TTK qui en découle.
 - Les power-ups concrets : lesquels, et leurs effets.
 - L'ordre de priorité entre les modes, au-delà du classique.
+- Ce qui relève du lore et reste ouvert est listé dans la bible (§ 18 de la bible) : la créature de l'événement légendaire, le nom de l'IA, le style de rendu final.

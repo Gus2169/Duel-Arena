@@ -4,7 +4,11 @@ FPS de **duel 1v1** en Unity 6 (6000.6.0f1), URP, multijoueur via Netcode for Ga
 
 ## Comment ce projet se pilote
 
-**`Docs/GDD-Duel-Arena.md` est le seul document qui fait autorité, et il ne parle que de design** — la vision, les piliers, les règles non négociables, ce que le jeu refuse d'être. C'est l'âme du jeu : à consulter avant toute décision qui touche au ressenti, à l'équilibrage ou au contenu, et à mettre à jour quand une décision de design est prise.
+**Deux documents de design font autorité, chacun sur son terrain** (tranché le 2026-10-04) :
+- **`Docs/GDD-Duel-Arena.md` pour les règles du jeu** — la vision, les piliers, les règles non négociables, ce que le jeu refuse d'être. C'est l'âme du jeu : à consulter avant toute décision qui touche au ressenti, à l'équilibrage ou au contenu.
+- **`Docs/Bible-Lore-DA.md` pour le monde et l'apparence** — lore, personnages, armes, arènes, ton, direction artistique. C'est désormais la version de référence de la bible : le PDF d'origine de l'utilisateur en est la base, et ses écarts sont listés dans son journal.
+
+En cas de conflit sur une règle de jeu, **le GDD gagne**. Les deux se mettent à jour quand une décision de design est prise.
 
 **Pour tout le reste — architecture, technique, priorités, dettes — ce fichier est la seule source de vérité**, et c'est Claude qui en est le juge. Concrètement :
 
@@ -491,7 +495,7 @@ Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline
 2. ~~Migrer le multijoueur vers `Arena.unity`~~ — **abandonné le 2026-09-29**, sans objet : l'arène a été reportée dans `MultiTestScene`.
 3. **Un vrai personnage (humanoïde placeholder), puis les hitbox par zone, puis les multiplicateurs de dégâts.** Voir l'arbitrage ci-dessous. Le lean façon R6 (buste seul) en fait partie, l'utilisateur y travaille.
 4. **Le modèle de session : N joueurs, deux duellistes.** Voir ci-dessous.
-5. **Lobby avec code + Relay** (Unity Services), pour le playtest entre amis. Le serveur dédié vient après, et seulement pour le classé.
+5. **Lobby avec code + Relay** (Unity Services), pour le playtest entre amis. C'est aussi ce qui sort : **des lobbys privés à code, et aucune file publique**. Le classé, et avec lui le serveur dédié, l'anti-triche client et le matchmaking par région, viennent après la sortie (tranché le 2026-10-04). Aucun service de matchmaking n'est donc à intégrer d'ici là.
 
 ### Ce que le questionnaire GDD change au plan (2026-10-02)
 
@@ -504,6 +508,20 @@ Le GDD a été refondu à partir de 86 réponses. Trois décisions ont des cons�
 **3. Les objets lancés par les spectateurs touchent les duellistes.** Cailloux et matériel seront des objets physiques **simulés par le serveur seul**, sur le modèle des dégâts. Le client demande un lancer (direction, force), le serveur le borne et le simule, jamais l'inverse. Le bruit d'un caillou qui tombe est un **événement sonore de catégorie B**, qui peut tromper un duelliste : c'est voulu par le GDD.
 
 **Périmètre recommandé pour le premier prototype** (le jalon « tester entre amis » du GDD) : le mode classique, la rotation roi de la colline, la tribune avec des spectateurs qui regardent, et le Relay avec code. Les interactions des spectateurs (cailloux, dons, bagarre) arrivent après ce premier test : elles demandent un vrai système d'objets lancés, et le test dira d'abord si le duel lui-même tient. **Validé par l'utilisateur le 2026-10-02.**
+
+### Ce que la bible Lore/DA implique techniquement (2026-10-04)
+
+`Docs/Bible-Lore-DA.md` retient des **prototypes de soldats robotisés**, aux pièces rigides et articulations visibles, dans un complexe militaire souterrain désaffecté. Cinq conséquences techniques :
+
+1. **Le travail d'animation survit au changement de modèle.** Un robot à pièces rigides reste un humanoïde : chaque pièce est parentée à un os (ou skinnée à 100 % sur un seul), le rig reste Humanoid, et les 30 clips Mixamo, les deux couches de l'Animator et `PlayerAnimator` se réutilisent tels quels. Seul le modèle sous `Model` change, et les trois conformités d'import plus haut restent obligatoires.
+2. 🚨 **La tentation d'un collider par pièce sera forte : c'est exactement la règle « ne jamais dériver le hitbox des os animés ».** Un robot en segments rigides donne l'impression que chaque pièce *est* une hitbox, mais ces pièces suivent les os animés. Le hitbox reste calculé depuis les scalaires réseautés (`PlayerHitbox.Apply`) ; la correspondance visuelle se règle en dimensionnant les capsules sur les pièces, jamais en accrochant les colliders aux pièces.
+3. **Les débris de mort sont cosmétiques, et doivent naître inoffensifs.** Un châssis qui vole en pièces implique des débris avec colliders, pour rebondir au sol. Ils doivent vivre sur un layer qui ne touche **ni** les `CharacterController`, **ni** `worldMask`, **ni** `obstacleMask` : sinon ils arrêtent des balles, poussent les joueurs ou faussent `CanStandUp()`, exactement comme le marqueur d'impact du 2026-09-24. Simulés localement sur chaque machine (catégorie C), ils n'ont pas la même trajectoire d'un écran à l'autre, donc rien de jouable ne doit en dépendre. Le fondu au noir entre deux manches est le moment naturel pour les nettoyer. Aucun ragdoll n'existe encore dans le code (vérifié le 2026-10-04).
+4. **Aucun cosmétique ne touche au son** (tranché par l'utilisateur le 2026-10-04 : « les robots font tous le même bruit »). Tous les robots partagent exactement les mêmes sons : un futur système de cosmétiques ne doit avoir aucune prise sur `PlayerSoundEmitter` ni sur `OnPlayerSound` (catégorie B), pas même hors manche.
+5. **Les formes cosmétiques restent dans le volume du hitbox.** Les cosmétiques changent la peinture et la *forme*. Une pièce qui dépasse du hitbox calculé (épaulière, antenne) se voit mais ne se touche pas, ce qui casse « on touche ce qu'on voit » ; une pièce qui le masque ment sur la cible. Toute géométrie cosmétique doit tenir dans les capsules de `PlayerHitbox` pour chaque posture et chaque lean.
+
+**Capacité d'un lobby** (tranché le 2026-10-04) : elle dépend du mode. **4 joueurs pour le prototype** (2 duellistes + 2 spectateurs), confirmé même si le groupe de testeurs est plus grand : les autres attendent hors du jeu. Peut-être 6 spectateurs plus tard. Le modèle de session doit donc prendre la capacité comme un **réglage de partie**, jamais comme une constante : la coder en dur coûterait autant, et la faire évoluer coûterait plus.
+
+**La couleur de chaque joueur est attribuée par le serveur dans le prototype.** Le GDD exige que chaque robot ait sa propre couleur, pour que les spectateurs reconnaissent les duellistes d'un coup d'œil, et la personnalisation n'arrive qu'après le prototype. Le serveur choisit donc une couleur vive, distincte des autres joueurs présents, et la publie dans une `NetworkVariable` en écriture serveur, sur le modèle du point de spawn : aucun client ne choisit la sienne. Purement visuelle (catégorie C), elle ne touche ni au hitbox ni au son. Quand la personnalisation arrivera, c'est cette même valeur qui portera le choix du joueur, validé par le serveur (couleurs vives seulement, d'après le GDD).
 
 ### Pourquoi le personnage passe avant le Lobby/Relay (tranché le 2026-09-29)
 
