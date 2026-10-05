@@ -24,9 +24,6 @@ using UnityEngine.TestTools;
 /// </summary>
 public class CharacterDriftTests
 {
-    private const string ModelPath = "Assets/_ProjectArt/Mesh/Personnages/SwattSolider_T_Pose.fbx";
-    private const string ControllerPath = "Assets/_ProjectArt/PlayerAnimator.controller";
-
     /// <summary>Une foulée fait osciller les hanches de quelques centimètres — c'est normal et
     /// souhaitable. Au-delà, le corps QUITTE sa racine, ce qui est le défaut recherché.</summary>
     private const float DriftLimit = 0.5f;
@@ -70,23 +67,8 @@ public class CharacterDriftTests
 
     private IEnumerator Setup()
     {
-        var model = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
-        Assert.IsNotNull(model, "Modèle introuvable : " + ModelPath);
-        var controller = UnityEditor.AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(ControllerPath);
-        Assert.IsNotNull(controller, "Controller introuvable : " + ControllerPath);
-
-        instance = Object.Instantiate(model);
-        instance.transform.position = Vector3.zero;
-        instance.transform.rotation = Quaternion.identity;
-
-        var animator = instance.GetComponent<Animator>();
-        Assert.IsNotNull(animator, "Pas d'Animator sur le modèle.");
-        animator.runtimeAnimatorController = controller;
-
-        // La position appartient à Move() : l'Animator ne doit jamais déplacer le personnage.
-        animator.applyRootMotion = false;
-        animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-
+        // Le personnage du prefab, pas un chemin en dur : voir TestCharacter.
+        instance = TestCharacter.InstantiateModel(out _);
         yield return null;
     }
 
