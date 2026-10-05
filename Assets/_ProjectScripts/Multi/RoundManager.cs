@@ -42,8 +42,8 @@ public class RoundManager : NetworkBehaviour
     [Tooltip("Temps d'arrêt après la fin du match, avant qu'un nouveau match reparte automatiquement (pratique pour tester en continu).")]
     [SerializeField] private float matchOverDuration = 5f;
 
-    [Tooltip("Durée max d'une manche. Le GDD vise 15-30 s ; au-delà de cette limite la manche est nulle et personne ne marque. DÉCISION DE DESIGN à retrancher par playtest : une manche nulle peut se répéter indéfiniment face à deux joueurs passifs. Mettre 0 pour désactiver la limite.")]
-    [SerializeField] private float roundTimeLimit = 60f;
+    [Tooltip("Durée max d'une manche, en secondes. 0 = AUCUNE limite, conformément au GDD (§ 5, tranché le 2026-10-02) : une manche se termine par une mort. Ne sert qu'à un test ponctuel ; si des manches passives apparaissent en playtest, la piste retenue est la révélation sonore, pas le retour d'un chrono.")]
+    [SerializeField] private float roundTimeLimit = 0f;
 
     // ------------------------------------------------------------------
     // État réseauté
@@ -52,10 +52,18 @@ public class RoundManager : NetworkBehaviour
     private readonly NetworkVariable<Phase> phase = new NetworkVariable<Phase>(
         Phase.WaitingForPlayers, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    /// <summary>Temps restant dans la phase courante, publié pour que les clients puissent
-    /// l'afficher sans avoir besoin d'une horloge commune avec le serveur.</summary>
-    private readonly NetworkVariable<float> phaseTimeRemaining = new NetworkVariable<float>(
-        0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    /// <summary>Début et fin de la phase courante, en temps SERVEUR (NetworkManager.ServerTime).
+    /// Publiés une fois par changement de phase, au lieu d'un temps restant réécrit à chaque frame
+    /// et donc réémis à chaque tick. Chaque client en déduit le décompte et le temps écoulé — le
+    /// « chrono » du futur HUD (GDD § 15). Une fin à 0 signifie : pas de fin.
+    ///
+    /// Le temps serveur de Netcode n'est qu'une estimation chez le client : assez pour un
+    /// affichage, jamais pour une décision, qui reste au serveur.</summary>
+    private readonly NetworkVariable<double> phaseStartedAt = new NetworkVariable<double>(
+        0d, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    private readonly NetworkVariable<double> phaseEndsAt = new NetworkVariable<double>(
+        0d, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     private readonly NetworkVariable<int> roundNumber = new NetworkVariable<int>(
         0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
@@ -86,15 +94,29 @@ public class RoundManager : NetworkBehaviour
     {
         get
         {
-            if (cached == null) cached = FindFirstObjectByType<RoundManager>();
+            if (cached == null) cached = FindAnyObjectByType<RoundManager>();
             return cached;
         }
     }
 
     public Phase CurrentPhase => phase.Value;
 
-    /// <summary>Le déplacement n'est libre que pendant une manche. Bloqué pendant le décompte pour
-    /// que les deux joueurs démarrent ensemble, et après une mort pour figer la scène.
+    private double Now => NetworkManager != null ? NetworkManager.ServerTime.Time : Time.timeAsDouble;
+
+    /// <summary>Secondes restantes dans la phase courante, 0 si elle n'a pas de fin.</summary>
+    public float PhaseTimeRemaining =>
+        phaseEndsAt.Value <= 0d ? 0f : (float)System.Math.Max(0d, phaseEndsAt.Value - Now);
+
+    /// <summary>Secondes écoulées depuis le début de la phase courante. En phase Active, c'est le
+    /// temps de la manche, que le HUD affichera (GDD § 15).</summary>
+    public float PhaseElapsed => (float)System.Math.Max(0d, Now - phaseStartedAt.Value);
+
+    private bool PhaseHasEnded => phaseEndsAt.Value > 0d && Now >= phaseEndsAt.Value;
+
+    /// <summary>Le déplacement est libre pendant une manche, et pendant l'attente d'un adversaire
+    /// (sinon le premier joueur connecté restait figé, ce qui empêchait aussi de tester seul).
+    /// Bloqué pendant le décompte pour que les deux joueurs démarrent ensemble, et après une mort
+    /// pour figer la scène.
     ///
     /// Lu depuis `PlayerLocomotion.Move()`, donc depuis une fonction rejouée par la réconciliation :
     /// la valeur utilisée lors d'un rejeu est celle de MAINTENANT, pas celle de l'input rejoué.
@@ -107,26 +129,26 @@ public class RoundManager : NetworkBehaviour
         get
         {
             RoundManager rm = Instance;
-            return rm == null || rm.phase.Value == Phase.Active;
+            return rm == null || rm.phase.Value == Phase.Active || rm.phase.Value == Phase.WaitingForPlayers;
         }
     }
 
-    /// <summary>Le tir n'est autorisé que pendant une manche. Vérifié côté client pour le confort,
-    /// et surtout côté SERVEUR dans `WeaponController.FireServerRpc` — c'est là que ça compte.</summary>
+    /// <summary>Le tir est autorisé pendant une manche, et pendant l'attente d'un adversaire pour
+    /// s'échauffer (personne à toucher : la phase s'arrête dès que le second joueur arrive).
+    /// Vérifié côté client pour le confort, et surtout côté SERVEUR dans
+    /// `WeaponController.FireServerRpc` — c'est là que ça compte.</summary>
     public static bool FiringAllowed
     {
         get
         {
             RoundManager rm = Instance;
-            return rm == null || rm.phase.Value == Phase.Active;
+            return rm == null || rm.phase.Value == Phase.Active || rm.phase.Value == Phase.WaitingForPlayers;
         }
     }
 
     // ------------------------------------------------------------------
     // Boucle serveur
     // ------------------------------------------------------------------
-
-    private float phaseEndsAt;
 
     public override void OnNetworkSpawn()
     {
@@ -138,8 +160,6 @@ public class RoundManager : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        phaseTimeRemaining.Value = Mathf.Max(0f, phaseEndsAt - Time.time);
-
         switch (phase.Value)
         {
             case Phase.WaitingForPlayers:
@@ -148,7 +168,7 @@ public class RoundManager : NetworkBehaviour
 
             case Phase.Starting:
                 if (!HasEnoughPlayers()) { SetPhase(Phase.WaitingForPlayers, 0f); break; }
-                if (Time.time >= phaseEndsAt) SetPhase(Phase.Active, roundTimeLimit);
+                if (PhaseHasEnded) SetPhase(Phase.Active, roundTimeLimit);
                 break;
 
             case Phase.Active:
@@ -157,11 +177,11 @@ public class RoundManager : NetworkBehaviour
                 break;
 
             case Phase.RoundOver:
-                if (Time.time >= phaseEndsAt) BeginRound();
+                if (PhaseHasEnded) BeginRound();
                 break;
 
             case Phase.MatchOver:
-                if (Time.time >= phaseEndsAt) StartMatch();
+                if (PhaseHasEnded) StartMatch();
                 break;
         }
     }
@@ -192,10 +212,10 @@ public class RoundManager : NetworkBehaviour
             return;
         }
 
-        if (roundTimeLimit > 0f && Time.time >= phaseEndsAt)
+        if (roundTimeLimit > 0f && PhaseHasEnded)
         {
-            // Manche nulle : personne ne marque. Voir le tooltip de roundTimeLimit — c'est une
-            // décision de design à confirmer par playtest.
+            // Manche nulle : personne ne marque. N'arrive que si une limite a été réglée pour un
+            // test : le GDD n'en veut pas (voir le tooltip de roundTimeLimit).
             Debug.Log("[Round] Temps écoulé, manche nulle.");
             EndRound();
         }
@@ -254,11 +274,13 @@ public class RoundManager : NetworkBehaviour
         SetPhase(Phase.Starting, startingDuration);
     }
 
+    /// <summary>Change de phase. Une durée nulle ou négative signifie : pas de fin programmée.</summary>
     private void SetPhase(Phase next, float duration)
     {
+        double now = Now;
         phase.Value = next;
-        phaseEndsAt = duration > 0f ? Time.time + duration : float.PositiveInfinity;
-        phaseTimeRemaining.Value = duration > 0f ? duration : 0f;
+        phaseStartedAt.Value = now;
+        phaseEndsAt.Value = duration > 0f ? now + duration : 0d;
     }
 
     private bool HasEnoughPlayers() => CountAlivePlayers() >= 2;
@@ -355,7 +377,7 @@ public class RoundManager : NetworkBehaviour
             case Phase.Starting:
                 // CeilToInt pour afficher 3, 2, 1 plutôt que 2, 1, 0 : on veut voir le dernier
                 // chiffre pendant toute sa seconde.
-                big = Mathf.CeilToInt(phaseTimeRemaining.Value).ToString();
+                big = Mathf.CeilToInt(PhaseTimeRemaining).ToString();
                 small = $"Manche {roundNumber.Value}";
                 break;
 

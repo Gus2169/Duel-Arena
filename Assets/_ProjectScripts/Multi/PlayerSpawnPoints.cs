@@ -32,7 +32,7 @@ public class PlayerSpawnPoints : MonoBehaviour
     {
         get
         {
-            if (cached == null) cached = FindFirstObjectByType<PlayerSpawnPoints>();
+            if (cached == null) cached = FindAnyObjectByType<PlayerSpawnPoints>();
             return cached;
         }
     }

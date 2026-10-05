@@ -18,15 +18,14 @@ using UnityEngine;
 ///
 /// B. ÉVÉNEMENTS SONORES DE GAMEPLAY (décidés par le serveur, diffusés à tous via ClientRpc) :
 ///    pas, ramper, changements de posture, lean start/end. Un adversaire proche doit pouvoir les
-///    ENTENDRE (primauté du son selon le GDD) — donc jamais purement locaux. Les sons "pas/posture"
-///    sont décidés directement par le serveur à partir de sa simulation (pas de RPC entrante, donc
-///    pas d'exploit possible). Le son de lean est la seule exception : comme le lean n'a aucun effet
-///    sur la simulation (juste un décalage caméra), le client demande via ServerRpc, mais la RPC
-///    n'accepte QUE LeanStart/LeanEnd (garde-fou anti-triche minimal).
+///    ENTENDRE (primauté du son selon le GDD) — donc jamais purement locaux. TOUS sont décidés par
+///    le serveur à partir de sa propre simulation, sans aucune RPC de son entrante : le lean y
+///    compris depuis le 2026-10-05, puisque son état voyage déjà dans chaque input.
 ///
 /// C. COSMÉTIQUE PUREMENT LOCAL (jamais réseauté, tourne uniquement si IsOwner) :
-///    head bob, kick caméra d'atterrissage, décalage caméra du lean. Concerne uniquement la caméra
-///    du propriétaire, invisible et non pertinent pour quiconque d'autre.
+///    head bob, kick caméra d'atterrissage, inclinaison caméra du lean. Concerne uniquement la
+///    caméra du propriétaire, invisible et non pertinent pour quiconque d'autre. Le DÉCALAGE du
+///    lean, lui, n'est plus cosmétique : il déplace la surface touchable (catégorie A).
 ///
 /// IMPORTANT — WeaponController doit être gardé en "IsOwner uniquement" : sans ça, chaque instance
 /// de joueur sur une machine lit le même clavier/souris physique et tirerait pour tout le monde à
@@ -37,7 +36,10 @@ using UnityEngine;
 public class PlayerLocomotion : NetworkBehaviour
 {
     public enum Stance { Standing, Crouching, Prone }
-    public enum NoiseLevel { Silent, Quiet, Loud }
+    /// <summary>Bruit d'un déplacement. Faint = sneak et ramper : faibles mais jamais muets.
+    /// Jamais sérialisé dans un asset, seulement transmis par RPC entre deux instances du même
+    /// build : l'ordre peut donc suivre la logique plutôt que l'historique.</summary>
+    public enum NoiseLevel { Silent, Faint, Quiet, Loud }
 
     [System.Serializable]
     public struct StanceProfile
@@ -51,8 +53,6 @@ public class PlayerLocomotion : NetworkBehaviour
     [Header("Références")]
     [SerializeField] private Transform cameraPivot;
     [SerializeField] private Transform leanPivot;
-    [Tooltip("Transform de la capsule visuelle enfant (juste pour VOIR le joueur en jeu — n'affecte jamais la collision, qui reste gérée uniquement par le CharacterController). Assigne l'enfant 'Capsule'. Laisse vide si tu n'as pas de mesh visuel.")]
-    [SerializeField] private Transform visualCapsule;
 
     [Tooltip("Surface TOUCHABLE du joueur (enfant 'Hitbox'), distincte du CharacterController de mouvement : elle suit la posture ET le lean, et n'est jamais désactivée par le mouvement. Sans elle, le joueur est INTOUCHABLE — le tir serveur ne cherche que ce collider.")]
     [SerializeField] private PlayerHitbox hitbox;
@@ -188,6 +188,12 @@ public class PlayerLocomotion : NetworkBehaviour
     /// accorder : son clip est lu à la vitesse qu'il faut pour tenir exactement dans cet
     /// intervalle. Sans ça, retoucher la durée du vault désaccorderait silencieusement le geste.</summary>
     public float VaultDuration => vaultDuration;
+
+    /// <summary>Vitesse de marche nominale d'une posture, en m/s : celle à laquelle l'animation de
+    /// déplacement doit valoir 1. Exposée pour que PlayerAnimator la LISE au lieu de la recopier :
+    /// sa copie s'était déjà désaccordée en silence (4,4 m/s dans l'animateur, 5 m/s réglés dans
+    /// le prefab, constaté le 2026-10-05).</summary>
+    public float NominalSpeed(Stance stance) => walkSpeed * GetStanceProfile(stance).moveSpeedMultiplier;
 
     /// <summary>Le joueur est-il en visee, du point de vue de l'AFFICHAGE ?
     ///
@@ -682,7 +688,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
     /// <summary>
     /// Replace ce joueur sur un point de spawn, côté SERVEUR uniquement, et publie le résultat.
-    /// Appelée au spawn, et prévue pour l'être aussi à chaque manche par la future boucle de round.
+    /// Appelée au spawn, puis à chaque manche par RoundManager.BeginRound().
     /// Sans `PlayerSpawnPoints` dans la scène, ne fait rien : le joueur garde la position que lui a
     /// donnée le NetworkManager.
     /// </summary>
@@ -697,9 +703,9 @@ public class PlayerLocomotion : NetworkBehaviour
         // dans les pieds de son adversaire. Le serveur spawne les joueurs séquentiellement, donc le
         // second voit bien le premier.
         var occupied = new List<Vector3>();
-        foreach (PlayerLocomotion other in FindObjectsByType<PlayerLocomotion>(FindObjectsSortMode.None))
+        foreach (PlayerLocomotion other in spawnedPlayers)
         {
-            if (other == this) continue;
+            if (other == null || other == this) continue;
             occupied.Add(other.transform.position);
         }
 
@@ -726,6 +732,7 @@ public class PlayerLocomotion : NetworkBehaviour
         currentLeanOffset = 0f;
         networkLeanOffset.Value = 0f;
         leanState = 0;
+        serverLastLeanState = 0; // sinon le premier input de la manche jouerait un faux LeanEnd
 
         // Le LEAN demande en plus une RPC vers le propriétaire, contrairement à tout le reste.
         // Son ÉTAT (-1/0/+1) est une bascule qui vit sur le client : remettre le décalage à zéro
@@ -778,6 +785,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
             ServerCheckAutoStand(snap);
             Move(snap, dt);
+            ServerTrackLeanSound(snap.leanState);
 
             if (controller.isGrounded && !wasGrounded) TriggerLandingKick(Mathf.Abs(verticalVelocity));
             ServerAdvanceFootsteps(dt);
@@ -997,6 +1005,7 @@ public class PlayerLocomotion : NetworkBehaviour
             Move(next.snapshot, dt);
             ServerAdvanceFootsteps(dt);
             ServerAdvanceLean(next.snapshot.leanState, dt);
+            ServerTrackLeanSound(next.snapshot.leanState);
             lastProcessedSequence = next.sequence;
         }
 
@@ -1425,15 +1434,9 @@ public class PlayerLocomotion : NetworkBehaviour
     }
 
     /// <summary>
-    /// Habillage de la posture — catégorie C/visuel. Tourne sur TOUTES les instances (y compris
-    /// les spectateurs, qui n'appellent jamais Move()) et peut donc utiliser Time.deltaTime sans
-    /// risque : rien ici n'influence la simulation.
-    ///
-    /// La capsule visuelle a désormais ses propres dimensions, distinctes de celles du
-    /// CharacterController : ce dernier passe instantanément d'une posture à l'autre, le mesh
-    /// continue de glisser. Bref décalage assumé entre ce qu'on voit et ce qui entre en collision
-    /// pendant une transition (~0,1 s) — invisible en pratique, et le prix d'une simulation
-    /// réellement déterministe.
+    /// Habillage de la posture — hauteur caméra et surface touchable. Tourne sur TOUTES les
+    /// instances (y compris les spectateurs, qui n'appellent jamais Move()). Seule la hauteur
+    /// caméra y est lissée avec Time.deltaTime, et elle n'influence pas la simulation.
     /// </summary>
     private void UpdateStanceVisuals()
     {
@@ -1444,18 +1447,15 @@ public class PlayerLocomotion : NetworkBehaviour
         // ce lissage-là qui donne le confort de s'accroupir. Purement local, sans conséquence.
         currentCameraHeight = Mathf.MoveTowards(currentCameraHeight, profile.cameraHeight, stanceTransitionSpeed * Time.deltaTime);
 
-        // Le CORPS, lui, ne s'interpole plus : surface visible et surface touchable sont toutes
-        // deux une fonction PURE de (posture réseau, décalage de lean), donc identiques sur toutes
-        // les machines. C'est ce qui garantit qu'on touche ce qu'on voit.
+        // La surface TOUCHABLE ne s'interpole pas : c'est une fonction PURE de (posture réseau,
+        // décalage de lean), donc identique sur toutes les machines. Un lissage local ferait
+        // diverger la surface d'un écran à l'autre pendant chaque transition, et le tireur
+        // viserait un corps que le serveur n'a pas au même endroit.
         //
-        // Un lissage local des dimensions du corps ferait diverger la silhouette d'un écran à
-        // l'autre pendant chaque transition : le tireur viserait un corps que le serveur n'a pas
-        // au même endroit. Le corps qui "claque" d'une posture à l'autre est le prix assumé tant
-        // que la capsule est un placeholder ; un vrai personnage animé réglera ça par l'animation,
-        // avec un hitbox qui suivra les os.
-        float lean = LeanOffset;
-        ApplyVisualCapsule(profile.controllerHeight, profile.controllerRadius, lean);
-        ApplyHitbox(profile.controllerHeight, profile.controllerRadius, lean);
+        // L'animation, elle, AFFICHE la transition en douceur ; elle ne pilote jamais le hitbox.
+        // 🚨 Ne JAMAIS dériver le hitbox des os animés : un Animator n'est pas déterministe entre
+        // machines. Les deux lisent la même source réseautée, aucun ne lit l'autre.
+        ApplyHitbox(profile.controllerHeight, profile.controllerRadius, LeanOffset);
 
         // Les spectateurs n'appellent jamais Move() : sans ça, leur CharacterController local
         // garderait la capsule de la posture précédente.
@@ -1484,22 +1484,7 @@ public class PlayerLocomotion : NetworkBehaviour
             cameraPivot.localPosition = pos;
         }
 
-        ApplyVisualCapsule(profile.controllerHeight, profile.controllerRadius, currentLeanOffset);
         ApplyHitbox(profile.controllerHeight, profile.controllerRadius, currentLeanOffset);
-    }
-
-    private void ApplyVisualCapsule(float height, float radius, float lateralOffset)
-    {
-        if (visualCapsule == null) return;
-
-        // Capsule primitive par défaut d'Unity : 2 unités de haut / 0.5 de rayon à l'échelle 1,
-        // pivot au centre — d'où les facteurs /2 et *2.
-        visualCapsule.localScale = new Vector3(radius * 2f, height / 2f, radius * 2f);
-
-        // Le corps visible se décale avec le lean, exactement comme le hitbox : sans ça, un
-        // adversaire penché serait touchable à un endroit où on ne le voit pas, ce qui serait un
-        // trou d'exactitude symétrique de celui qu'on vient de fermer.
-        visualCapsule.localPosition = new Vector3(lateralOffset, height / 2f, 0f);
     }
 
     // ------------------------------------------------------------------
@@ -1553,14 +1538,23 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private NoiseLevel ComputeNoiseLevel()
     {
-        NoiseLevel level;
-        if (!IsMoving || CurrentStance == Stance.Prone) level = NoiseLevel.Silent;
-        else if (IsSprinting) level = NoiseLevel.Loud;
-        else if (IsSneaking) level = NoiseLevel.Silent;
-        else level = NoiseLevel.Quiet;
-
+        NoiseLevel level = GetNoiseLevel(IsMoving, CurrentStance, IsSprinting, IsSneaking);
         CurrentNoise = level;
         return level;
+    }
+
+    /// <summary>Niveau de bruit d'un déplacement. Fonction pure, testée.
+    ///
+    /// Le sneak et le ramper sont FAIBLES, jamais muets (GDD § 8, confirmé le 2026-10-05). Ils
+    /// étaient classés Silent, que PlayerSoundEmitter filtre : ramper et marcher en sneak ne
+    /// faisaient donc aucun bruit, ce qui retirait une information au joueur adverse.</summary>
+    public static NoiseLevel GetNoiseLevel(bool moving, Stance stance, bool sprinting, bool sneaking)
+    {
+        if (!moving) return NoiseLevel.Silent;
+        if (stance == Stance.Prone) return NoiseLevel.Faint;
+        if (sprinting) return NoiseLevel.Loud;
+        if (sneaking) return NoiseLevel.Faint;
+        return NoiseLevel.Quiet;
     }
 
     [ClientRpc]
@@ -1569,15 +1563,38 @@ public class PlayerLocomotion : NetworkBehaviour
         OnPlayerSound?.Invoke(soundEvent, noise);
     }
 
-    [ServerRpc]
-    private void RequestPlayerSoundServerRpc(PlayerSoundEvent soundEvent)
+    // Son du lean, décidé par le SERVEUR (2026-10-05). Il passait par une RPC où le client
+    // demandait lui-même le son, sans aucune borne de débit. Elle était devenue inutile : l'état
+    // de lean voyage dans chaque input, donc le serveur voit les transitions lui-même — comme
+    // pour la posture, sans rien accepter du client qu'il ne sache déjà.
+    private int serverLastLeanState;
+    private float serverLastLeanSoundTime = -Mathf.Infinity;
+
+    /// <summary>Intervalle minimal entre deux sons de lean, en temps RÉEL (règle des garde-fous) :
+    /// un client modifié qui alternerait son état à chaque input ne doit pas pouvoir saturer les
+    /// autres de sons. Largement sous le rythme d'un vrai joueur qui peek.</summary>
+    private const float MinLeanSoundInterval = 0.1f;
+
+    private void ServerTrackLeanSound(int state)
     {
-        // Seul le lean passe par ce chemin "client demande, serveur diffuse" : c'est un son
-        // purement cosmétique, qui ne dérive d'aucun état simulé côté serveur (contrairement aux
-        // pas/postures). Garde-fou anti-triche minimal : un client modifié ne doit pas pouvoir
-        // déclencher n'importe quel son (ex. spammer de faux pas) via cette RPC.
-        if (soundEvent != PlayerSoundEvent.LeanStart && soundEvent != PlayerSoundEvent.LeanEnd) return;
-        BroadcastPlayerSoundClientRpc(soundEvent, ComputeNoiseLevel());
+        int previous = serverLastLeanState;
+        serverLastLeanState = state;
+
+        PlayerSoundEvent? sound = GetLeanSound(previous, state);
+        if (!sound.HasValue) return;
+
+        if (Time.time - serverLastLeanSoundTime < MinLeanSoundInterval) return;
+        serverLastLeanSoundTime = Time.time;
+        BroadcastPlayerSoundClientRpc(sound.Value, ComputeNoiseLevel());
+    }
+
+    /// <summary>Son d'une transition de lean (-1 gauche / 0 / +1 droite). Passer directement d'un
+    /// côté à l'autre est un nouveau lean, donc il s'entend aussi.</summary>
+    public static PlayerSoundEvent? GetLeanSound(int from, int to)
+    {
+        if (from == to) return null;
+        if (to == 0) return PlayerSoundEvent.LeanEnd;
+        return PlayerSoundEvent.LeanStart;
     }
 
     // ------------------------------------------------------------------
@@ -1595,23 +1612,14 @@ public class PlayerLocomotion : NetworkBehaviour
     /// </summary>
     private void UpdateLeanState()
     {
-        int previousLeanState = leanState;
-
         if (IsSprinting)
         {
             leanState = 0;
-        }
-        else
-        {
-            if (input.LeanLeftPressedThisFrame) leanState = leanState == -1 ? 0 : -1;
-            if (input.LeanRightPressedThisFrame) leanState = leanState == 1 ? 0 : 1;
+            return;
         }
 
-        if (leanState != previousLeanState)
-        {
-            if (leanState != 0 && previousLeanState == 0) RequestPlayerSoundServerRpc(PlayerSoundEvent.LeanStart);
-            else if (leanState == 0 && previousLeanState != 0) RequestPlayerSoundServerRpc(PlayerSoundEvent.LeanEnd);
-        }
+        if (input.LeanLeftPressedThisFrame) leanState = leanState == -1 ? 0 : -1;
+        if (input.LeanRightPressedThisFrame) leanState = leanState == 1 ? 0 : 1;
     }
 
     /// <summary>
@@ -1623,9 +1631,14 @@ public class PlayerLocomotion : NetworkBehaviour
     private float ComputeAllowedLeanOffset(int state)
     {
         float targetOffset = state * maxLeanOffset;
-        if (Mathf.Abs(targetOffset) <= 0.01f || cameraPivot == null) return targetOffset;
+        if (Mathf.Abs(targetOffset) <= 0.01f) return targetOffset;
 
-        Vector3 origin = cameraPivot.position;
+        // Origine calculée, PAS lue sur le CameraPivot (corrigé le 2026-10-05). Seul le
+        // propriétaire met ce pivot à jour : sur le serveur, celui d'un client distant restait à
+        // hauteur debout même accroupi ou allongé, et près d'un obstacle bas les deux côtés
+        // calculaient un lean différent. Position + hauteur de caméra de la posture RÉSEAU est la
+        // même partout, et ignore le head bob, qui n'a rien à faire dans un calcul autoritaire.
+        Vector3 origin = transform.position + Vector3.up * GetStanceProfile(networkStance.Value).cameraHeight;
         Vector3 dir = transform.right * Mathf.Sign(targetOffset);
         float desiredDistance = Mathf.Abs(targetOffset);
 
@@ -1639,8 +1652,7 @@ public class PlayerLocomotion : NetworkBehaviour
     }
 
     /// <summary>Effet caméra du lean — catégorie C, propriétaire uniquement. Le décalage résultant
-    /// sert AUSSI à positionner la surface visible et la surface touchable du propriétaire, pour
-    /// qu'il voie son propre corps là où les autres le voient.</summary>
+    /// sert AUSSI à positionner la surface touchable du propriétaire, prédite sans latence.</summary>
     private void UpdateLeanVisual()
     {
         float targetOffset = ComputeAllowedLeanOffset(leanState);
@@ -1659,9 +1671,8 @@ public class PlayerLocomotion : NetworkBehaviour
     /// snapshot d'input et du dt de ce même input. C'est cette valeur qui déplace son hitbox côté
     /// serveur, donc celle qui décide s'il est touché quand il peek.
     ///
-    /// Limite connue : ce décalage est en retard d'environ un RTT sur ce que le tireur voit à
-    /// l'écran, comme l'était la position avant le rewind. Le rewind devra donc historiser le lean
-    /// en même temps que la position, sous peine de ne corriger qu'une moitié du problème.
+    /// Ce décalage est en retard d'environ un RTT sur ce que le tireur voit à l'écran : c'est
+    /// pourquoi l'historique du rewind (HitboxPose) porte le lean au même titre que la position.
     /// </summary>
     private void ServerAdvanceLean(int state, float dt)
     {
@@ -1950,9 +1961,10 @@ public class PlayerLocomotion : NetworkBehaviour
     /// 🚨 Cette structure est un INVARIANT, pas un utilitaire de test. Toute valeur cumulative
     /// lue par Move() doit y figurer — c'est la même liste que celle des valeurs qui doivent
     /// avoir un équivalent confirmé par le serveur dans la RPC de correction. Le projet s'est
-    /// fait piéger QUATRE fois sur cette règle (yaw, currentVelocity, hauteur de capsule, état
-    /// de vault) ; le test de déterminisme échoue désormais si une cinquième est oubliée, parce
-    /// qu'une restauration incomplète fait diverger le rejeu.
+    /// fait piéger CINQ fois sur cette règle (yaw, currentVelocity, hauteur de capsule, état de
+    /// vault, vaultPeakY). Seul EtatDeSimulation_SeRestaureEntierement garde réellement cet
+    /// invariant : les tests de rejeu partent d'un état pris AVANT le vault et ne voient pas une
+    /// restauration incomplète. Toute nouvelle valeur doit y être ajoutée aussi.
     /// </summary>
     public struct SimulationState
     {

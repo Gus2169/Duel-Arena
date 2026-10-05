@@ -16,9 +16,8 @@ using UnityEngine;
 /// Les autres joueurs reçoivent ensuite le tracer/impact calculé par le serveur via
 /// BroadcastShotClientRpc.
 ///
-/// LIMITE CONNUE, pas un oubli : pas encore de compensation de latence (rewind) — le serveur
-/// valide contre la position ACTUELLE des adversaires, donc légèrement en retard sur ce que le
-/// tireur voyait, d'autant plus sous forte latence. Voir le TODO détaillé sur FireServerRpc.
+/// Le serveur valide chaque tir contre la pose PASSÉE des adversaires, celle que le tireur avait
+/// à l'écran (compensation de latence, voir FireServerRpc).
 /// </summary>
 [RequireComponent(typeof(Transform))]
 public class WeaponController : NetworkBehaviour
@@ -30,7 +29,7 @@ public class WeaponController : NetworkBehaviour
     [SerializeField] private AudioSource audioSource;
 
     [Header("Recul selon la posture / le mouvement")]
-    [Tooltip("Multiplicateurs (%) appliqués au recul (data.recoilPerShotDegrees) selon la posture et si le joueur se déplace ou non. Vit ici plutôt que dans WeaponData : ça s'applique automatiquement à n'importe quelle arme équipée, sans réglage à dupliquer par arme. Le déplacement en sneak (Ctrl/molette maintenu) est plus stable que la marche normale, quelle que soit la posture, sans être aussi stable qu'à l'arrêt complet.")]
+    [Tooltip("Multiplicateurs (%) appliqués au recul (data.recoilPerShotDegrees) selon la posture et si le joueur se déplace ou non. Vit ici plutôt que dans WeaponData : ça s'applique automatiquement à n'importe quelle arme équipée, sans réglage à dupliquer par arme. Le déplacement en sneak (action Sneak maintenue) est plus stable que la marche normale, quelle que soit la posture, sans être aussi stable qu'à l'arrêt complet.")]
     [SerializeField, Range(0f, 100f)] private float recoilPercentStandingStatic = 85f;
     [SerializeField, Range(0f, 100f)] private float recoilPercentStandingSneaking = 92f;
     [SerializeField, Range(0f, 100f)] private float recoilPercentStandingMoving = 100f;
@@ -250,17 +249,17 @@ public class WeaponController : NetworkBehaviour
         shotIndexInBurst++;
     }
 
+    /// <summary>Levé à chaque tir VU depuis cette machine : chez le tireur depuis Fire(), chez
+    /// tous les autres depuis BroadcastShotClientRpc. Purement cosmétique — il sert à déclencher
+    /// l'animation de tir, qui doit être visible sur l'adversaire comme sur soi.
+    ///
+    /// Le tir était déjà diffusé à tout le monde pour le son et le tracer : aucun réseau
+    /// supplémentaire n'a été nécessaire, seulement un point d'accroche.</summary>
+    public event System.Action OnShotFired;
+
     /// <summary>Joue le son de tir de l'arme équipée (data.fireSounds). Appelé localement par le
     /// tireur dans Fire(), et rediffusé aux autres clients par BroadcastShotClientRpc — sinon,
     /// comme pour le visuel avant l'ajout du ClientRpc, seul le tireur entendrait ses propres tirs.</summary>
-    /// <summary>Leve a chaque tir VU depuis cette machine : chez le tireur depuis Fire(), chez
-    /// tous les autres depuis BroadcastShotClientRpc. Purement cosmetique — il sert a declencher
-    /// l'animation de tir, qui doit etre visible sur l'adversaire comme sur soi.
-    ///
-    /// Le tir etait deja diffuse a tout le monde pour le son et le tracer : aucun reseau
-    /// supplementaire n'a ete necessaire, seulement un point d'accroche.</summary>
-    public event System.Action OnShotFired;
-
     private void PlayFireSound()
     {
         if (audioSource == null || data.fireSounds == null || data.fireSounds.Length == 0) return;
@@ -345,9 +344,9 @@ public class WeaponController : NetworkBehaviour
         //     serveur, donc sa caméra est légitimement devant la position que le serveur lui
         //     connaît, d'autant plus que le ping est élevé (~1,2 m à 6 m/s et 200 ms de RTT).
         // La valeur par défaut est donc volontairement large : l'objectif est de rendre impossible
-        // le tir "depuis ailleurs", pas de chipoter sur quelques dizaines de centimètres. Elle
-        // pourra être resserrée une fois le rewind en place (le serveur saura alors où le tireur
-        // se trouvait vraiment au moment du tir, et non seulement où il est maintenant).
+        // le tir "depuis ailleurs", pas de chipoter sur quelques dizaines de centimètres. Pour la
+        // resserrer, il faudrait comparer l'origine à la pose PASSÉE du tireur, que l'historique
+        // du rewind connaît déjà mais que cette validation n'utilise pas encore.
         if ((origin - transform.root.position).sqrMagnitude > maxOriginDistanceFromPlayer * maxOriginDistanceFromPlayer)
         {
             Debug.LogWarning($"[Serveur] Tir rejeté : origine invalide (à {Vector3.Distance(origin, transform.root.position):F1} m du joueur, max {maxOriginDistanceFromPlayer} m). Soit un client modifié, soit la tolérance est trop serrée pour la latence testée.", this);
@@ -362,8 +361,8 @@ public class WeaponController : NetworkBehaviour
         // celle-ci peut carrément en sortir, ce qui mettrait son propre collider en travers du
         // rayon. On le retire de la requête le temps du tir. Le try/finally garantit qu'il revient
         // même si le raycast ou l'application des dégâts lève — un hitbox laissé désactivé rendrait
-        // le tireur invulnérable pour le reste de la partie. C'est aussi le patron que réutilisera
-        // le rewind, qui devra déplacer puis restaurer les hitbox des autres joueurs.
+        // le tireur invulnérable pour le reste de la partie. Le rewind ci-dessous suit le même
+        // patron pour les hitbox des autres joueurs.
         Collider ownHitbox = locomotion != null ? locomotion.HitboxCollider : null;
         bool hitboxWasEnabled = ownHitbox != null && ownHitbox.enabled;
         if (hitboxWasEnabled) ownHitbox.enabled = false;

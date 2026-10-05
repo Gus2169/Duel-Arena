@@ -56539,7 +56539,7 @@ MonoBehaviour:
   startingDuration: 3
   roundOverDuration: 2.5
   matchOverDuration: 5
-  roundTimeLimit: 60
+  roundTimeLimit: 0
 --- !u!43 &2004658222
 Mesh:
   m_ObjectHideFlags: 0

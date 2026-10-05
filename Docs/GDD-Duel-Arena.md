@@ -69,7 +69,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 *Le risque connu : deux joueurs passifs peuvent faire durer une manche indéfiniment. Ce n'est pas un problème tant que les playtests ne le montrent pas. Si ça arrive, la piste privilégiée est la **révélation** : au bout d'un moment, chaque joueur émet un son de sa position. La règle devient une mécanique sonore plutôt qu'une sanction.*
 
-**Spawns** : plusieurs points différents dans l'arène, avec échange de côté d'une manche à l'autre.
+**Spawns** : plusieurs points différents dans l'arène, avec échange de côté d'une manche à l'autre. Leur disposition dépendra surtout des modes de jeu, donc elle sera fixée plus tard ; d'ici là, le prototype garde ses deux points opposés (2026-10-05).
 
 **Décompte** : 3 à 5 secondes. Le regard et le changement de posture sont libres, le déplacement non.
 
@@ -86,6 +86,8 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 **TTK** — la cible de départ est ≈ **0,7 seconde** de tir soutenu, mais elle est **à retravailler**, notamment avec l'arrivée des headshots. Elle vit dans l'inspecteur, pas en dur dans le code.
 
 **Le MP5 actuel est une arme de test.** L'apparence des armes est décrite dans la bible (§ 12 de la bible) : conventionnelles, prototypes, bricolées, absurdes.
+
+**L'arsenal du prototype** (tranché le 2026-10-05) : une arme automatique à chargeur, le MP5 ou une arme d'apparence plus robotique ou futuriste, et le **taser** de corps à corps (voir *Mêlée*). Le choix de l'arme (pile ou face, classes) attend la suite.
 
 **L'identité « insolite »** : des armes qui jouent sur le décalage entre leur apparence et leur effet. Exemples cités : un énorme pistolet bionique démesuré qui tire un minuscule rayon paralysant (ralentit beaucoup, blesse peu), ou à l'inverse un petit pistolet qui tire un énorme trou noir.
 
@@ -109,7 +111,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Utilitaires** : des grenades, soit cachées dans l'arène, soit données par les spectateurs.
 
-**Mêlée** : couteau, **mort instantanée**. Il sort **automatiquement** quand l'arme est vide.
+**Mêlée** : un **taser** plutôt qu'un couteau, plus logique contre des robots (tranché le 2026-10-05). **Mort instantanée**, pour l'instant. Il sort **automatiquement** quand l'arme est vide.
 
 **Recul** — référence de sensation : la R-301 d'Apex. **Les rafales longues doivent être viables et agréables** : pas de jeu qui force les rafales courtes, sauf pour une DMR au coup par coup. Le recul est stylisé et lisible : montée rapide sur les premiers tirs puis plafonnement, avec un pattern horizontal en « S » quand la rafale s'allonge. Il est modulé par la posture, le déplacement et la visée.
 
@@ -127,7 +129,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Postures** Debout / Accroupi / Prone, chacune avec sa vitesse, sa hauteur de vue et son empreinte. Se relever est bloqué s'il n'y a pas la place. **On peut tirer en rampant.**
 
-**Le lean façon Rainbow Six** : seul le **buste** se penche. Derrière un mur, en visant et en se penchant, on n'expose que le haut du corps ; les jambes restent à couvert. Le lean actuel, qui fait glisser tout le corps, est trop généreux et va changer.
+**Le lean façon Rainbow Six** : seul le **buste** se penche. Derrière un mur, en visant et en se penchant, on n'expose que le haut du corps ; les jambes restent à couvert. Le lean actuel, qui fait glisser tout le corps, est trop généreux et va changer. Contrairement à Rainbow Six, **le lean reste possible en position allongée**. Son amplitude se rapproche de celle de R6 : la tête sort d'environ 35 cm, valeur de départ à régler en jouant (tranché le 2026-10-05).
 
 **Pas de saut libre.** La touche de saut sert au **vault** : un obstacle assez bas, du sol derrière, et on passe par-dessus. C'est un choix assumé.
 
@@ -139,7 +141,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 Un adversaire proche doit pouvoir **entendre** les pas, le ramper, les changements de posture, le lean et les tirs — en 3D, localisable. C'est la moitié de l'information disponible dans un duel.
 
-**Portée par allure** (ordre d'idée, à régler en jouant) : la course s'entend de partout, la marche à peu près à moitié de cette distance, le sneak à peine. Le sneak est **très faible**, pas totalement muet.
+**Portée par allure** (ordre d'idée, à régler en jouant) : la course s'entend de partout, la marche à peu près à moitié de cette distance, le sneak à peine. Le sneak et le ramper sont **très faibles, mais audibles** : jamais totalement muets (confirmé le 2026-10-05).
 
 **Pas de musique pendant la manche.** La musique vit dans les menus, entre les manches et sur l'écran de victoire. Pendant le combat : quelques sons d'ambiance, et ceux des spectateurs.
 
@@ -209,7 +211,7 @@ Le **classique** est le cœur, et le seul du premier prototype. Les autres sont 
 - **Arène dans le noir** — envie forte. Le son devient l'information principale.
 - **Tag Team** — un 2v2 façon catch : quand un joueur meurt, son coéquipier prend sa place. Communication entre coéquipiers ouverte ou fermée (fermée se contourne facilement par Discord). Victoire au plus de kills en temps donné, ou au premier à 100 points.
 - **Golden Gun** — une seule arme, une balle tue, munitions illimitées. En temps donné ou à un objectif de points.
-- **Gun Game** — chaque kill fait passer à l'arme suivante, dans un ordre fixe. Se faire tuer au couteau fait redescendre d'un cran. Le premier à tuer avec la dernière arme gagne.
+- **Gun Game** — chaque kill fait passer à l'arme suivante, dans un ordre fixe. Se faire tuer au taser fait redescendre d'un cran. Le premier à tuer avec la dernière arme gagne.
 - *Coop Zombie* — deux joueurs contre des vagues de zombies, comme dans Call of Duty. Noté pour mémoire : ce n'est pas du duel, donc hors de l'identité du jeu.
 
 ## 12. Univers et ton
@@ -297,6 +299,8 @@ Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touch
 
 **Toujours ouvert** :
 - Comment le joueur obtient son arme (§ 6).
+- L'apparence de l'arme automatique du prototype : le MP5, ou une arme plus robotique ou futuriste (§ 6).
+- Ce que lancent les spectateurs : la bible parle de *power-ups* (§ 8 et § 15 de la bible), alors que ce document réserve les power-ups à des emplacements fixes de l'arène (§ 10) et fait lancer du *matériel* aux spectateurs (§ 9). Un objet lancé par un spectateur est-il un power-up ? Relevé le 2026-10-05, sans urgence avant les interactions des spectateurs.
 - Le multiplicateur des headshots, et le TTK qui en découle.
 - Les power-ups concrets : lesquels, et leurs effets.
 - L'ordre de priorité entre les modes, au-delà du classique.

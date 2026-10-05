@@ -30,6 +30,11 @@ public class PlayerCameraLook : MonoBehaviour
     private PlayerLocomotion locomotion;
     private NetworkObject networkObject;
     private float pitch;
+
+    /// <summary>Décalage horizontal du RECUL, appliqué à la caméra seule (degrés). Le yaw du corps
+    /// appartient à la simulation (PlayerLocomotion.Move) et n'en reçoit jamais : voir
+    /// AddInstantRotation.</summary>
+    private float recoilYaw;
     private bool initializedForOwner;
 
     private void Awake()
@@ -61,9 +66,14 @@ public class PlayerCameraLook : MonoBehaviour
         Vector2 look = input.LookInput * mouseSensitivity;
 
         pitch = Mathf.Clamp(pitch - look.y, minPitch, maxPitch);
-        transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+        ApplyLocalRotation();
 
         UpdateFov();
+    }
+
+    private void ApplyLocalRotation()
+    {
+        transform.localRotation = Quaternion.Euler(pitch, recoilYaw, 0f);
     }
 
     private void UpdateFov()
@@ -75,19 +85,26 @@ public class PlayerCameraLook : MonoBehaviour
     }
 
     /// <summary>
-    /// Applique une rotation instantanée à la caméra (pitch) et au corps du joueur (yaw),
-    /// indépendamment de l'input souris. Utilisé pour le kick de recul et sa récupération.
-    /// Le signe suit la même convention que le look souris : pitchDelta positif = caméra
-    /// monte, yawDelta positif = rotation vers la droite.
+    /// Applique une rotation instantanée à la CAMÉRA, indépendamment de l'input souris. Utilisé
+    /// pour le kick de recul et sa récupération. Même convention de signe que le look souris :
+    /// pitchDelta positif = caméra monte, yawDelta positif = rotation vers la droite.
+    ///
+    /// 🚨 Le yaw de recul ne touche JAMAIS le corps (corrigé le 2026-10-05). Il faisait
+    /// `locomotion.transform.Rotate(...)`, donc modifiait le yaw — une valeur de la simulation —
+    /// HORS de Move() : un client distant tournait sans que le serveur le sache. Le zigzag du MP5
+    /// restait sous le seuil de réconciliation de 1°, mais une arme qui dévie d'un seul côté
+    /// aurait provoqué des recalages en pleine rafale. La visée, elle, ne change pas : le tir
+    /// part de la caméra, qui porte ce décalage.
     /// </summary>
     public void AddInstantRotation(float pitchDelta, float yawDelta)
     {
         pitch = Mathf.Clamp(pitch - pitchDelta, minPitch, maxPitch);
-        transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
-
-        if (locomotion != null && Mathf.Abs(yawDelta) > 0f)
-        {
-            locomotion.transform.Rotate(Vector3.up * yawDelta);
-        }
+        recoilYaw += yawDelta;
+        ApplyLocalRotation();
     }
+
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+    /// <summary>Surface de test : décalage horizontal de recul porté par la caméra.</summary>
+    public float TestRecoilYaw => recoilYaw;
+#endif
 }

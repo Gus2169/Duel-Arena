@@ -79,4 +79,80 @@ public class PlayerSoundMappingTests
         Assert.AreNotEqual(PlayerSoundEvent.FootstepRun,
             PlayerLocomotion.GetFootstepSoundEvent(PlayerLocomotion.Stance.Prone, sprinting: true));
     }
+
+    // ------------------------------------------------------------------
+    // Niveaux de bruit (2026-10-05). Le sneak et le ramper étaient classés Silent, que
+    // PlayerSoundEmitter filtre : ils ne faisaient AUCUN bruit, alors que le GDD (§ 8) les veut
+    // faibles mais audibles. Un test vert ici ne dit rien du volume réel, seulement qu'aucune
+    // allure de déplacement n'est classée muette.
+    // ------------------------------------------------------------------
+
+    [Test]
+    public void SneakEtRamper_SontFaibles_JamaisMuets()
+    {
+        Assert.AreEqual(PlayerLocomotion.NoiseLevel.Faint,
+            PlayerLocomotion.GetNoiseLevel(moving: true, PlayerLocomotion.Stance.Standing, sprinting: false, sneaking: true));
+
+        Assert.AreEqual(PlayerLocomotion.NoiseLevel.Faint,
+            PlayerLocomotion.GetNoiseLevel(moving: true, PlayerLocomotion.Stance.Prone, sprinting: false, sneaking: false));
+    }
+
+    [Test]
+    public void SeuleLImmobilite_EstSilencieuse()
+    {
+        Assert.AreEqual(PlayerLocomotion.NoiseLevel.Silent,
+            PlayerLocomotion.GetNoiseLevel(moving: false, PlayerLocomotion.Stance.Standing, sprinting: false, sneaking: false));
+
+        // Toutes les combinaisons EN MOUVEMENT doivent faire du bruit.
+        foreach (PlayerLocomotion.Stance stance in System.Enum.GetValues(typeof(PlayerLocomotion.Stance)))
+        {
+            foreach (bool sprint in new[] { false, true })
+            {
+                foreach (bool sneak in new[] { false, true })
+                {
+                    Assert.AreNotEqual(PlayerLocomotion.NoiseLevel.Silent,
+                        PlayerLocomotion.GetNoiseLevel(moving: true, stance, sprint, sneak),
+                        $"Muet en mouvement : {stance}, sprint={sprint}, sneak={sneak}");
+                }
+            }
+        }
+    }
+
+    [Test]
+    public void LaCourse_EstPlusBruyanteQueLaMarche()
+    {
+        Assert.AreEqual(PlayerLocomotion.NoiseLevel.Loud,
+            PlayerLocomotion.GetNoiseLevel(moving: true, PlayerLocomotion.Stance.Standing, sprinting: true, sneaking: false));
+
+        Assert.AreEqual(PlayerLocomotion.NoiseLevel.Quiet,
+            PlayerLocomotion.GetNoiseLevel(moving: true, PlayerLocomotion.Stance.Standing, sprinting: false, sneaking: false));
+    }
+
+    // ------------------------------------------------------------------
+    // Sons du lean, décidés par le serveur depuis l'état reçu dans chaque input (2026-10-05).
+    // ------------------------------------------------------------------
+
+    [Test]
+    public void SePencher_JoueLeSonDeDebut_SeRedresser_LeSonDeFin()
+    {
+        Assert.AreEqual(PlayerSoundEvent.LeanStart, PlayerLocomotion.GetLeanSound(0, -1));
+        Assert.AreEqual(PlayerSoundEvent.LeanStart, PlayerLocomotion.GetLeanSound(0, 1));
+        Assert.AreEqual(PlayerSoundEvent.LeanEnd, PlayerLocomotion.GetLeanSound(-1, 0));
+        Assert.AreEqual(PlayerSoundEvent.LeanEnd, PlayerLocomotion.GetLeanSound(1, 0));
+    }
+
+    [Test]
+    public void ChangerDeCote_SEntend()
+    {
+        // Passer directement de gauche à droite est un nouveau peek : il ne doit pas être muet.
+        Assert.AreEqual(PlayerSoundEvent.LeanStart, PlayerLocomotion.GetLeanSound(-1, 1));
+        Assert.AreEqual(PlayerSoundEvent.LeanStart, PlayerLocomotion.GetLeanSound(1, -1));
+    }
+
+    [Test]
+    public void LeanInchange_AucunSon()
+    {
+        Assert.IsNull(PlayerLocomotion.GetLeanSound(0, 0));
+        Assert.IsNull(PlayerLocomotion.GetLeanSound(1, 1));
+    }
 }

@@ -20,6 +20,9 @@ public class PlayerSoundEmitter : MonoBehaviour
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private PlayerSoundBank soundBank;
 
+    [Tooltip("Volume relatif des déplacements discrets (sneak, ramper). Le GDD les veut FAIBLES mais audibles : jamais 0. Réglage de ressenti, à ajuster en jouant.")]
+    [SerializeField, Range(0.05f, 1f)] private float faintVolumeScale = 0.35f;
+
     private PlayerLocomotion locomotion;
 
     private void Awake()
@@ -39,10 +42,9 @@ public class PlayerSoundEmitter : MonoBehaviour
 
     private void HandlePlayerSound(PlayerSoundEvent type, PlayerLocomotion.NoiseLevel noise)
     {
-        // Le sneak reste silencieux pour la détection à distance (gameplay) : on respecte ça
-        // pour les pas/le ramper. Les sons ponctuels (s'accroupir, pencher...) font un minimum
-        // de bruit physique même en essayant d'être discret — à inverser ici si le design
-        // final veut au contraire les couper aussi en sneak.
+        // Un pas « silencieux » n'existe que si le joueur ne bouge pas : rien à jouer. Le sneak et
+        // le ramper, eux, sont Faint — joués moins fort, jamais coupés (GDD § 8). Les sons
+        // ponctuels (s'accroupir, pencher...) gardent leur volume plein.
         bool isMovementLoop = type == PlayerSoundEvent.FootstepWalk || type == PlayerSoundEvent.FootstepRun
             || type == PlayerSoundEvent.FootstepCrouch || type == PlayerSoundEvent.Crawl;
         if (isMovementLoop && noise == PlayerLocomotion.NoiseLevel.Silent)
@@ -54,8 +56,11 @@ public class PlayerSoundEmitter : MonoBehaviour
         if (!soundBank.TryGetEntry(type, out var entry)) return;
         if (entry.clips == null || entry.clips.Length == 0) return;
 
+        float volume = entry.volume;
+        if (isMovementLoop && noise == PlayerLocomotion.NoiseLevel.Faint) volume *= faintVolumeScale;
+
         AudioClip clip = entry.clips[Random.Range(0, entry.clips.Length)];
         audioSource.pitch = Random.Range(entry.pitchRange.x, entry.pitchRange.y);
-        audioSource.PlayOneShot(clip, entry.volume);
+        audioSource.PlayOneShot(clip, volume);
     }
 }

@@ -27,8 +27,11 @@ using UnityEngine;
 /// Dimensions et position sont pilotées par PlayerLocomotion (voir ApplyHitbox) : fonction pure de
 /// la posture réseau + du décalage de lean, donc identique sur toutes les machines pour une même
 /// posture — pas d'interpolation locale qui ferait diverger la surface touchable d'un écran à
-/// l'autre. La capsule VISIBLE utilise exactement les mêmes valeurs : ce qu'on voit est ce qu'on
-/// touche.
+/// l'autre.
+///
+/// 🚨 Ne JAMAIS dériver cette surface des os animés : un Animator n'est pas déterministe entre
+/// machines. L'animation AFFICHE le corps, ce composant le CALCULE depuis les mêmes scalaires
+/// réseautés ; aucun des deux ne lit l'autre.
 /// </summary>
 [RequireComponent(typeof(CapsuleCollider))]
 public class PlayerHitbox : MonoBehaviour
@@ -36,7 +39,7 @@ public class PlayerHitbox : MonoBehaviour
     private CapsuleCollider capsule;
 
     /// <summary>Le collider touchable, exposé pour que le tir serveur puisse l'ignorer
-    /// temporairement (on ne se tire pas dessus) et, plus tard, pour le rewind.</summary>
+    /// temporairement (on ne se tire pas dessus).</summary>
     public Collider Collider
     {
         get
@@ -82,8 +85,8 @@ public class PlayerHitbox : MonoBehaviour
         capsule.radius = radius;
 
         // Le centre du collider suit le lean. On décale le COLLIDER et non le transform pour que
-        // la position du GameObject reste celle du joueur — plus simple à raisonner pour le futur
-        // rewind, qui n'aura qu'une position de joueur à restaurer.
+        // la position du GameObject reste celle du joueur — c'est ce qui permet au rewind de ne
+        // sauvegarder et restaurer qu'une position et une rotation.
         capsule.center = new Vector3(lateralOffset, height / 2f, 0f);
     }
 }

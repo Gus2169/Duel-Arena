@@ -24,11 +24,9 @@ public class PlayerAnimator : MonoBehaviour
     [Tooltip("Animator du personnage (enfant Model). Laissé vide, il est cherché dans les enfants.")]
     [SerializeField] private Animator animator;
 
-    [Header("Vitesses de référence par posture")]
-    [Tooltip("Vitesse à laquelle l'arbre de mélange vaut 1 (allure nominale). Doit suivre walkSpeed de PlayerLocomotion.")]
-    [SerializeField] private float standingReference = 4.4f;
-    [SerializeField] private float crouchingReference = 2.64f;
-    [SerializeField] private float proneReference = 1.1f;
+    // Les vitesses de référence (celles où l'arbre de mélange vaut 1) ne sont plus recopiées ici :
+    // elles sont LUES dans PlayerLocomotion.NominalSpeed. La copie s'était désaccordée en silence
+    // (4,4 m/s ici contre 5 m/s réglés dans le prefab), et l'animation tournait 14 % trop vite.
 
     [Tooltip("Lissage des paramètres de mélange. Purement visuel : évite qu'un à-coup d'une frame ne fasse claquer l'animation.")]
     [SerializeField] private float blendSmoothing = 12f;
@@ -112,7 +110,7 @@ public class PlayerAnimator : MonoBehaviour
         // qu'un spectateur n'appelle jamais. Elle y resterait bloquée sur Standing, et l'adversaire
         // n'aurait jamais d'animation accroupie ni allongée. Symptôme vécu le 2026-09-29.
         PlayerLocomotion.Stance stance = locomotion.NetworkedStance;
-        float reference = ReferenceSpeed(stance);
+        float reference = locomotion.NominalSpeed(stance);
         Vector2 target = new Vector2(local.x, local.z) / Mathf.Max(0.01f, reference);
 
         // Borne volontaire. Une resynchronisation de réconciliation TÉLÉPORTE le propriétaire de
@@ -183,12 +181,5 @@ public class PlayerAnimator : MonoBehaviour
         if (stance == PlayerLocomotion.Stance.Crouching) return crouchingPlaybackScale;
         if (stance == PlayerLocomotion.Stance.Prone) return pronePlaybackScale;
         return standingPlaybackScale;
-    }
-
-    private float ReferenceSpeed(PlayerLocomotion.Stance stance)
-    {
-        if (stance == PlayerLocomotion.Stance.Crouching) return crouchingReference;
-        if (stance == PlayerLocomotion.Stance.Prone) return proneReference;
-        return standingReference;
     }
 }

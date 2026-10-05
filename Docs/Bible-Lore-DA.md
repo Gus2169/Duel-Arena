@@ -237,6 +237,8 @@ Les armes peuvent être issues du programme militaire, de prototypes jamais fina
 
 **Les armes bricolées sont un style visuel** : elles fonctionnent exactement comme les autres, sans défaut ni enrayement.
 
+**L'arme de corps à corps est un taser**, pas un couteau : une lame n'a guère de sens contre un châssis de métal, une décharge électrique si. Ses règles sont dans le GDD (§ 6) ; son apparence reste à définir.
+
 La variété doit soutenir le fun sans détruire le skill. Chaque arme ou power-up doit être évalué selon sa lisibilité, sa contre-mesure, son impact sur les distances de combat et son potentiel de frustration.
 
 ## 13. Arènes et environnement
@@ -398,3 +400,9 @@ Cette bible constitue une base de travail. Les décisions finales devront être 
 | 5 | Chaque robot a sa propre couleur ; les peintures seront limitées à des couleurs vives quand la personnalisation arrivera, après le prototype. | R2, C1 |
 | 9 | Pendant une manche, l'IA parle rarement, brièvement et jamais fort, juste assez pour les deux joueurs. | R1 |
 | 18 | La monnaie se gagne en jouant pour l'instant ; l'achat contre de l'argent réel reste possible plus tard. | C5 |
+
+**2026-10-05 — relecture du projet**
+
+| Section | Ce qui a changé | Décision |
+|---|---|---|
+| 12 | L'arme de corps à corps est un taser, plus logique qu'un couteau contre des robots. | Réponse de l'utilisateur à la relecture du 2026-10-05 |

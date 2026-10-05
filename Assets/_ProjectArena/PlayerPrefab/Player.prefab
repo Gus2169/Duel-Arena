@@ -305,8 +305,10 @@ MonoBehaviour:
   vaultMinHeight: 0.3
   vaultMaxHeight: 1.3
   vaultLandingProbeDistance: 0.6
+  vaultMaxLandingDrop: 1.5
   vaultDuration: 0.55
   vaultArcHeight: 0.35
+  vaultObstacleClearance: 0.15
   vaultHeightCurve:
     serializedVersion: 2
     m_Curve:
@@ -413,6 +415,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerSoundEmitter
   audioSource: {fileID: 7504234295997836428}
   soundBank: {fileID: 11400000, guid: 772ac07e0f7c32340ad0fcd08213ad54, type: 2}
+  faintVolumeScale: 0.35
 --- !u!114 &8499542872561817817
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -537,9 +540,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: DuelArena.Runtime::PlayerAnimator
   animator: {fileID: 5766874238266839388}
-  standingReference: 4.4
-  crouchingReference: 2.64
-  proneReference: 1.1
   blendSmoothing: 12
   vaultClipLength: 1.17
   minPlaybackSpeed: 0.75

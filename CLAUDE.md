@@ -26,7 +26,7 @@ Aucun autre document technique n'est maintenu. Il y en a eu un, décrivant comme
   Cycle de vérification standard après une modif de script : `recompile`, puis `recompile_status` en boucle, puis `console_status`. Préférer ces outils à l'édition manuelle de `.unity`/`.prefab` (YAML) quand l'Editor est ouvert.
   ⚠️ Le buffer de `console` garde les entrées des compilations précédentes. Se fier à `groundTruth` / `recompile_status`, pas au comptage brut.
   Un second serveur MCP existait (`unity-mcp`, le pont in-Editor du package AI Assistant via `relay_win.exe`) : **supprimé le 2026-09-24**, il faisait doublon et n'était épinglé à aucun projet — il s'attachait à l'Editor qui tournait, piège assuré le jour où deux Editors tournent en parallèle. Le pont reste activable dans Project Settings > AI > Unity MCP si un besoin apparaît (son seul apport unique était la génération d'assets par IA, qui demande un abonnement Unity AI absent ici).
-- **Git** : dépôt local, pas de remote. **Committer seulement sur demande explicite.**
+- **Git** : remote `origin` = dépôt GitHub **privé** `https://github.com/Gus2169/Duel-Arena.git` (ajouté le 2026-10-05, branche `master`, avec LFS). **Committer seulement sur demande explicite**, et pousser de même.
 
 ## Architecture réseau
 
@@ -92,7 +92,9 @@ Contrainte de configuration : `maxRewindSeconds` (sur `WeaponController`) doit r
 
 `PlayerHitbox` (enfant `Hitbox` du prefab joueur) porte un `CapsuleCollider` **trigger** sur le layer **`Hitbox` (7)**. Trigger et layer sont forcés dans `Awake()`, pas laissés à l'inspecteur : ce sont des invariants, et les deux se règlent silencieusement mal en un clic (un hitbox non-trigger repousserait physiquement les joueurs, un mauvais layer le rendrait invisible au tir ou bloquerait les balles comme un mur).
 
-Ses dimensions et sa position sont une **fonction pure de (posture réseau, décalage de lean)** — aucune interpolation locale, donc une surface identique sur toutes les machines. La **capsule visible utilise exactement les mêmes valeurs** : on touche ce qu'on voit.
+Ses dimensions et sa position sont une **fonction pure de (posture réseau, décalage de lean)** — aucune interpolation locale, donc une surface identique sur toutes les machines. La capsule visible utilisait exactement les mêmes valeurs : on touchait ce qu'on voyait.
+
+🚨 **Ce n'est plus vrai depuis l'arrivée du personnage (constaté le 2026-10-05).** La capsule visible (`Capsule`) est désactivée dans le prefab, et le corps affiché est désormais `Model`, enfant direct de `Player` : **il ne se penche pas**, et `PlayerAnimator` n'a aucun paramètre de lean. Le hitbox, lui, glisse toujours de 0,5 m sur le côté. Un joueur penché derrière un angle expose donc une surface touchable invisible, et la partie de son corps qu'on voit n'est plus entièrement touchable. Le lean façon R6 (buste piloté par le scalaire réseauté, hitbox en plusieurs capsules) est ce qui referme ce trou.
 
 Ce que ça débloque, au-delà du lean : le `CharacterController` peut être désactivé (vault) sans que le joueur cesse d'être touchable, et le rewind aura une surface dédiée à déplacer dans le passé sans toucher à la simulation.
 
@@ -133,7 +135,7 @@ L'ampleur des multiplicateurs est une **décision de design** : elle touche dire
 
 ### Garde-fous serveur
 
-- `WeaponController.FireServerRpc` rejette : un tir plus rapide que `data.shotsPerSecond` (tolérance 15 %), une direction nulle, et une **origine trop éloignée de la position serveur du tireur** (`maxOriginDistanceFromPlayer`, 4 m — couvre hauteur caméra + lean + avance de prédiction sous latence ; à resserrer quand le rewind sera en place).
+- `WeaponController.FireServerRpc` rejette : un tir plus rapide que `data.shotsPerSecond` (tolérance 15 %), une direction nulle, et une **origine trop éloignée de la position serveur du tireur** (`maxOriginDistanceFromPlayer`, 4 m — couvre hauteur caméra + lean + avance de prédiction sous latence. Le rewind est en place et l'historique serveur couvre aussi le tireur, mais la validation de l'origine ne s'en sert pas encore : c'est ce qui permettrait de resserrer la borne).
 - `PlayerLocomotion.ApplyBufferedServerInputs` clampe le `deltaTime` de chaque input et **budgète le temps simulé sur le temps RÉEL** (token bucket rechargé de `Time.deltaTime × 1.1`, réserve plafonnée à 0,25 s). `SubmitInputServerRpc` plafonne la taille de `serverInputQueue`.
 
 **Deux règles qui en découlent, à appliquer à toute nouvelle RPC client→serveur :**
@@ -169,17 +171,15 @@ Deux interrupteurs de triche simulée dans l'inspecteur, sous le header `Debug �
 
 ## Structure du projet
 
-**Prefab joueur unique** : `Assets/_ProjectArena/PlayerPrefab/Player.prefab` — `NetworkObject` + `PlayerLocomotion` + `WeaponController` + `PlayerInputReader` + `PlayerCameraLook` + `CrosshairUI` + `WeaponVisualFeedback` + `PlayerSoundEmitter`. Référencé par GUID dans `NetworkManager.PlayerPrefab` et `Assets/DefaultNetworkPrefabs.asset`.
+**Prefab joueur unique** : `Assets/_ProjectArena/PlayerPrefab/Player.prefab`. Sur la racine : `CharacterController`, `NetworkObject`, `PlayerLocomotion`, `PlayerInputReader`, `CrosshairUI`, `WeaponVisualFeedback`, `PlayerSoundEmitter`, `Health`, `AudioSource`, `PlayerAnimator`. Enfants : `CameraPivot` (`PlayerCameraLook`) → `Leanpivot` → `Main Camera` ; `Weapon` (`WeaponController`) ; `Hitbox` (`PlayerHitbox`, layer 7) ; `Model` (le personnage et son `Animator`). Référencé par GUID dans `NetworkManager.PlayerPrefab` et `Assets/DefaultNetworkPrefabs.asset`.
 
-**Scènes** :
-- `Assets/_ProjectScenes/MultiTestScene.unity` — seule scène avec un `NetworkManager` (UnityTransport, 127.0.0.1:7777, local uniquement). Scène de test multijoueur.
-- `Assets/_ProjectScenes/Arena.unity` — scène de jeu d'origine, **conservée pour mémoire seulement**. Sa géométrie d'arène a été reportée dans `MultiTestScene`, qui est donc la scène de travail unique. Aucune migration à prévoir (tranché le 2026-09-29) : il n'y a rien dans `Arena.unity` qui n'existe déjà ailleurs.
+**Scène unique** : `Assets/_ProjectScenes/MultiTestScene.unity`, seule scène de la build et seule avec un `NetworkManager` (UnityTransport, 127.0.0.1:7777, local uniquement). Elle utilise le terrain `Assets/New Terrain 1.asset` — malgré son nom, **il est utilisé**.
 
-Les deux référencent un asset Terrain à la racine d'`Assets/` (`New Terrain.asset`, `New Terrain 1.asset`) — ils ont l'air de traîner mais **ils sont utilisés**, ne pas les supprimer sans vérifier.
+`Arena.unity` (la scène d'origine, gardée pour mémoire), son terrain `New Terrain.asset` et `CubeTest` + `TestSpin.cs` ont été **supprimés le 2026-10-05**, avec l'accord de l'utilisateur. L'historique Git les garde.
 
 **Placeholders assumés** (à remplacer avec le vrai système d'armes / le vrai HUD, pas des bugs) : `CrosshairUI` (réticule OnGUI), `WeaponVisualFeedback` (tracer/impact procéduraux), `NetworkBootstrapUI` (boutons Host/Server/Client en OnGUI).
 
-`CubeTest` (dans `MultiTestScene`) est un `NetworkObject` in-scene **désactivé**, donc `TestSpin.cs` ne tourne jamais. Il n'est pas impliqué dans le bug du joueur fantôme (il n'est pas le `PlayerPrefab`), mais c'est la même famille de piège : à supprimer au prochain nettoyage, ce qui rendra `TestSpin.cs` mort à son tour.
+**Le jeu n'utilise que `PlayerControls.inputactions`** (classe C# générée, dans `DuelArena.Input`). L'asset d'actions *globales* du gabarit Unity (`InputSystem_Actions`) a été retiré le 2026-10-05 : il était chargé dans la build sans servir à rien. Les touches actuelles (sprint sur Alt, sneak sur Shift) sont la configuration personnelle de l'utilisateur ; le GDD (§ 15) prévoit des touches personnalisables.
 
 ⚠️ **Piège de nommage** : `/Spawn` et `/Spawn Enemy` dans `MultiTestScene` **ne sont PAS des points d'apparition** — ce sont des groupes de géométrie ProBuilder (caisses, cubes) situés *dans* les zones de spawn. Les vrais points d'apparition sont sous `/SpawnPoints`.
 
@@ -238,6 +238,23 @@ L'affichage `OnGUI` du `RoundManager` est un **placeholder** au même titre que 
 
 **Hygiène** : ✅ **assemblies et tests posés le 2026-09-28** — voir la section ci-dessous.
 
+### Relecture complète du 2026-10-05 (vérifié dans le code, l'Editor et l'importeur)
+
+État de départ : 39 tests verts (23 EditMode, 16 PlayMode), console vierge, dépôt propre.
+
+10. 🔴 **Le lean n'est pas affiché, mais le hitbox glisse.** Voir l'alerte dans « Le hitbox ». C'est la dette la plus grave : elle touche à l'équité du tir. → **Confiée à Claude le 2026-10-05** : c'est le chantier du lean façon R6 (buste seul).
+11. 🟡 **En partie corrigé le 2026-10-05** — le sneak et le ramper sont classés `Faint` (nouvelle valeur de `NoiseLevel`) et joués à volume réduit (`PlayerSoundEmitter.faintVolumeScale`, 0,35) au lieu d'être coupés ; gardé par trois tests, validés par mutation. **Restent, à la charge de l'utilisateur et sans urgence** : les clips manquants, la portée par allure (« sera réglée en temps et en heure ») et le son du MP5 (« pour s'amuser, sera changé »). Le diagnostic : 🟠 **Le son de gameplay est presque muet.** `PlayerSounds.asset` n'a de clip que pour `FootstepWalk` : course, accroupi, ramper, postures et lean ne jouent rien. En plus, `ComputeNoiseLevel` classe le sneak ET tout le prone en `Silent`, que `PlayerSoundEmitter` filtre : même avec des clips, ramper et marcher en sneak resteraient muets, alors que le GDD (§ 8) les veut faibles mais audibles. Une seule `AudioSource` à 20 m de portée sert à toutes les allures, dans une arène de 66 × 74 m : « la course s'entend de partout » est impossible. Le MP5 tire au hasard parmi cinq sons sans rapport (goutte d'eau, fusil à pompe, laser…), donc l'arme n'est pas reconnaissable à l'oreille. Les tests de son vérifient le *mapping*, pas l'audibilité : ils restent verts.
+12. ✅ **Corrigé le 2026-10-05** — le recul horizontal est désormais porté par la caméra seule (`recoilYaw` dans `PlayerCameraLook`), gardé par `RecoilTests`, validé par mutation (l'ancien code fait échouer `LeReculHorizontal_NeTournePasLeCorps`). Le diagnostic : 🟠 **Le recul horizontal tournait le corps HORS de `Move()`.** `PlayerCameraLook.AddInstantRotation` fait `locomotion.transform.Rotate(yawDelta)` : un client distant modifie son yaw sans que le serveur le sache. Latent avec le MP5, dont le zigzag ±0,6° reste sous le seuil de 1° ; une arme à dérive horizontale d'un seul côté provoquerait des resynchronisations en pleine rafale. Même famille que les quatre pièges de valeurs cumulatives.
+13. ✅ **Corrigé le 2026-10-05** — l'origine du rayon est calculée (position + hauteur de caméra de la posture réseau), donc identique partout. Le diagnostic : 🟡 **L'anti-clipping du lean divergeait entre propriétaire et serveur.** `ComputeAllowedLeanOffset` part de `cameraPivot.position`, que seul le propriétaire met à jour (`ApplyCameraPivotPosition`). Sur le serveur, le `CameraPivot` d'un client distant reste à 1,65 m même accroupi ou allongé : près d'un obstacle bas, le serveur calcule un autre lean que le client. À calculer depuis une fonction pure (position + hauteur de caméra de la posture réseau).
+14. ✅ **Corrigé le 2026-10-05** — la RPC est supprimée ; le serveur déduit les sons de lean des transitions qu'il reçoit dans les inputs (`ServerTrackLeanSound`), avec un intervalle minimal de 0,1 s en temps réel. Changer directement de côté joue désormais `LeanStart`. **Reste ouvert** : `RequestStanceChangeServerRpc` n'a pas non plus de borne de débit (un client modifié peut alterner les postures à chaque frame). Le diagnostic : 🟡 **`RequestPlayerSoundServerRpc` n'avait aucune borne de débit** (règle 2 des garde-fous). Elle est d'ailleurs devenue inutile : l'état de lean voyage dans chaque input, le serveur peut détecter les transitions lui-même, comme pour la posture.
+15. ✅ **Corrigé le 2026-10-05** — `roundTimeLimit` vaut 0 (code et scène) ; déplacement et tir sont libres pendant `WaitingForPlayers` (vérifié en Play Mode : un Host seul se déplace) ; la phase publie son début et sa fin en temps serveur (`phaseStartedAt` / `phaseEndsAt`), une fois par changement, et expose `PhaseElapsed`, le chrono du futur HUD. Le diagnostic : `roundTimeLimit` valait 60 s alors que le GDD a supprimé la limite, le joueur seul était figé, et `phaseTimeRemaining` était réémis à chaque tick.
+16. ⏸️ **Reporté (décision de l'utilisateur, 2026-10-05)** : la disposition des spawns dépendra des modes de jeu. Le diagnostic : deux points et « le plus éloigné des autres », alors que le GDD (§ 5) veut plusieurs points et un échange de côté à chaque manche.
+17. ✅ **Corrigé le 2026-10-05.** Au passage, trois appels d'API devenus obsolètes en Unity 6.6 (`FindFirstObjectByType`, `FindObjectsByType` avec tri) ont été remplacés. Le diagnostic : ⚪ **Commentaires qui contredisaient les règles du projet** : `PlayerLocomotion` annonce encore « un hitbox qui suivra les os » (exactement ce qui est interdit), un lean « sans effet sur la simulation », un rewind « à venir » ; `WeaponController` dit encore n'avoir « pas de compensation de latence » ; un tooltip place le sneak sur Ctrl alors qu'il est sur Shift. Un commentaire faux finit par être cru.
+18. ✅ **Corrigé le 2026-10-05** — `PlayerAnimator` lit `PlayerLocomotion.NominalSpeed(posture)` ; vérifié en Play Mode, un strafe à la marche donne `MoveX = -1,00` exactement. Le diagnostic : 🟡 `PlayerAnimator` recopiait les vitesses de référence (4,4 / 2,64 / 1,1) au lieu de les lire dans `PlayerLocomotion` — **et le désaccord a déjà eu lieu** : le prefab règle `walkSpeed` à 5 m/s (et `runSpeed` à 10, `sneakSpeed` à 2), pas à 4,4. L'arbre de mélange reçoit donc 1,14 à la marche au lieu de 1. À dériver de `PlayerLocomotion` (vitesse de marche × multiplicateur de posture).
+19. ✅ **Supprimés le 2026-10-05**, avec l'accord de l'utilisateur, sauf les 11 clips inutilisés, gardés pour les futures transitions de posture. Tests et Play Mode verts après coup. Le diagnostic : ⚪ **Restes de gabarit et éléments morts** : `CubeTest` + `TestSpin.cs` ; `Arena.unity` **toujours dans la build** (et `New Terrain.asset`, qu'elle seule utilise) ; la `Capsule` désactivée du prefab, le code `visualCapsule` et les deux matériaux `M_Player` (inutilisé) / `M_Enemy` ; les dossiers vides `Resources`, `Scenes`, `TutorialInfo` ; `InputSystem_Actions.inputactions`, déclaré comme actions *globales* du projet et préchargé dans la build alors que le jeu utilise `PlayerControls` ; l'action `Vault` (doublon de `Jump`, jamais lue) ; le layer 6 nommé `obstacleMask` (aucun collider) ; le niveau de qualité et le pipeline `Mobile` ; quatre packages directs sans dépendant ni usage dans le code (`visualscripting`, `collab-proxy`, `ai.navigation`, `ai.inference`) ; 11 clips d'animation importés mais inutilisés.
+20. ⏳ **Remplacement en cours** : l'utilisateur a choisi **Y Bot (Mixamo)** comme robot provisoire le 2026-10-05 et l'ajoute lui-même. ⚪ **Le modèle `SwattSolider` est un humain**, alors que la bible veut des robots. Il ne faut pas le supprimer avant d'avoir repointé les 30 clips : il est la source d'avatar de leur import (`Copy From Other Avatar`).
+21. ✅ **Remote GitHub privé ajouté le 2026-10-05** (voir « Configuration Git »). ⚠️ **Aucun remote Git** : le dépôt pèse 288 Mo (LFS compris, le « 1,8 Mo » de la section Git date d'avant le personnage) et n'existe que sur ce disque.
+
 ## Tester sous latence, et l'outillage de diagnostic (2026-09-28)
 
 **Simulateur réseau.** `com.unity.multiplayer.tools` 2.2.12 est installé pour ça (le `DebugSimulator` d'`UnityTransport` est obsolète et sans effet, voir les pièges). Un composant `NetworkSimulator` est posé sur `/NetworkManager` avec le preset `Assets/_ProjectScenes/NetSim_Test150ms.asset` : **75 ms par sens + 10 ms de gigue**, soit un RTT mesuré d'environ **165 ms**. Le preset s'applique aux deux instances puisqu'elles partagent la scène.
@@ -265,7 +282,7 @@ Le code de jeu a quitté `Assembly-CSharp` pour deux assemblies : `DuelArena.Inp
 
 Ce n'était pas qu'une question de temps de compilation : **un assembly de test ne peut pas référencer `Assembly-CSharp`**, l'assembly prédéfini. Sans asmdef, aucun test ne pouvait voir le code du jeu. Vérifié après coup : toutes les références de scripts dans le prefab joueur et la scène ont survécu (les GUID de fichiers ne changent pas), et le jeu tourne.
 
-**Tests EditMode** sous `Assets/Tests/EditMode` (`DuelArena.Tests.EditMode`). Lancer : `unity command run_tests --project-path "..." --mode EditMode`. 23 tests au 2026-09-28, tous verts.
+**Tests EditMode** sous `Assets/Tests/EditMode` (`DuelArena.Tests.EditMode`). Lancer : `unity command run_tests --project-path "..." --mode EditMode`. 29 tests EditMode et 18 tests PlayMode au 2026-10-05, tous verts.
 
 Ils couvrent volontairement la **logique pure**, là où une régression est à la fois probable et silencieuse :
 - `SampleHitboxHistory` — le cœur du rewind. Un échantillonnage cassé ne lève aucune erreur, il fait juste rater des tirs qui auraient dû toucher. Couvre l'interpolation position/lean, le `LerpAngle` du yaw (un `Lerp` ferait tourner le hitbox à l'envers entre 350° et 10°), la posture non interpolée, les bornes, la division par zéro et l'historique vide/null.
@@ -286,7 +303,7 @@ Ils couvrent volontairement la **logique pure**, là où une régression est à 
 
 ### Tests PlayMode — le déterminisme de `Move()` (2026-09-29)
 
-`Assets/Tests/PlayMode` (`DuelArena.Tests.PlayMode`), 3 tests. Lancer : `unity command run_tests --project-path "..." --mode PlayMode --async_tests`, puis sonder `test_status`. **Le mode synchrone ne marche pas** : entrer en Play Mode déclenche un rechargement de domaine qui coupe la requête HTTP.
+`Assets/Tests/PlayMode` (`DuelArena.Tests.PlayMode`) : 6 tests de déterminisme au 2026-10-05, 2 tests de recul (`RecoilTests`), plus les tests d'animation des sections suivantes (18 en tout). Lancer : `unity command run_tests --project-path "..." --mode PlayMode --async_tests`, puis sonder `test_status`. **Le mode synchrone ne marche pas** : entrer en Play Mode déclenche un rechargement de domaine qui coupe la requête HTTP.
 
 Ils verrouillent l'**équivalence entre une simulation en avant et un REJEU depuis le même état** — exactement ce que suppose la réconciliation. C'était jusqu'ici « la garantie la plus précieuse du projet, vérifiée à la main ».
 
@@ -315,10 +332,12 @@ Ils verrouillent l'**équivalence entre une simulation en avant et un REJEU depu
 
 ### Conformité d'import — trois propriétés non négociables
 
-Tout FBX d'animation ajouté doit avoir : **rig Humanoid** en `Copy From Other Avatar` pointant l'avatar du personnage, **`lockRootPositionXZ`** (Bake Into Pose), et un **bouclage correct**.
+Tout FBX d'animation ajouté doit avoir : **rig Humanoid** en `Copy From Other Avatar` pointant l'avatar du personnage, **`lockRootPositionXZ` à FALSE** (Bake Into Pose décoché, voir la section « Root motion » plus bas), et un **bouclage correct**.
+
+⚠️ *Corrigé le 2026-10-05 : cette ligne exigeait l'inverse (`lockRootPositionXZ` coché) et contredisait la section « Root motion », qui est la bonne. L'importeur, interrogé ce jour-là, donne bien `lockRootPositionXZ = false` sur les 30 clips. Piège à surveiller au moment d'importer les animations du robot.*
 
 - Sans Humanoid, Mecanim ne peut pas retargeter — or les animations viennent d'un AUTRE personnage (`Ch35_nonPBR`) que le modèle. Elles ne joueraient tout simplement pas.
-- `lockRootPositionXZ` neutralise la root motion. **La position horizontale appartient exclusivement à `Move()`** ; une animation qui déplace aussi le personnage entrerait en conflit avec la simulation, et la vitesse d'un Animator n'est pas déterministe entre machines.
+- Le déplacement de la racine doit rester du root motion, que `applyRootMotion = false` jette. **La position horizontale appartient exclusivement à `Move()`** ; une animation qui déplace aussi le personnage entrerait en conflit avec la simulation, et la vitesse d'un Animator n'est pas déterministe entre machines.
 - Le bouclage se classe sur le bon critère : un état **continu** boucle (attente, déplacement, phase aérienne), un **événement** ponctuel non (tir, transition de posture, atterrissage, vault). Une première version déduisait « transition » du `" To "` des noms Mixamo — juste au début, faux dès l'arrivée des tirs et des sauts.
 
 ### L'Animator
@@ -481,7 +500,11 @@ Deux limites à connaître :
 
 Les `.asset` d'Unity sont du YAML texte (projet en Force Text) : ils passent par Smart Merge, pas par LFS. Si le projet basculait en Force Binary, il faudrait les déplacer côté LFS.
 
-Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline de rendu Mobile, inutile pour un FPS compétitif PC. Sans impact, à nettoyer si on touche aux settings de rendu.
+Le niveau de qualité `Mobile` et ses assets de rendu ont été retirés le 2026-10-05 : il ne reste que `PC`, utilisé par toutes les plateformes.
+
+**Remote GitHub depuis le 2026-10-05** (`origin`, privé). Le CLI `gh` n'est pas installé ; l'authentification passe par Git Credential Manager (`credential.helper = manager`), qui ouvre une fenêtre de connexion chez l'utilisateur au premier push. Les objets LFS (~280 Mo au 2026-10-05) partent avec le push, via le hook installé par `git lfs install --local`.
+
+⚠️ **Depuis qu'il y a un remote, réécrire l'historique n'est plus anodin** : la migration LFS des `.wav` évoquée plus haut demanderait un push forcé. À ne faire qu'avec l'accord de l'utilisateur.
 
 ## Ordre de travail
 
@@ -491,11 +514,18 @@ Point mineur laissé tel quel : `QualitySettings` référence encore un pipeline
 
 *(Livré le 2026-09-28 : le vault réseauté. **Toutes les mécaniques du GDD sont désormais en place.**)*
 
+*(Relecture complète et rectification le 2026-10-05 : voir « Relecture complète du 2026-10-05 » dans les dettes. Ordre ci-dessous refait à cette date.)*
+
 1. ~~Poser des obstacles franchissables~~ — fait le 2026-09-29 (`Barricade 0.5` / `1.25` / `1.6`).
-2. ~~Migrer le multijoueur vers `Arena.unity`~~ — **abandonné le 2026-09-29**, sans objet : l'arène a été reportée dans `MultiTestScene`.
-3. **Un vrai personnage (humanoïde placeholder), puis les hitbox par zone, puis les multiplicateurs de dégâts.** Voir l'arbitrage ci-dessous. Le lean façon R6 (buste seul) en fait partie, l'utilisateur y travaille.
-4. **Le modèle de session : N joueurs, deux duellistes.** Voir ci-dessous.
-5. **Lobby avec code + Relay** (Unity Services), pour le playtest entre amis. C'est aussi ce qui sort : **des lobbys privés à code, et aucune file publique**. Le classé, et avec lui le serveur dédié, l'anti-triche client et le matchmaking par région, viennent après la sortie (tranché le 2026-10-04). Aucun service de matchmaking n'est donc à intégrer d'ici là.
+2. ~~Migrer le multijoueur vers `Arena.unity`~~ — **abandonné le 2026-09-29**, puis la scène a été supprimée le 2026-10-05.
+3. **Rendre le duel lisible.**
+   - **Robot provisoire : Y Bot de Mixamo**, ajouté par l'utilisateur. Une fois là : repointer l'avatar source des 30 clips (`Copy From Other Avatar`) sur lui, vérifier les trois conformités d'import, relancer `CharacterDriftTests` et `AnimatorStateTests`, puis seulement retirer le soldat SWAT.
+   - **Couleur par joueur**, attribuée par le serveur (voir la section bible plus bas).
+   - **Lean façon R6, confié à Claude** (ressenti tranché le 2026-10-05 : lean autorisé allongé, amplitude de départ ~35 cm, GDD § 7) : buste piloté par le scalaire réseauté, hitbox en plusieurs capsules (jambes fixes, torse et tête qui pivotent), zones tête / torse / jambes posées pour les futurs multiplicateurs. Les dimensions se calent sur les proportions du robot, donc **après** son arrivée ; la logique peut précéder.
+   - **Son** : clips à trouver, portée par allure (à la main de l'utilisateur, sans urgence).
+4. **Compléter le duel** : chargeur et rechargement, **taser** de corps à corps qui tue en un coup et sort quand l'arme est vide (GDD § 6, tranché le 2026-10-05), marqueur et sons de touche, effet de dégâts reçus, vraie mort, HUD minimal, phrase de victoire. L'arme automatique du prototype reste le MP5 ou une arme d'apparence plus robotique (question ouverte au GDD § 17).
+5. **Le modèle de session : N joueurs, deux duellistes.** Voir ci-dessous.
+6. **Lobby avec code + Relay** (Unity Services), pour le playtest entre amis. C'est aussi ce qui sort : **des lobbys privés à code, et aucune file publique**. Le classé, et avec lui le serveur dédié, l'anti-triche client et le matchmaking par région, viennent après la sortie (tranché le 2026-10-04). Aucun service de matchmaking n'est donc à intégrer d'ici là.
 
 ### Ce que le questionnaire GDD change au plan (2026-10-02)
 
@@ -544,7 +574,7 @@ Pour le rewind, le test qui compte : **preset `NetSim_Test150ms` actif (PAS le `
 2. **Tirs derrière une couverture** — un adversaire derrière une caisse ne doit rien prendre (la trace monde borne la trace hitbox).
 3. **Tir sur soi-même** — impossible par construction, mais à confirmer : aucun dégât ne doit s'appliquer au tireur, même en lean appuyé.
 4. **Postures** — accroupi et prone doivent être plus difficiles à toucher, proportionnellement à leur capsule. Le corps « claque » désormais entre postures au lieu de glisser : à confirmer que ça ne choque pas visuellement.
-5. **Sous latence (100-150 ms)** — le lean d'un adversaire est en retard d'un RTT chez le spectateur. Attendu tant que le rewind n'est pas là ; à mesurer pour savoir si c'est gênant en duel.
+5. **Sous latence (100-150 ms)** — le lean d'un adversaire est en retard d'un RTT chez le spectateur ; le rewind historise le lean et compense ce retard pour le tir. Reste à juger si le retard *visuel* gêne en duel.
 6. **Console** — aucun `[Serveur] Tir rejeté`, aucun warning `layer Hitbox mais aucun Health parent`.
 
 Réglages si besoin : `positionReconciliationThreshold` / `yawReconciliationThreshold` sur `PlayerLocomotion`, `maxOriginDistanceFromPlayer` sur `WeaponController`.
