@@ -19,6 +19,9 @@ public class PlayerCameraLook : MonoBehaviour
     [SerializeField] private float minPitch = -85f;
     [SerializeField] private float maxPitch = 85f;
 
+    [Tooltip("Enfant 'Leanpivot' qui porte la caméra. Le lean y est appliqué APRÈS le pitch. Laissé vide, il est cherché par son nom.")]
+    [SerializeField] private Transform leanPivot;
+
     [Header("FOV")]
     [Tooltip("La Camera réelle (sous LeanPivot). Laisse vide pour désactiver le FOV kick.")]
     [SerializeField] private Camera targetCamera;
@@ -42,6 +45,7 @@ public class PlayerCameraLook : MonoBehaviour
         input = GetComponentInParent<PlayerInputReader>();
         locomotion = GetComponentInParent<PlayerLocomotion>();
         networkObject = GetComponentInParent<NetworkObject>();
+        if (leanPivot == null) leanPivot = transform.Find("Leanpivot");
     }
 
     private void LateUpdate()
@@ -67,6 +71,7 @@ public class PlayerCameraLook : MonoBehaviour
 
         pitch = Mathf.Clamp(pitch - look.y, minPitch, maxPitch);
         ApplyLocalRotation();
+        ApplyLean();
 
         UpdateFov();
     }
@@ -74,6 +79,18 @@ public class PlayerCameraLook : MonoBehaviour
     private void ApplyLocalRotation()
     {
         transform.localRotation = Quaternion.Euler(pitch, recoilYaw, 0f);
+    }
+
+    /// <summary>Place la caméra sur l'œil penché. Le décalage est exprimé dans l'espace du JOUEUR
+    /// (latéral + descente de la tête quand le buste s'incline) ; ce pivot-ci porte le pitch, donc
+    /// on l'y ramène. Sans cette conversion, la descente de la tête partirait en avant ou en
+    /// arrière dès qu'on regarde en haut ou en bas. Fait APRÈS le pitch, dans la même frame.</summary>
+    private void ApplyLean()
+    {
+        if (leanPivot == null || locomotion == null) return;
+
+        leanPivot.localPosition = Quaternion.Inverse(transform.localRotation) * locomotion.LeanCameraOffset;
+        leanPivot.localRotation = Quaternion.Euler(0f, 0f, locomotion.LeanCameraTilt);
     }
 
     private void UpdateFov()
@@ -101,6 +118,7 @@ public class PlayerCameraLook : MonoBehaviour
         pitch = Mathf.Clamp(pitch - pitchDelta, minPitch, maxPitch);
         recoilYaw += yawDelta;
         ApplyLocalRotation();
+        ApplyLean();
     }
 
 #if UNITY_EDITOR || UNITY_INCLUDE_TESTS

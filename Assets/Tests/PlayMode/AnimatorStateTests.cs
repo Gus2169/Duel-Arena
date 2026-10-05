@@ -18,9 +18,6 @@ using UnityEngine.TestTools;
 /// </summary>
 public class AnimatorStateTests
 {
-    private const string ModelPath = "Assets/_ProjectArt/Mesh/Personnages/SwattSolider_T_Pose.fbx";
-    private const string ControllerPath = "Assets/_ProjectArt/PlayerAnimator.controller";
-
     private GameObject instance;
     private Animator animator;
 
@@ -32,17 +29,8 @@ public class AnimatorStateTests
 
     private IEnumerator Setup()
     {
-        var model = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
-        Assert.IsNotNull(model, "Modèle introuvable : " + ModelPath);
-        var controller = UnityEditor.AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(ControllerPath);
-        Assert.IsNotNull(controller, "Controller introuvable : " + ControllerPath);
-
-        instance = Object.Instantiate(model);
-        animator = instance.GetComponent<Animator>();
-        Assert.IsNotNull(animator, "Pas d'Animator sur le modèle.");
-        animator.runtimeAnimatorController = controller;
-        animator.applyRootMotion = false;
-        animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+        // Le personnage du prefab, pas un chemin en dur : voir TestCharacter.
+        instance = TestCharacter.InstantiateModel(out animator);
         yield return null;
     }
 
@@ -151,6 +139,34 @@ public class AnimatorStateTests
         animator.SetFloat("StanceF", 2f);
         yield return Settle();
         StringAssert.Contains("Prone", ClipDominant(1));
+    }
+
+    /// <summary>
+    /// Allongé et immobile, les jambes jouent la pose d'ATTENTE, pas la reptation.
+    ///
+    /// Même piège que ci-dessus, découvert le 2026-10-05 sur la couche de déplacement : l'arbre
+    /// allongé gardait ses seuils automatiques (0 / 0,5 / 1 au lieu de -1 / 0 / 1). À MoveY = 0, il
+    /// jouait donc la reptation arrière à plein poids : un joueur immobile rampait sur place, et
+    /// son corps tournait en diagonale au fil du clip — à 35° de sa surface touchable.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator Allonge_Immobile_JoueLaPoseDAttente_EtRampeQuandIlBouge()
+    {
+        yield return Setup();
+
+        animator.SetFloat("SpeedMult", 1f);
+        animator.SetInteger("Stance", 2);
+        animator.SetFloat("StanceF", 2f);
+        animator.SetFloat("MoveX", 0f);
+        animator.SetFloat("MoveY", 0f);
+        yield return Settle();
+        StringAssert.Contains("Prone Idle", ClipDominant(0), "Immobile allongé, les jambes ne doivent pas ramper.");
+
+        // Garde anti-vacuité : la reptation existe bien et se déclenche en bougeant. Sans elle, un
+        // arbre qui ne jouerait QUE l'attente passerait ce test.
+        animator.SetFloat("MoveY", -1f);
+        yield return Settle();
+        StringAssert.Contains("Prone Position", ClipDominant(0), "En reculant allongé, les jambes doivent ramper.");
     }
 
     [UnityTest]

@@ -46,13 +46,21 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         public float controllerHeight;
         public float controllerRadius;
-        public float cameraHeight; // hauteur locale du CameraPivot par rapport aux pieds
+
+        [Tooltip("Hauteur de l'ŒIL (la caméra) au-dessus des pieds. La tête touchable est centrée dessus : on voit depuis l'endroit où l'on peut être touché.")]
+        public float cameraHeight;
+
+        [Tooltip("Avancée de l'œil devant la racine, en mètres. Calée sur la tête du modèle dans cette posture (accroupi, la tête est en avant ; allongé, bien plus). L'œil doit rester à l'intérieur du rayon du CharacterController, sinon la caméra passerait à travers un mur face auquel on se tient.")]
+        public float cameraForward;
+
+        [Tooltip("Décalage latéral de l'œil, en mètres (+ = droite). Nul debout et accroupi ; allongé, la pose penche la tête sur la crosse, et l'œil suit la tête visible.")]
+        public float cameraSide;
+
         public float moveSpeedMultiplier;
     }
 
     [Header("Références")]
     [SerializeField] private Transform cameraPivot;
-    [SerializeField] private Transform leanPivot;
 
     [Tooltip("Surface TOUCHABLE du joueur (enfant 'Hitbox'), distincte du CharacterController de mouvement : elle suit la posture ET le lean, et n'est jamais désactivée par le mouvement. Sans elle, le joueur est INTOUCHABLE — le tir serveur ne cherche que ce collider.")]
     [SerializeField] private PlayerHitbox hitbox;
@@ -75,23 +83,29 @@ public class PlayerLocomotion : NetworkBehaviour
     [SerializeField] private float deceleration = 80f;
 
     [Header("Postures")]
+    // Yeux calés sur la tête du robot le 2026-10-05 (voir BodyLayout) : accroupi et allongé, la
+    // caméra était 10 à 50 cm à côté de la tête visible, donc on pouvait être touché à la tête
+    // là où l'on ne voyait rien.
     [SerializeField] private StanceProfile standingProfile = new StanceProfile
     {
-        controllerHeight = 1.8f, controllerRadius = 0.35f, cameraHeight = 1.65f, moveSpeedMultiplier = 1f
+        controllerHeight = 1.8f, controllerRadius = 0.35f, cameraHeight = 1.65f, cameraForward = 0f, moveSpeedMultiplier = 1f
     };
     [SerializeField] private StanceProfile crouchingProfile = new StanceProfile
     {
-        controllerHeight = 1.1f, controllerRadius = 0.35f, cameraHeight = 0.95f, moveSpeedMultiplier = 0.6f
+        controllerHeight = 1.1f, controllerRadius = 0.35f, cameraHeight = 1.05f, cameraForward = 0.10f, moveSpeedMultiplier = 0.6f
     };
     [SerializeField] private StanceProfile proneProfile = new StanceProfile
     {
-        controllerHeight = 0.5f, controllerRadius = 0.4f, cameraHeight = 0.35f, moveSpeedMultiplier = 0.25f
+        controllerHeight = 0.5f, controllerRadius = 0.4f, cameraHeight = 0.36f, cameraForward = 0.25f, cameraSide = -0.15f, moveSpeedMultiplier = 0.25f
     };
     [SerializeField] private float stanceTransitionSpeed = 8f;
 
-    [Header("Lean")]
-    [SerializeField] private float maxLeanOffset = 0.5f;   // distance latérale max de la caméra
-    [SerializeField] private float maxLeanTilt = 12f;      // inclinaison (roll) en degrés
+    [Header("Lean (façon Rainbow Six : seul le buste se penche)")]
+    [Tooltip("Décalage latéral maximal de l'œil, en mètres. 0,35 m, plus proche de R6 que l'ancien 0,5 m (tranché le 2026-10-05). Réglage de ressenti.")]
+    [SerializeField] private float maxLeanOffset = 0.35f;
+    [Tooltip("Angle maximal dont le buste s'incline. Accroupi, le buste est plus court : sans cette borne, il faudrait s'y plier à près de 50° pour sortir la tête d'autant que debout.")]
+    [SerializeField] private float maxLeanAngle = 40f;
+    [SerializeField] private float maxLeanTilt = 12f;      // roulis de la CAMÉRA en degrés, pas celui du buste
     [SerializeField] private float leanSpeed = 10f;
 
     [Header("Head bob (marche/course)")]
@@ -195,6 +209,36 @@ public class PlayerLocomotion : NetworkBehaviour
     /// le prefab, constaté le 2026-10-05).</summary>
     public float NominalSpeed(Stance stance) => walkSpeed * GetStanceProfile(stance).moveSpeedMultiplier;
 
+    /// <summary>Position de l'œil dans une posture, dans l'espace du joueur, SANS lean ni head
+    /// bob. C'est la valeur autoritaire, identique sur toutes les machines : elle sert au calcul
+    /// des zones touchables et à l'anti-clipping du lean. La caméra du propriétaire, elle, y
+    /// glisse en douceur.</summary>
+    public Vector3 EyeLocal(Stance stance)
+    {
+        StanceProfile p = GetStanceProfile(stance);
+        return new Vector3(p.cameraSide, p.cameraHeight, p.cameraForward);
+    }
+
+    /// <summary>Rayon du CharacterController dans une posture. L'œil doit rester à l'intérieur,
+    /// sinon la caméra traverserait un mur face auquel on se tient (vérifié par les tests).</summary>
+    public float ControllerRadius(Stance stance) => GetStanceProfile(stance).controllerRadius;
+
+    /// <summary>Décalage latéral de lean à AFFICHER pour ce joueur sur cette machine : prédit
+    /// chez le propriétaire, publié par le serveur partout ailleurs. Lu par l'animation.</summary>
+    public float DisplayLeanOffset => LeanOffset;
+
+    /// <summary>Surface touchable, ou null si le joueur n'en a pas (joueur de test).</summary>
+    public PlayerHitbox Hitbox => hitbox;
+
+    /// <summary>Déplacement de la caméra dû au lean, dans l'espace du JOUEUR (latéral, plus la
+    /// descente de la tête quand le buste s'incline). Propriétaire uniquement ; appliqué par
+    /// PlayerCameraLook APRÈS le pitch, pour pouvoir le ramener dans le repère de la caméra.</summary>
+    public Vector3 LeanCameraOffset { get; private set; }
+
+    /// <summary>Roulis de la caméra dû au lean, en degrés. Nul allongé : le buste y pivote à plat,
+    /// sans s'incliner.</summary>
+    public float LeanCameraTilt { get; private set; }
+
     /// <summary>Le joueur est-il en visee, du point de vue de l'AFFICHAGE ?
     ///
     /// IsAiming est affectee DANS Move(), qu'un spectateur n'appelle jamais : lue telle quelle
@@ -236,6 +280,8 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private Vector3 currentVelocity;      // vitesse horizontale lissée (monde), pour l'accel/décel
     private float currentCameraHeight;    // hauteur de base liée à la posture, sans le kick d'atterrissage
+    private float currentCameraForward;   // avancée de base liée à la posture (tête en avant accroupi/allongé)
+    private float currentCameraSide;      // décalage latéral de base (tête penchée allongé)
 
     private float landingDipOffset;       // décalage négatif temporaire appliqué par-dessus, qui remonte à 0
 
@@ -300,10 +346,6 @@ public class PlayerLocomotion : NetworkBehaviour
     /// la valeur publiée par le serveur partout ailleurs (serveur compris, puisqu'il est l'auteur
     /// de cette valeur pour un client distant).</summary>
     private float LeanOffset => IsOwner ? currentLeanOffset : networkLeanOffset.Value;
-
-    /// <summary>Collider de la surface touchable, pour que le tir serveur puisse exclure celle du
-    /// tireur — et, plus tard, pour que le rewind puisse la déplacer dans le passé.</summary>
-    public Collider HitboxCollider => hitbox != null ? hitbox.Collider : null;
 
     private int nextInputSequence;
 
@@ -611,11 +653,10 @@ public class PlayerLocomotion : NetworkBehaviour
         isRewound = true;
 
         // Position et orientation MONDE : le hitbox est un enfant, mais on le sort volontairement
-        // de la pose de son parent le temps du tir.
+        // de la pose de son parent le temps du tir. Ses trois zones suivent.
         t.SetPositionAndRotation(pose.position, Quaternion.Euler(0f, pose.yaw, 0f));
 
-        StanceProfile profile = GetStanceProfile(pose.stance);
-        hitbox.Apply(profile.controllerHeight, profile.controllerRadius, pose.leanOffset);
+        hitbox.Apply(pose.stance, EyeLocal(pose.stance), pose.leanOffset);
     }
 
     /// <summary>Remet la surface touchable dans sa pose courante. TOUJOURS appelée en finally par
@@ -630,11 +671,10 @@ public class PlayerLocomotion : NetworkBehaviour
         t.localRotation = rewindSavedLocalRotation;
         isRewound = false;
 
-        // Les dimensions sont recalculées au prochain UpdateStanceVisuals (fonction pure de la
-        // posture courante), mais on les remet tout de suite pour qu'une requête intermédiaire ne
-        // voie pas la géométrie du passé.
-        StanceProfile profile = GetStanceProfile(networkStance.Value);
-        hitbox.Apply(profile.controllerHeight, profile.controllerRadius, LeanOffset);
+        // Les zones sont recalculées au prochain UpdateStanceVisuals (fonction pure de la posture
+        // courante), mais on les remet tout de suite pour qu'une requête intermédiaire ne voie
+        // pas la géométrie du passé.
+        hitbox.Apply(networkStance.Value, EyeLocal(networkStance.Value), LeanOffset);
     }
 
     private bool TrySampleHistory(float targetTime, out HitboxPose result)
@@ -756,12 +796,8 @@ public class PlayerLocomotion : NetworkBehaviour
 
         leanState = 0;
         currentLeanOffset = 0f;
-
-        if (leanPivot != null)
-        {
-            leanPivot.localPosition = Vector3.zero;
-            leanPivot.localRotation = Quaternion.identity;
-        }
+        LeanCameraOffset = Vector3.zero;
+        LeanCameraTilt = 0f;
     }
 
     // ------------------------------------------------------------------
@@ -1443,9 +1479,12 @@ public class PlayerLocomotion : NetworkBehaviour
         Stance stance = networkStance.Value;
         StanceProfile profile = GetStanceProfile(stance);
 
-        // SEULE la hauteur caméra est interpolée : c'est le point de vue du propriétaire, et c'est
-        // ce lissage-là qui donne le confort de s'accroupir. Purement local, sans conséquence.
-        currentCameraHeight = Mathf.MoveTowards(currentCameraHeight, profile.cameraHeight, stanceTransitionSpeed * Time.deltaTime);
+        // SEULE la position de la caméra est interpolée : c'est le point de vue du propriétaire,
+        // et c'est ce lissage-là qui donne le confort de s'accroupir. Purement local.
+        float step = stanceTransitionSpeed * Time.deltaTime;
+        currentCameraHeight = Mathf.MoveTowards(currentCameraHeight, profile.cameraHeight, step);
+        currentCameraForward = Mathf.MoveTowards(currentCameraForward, profile.cameraForward, step);
+        currentCameraSide = Mathf.MoveTowards(currentCameraSide, profile.cameraSide, step);
 
         // La surface TOUCHABLE ne s'interpole pas : c'est une fonction PURE de (posture réseau,
         // décalage de lean), donc identique sur toutes les machines. Un lissage local ferait
@@ -1455,7 +1494,7 @@ public class PlayerLocomotion : NetworkBehaviour
         // L'animation, elle, AFFICHE la transition en douceur ; elle ne pilote jamais le hitbox.
         // 🚨 Ne JAMAIS dériver le hitbox des os animés : un Animator n'est pas déterministe entre
         // machines. Les deux lisent la même source réseautée, aucun ne lit l'autre.
-        ApplyHitbox(profile.controllerHeight, profile.controllerRadius, LeanOffset);
+        ApplyHitbox(stance, LeanOffset);
 
         // Les spectateurs n'appellent jamais Move() : sans ça, leur CharacterController local
         // garderait la capsule de la posture précédente.
@@ -1464,10 +1503,10 @@ public class PlayerLocomotion : NetworkBehaviour
 
     /// <summary>Met la surface touchable en accord avec la posture et le lean. Tourne sur toutes
     /// les instances, mais seule celle du SERVEUR décide des dégâts.</summary>
-    private void ApplyHitbox(float height, float radius, float lateralOffset)
+    private void ApplyHitbox(Stance stance, float lateralOffset)
     {
         if (hitbox == null) return;
-        hitbox.Apply(height, radius, lateralOffset);
+        hitbox.Apply(stance, EyeLocal(stance), lateralOffset);
     }
 
     private void ApplyStanceImmediate(Stance stance)
@@ -1475,16 +1514,16 @@ public class PlayerLocomotion : NetworkBehaviour
         StanceProfile profile = GetStanceProfile(stance);
         ApplySimulationCapsule(stance);
         currentCameraHeight = profile.cameraHeight;
+        currentCameraForward = profile.cameraForward;
+        currentCameraSide = profile.cameraSide;
         landingDipOffset = 0f;
 
         if (cameraPivot != null)
         {
-            Vector3 pos = cameraPivot.localPosition;
-            pos.y = currentCameraHeight;
-            cameraPivot.localPosition = pos;
+            cameraPivot.localPosition = new Vector3(currentCameraSide, currentCameraHeight, currentCameraForward);
         }
 
-        ApplyHitbox(profile.controllerHeight, profile.controllerRadius, currentLeanOffset);
+        ApplyHitbox(stance, currentLeanOffset);
     }
 
     // ------------------------------------------------------------------
@@ -1630,15 +1669,16 @@ public class PlayerLocomotion : NetworkBehaviour
     /// </summary>
     private float ComputeAllowedLeanOffset(int state)
     {
-        float targetOffset = state * maxLeanOffset;
+        Stance stance = networkStance.Value;
+        float targetOffset = state * MaxLeanOffset(stance, state);
         if (Mathf.Abs(targetOffset) <= 0.01f) return targetOffset;
 
         // Origine calculée, PAS lue sur le CameraPivot (corrigé le 2026-10-05). Seul le
         // propriétaire met ce pivot à jour : sur le serveur, celui d'un client distant restait à
         // hauteur debout même accroupi ou allongé, et près d'un obstacle bas les deux côtés
-        // calculaient un lean différent. Position + hauteur de caméra de la posture RÉSEAU est la
-        // même partout, et ignore le head bob, qui n'a rien à faire dans un calcul autoritaire.
-        Vector3 origin = transform.position + Vector3.up * GetStanceProfile(networkStance.Value).cameraHeight;
+        // calculaient un lean différent. L'œil de la posture RÉSEAU est le même partout, et
+        // ignore le head bob, qui n'a rien à faire dans un calcul autoritaire.
+        Vector3 origin = transform.TransformPoint(EyeLocal(stance));
         Vector3 dir = transform.right * Mathf.Sign(targetOffset);
         float desiredDistance = Mathf.Abs(targetOffset);
 
@@ -1651,18 +1691,40 @@ public class PlayerLocomotion : NetworkBehaviour
         return targetOffset;
     }
 
+    /// <summary>Décalage latéral maximal d'un côté (+1 droite, -1 gauche) dans une posture : le plus
+    /// petit de `maxLeanOffset` et de ce que permet l'angle maximal du buste. Allongé, la pose est
+    /// asymétrique, donc les deux côtés diffèrent un peu. Ne dépend que de la posture et de données
+    /// du prefab, donc identique sur le client et le serveur.</summary>
+    private float MaxLeanOffset(Stance stance, int side)
+    {
+        if (hitbox == null) return maxLeanOffset;
+        return Mathf.Min(maxLeanOffset, hitbox.MaxLateralOffset(stance, EyeLocal(stance), maxLeanAngle, side));
+    }
+
     /// <summary>Effet caméra du lean — catégorie C, propriétaire uniquement. Le décalage résultant
-    /// sert AUSSI à positionner la surface touchable du propriétaire, prédite sans latence.</summary>
+    /// sert AUSSI à positionner la surface touchable du propriétaire, prédite sans latence.
+    ///
+    /// La caméra suit l'ŒIL penché calculé par BodyLayout, pas un simple glissement latéral : le
+    /// buste pivotant autour de la colonne, la tête descend un peu en sortant. La caméra est donc
+    /// exactement au centre de la tête touchable — on voit depuis l'endroit où l'on est exposé.</summary>
     private void UpdateLeanVisual()
     {
         float targetOffset = ComputeAllowedLeanOffset(leanState);
         currentLeanOffset = Mathf.MoveTowards(currentLeanOffset, targetOffset, leanSpeed * Time.deltaTime);
 
-        if (leanPivot != null)
+        Stance stance = networkStance.Value;
+        if (hitbox != null)
         {
-            leanPivot.localPosition = new Vector3(currentLeanOffset, 0f, 0f);
-            float tilt = (currentLeanOffset / maxLeanOffset) * -maxLeanTilt;
-            leanPivot.localRotation = Quaternion.Euler(0f, 0f, tilt);
+            Vector3 eye = EyeLocal(stance);
+            LeanCameraOffset = hitbox.LeanedEye(stance, eye, currentLeanOffset) - eye;
+            LeanCameraTilt = hitbox.LeanSwingsSideways(stance)
+                ? 0f
+                : (currentLeanOffset / Mathf.Max(0.01f, maxLeanOffset)) * -maxLeanTilt;
+        }
+        else
+        {
+            LeanCameraOffset = new Vector3(currentLeanOffset, 0f, 0f);
+            LeanCameraTilt = (currentLeanOffset / Mathf.Max(0.01f, maxLeanOffset)) * -maxLeanTilt;
         }
     }
 
@@ -1746,8 +1808,9 @@ public class PlayerLocomotion : NetworkBehaviour
         if (cameraPivot == null) return;
 
         Vector3 pos = cameraPivot.localPosition;
-        pos.x = headBobLateralOffset;
+        pos.x = currentCameraSide + headBobLateralOffset;
         pos.y = currentCameraHeight + landingDipOffset + headBobOffset;
+        pos.z = currentCameraForward;
         cameraPivot.localPosition = pos;
     }
 

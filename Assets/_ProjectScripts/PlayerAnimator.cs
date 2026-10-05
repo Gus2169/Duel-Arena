@@ -34,6 +34,12 @@ public class PlayerAnimator : MonoBehaviour
     [Tooltip("Durée de la partie UTILE du clip de vault, en secondes — pas sa durée totale. Le contrôleur entre dans l'état à 20 % du clip pour sauter la préparation, et la réception est coupée par la sortie d'état. Sert à lire le geste à la vitesse qui le fait tenir dans la durée du vault.")]
     [SerializeField] private float vaultClipLength = 0.70f;
 
+    [Header("Lean et posture allongée (affichage)")]
+    [Tooltip("Recul du modèle en position allongée, en mètres (Z local). Sa tête tombe ainsi à l'intérieur du CharacterController, là où la caméra et la tête touchable la placent (voir BodyLayout.DefaultProne). Doit rester accordé à ces deux valeurs.")]
+    [SerializeField] private float proneModelOffset = -0.30f;
+    [Tooltip("Vitesse (m/s) à laquelle le modèle glisse vers ce décalage. Purement visuel : la surface touchable, elle, change de posture d'un coup.")]
+    [SerializeField] private float modelOffsetSpeed = 1.5f;
+
     [Header("Cadence de lecture")]
     [Tooltip("Plancher du multiplicateur de vitesse de lecture. Ne descend pas à 0 : il s'applique aussi à l'animation d'attente, qui doit continuer de respirer à l'arrêt.")]
     [SerializeField] private float minPlaybackSpeed = 0.75f;
@@ -170,6 +176,52 @@ public class PlayerAnimator : MonoBehaviour
         // La visée passe par le même aiguillage que le reste : IsAiming est affectée dans
         // Move(), qu'un spectateur n'appelle jamais, donc l'adversaire n'épaulerait jamais.
         animator.SetBool(AimingId, locomotion.DisplayAiming);
+
+        ApplyProneModelOffset(stance, dt);
+        ApplyVisualLean(stance);
+    }
+
+    /// <summary>Allongé, le modèle recule pour que sa tête soit là où sont la caméra et la tête
+    /// touchable, à l'intérieur du CharacterController. Glissement en douceur : c'est de
+    /// l'affichage, la surface touchable change de posture d'un coup.</summary>
+    private void ApplyProneModelOffset(PlayerLocomotion.Stance stance, float dt)
+    {
+        Transform model = animator.transform;
+        float target = stance == PlayerLocomotion.Stance.Prone ? proneModelOffset : 0f;
+        Vector3 p = model.localPosition;
+        p.z = Mathf.MoveTowards(p.z, target, modelOffsetSpeed * dt);
+        model.localPosition = p;
+    }
+
+    /// <summary>
+    /// Lean façon Rainbow Six, VU : le buste pivote autour de la base de la colonne, les jambes ne
+    /// bougent pas.
+    ///
+    /// La rotation vient de BodyLayout, avec le même décalage réseauté que la surface touchable :
+    /// l'animation et le hitbox lisent la même source, aucun ne lit l'autre. On touche ce qu'on
+    /// voit, sans que le hitbox dépende jamais d'un os animé.
+    ///
+    /// Appliquée ici, en LateUpdate, APRÈS l'évaluation de l'Animator : la rotation s'ajoute à la
+    /// pose de la frame, que l'Animator réécrit à chaque évaluation. D'où l'obligation de garder
+    /// l'Animator en AlwaysAnimate : s'il cessait d'évaluer (modèle hors champ), la rotation
+    /// s'accumulerait frame après frame et le buste tournerait sur lui-même.
+    /// </summary>
+    private void ApplyVisualLean(PlayerLocomotion.Stance stance)
+    {
+        PlayerHitbox hitbox = locomotion.Hitbox;
+        if (hitbox == null) return;
+
+        float lean = locomotion.DisplayLeanOffset;
+        if (Mathf.Abs(lean) < 0.001f) return;
+
+        Transform spine = animator.GetBoneTransform(HumanBodyBones.Spine);
+        if (spine == null) return;
+
+        // Rotation exprimée dans l'espace du JOUEUR : on la convertit dans le repère monde, puis
+        // on l'applique à l'os autour de sa propre position (la base de la colonne).
+        Quaternion local = hitbox.LeanRotation(stance, locomotion.EyeLocal(stance), lean);
+        Quaternion world = transform.rotation * local * Quaternion.Inverse(transform.rotation);
+        spine.rotation = world * spine.rotation;
     }
 
     /// <summary>Accorde la cadence d'une posture à ses clips. Mixamo n'authore pas ses animations

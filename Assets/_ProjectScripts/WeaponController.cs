@@ -362,10 +362,11 @@ public class WeaponController : NetworkBehaviour
         // rayon. On le retire de la requête le temps du tir. Le try/finally garantit qu'il revient
         // même si le raycast ou l'application des dégâts lève — un hitbox laissé désactivé rendrait
         // le tireur invulnérable pour le reste de la partie. Le rewind ci-dessous suit le même
-        // patron pour les hitbox des autres joueurs.
-        Collider ownHitbox = locomotion != null ? locomotion.HitboxCollider : null;
-        bool hitboxWasEnabled = ownHitbox != null && ownHitbox.enabled;
-        if (hitboxWasEnabled) ownHitbox.enabled = false;
+        // patron pour les hitbox des autres joueurs. Les TROIS zones sont retirées : la tête
+        // entoure la caméra, donc le rayon en part toujours.
+        PlayerHitbox ownHitbox = locomotion != null ? locomotion.Hitbox : null;
+        bool hitboxWasEnabled = ownHitbox != null && ownHitbox.IsQueryable;
+        if (hitboxWasEnabled) ownHitbox.SetQueryable(false);
 
         // Garde-fou anti-triche : la suggestion du client est bornée. maxRewindSeconds doit couvrir
         // un ping élevé légitime sans permettre de toucher quelqu'un là où il était il y a une
@@ -407,7 +408,7 @@ public class WeaponController : NetworkBehaviour
                 // Centre du hitbox à sa position PASSÉE, capturé pendant que le rewind est appliqué.
                 foreach (PlayerLocomotion other in rewoundPlayers)
                 {
-                    Collider c = other != null ? other.HitboxCollider : null;
+                    Collider c = other != null && other.Hitbox != null ? other.Hitbox.TorsoCollider : null;
                     if (c != null) diagPastCenter = c.bounds.center;
                 }
 #endif
@@ -427,7 +428,11 @@ public class WeaponController : NetworkBehaviour
 #if UNITY_EDITOR
                     diagHits++;
 #endif
-                    Debug.Log($"[Serveur] {data.weaponName} : {bodyHit.transform.root.name} touché pour {data.damagePerHit} dégâts (vie restante : {targetHealth.Current}).");
+                    // La zone est journalisée sans encore peser sur les dégâts : les multiplicateurs
+                    // par zone sont une décision de design, à trancher par playtest (GDD § 6).
+                    PlayerHitboxZone zone = bodyHit.GetComponent<PlayerHitboxZone>();
+                    string zoneName = zone != null ? zone.Zone.ToString() : "?";
+                    Debug.Log($"[Serveur] {data.weaponName} : {bodyHit.transform.root.name} touché ({zoneName}) pour {data.damagePerHit} dégâts (vie restante : {targetHealth.Current}).");
                 }
                 else
                 {
@@ -477,7 +482,7 @@ public class WeaponController : NetworkBehaviour
                 // directement cette distance.
                 foreach (PlayerLocomotion other in rewoundPlayers)
                 {
-                    Collider c = other != null ? other.HitboxCollider : null;
+                    Collider c = other != null && other.Hitbox != null ? other.Hitbox.TorsoCollider : null;
                     if (c == null) continue;
 
                     float dPast = Vector3.Cross(direction, diagPastCenter - origin).magnitude;
@@ -490,7 +495,7 @@ public class WeaponController : NetworkBehaviour
             }
 #endif
 
-            if (hitboxWasEnabled) ownHitbox.enabled = true;
+            if (hitboxWasEnabled) ownHitbox.SetQueryable(true);
         }
     }
 
