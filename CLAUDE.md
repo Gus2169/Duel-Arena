@@ -116,6 +116,8 @@ Contrainte de configuration : `maxRewindSeconds` (sur `WeaponController`) doit r
 
 **Le roulis de la caméra suit l'angle du buste** (`maxLeanTilt`, 10° dans le prefab, à fond de lean dans toutes les postures), et non plus le décalage : allongé, c'est l'essentiel de l'effet.
 
+**Le mouvement du buste est amorti** (2026-10-06, `StepLean`, `leanSmoothTime` 0,06 s) : départ et arrivée en douceur, sans rebond, en s'inclinant comme en se redressant. Mesuré en jeu : 90 % en ~110 ms, immobile vers 200 ms. Avant, il avançait à vitesse constante (7 m/s, 35 cm en 50 ms) et partait puis s'arrêtait net — « brut et sec ». C'est aussi la vitesse à laquelle on s'expose en peekant : réglage de ressenti **et** d'équilibrage. Gardé par `LeanMotionTests`, validé par mutation (l'ancien mouvement fait 11,7 cm dès la première image).
+
 **L'affichage suit le même scalaire** : `PlayerAnimator.ApplyVisualLean` tourne l'os `Spine` de l'angle calculé par `BodyLayout`, après l'évaluation de l'Animator. La caméra du propriétaire va sur l'œil penché (`PlayerLocomotion.LeanCameraOffset`, appliqué par `PlayerCameraLook` **après** le pitch, dans le repère du joueur). Mesuré en Play Mode le 2026-10-05, écart entre le crâne visible du robot et la tête touchable penchée : **1,5 à 2,8 cm debout, 5,5 cm accroupi**, et caméra exactement au centre de la tête. Allongé en roulis (2026-10-06) : **1,2 cm à droite, 0,7 cm à gauche**, caméra au centre de la tête.
 
 🚨 **Règle à ne pas enfreindre : ne JAMAIS dériver le hitbox des os animés.** Un Animator n'est pas déterministe entre machines. **L'animation AFFICHE le lean ; le hitbox se CALCULE à partir du même scalaire réseauté.** Les deux lisent la même source, aucun ne lit l'autre.
@@ -357,7 +359,7 @@ Le code de jeu a quitté `Assembly-CSharp` pour deux assemblies : `DuelArena.Inp
 
 Ce n'était pas qu'une question de temps de compilation : **un assembly de test ne peut pas référencer `Assembly-CSharp`**, l'assembly prédéfini. Sans asmdef, aucun test ne pouvait voir le code du jeu. Vérifié après coup : toutes les références de scripts dans le prefab joueur et la scène ont survécu (les GUID de fichiers ne changent pas), et le jeu tourne.
 
-**Tests EditMode** sous `Assets/Tests/EditMode` (`DuelArena.Tests.EditMode`). Lancer : `unity command run_tests --project-path "..." --mode EditMode`. 47 tests EditMode et 28 tests PlayMode au 2026-10-06, tous verts.
+**Tests EditMode** sous `Assets/Tests/EditMode` (`DuelArena.Tests.EditMode`). Lancer : `unity command run_tests --project-path "..." --mode EditMode`. 51 tests EditMode et 28 tests PlayMode au 2026-10-06, tous verts.
 
 Ils couvrent volontairement la **logique pure**, là où une régression est à la fois probable et silencieuse :
 - `SampleHitboxHistory` — le cœur du rewind. Un échantillonnage cassé ne lève aucune erreur, il fait juste rater des tirs qui auraient dû toucher. Couvre l'interpolation position/lean, le `LerpAngle` du yaw (un `Lerp` ferait tourner le hitbox à l'envers entre 350° et 10°), la posture non interpolée, les bornes, la division par zéro et l'historique vide/null.
@@ -604,7 +606,7 @@ Le niveau de qualité `Mobile` et ses assets de rendu ont été retirés le 2026
 3. **Rendre le duel lisible.**
    - ~~**Robot provisoire : Y Bot de Mixamo**~~ — **en place le 2026-10-05.** Le soldat SWAT reste comme avatar source des animations (voir « Le personnage et l'animation »).
    - **Couleur par joueur**, attribuée par le serveur (voir la section bible plus bas).
-   - ~~**Lean façon R6 et hitbox par zones**~~ — **livrés le 2026-10-05**. Amplitude et vue accroupie validées en jouant le 2026-10-06. **Lean allongé refait en roulis** (« exactement ça ») et **transitions de posture** livrés et validés en jouant le 2026-10-06. Reste l'inclinaison du lean et le retour droit, « encore un peu bruts et secs ». Dettes ouvertes : le corps allongé qui dépasse du collider (n° 24), la vue du Host par à-coups (n° 30).
+   - ~~**Lean façon R6 et hitbox par zones**~~ — **livrés le 2026-10-05**. Amplitude et vue accroupie validées en jouant le 2026-10-06. **Lean allongé refait en roulis** (« exactement ça ») et **transitions de posture** livrés et validés en jouant le 2026-10-06. L'inclinaison du lean et le retour droit, « encore un peu bruts et secs », sont amortis le même jour : à rejuger. Dettes ouvertes : le corps allongé qui dépasse du collider (n° 24), la vue du Host par à-coups (n° 30).
    - **Son** : clips à trouver, portée par allure (à la main de l'utilisateur, sans urgence).
 4. **Compléter le duel** : chargeur et rechargement, **taser** de corps à corps qui tue en un coup et sort quand l'arme est vide (GDD § 6, tranché le 2026-10-05), marqueur et sons de touche, effet de dégâts reçus, vraie mort, HUD minimal, phrase de victoire. L'arme automatique du prototype reste le MP5 ou une arme d'apparence plus robotique (question ouverte au GDD § 17).
 5. **Le modèle de session : N joueurs, deux duellistes.** Voir ci-dessous.

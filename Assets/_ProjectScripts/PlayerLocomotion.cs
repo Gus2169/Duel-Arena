@@ -159,7 +159,13 @@ public class PlayerLocomotion : NetworkBehaviour
     [Tooltip("Angle maximal dont le buste s'incline. Accroupi, le buste est plus court : sans cette borne, il faudrait s'y plier à près de 50° pour sortir la tête d'autant que debout.")]
     [SerializeField] private float maxLeanAngle = 40f;
     [SerializeField] private float maxLeanTilt = 12f;      // roulis de la CAMÉRA en degrés, pas celui du buste
-    [SerializeField] private float leanSpeed = 10f;
+    [Tooltip("Temps d'amortissement (s) du buste qui s'incline ou se redresse : départ et arrivée en douceur, sans rebond. Le buste arrive à 95 % en environ 2,4 fois cette valeur (0,06 → ~0,14 s). L'ancien mouvement à vitesse constante (7 m/s, 35 cm en 50 ms) partait et s'arrêtait net : « brut et sec » (2026-10-06). Réglage de ressenti ; il règle aussi la vitesse à laquelle on s'expose en peekant.")]
+    [SerializeField] private float leanSmoothTime = 0.06f;
+
+    /// <summary>Vitesse courante du lean (m/s), état de l'amortissement. Propre à chaque instance,
+    /// comme le décalage lui-même : chez le propriétaire pour sa caméra, sur le serveur pour la
+    /// surface touchable.</summary>
+    private float leanVelocity;
 
     [Header("Head bob (marche/course)")]
     [Tooltip("Distance parcourue (m) pour un cycle complet de bob en marche.")]
@@ -855,6 +861,7 @@ public class PlayerLocomotion : NetworkBehaviour
         ApplyStanceImmediate(Stance.Standing);
 
         currentLeanOffset = 0f;
+        leanVelocity = 0f;
         leanState = 0;
         serverLastLeanState = 0; // sinon le premier input de la manche jouerait un faux LeanEnd
 
@@ -880,6 +887,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
         leanState = 0;
         currentLeanOffset = 0f;
+        leanVelocity = 0f;
         LeanCameraOffset = Vector3.zero;
         LeanCameraTilt = 0f;
     }
@@ -1997,7 +2005,7 @@ public class PlayerLocomotion : NetworkBehaviour
     private void UpdateLeanVisual()
     {
         float targetOffset = ComputeAllowedLeanOffset(leanState);
-        currentLeanOffset = Mathf.MoveTowards(currentLeanOffset, targetOffset, leanSpeed * Time.deltaTime);
+        currentLeanOffset = StepLean(currentLeanOffset, targetOffset, ref leanVelocity, leanSmoothTime, Time.deltaTime);
 
         if (hitbox != null)
         {
@@ -2034,7 +2042,22 @@ public class PlayerLocomotion : NetworkBehaviour
     private void ServerAdvanceLean(int state, float dt)
     {
         float targetOffset = ComputeAllowedLeanOffset(state);
-        currentLeanOffset = Mathf.MoveTowards(currentLeanOffset, targetOffset, leanSpeed * dt);
+        currentLeanOffset = StepLean(currentLeanOffset, targetOffset, ref leanVelocity, leanSmoothTime, dt);
+    }
+
+    /// <summary>
+    /// Un pas du lean vers sa cible : amortissement critique (SmoothDamp), donc un départ en
+    /// douceur, une arrivée en douceur et aucun dépassement — ni en s'inclinant, ni en se
+    /// redressant, ni en passant directement d'un côté à l'autre. Fonction pure, testée.
+    ///
+    /// Partagée par le propriétaire (sa caméra, à son propre rythme d'images) et le serveur (la
+    /// surface touchable, au rythme des inputs reçus) : les deux suivent la même courbe, aux
+    /// petites différences de pas près, comme avant avec MoveTowards.
+    /// </summary>
+    public static float StepLean(float current, float target, ref float velocity, float smoothTime, float dt)
+    {
+        if (dt <= 0f) return current;
+        return Mathf.SmoothDamp(current, target, ref velocity, Mathf.Max(0.001f, smoothTime), Mathf.Infinity, dt);
     }
 
     private void TriggerLandingKick(float fallSpeed)
