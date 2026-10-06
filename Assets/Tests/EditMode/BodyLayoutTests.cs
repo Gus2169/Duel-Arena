@@ -123,11 +123,51 @@ public class BodyLayoutTests
     }
 
     [Test]
-    public void Allonge_LeBustePivoteAPlat_SansQuitterLeSol()
+    public void Allonge_LeBusteRouleSurLuiMeme_SansEnfoncerLaTeteDansLeSol()
     {
+        // Demandé le 2026-10-06 : allongé, le lean est une ROTATION du buste sur lui-même, pas un
+        // glissement de côté. La tête reste donc dans son plan (ni avancée ni reculée), sort peu
+        // sur le côté, et ne doit jamais passer sous le sol en roulant vers la gauche.
         var (body, eye, _) = AllStances[2];
-        Vector3 leaned = BodyLayout.LeanedEye(body, eye, 0.3f);
-        Assert.AreEqual(eye.y, leaned.y, Eps, "Allongé, le lean ne doit pas soulever ni enfoncer la tête.");
+        foreach (int side in new[] { 1, -1 })
+        {
+            float offset = side * BodyLayout.MaxLateralOffset(body, eye, 40f, side);
+            Vector3 leaned = BodyLayout.LeanedEye(body, eye, offset);
+            Assert.AreEqual(eye.z, leaned.z, Eps, $"côté {side} : la tête avance ou recule, le buste ne roule pas autour de l'axe avant.");
+            Assert.Greater(leaned.y - body.headRadius, 0.02f, $"côté {side} : la tête touchable passe sous le sol.");
+            Assert.Less(Mathf.Abs(offset), 0.2f, $"côté {side} : allongé, rouler ne doit pas sortir la tête comme un lean debout.");
+        }
+    }
+
+    [Test]
+    public void TransitionDePosture_PartDeLaPostureQuitteeEtArriveALaNouvelle()
+    {
+        var stances = AllStances;
+        var (standing, eyeStanding, _) = stances[0];
+        var (prone, eyeProne, _) = stances[2];
+
+        BodyLayout.Compute(standing, eyeStanding, 0f, out ZoneShape h0, out ZoneShape t0, out ZoneShape l0, out _);
+        BodyLayout.ComputeBlended(standing, eyeStanding, prone, eyeProne, 0f, 0f,
+                                  out ZoneShape hb0, out ZoneShape tb0, out ZoneShape lb0, out ZoneShape sb0);
+        Assert.That(Vector3.Distance(h0.a, hb0.a), Is.LessThan(Eps), "Au départ, la tête doit être celle de la posture quittée.");
+        Assert.That(Vector3.Distance(t0.a, tb0.a), Is.LessThan(Eps));
+        Assert.That(Vector3.Distance(l0.b, lb0.b), Is.LessThan(Eps));
+
+        // La seconde jambe, propre à la pose allongée, naît confondue avec la première au lieu de
+        // surgir à côté du joueur debout.
+        Assert.That(Vector3.Distance(sb0.a, l0.a), Is.LessThan(Eps), "La seconde jambe doit naître de la première.");
+        Assert.AreEqual(l0.radius, sb0.radius, Eps);
+
+        BodyLayout.Compute(prone, eyeProne, 0f, out ZoneShape h1, out _, out _, out ZoneShape s1);
+        BodyLayout.ComputeBlended(standing, eyeStanding, prone, eyeProne, 1f, 0f,
+                                  out ZoneShape hb1, out _, out _, out ZoneShape sb1);
+        Assert.That(Vector3.Distance(h1.a, hb1.a), Is.LessThan(Eps), "À l'arrivée, la tête doit être celle de la posture atteinte.");
+        Assert.That(Vector3.Distance(s1.b, sb1.b), Is.LessThan(Eps));
+
+        // À mi-chemin, la tête est à mi-hauteur : la surface touchable ne saute pas d'une posture
+        // à l'autre, elle descend avec le corps.
+        BodyLayout.ComputeBlended(standing, eyeStanding, prone, eyeProne, 0.5f, 0f, out ZoneShape hm, out _, out _, out _);
+        Assert.AreEqual((h0.a.y + h1.a.y) * 0.5f, hm.a.y, Eps);
     }
 
     [Test]

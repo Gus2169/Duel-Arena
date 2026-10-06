@@ -41,6 +41,52 @@ public class PlayerLocomotion : NetworkBehaviour
     /// build : l'ordre peut donc suivre la logique plutôt que l'historique.</summary>
     public enum NoiseLevel { Silent, Faint, Quiet, Loud }
 
+    /// <summary>
+    /// Posture publiée par le serveur, AVEC sa transition : la posture d'arrivée, celle de départ,
+    /// et l'instant du changement sur l'horloge du serveur (NetworkManager.ServerTime).
+    ///
+    /// Cet instant suffit à reconstituer la transition partout sans rien réseauter de plus : chaque
+    /// machine calcule la progression pour l'instant qu'ELLE considère — le présent pour le
+    /// serveur, le passé interpolé pour un spectateur, un instant passé pour le rewind. C'est ce
+    /// qui garde d'accord, pendant une transition, le corps visible, la surface touchable et le
+    /// rewind (2026-10-06).
+    /// </summary>
+    public struct StanceState : INetworkSerializeByMemcpy
+    {
+        public Stance current;
+        public Stance previous;
+        public double changedAt;
+    }
+
+    /// <summary>
+    /// Pose d'AFFICHAGE publiée par le serveur à chaque frame, DATÉE sur son horloge.
+    ///
+    /// Les spectateurs datent chaque pose de l'instant où le serveur l'a produite, et non plus de
+    /// son arrivée chez eux. C'est ce qui rend leur interpolation régulière : mesuré le 2026-10-06
+    /// avec l'ancienne datation à l'arrivée, l'adversaire avançait par bonds (jusqu'à 14 cm en une
+    /// frame pour 2,5 cm en moyenne), parce que la gigue du réseau se lisait comme des variations
+    /// de vitesse. La rotation, le lean et les drapeaux d'animation voyagent dans la même pose :
+    /// ils étaient appliqués dès réception, 100 ms avant la position qu'ils accompagnent, et la
+    /// rotation n'avançait que par crans de 33 ms.
+    /// </summary>
+    public struct DisplayPose : INetworkSerializeByMemcpy
+    {
+        public double time;
+        public Vector3 position;
+        public float yaw;
+        public float leanOffset;
+        public byte flags;       // DisplayFlags
+        public byte teleportId;  // change à chaque téléportation : l'interpolation repart de zéro
+    }
+
+    [System.Flags]
+    private enum DisplayFlags : byte
+    {
+        Grounded = 1,
+        Vaulting = 2,
+        Aiming = 4,
+    }
+
     [System.Serializable]
     public struct StanceProfile
     {
@@ -98,7 +144,14 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         controllerHeight = 0.5f, controllerRadius = 0.4f, cameraHeight = 0.36f, cameraForward = 0.25f, cameraSide = -0.15f, moveSpeedMultiplier = 0.25f
     };
-    [SerializeField] private float stanceTransitionSpeed = 8f;
+
+    [Header("Transitions de posture (ressenti, à régler en jouant)")]
+    [Tooltip("Durée (s) entre debout et accroupi, dans les deux sens. Le corps visible, la caméra, la surface touchable et la vitesse de déplacement passent ensemble d'une posture à l'autre sur cette durée.")]
+    [SerializeField] private float standCrouchTransition = 0.3f;
+    [Tooltip("Durée (s) entre accroupi et allongé. L'animation de transition (genou à terre ↔ allongé) est lue à la vitesse qui la fait tenir dans cette durée.")]
+    [SerializeField] private float crouchProneTransition = 0.65f;
+    [Tooltip("Durée (s) entre debout et allongé. L'animation y ajoute le temps de poser un genou (0,25 s) à la précédente : garder à peu près cet écart, sinon le geste paraîtra pressé ou en retard.")]
+    [SerializeField] private float standProneTransition = 0.9f;
 
     [Header("Lean (façon Rainbow Six : seul le buste se penche)")]
     [Tooltip("Décalage latéral maximal de l'œil, en mètres. 0,35 m, plus proche de R6 que l'ancien 0,5 m (tranché le 2026-10-05). Réglage de ressenti.")]
@@ -180,15 +233,39 @@ public class PlayerLocomotion : NetworkBehaviour
     [SerializeField] private float yawReconciliationThreshold = 1f;
 
     [Header("Réseau — spectateur")]
-    [Tooltip("Délai volontaire (s) auquel un spectateur affiche un joueur distant, pour toujours avoir 2 points d'historique connus entre lesquels interpoler.")]
-    [SerializeField] private float interpolationDelay = 0.1f;
+    [Tooltip("Délai volontaire (s) auquel un spectateur affiche un joueur distant, pour toujours avoir 2 poses connues entre lesquelles interpoler. Il s'AJOUTE aux 50 ms de marge que Netcode garde déjà sur son horloge serveur côté client : 0,05 s donne 100 ms de réserve derrière la pose la plus récente, trois poses à 30 par seconde. Si [DIAG-ANIM] compte des frames « affamées », c'est trop court.")]
+    [SerializeField] private float interpolationDelay = 0.05f;
 
     public Stance CurrentStance { get; private set; } = Stance.Standing;
 
-    /// <summary>Posture telle que le SERVEUR la publie. Contrairement à CurrentStance, elle est
-    /// juste sur les quatre cas réseau, y compris chez un spectateur qui n'appelle jamais Move().
-    /// C'est la source à utiliser pour tout affichage (animation, capsule visible, hitbox).</summary>
-    public Stance NetworkedStance => networkStance.Value;
+    /// <summary>Posture d'ARRIVÉE telle que le SERVEUR la publie, celle que la simulation utilise.
+    /// Contrairement à CurrentStance, elle est juste sur les quatre cas réseau, y compris chez un
+    /// spectateur qui n'appelle jamais Move(). Pour l'AFFICHAGE, préférer GetDisplayedStance, qui
+    /// tient compte de la transition en cours et de l'instant affiché.</summary>
+    public Stance NetworkedStance => networkStance.Value.current;
+
+    /// <summary>
+    /// Posture AFFICHÉE pour ce joueur sur cette machine : posture de départ, posture d'arrivée et
+    /// progression adoucie de l'une à l'autre (1 = arrivé). Calculée pour l'instant que cette
+    /// machine affiche : le présent du serveur pour le serveur, le passé interpolé pour un
+    /// spectateur — exactement le même que celui de la position, donc l'adversaire se couche là
+    /// où on le voit, au moment où on le voit.
+    /// </summary>
+    public void GetDisplayedStance(out Stance from, out Stance to, out float progress)
+    {
+        StanceState state = networkStance.Value;
+        ResolveStance(state, DisplayTime, TransitionDuration(state.previous, state.current), out from, out to, out progress);
+    }
+
+    /// <summary>Durée de la transition entre accroupi et allongé : l'animation de transition y
+    /// accorde sa vitesse de lecture, comme le vault le fait avec sa propre durée.</summary>
+    public float CrouchProneTransitionDuration => crouchProneTransition;
+
+    /// <summary>Vrai là où ce joueur est SIMULÉ (propriétaire, serveur, ou hors session dans les
+    /// tests) ; faux chez un pur spectateur, qui ne fait qu'afficher ce que le serveur publie.</summary>
+    private bool Simulates => !IsSpawned || IsOwner || IsServer;
+
+    private bool HasDisplayFlag(DisplayFlags flag) => (displayedPose.flags & (byte)flag) != 0;
 
     /// <summary>Le joueur est-il en train de franchir, du point de vue de l'AFFICHAGE ?
     ///
@@ -196,7 +273,7 @@ public class PlayerLocomotion : NetworkBehaviour
     /// et seul le spectateur lit la valeur réseautée. Le propriétaire voit ainsi son propre
     /// franchissement instantanément — ce qui compte pour son ombre, la seule partie de son
     /// modèle qu'il voit.</summary>
-    public bool DisplayVaulting => (IsOwner || IsServer) ? IsVaulting : networkVaulting.Value;
+    public bool DisplayVaulting => Simulates ? IsVaulting : HasDisplayFlag(DisplayFlags.Vaulting);
 
     /// <summary>Durée d'un franchissement, en secondes. Exposée pour que l'ANIMATION puisse s'y
     /// accorder : son clip est lu à la vitesse qu'il faut pour tenir exactement dans cet
@@ -235,8 +312,9 @@ public class PlayerLocomotion : NetworkBehaviour
     /// PlayerCameraLook APRÈS le pitch, pour pouvoir le ramener dans le repère de la caméra.</summary>
     public Vector3 LeanCameraOffset { get; private set; }
 
-    /// <summary>Roulis de la caméra dû au lean, en degrés. Nul allongé : le buste y pivote à plat,
-    /// sans s'incliner.</summary>
+    /// <summary>Roulis de la caméra dû au lean, en degrés : proportionnel à l'angle du buste, donc le
+    /// même à fond de lean dans toutes les postures. Allongé, c'est l'essentiel de l'effet : le
+    /// buste roule sur lui-même et la tête sort peu.</summary>
     public float LeanCameraTilt { get; private set; }
 
     /// <summary>Le joueur est-il en visee, du point de vue de l'AFFICHAGE ?
@@ -244,7 +322,7 @@ public class PlayerLocomotion : NetworkBehaviour
     /// IsAiming est affectee DANS Move(), qu'un spectateur n'appelle jamais : lue telle quelle
     /// elle resterait false en permanence et l'adversaire n'epaulerait jamais son arme. Meme
     /// aiguillage que pour la posture, la chute et le franchissement.</summary>
-    public bool DisplayAiming => (IsOwner || IsServer) ? IsAiming : networkAiming.Value;
+    public bool DisplayAiming => Simulates ? IsAiming : HasDisplayFlag(DisplayFlags.Aiming);
 
     /// <summary>Le joueur est-il en l'air, du point de vue de l'AFFICHAGE ?
     ///
@@ -256,7 +334,7 @@ public class PlayerLocomotion : NetworkBehaviour
         get
         {
             if (DisplayVaulting) return false;
-            bool grounded = (IsOwner || IsServer) ? controller.isGrounded : networkGrounded.Value;
+            bool grounded = Simulates ? controller.isGrounded : HasDisplayFlag(DisplayFlags.Grounded);
             return !grounded;
         }
     }
@@ -296,56 +374,63 @@ public class PlayerLocomotion : NetworkBehaviour
     private float footstepDistanceAccumulator;
 
     // ------------------------------------------------------------------
-    // Réseau — position (catégorie A)
-    // ------------------------------------------------------------------
-
-    private readonly NetworkVariable<Vector3> networkPosition = new NetworkVariable<Vector3>(
-        default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
-    private readonly NetworkVariable<Stance> networkStance = new NetworkVariable<Stance>(
-        Stance.Standing, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
-    // ------------------------------------------------------------------
-    // Réseau — état d'AFFICHAGE (catégorie C réseautée)
+    // Réseau — ce que le serveur publie (2026-10-06)
     //
-    // Ces deux drapeaux ne servent QU'À L'ANIMATION : rien dans la simulation ne les relit, et
-    // un client ne peut donc rien en tirer. Ils existent parce qu'un SPECTATEUR n'a aucun moyen
-    // de les connaître — il n'appelle jamais Move(), et son CharacterController n'est pas
-    // simulé, donc son isGrounded ne veut rien dire. Sans eux, un adversaire qui tombe ou qui
-    // franchit un obstacle garderait son animation de course.
+    // Deux variables seulement. La POSE d'affichage, datée sur l'horloge du serveur et publiée à
+    // chaque frame : position, rotation, lean et drapeaux d'animation (au sol, en franchissement,
+    // en visée). Et la POSTURE avec sa transition. Elles remplacent sept variables, dont trois
+    // drapeaux qui n'existaient que pour l'animation d'un spectateur — lequel n'appelle jamais
+    // Move() et n'a donc aucun autre moyen de savoir qu'un adversaire tombe, franchit ou épaule.
     //
-    // C'est la même règle que pour la posture, apprise à ses dépens : tout ce qu'un spectateur
-    // doit VOIR doit venir d'une source réseautée, jamais d'un champ mis à jour par la simulation.
+    // La règle reste celle apprise à ses dépens : tout ce qu'un spectateur doit VOIR doit venir
+    // d'une source réseautée, jamais d'un champ mis à jour par la simulation.
     // ------------------------------------------------------------------
 
-    private readonly NetworkVariable<bool> networkGrounded = new NetworkVariable<bool>(
-        true, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
-    private readonly NetworkVariable<bool> networkVaulting = new NetworkVariable<bool>(
-        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
-    private readonly NetworkVariable<bool> networkAiming = new NetworkVariable<bool>(
-        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
-    /// <summary>Yaw (degrés, monde) — écrit par le serveur juste après avoir fait autorité sur le
-    /// mouvement (cas 1 et 3), lu uniquement par les purs spectateurs (cas 4) pour orienter
-    /// visuellement le joueur distant. Le propriétaire et le serveur-autoritaire n'en ont pas
-    /// besoin : ils dérivent déjà leur propre rotation via Move() (voir remarque plus bas).</summary>
-    private readonly NetworkVariable<float> networkYaw = new NetworkVariable<float>(
+    private readonly NetworkVariable<DisplayPose> networkPose = new NetworkVariable<DisplayPose>(
         default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    /// <summary>Décalage latéral du lean, en mètres — écrit par le serveur. Le lean n'est plus
-    /// purement cosmétique depuis le hitbox séparé : il déplace la surface touchable, donc tout le
-    /// monde doit voir où penche un adversaire. Le PROPRIÉTAIRE, lui, utilise sa valeur locale
-    /// prédite (voir LeanOffset) pour que sa caméra et son corps ne subissent aucune latence.</summary>
-    private readonly NetworkVariable<float> networkLeanOffset = new NetworkVariable<float>(
-        default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private readonly NetworkVariable<StanceState> networkStance = new NetworkVariable<StanceState>(
+        new StanceState { current = Stance.Standing, previous = Stance.Standing, changedAt = double.NegativeInfinity },
+        NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    /// <summary>Décalage de lean à utiliser pour positionner la surface visible et la surface
-    /// touchable de CE joueur, sur CETTE machine : la valeur locale prédite chez le propriétaire,
-    /// la valeur publiée par le serveur partout ailleurs (serveur compris, puisqu'il est l'auteur
-    /// de cette valeur pour un client distant).</summary>
-    private float LeanOffset => IsOwner ? currentLeanOffset : networkLeanOffset.Value;
+    /// <summary>Côté serveur : change à chaque téléportation (apparition, nouvelle manche), pour que
+    /// les spectateurs vident leur historique au lieu d'interpoler un glissement à travers la carte.</summary>
+    private byte serverTeleportId;
+
+    /// <summary>Décalage de lean de CE joueur sur CETTE machine : la valeur simulée chez le
+    /// propriétaire et sur le serveur, la valeur interpolée — au même instant que la position —
+    /// chez un spectateur.</summary>
+    private float LeanOffset => Simulates ? currentLeanOffset : displayedPose.leanOffset;
+
+    /// <summary>Horloge du serveur (NetworkManager.ServerTime). Sur le serveur, son présent ; sur un
+    /// client, son estimation, en retard d'environ RTT/2 + 50 ms — soit l'âge des données qui lui
+    /// arrivent. Hors session (tests), le temps local.</summary>
+    private double ServerClock => IsSpawned && NetworkManager != null ? NetworkManager.ServerTime.Time : Time.timeAsDouble;
+
+    /// <summary>
+    /// Instant, sur l'horloge du serveur, de ce que CETTE machine affiche des AUTRES joueurs. Le
+    /// tireur l'envoie avec chaque tir, et le serveur replace ses adversaires exactement à cet
+    /// instant : plus d'estimation de latence à deviner. Le Host voit les autres au présent de sa
+    /// propre simulation, donc il n'a rien à compenser.
+    /// </summary>
+    public double ViewServerTime => IsServer ? ServerClock : (shownViewTime > 0.0 ? shownViewTime : InterpolationTime);
+
+    /// <summary>Instant auquel un spectateur interpole les autres joueurs, calculé maintenant.</summary>
+    private double InterpolationTime => ServerClock - interpolationDelay;
+
+    /// <summary>
+    /// Instant RÉELLEMENT affiché des autres joueurs sur cette machine : celui de leur dernière
+    /// interpolation. C'est lui que le tir doit annoncer, et non l'instant calculé à la volée
+    /// (2026-10-06) : selon l'ordre d'exécution des scripts, le tir part avant ou après que les
+    /// adversaires aient été replacés pour cette frame. Annoncer l'instant de la frame en cours
+    /// alors qu'ils sont encore à celui de la précédente décalait le rewind d'une frame — jusqu'à
+    /// 8 cm à 60 images/s sur une cible qui court.
+    /// </summary>
+    private static double shownViewTime;
+
+    /// <summary>Instant affiché pour CE joueur sur cette machine : le présent pour qui le simule,
+    /// l'instant interpolé pour un spectateur.</summary>
+    private double DisplayTime => Simulates ? ServerClock : InterpolationTime;
 
     private int nextInputSequence;
 
@@ -387,8 +472,14 @@ public class PlayerLocomotion : NetworkBehaviour
 
         /// <summary>Time.time au moment de l'envoi au serveur. Sert à mesurer le RTT GRATUITEMENT,
         /// en chronométrant l'aller-retour prédiction/réconciliation qui existe déjà : aucune RPC
-        /// de ping dédiée, et aucune dépendance à la synchronisation d'horloge de Netcode.</summary>
+        /// de ping dédiée. Diagnostic seulement depuis que le tir envoie l'instant qu'il voit.</summary>
         public float sentAt;
+
+        /// <summary>Instant de simulation de cet input sur l'horloge du serveur : NetworkManager.
+        /// LocalTime chez le client, qui vaut à peu près l'instant où le serveur le traitera. Sert
+        /// à la progression d'une transition de posture dans Move(), et doit être REJOUÉ tel quel
+        /// à la réconciliation, sinon le rejeu ne referait pas le même calcul.</summary>
+        public double simTime;
     }
 
     // Côté propriétaire distant (cas 2) : inputs envoyés au serveur mais pas encore confirmés.
@@ -402,22 +493,11 @@ public class PlayerLocomotion : NetworkBehaviour
     [Tooltip("Durée (s) de l'historique de pose conservé par le SERVEUR pour chaque joueur, afin de pouvoir le replacer dans le passé au moment de valider un tir. Doit couvrir le rewind maximum autorisé côté arme, avec de la marge.")]
     [SerializeField] private float hitboxHistoryDuration = 1f;
 
-    /// <summary>RTT lissé du propriétaire distant, en secondes. Reste à 0 pour le Host, qui ne
-    /// passe jamais par la boucle prédiction/réconciliation — cohérent avec le fait qu'il n'a
-    /// aucune latence avec lui-même.</summary>
+    /// <summary>RTT lissé du propriétaire distant, en secondes — DIAGNOSTIC seulement. Le rewind
+    /// s'en servait pour estimer l'âge de ce que le tireur voit ; depuis le 2026-10-06, le tireur
+    /// envoie directement l'instant qu'il affiche (ViewServerTime), ce qui est exact. L'estimation
+    /// oubliait d'ailleurs les 50 ms de marge que Netcode garde sur son horloge serveur.</summary>
     private float smoothedRtt;
-
-    /// <summary>
-    /// Délai de rewind que CE tireur suggère au serveur. Deux termes, qui approximent ensemble
-    /// l'âge de ce qu'il voit réellement à l'écran au moment où il vise :
-    ///   - la moitié du RTT : le temps que son tir mette à atteindre le serveur ;
-    ///   - le délai d'interpolation : les adversaires lui sont affichés volontairement en retard,
-    ///     pour toujours avoir deux points d'historique entre lesquels interpoler.
-    /// Vaut 0 pour le Host : il voit les autres joueurs à la position que LUI-MÊME simule (cas 3),
-    /// donc sans interpolation ni latence — il n'y a rien à compenser.
-    /// Le serveur ne fait jamais confiance à cette valeur : il la clampe (voir FireServerRpc).
-    /// </summary>
-    public float EstimatedRewindSeconds => IsServer ? 0f : smoothedRtt * 0.5f + interpolationDelay;
 
     /// <summary>Pose passée d'un joueur, telle que le serveur l'a simulée. Contient TOUT ce dont
     /// dépend la surface touchable — position, orientation, lean et posture. Historiser la seule
@@ -425,11 +505,11 @@ public class PlayerLocomotion : NetworkBehaviour
     /// du tir serait rewind avec la géométrie qu'il a MAINTENANT.</summary>
     public struct HitboxPose
     {
-        public float time;
+        public double time;      // horloge du serveur
         public Vector3 position;
         public float yaw;
         public float leanOffset;
-        public Stance stance;
+        public StanceState stance; // avec sa transition : la forme exacte se recalcule à l'instant visé
     }
 
     // Côté serveur : historique glissant, alimenté à chaque tick où le serveur fait autorité sur
@@ -451,14 +531,10 @@ public class PlayerLocomotion : NetworkBehaviour
     // Côté serveur (cas 3) : inputs reçus des clients, en attente de traitement.
     private readonly Queue<PendingInput> serverInputQueue = new Queue<PendingInput>();
 
-    private struct PositionSnapshot
-    {
-        public float time;
-        public Vector3 position;
-    }
-
-    // Côté spectateur (cas 4) : petit historique récent des positions reçues.
-    private readonly List<PositionSnapshot> remoteSnapshots = new List<PositionSnapshot>();
+    // Côté spectateur (cas 4) : petit historique récent des poses reçues, et la pose affichée.
+    private readonly List<DisplayPose> remoteSnapshots = new List<DisplayPose>();
+    private DisplayPose displayedPose;
+    private byte lastTeleportId;
 
     private void Awake()
     {
@@ -479,29 +555,34 @@ public class PlayerLocomotion : NetworkBehaviour
             // le monde apparaît à la position du prefab, donc les uns sur les autres.
             ServerMoveToSpawnPoint();
 
-            // Le SERVEUR publie la position où il vient de faire apparaître ce joueur. Sans ça,
-            // networkPosition vaut encore default = (0,0,0) à cet instant, et la branche cliente
-            // ci-dessous téléportait tout le monde à l'origine du monde — y compris le serveur
-            // lui-même, dans la version précédente qui appliquait ce recalage inconditionnellement.
-            // Le commentaire d'origine disait "évite un téléport visuel au spawn" ; en pratique
-            // c'est lui qui le PROVOQUAIT. Invisible tant que la scène de test spawne près de
-            // l'origine, et fatal dès qu'il y aura de vrais points de spawn opposés.
-            networkPosition.Value = transform.position;
-            networkYaw.Value = transform.eulerAngles.y;
+            // Le SERVEUR publie la pose où il vient de faire apparaître ce joueur. Sans ça, elle
+            // vaut encore default = (0,0,0) à cet instant, et la branche cliente ci-dessous
+            // téléportait tout le monde à l'origine du monde. Invisible tant que la scène de test
+            // spawne près de l'origine, et fatal dès qu'il y a de vrais points de spawn opposés.
+            ServerPublishPose();
         }
         else
         {
             // Client/spectateur : on s'aligne sur ce que le serveur a publié (livré avec le
             // message de spawn), pour éviter une frame affichée à la position du prefab.
+            DisplayPose pose = networkPose.Value;
             controller.enabled = false;
-            transform.position = networkPosition.Value;
-            transform.rotation = Quaternion.Euler(0f, networkYaw.Value, 0f);
+            transform.SetPositionAndRotation(pose.position, Quaternion.Euler(0f, pose.yaw, 0f));
             controller.enabled = true;
+            displayedPose = pose;
+            lastTeleportId = pose.teleportId;
+            remoteSnapshots.Clear();
+            remoteSnapshots.Add(pose);
         }
 
-        networkPosition.OnValueChanged += HandleNetworkPositionChanged;
+        networkPose.OnValueChanged += HandleNetworkPoseChanged;
         if (!spawnedPlayers.Contains(this)) spawnedPlayers.Add(this);
-        ApplyStanceImmediate(networkStance.Value);
+
+        // Static, et le rechargement de domaine est désactivé à l'entrée en Play Mode dans ce
+        // projet : sans cette remise à zéro, le premier tir d'une session annoncerait l'instant de
+        // la session précédente.
+        if (IsOwner) shownViewTime = 0.0;
+        ApplyStanceImmediate(networkStance.Value.current);
 
         // Caméra/AudioListener : une seule instance de joueur doit "voir" et "entendre" par
         // machine — celle du propriétaire local. Fixé EXPLICITEMENT dans les deux sens (pas
@@ -546,7 +627,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
     public override void OnNetworkDespawn()
     {
-        networkPosition.OnValueChanged -= HandleNetworkPositionChanged;
+        networkPose.OnValueChanged -= HandleNetworkPoseChanged;
         spawnedPlayers.Remove(this);
     }
 
@@ -601,7 +682,7 @@ public class PlayerLocomotion : NetworkBehaviour
         Debug.Log($"[DIAG-CLIENT] corrections={diagCorrections} resync={diagResyncs} ({resyncRate:F1}%) " +
                   $"erreur_moy={avgError * 100f:F1}cm erreur_max={diagMaxError * 100f:F1}cm " +
                   $"vaults={diagVaultsTotal} kicks={diagLandingKicksTotal} " +
-                  $"rtt={smoothedRtt * 1000f:F0}ms rewind={EstimatedRewindSeconds * 1000f:F0}ms " +
+                  $"rtt={smoothedRtt * 1000f:F0}ms " +
                   $"file_serveur={serverInputQueue.Count}");
 
         diagCorrections = 0;
@@ -619,16 +700,17 @@ public class PlayerLocomotion : NetworkBehaviour
     /// serveur fait autorité sur ce joueur (cas 1 et 3).</summary>
     private void ServerRecordHitboxPose()
     {
+        double now = ServerClock;
         serverHitboxHistory.Add(new HitboxPose
         {
-            time = Time.time,
+            time = now,
             position = transform.position,
             yaw = transform.eulerAngles.y,
             leanOffset = LeanOffset,
             stance = networkStance.Value,
         });
 
-        float cutoff = Time.time - hitboxHistoryDuration;
+        double cutoff = now - hitboxHistoryDuration;
         // RemoveAll plutôt qu'une file : l'historique est court (~60 entrées) et on a besoin d'un
         // accès indexé pour interpoler entre deux poses.
         serverHitboxHistory.RemoveAll(p => p.time < cutoff);
@@ -640,7 +722,7 @@ public class PlayerLocomotion : NetworkBehaviour
     /// en cours continue sur les vraies positions, seul le collider de tir voyage dans le passé.
     /// C'est précisément ce que le hitbox séparé rend possible.
     /// </summary>
-    public void ServerBeginRewind(float targetTime)
+    public void ServerBeginRewind(double targetTime)
     {
         if (!IsServer || isRewound || hitbox == null) return;
         if (serverHitboxHistory.Count == 0) return;
@@ -656,7 +738,9 @@ public class PlayerLocomotion : NetworkBehaviour
         // de la pose de son parent le temps du tir. Ses trois zones suivent.
         t.SetPositionAndRotation(pose.position, Quaternion.Euler(0f, pose.yaw, 0f));
 
-        hitbox.Apply(pose.stance, EyeLocal(pose.stance), pose.leanOffset);
+        // La posture est recalculée pour l'instant VISÉ, transition comprise : un adversaire
+        // surpris à mi-chemin d'un plongeon au sol est replacé à mi-chemin, comme on le voyait.
+        ApplyHitboxAt(pose.stance, targetTime, pose.leanOffset);
     }
 
     /// <summary>Remet la surface touchable dans sa pose courante. TOUJOURS appelée en finally par
@@ -674,10 +758,10 @@ public class PlayerLocomotion : NetworkBehaviour
         // Les zones sont recalculées au prochain UpdateStanceVisuals (fonction pure de la posture
         // courante), mais on les remet tout de suite pour qu'une requête intermédiaire ne voie
         // pas la géométrie du passé.
-        hitbox.Apply(networkStance.Value, EyeLocal(networkStance.Value), LeanOffset);
+        ApplyHitboxAt(networkStance.Value, ServerClock, LeanOffset);
     }
 
-    private bool TrySampleHistory(float targetTime, out HitboxPose result)
+    private bool TrySampleHistory(double targetTime, out HitboxPose result)
         => SampleHitboxHistory(serverHitboxHistory, targetTime, out result);
 
     /// <summary>
@@ -688,7 +772,7 @@ public class PlayerLocomotion : NetworkBehaviour
     /// donc l'endroit où une régression coûterait le plus cher, et sous cette forme elle se teste
     /// sans Editor, sans réseau et sans scène (voir les tests EditMode).
     /// </summary>
-    public static bool SampleHitboxHistory(IReadOnlyList<HitboxPose> history, float targetTime, out HitboxPose result)
+    public static bool SampleHitboxHistory(IReadOnlyList<HitboxPose> history, double targetTime, out HitboxPose result)
     {
         result = default;
         if (history == null || history.Count == 0) return false;
@@ -705,8 +789,8 @@ public class PlayerLocomotion : NetworkBehaviour
             HitboxPose b = history[i + 1];
             if (a.time > targetTime || targetTime > b.time) continue;
 
-            float span = b.time - a.time;
-            float t = span > 0.0001f ? (targetTime - a.time) / span : 0f;
+            double span = b.time - a.time;
+            float t = span > 0.0001 ? (float)((targetTime - a.time) / span) : 0f;
 
             result = new HitboxPose
             {
@@ -714,10 +798,10 @@ public class PlayerLocomotion : NetworkBehaviour
                 position = Vector3.Lerp(a.position, b.position, t),
                 yaw = Mathf.LerpAngle(a.yaw, b.yaw, t),
                 leanOffset = Mathf.Lerp(a.leanOffset, b.leanOffset, t),
-                // La posture est discrète : on garde celle d'AVANT plutôt que d'inventer un état
-                // intermédiaire. Pendant une transition, le joueur est donc rewind avec la capsule
-                // qu'il quittait — le choix conservateur du point de vue de la cible.
-                stance = a.stance,
+                // La posture ne s'interpole pas : elle porte l'instant exact de son changement, et
+                // la transition se recalcule à l'instant visé (ApplyHitboxAt). On prend donc celle
+                // qui était en vigueur à cet instant : la nouvelle si le changement le précède.
+                stance = b.stance.changedAt <= targetTime ? b.stance : a.stance,
             };
             return true;
         }
@@ -765,12 +849,12 @@ public class PlayerLocomotion : NetworkBehaviour
 
         // Remise à zéro de la POSTURE et du LEAN. Sans ça, on reprend la manche suivante dans
         // l'état où on est mort : penché derrière un angle qui n'existe plus, ou allongé en plein
-        // milieu. La posture vient d'une NetworkVariable, donc la remettre ici suffit.
-        networkStance.Value = Stance.Standing;
+        // milieu. La posture vient d'une NetworkVariable, donc la remettre ici suffit — sans
+        // transition : on réapparaît debout, on ne se relève pas.
+        ServerSetStanceImmediate(Stance.Standing);
         ApplyStanceImmediate(Stance.Standing);
 
         currentLeanOffset = 0f;
-        networkLeanOffset.Value = 0f;
         leanState = 0;
         serverLastLeanState = 0; // sinon le premier input de la manche jouerait un faux LeanEnd
 
@@ -783,8 +867,8 @@ public class PlayerLocomotion : NetworkBehaviour
             Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
         });
 
-        networkPosition.Value = transform.position;
-        networkYaw.Value = transform.eulerAngles.y;
+        serverTeleportId++;
+        ServerPublishPose();
     }
 
     /// <summary>Annule le lean chez le propriétaire — état, décalage et effet caméra. Envoyée par
@@ -812,6 +896,9 @@ public class PlayerLocomotion : NetworkBehaviour
         // lean (décalage caméra, anti-clipping) reste cosmétique et local, plus bas.
         if (IsOwner) UpdateLeanState();
 
+        // Une demande de posture arrivée pendant une transition s'applique à la fin de celle-ci.
+        if (IsServer) ServerUpdateStance();
+
         if (IsOwner && IsServer)
         {
             // Cas 1 : Host sur son propre perso — autorité directe, comme en solo.
@@ -820,15 +907,11 @@ public class PlayerLocomotion : NetworkBehaviour
             bool wasGrounded = controller.isGrounded;
 
             ServerCheckAutoStand(snap);
-            Move(snap, dt);
+            Move(snap, dt, ServerClock);
             ServerTrackLeanSound(snap.leanState);
 
             if (controller.isGrounded && !wasGrounded) TriggerLandingKick(Mathf.Abs(verticalVelocity));
             ServerAdvanceFootsteps(dt);
-            networkPosition.Value = transform.position;
-            networkYaw.Value = transform.eulerAngles.y;
-            ServerPublishDisplayState();
-            ServerRecordHitboxPose();
         }
         else if (IsOwner)
         {
@@ -866,10 +949,17 @@ public class PlayerLocomotion : NetworkBehaviour
             }
 
             ApplyCameraPivotPosition();
+        }
 
-            // Le Host publie son propre décalage de lean : il est à la fois propriétaire et
-            // serveur, donc sa valeur locale EST la valeur autoritaire.
-            if (IsServer) networkLeanOffset.Value = currentLeanOffset;
+        // Publication serveur, à CHAQUE frame et même sans input traité : sinon l'historique du
+        // rewind aurait des trous pendant les micro-coupures réseau, précisément quand il sert le
+        // plus, et la pose des spectateurs resterait figée (un adversaire garderait son animation
+        // de chute après avoir atterri). Placée APRÈS le bloc du propriétaire, pour que le Host
+        // publie le lean de cette frame et non celui de la précédente.
+        if (IsServer && IsSpawned)
+        {
+            ServerPublishPose();
+            ServerRecordHitboxPose();
         }
 
         // Habillage de la posture (hauteur caméra) + surface visible + surface touchable — tourne
@@ -914,8 +1004,12 @@ public class PlayerLocomotion : NetworkBehaviour
 
         int sequence = nextInputSequence++;
 
+        // LocalTime et non ServerTime : c'est l'instant, sur l'horloge du serveur, où celui-ci
+        // TRAITERA cet input. Une transition de posture y progresse donc d'autant des deux côtés.
+        double simTime = NetworkManager.LocalTime.Time;
+
         bool wasGrounded = controller.isGrounded;
-        Move(snap, dt);
+        Move(snap, dt, simTime);
         if (controller.isGrounded && !wasGrounded) TriggerLandingKick(Mathf.Abs(verticalVelocity));
 
         // L'input est enregistré APRÈS Move() : on a besoin de l'état prédit qui en résulte pour
@@ -930,6 +1024,7 @@ public class PlayerLocomotion : NetworkBehaviour
             predictedYaw = transform.eulerAngles.y,
             predictedVaulting = IsVaulting,
             sentAt = Time.time,
+            simTime = simTime,
         });
 
         SubmitInputServerRpc(sequence, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, snap.jumpPressed, dt);
@@ -1038,7 +1133,9 @@ public class PlayerLocomotion : NetworkBehaviour
             serverInputTimeBudget -= dt;
 
             ServerCheckAutoStand(next.snapshot);
-            Move(next.snapshot, dt);
+            // L'horloge du serveur, jamais un instant fourni par le client : il pourrait sinon
+            // sauter la fin d'une transition (se relever d'un coup) en annonçant un instant futur.
+            Move(next.snapshot, dt, ServerClock);
             ServerAdvanceFootsteps(dt);
             ServerAdvanceLean(next.snapshot.leanState, dt);
             ServerTrackLeanSound(next.snapshot.leanState);
@@ -1050,17 +1147,10 @@ public class PlayerLocomotion : NetworkBehaviour
 
         if (lastProcessedSequence >= 0)
         {
-            networkPosition.Value = transform.position;
-            networkYaw.Value = transform.eulerAngles.y;
             SendCorrectionToOwner(lastProcessedSequence, transform.position, verticalVelocity, transform.eulerAngles.y, currentVelocity, IsVaulting, vaultTimer, vaultStart, vaultEnd, vaultPeakY);
         }
 
-        // Enregistrés à CHAQUE frame serveur, même sans input traité : sinon l'historique aurait
-        // des trous pendant les micro-coupures réseau, précisément quand le rewind sert le plus —
-        // et l'état d'affichage resterait figé, donc un adversaire garderait son animation de
-        // chute après avoir atterri. Hors du bloc ci-dessus, volontairement.
-        ServerPublishDisplayState();
-        ServerRecordHitboxPose();
+        // La pose et l'historique sont publiés par Update(), à chaque frame, inputs ou non.
     }
 
     private void SendCorrectionToOwner(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, bool confirmedVaulting, float confirmedVaultTimer, Vector3 confirmedVaultStart, Vector3 confirmedVaultEnd, float confirmedVaultPeakY)
@@ -1156,7 +1246,7 @@ public class PlayerLocomotion : NetworkBehaviour
             for (int i = 0; i < unconfirmedInputs.Count; i++)
             {
                 PendingInput pending = unconfirmedInputs[i];
-                Move(pending.snapshot, pending.deltaTime);
+                Move(pending.snapshot, pending.deltaTime, pending.simTime);
 
                 // Le rejeu vient de produire un NOUVEL état prédit pour cet input, différent de celui
                 // calculé lors de la prédiction initiale puisqu'on est reparti d'une base corrigée.
@@ -1181,57 +1271,115 @@ public class PlayerLocomotion : NetworkBehaviour
     // Cas 4 — spectateur : interpolation par historique avec délai volontaire
     // ------------------------------------------------------------------
 
-    private void HandleNetworkPositionChanged(Vector3 previous, Vector3 current)
+    private void HandleNetworkPoseChanged(DisplayPose previous, DisplayPose current)
     {
         if (IsOwner || IsServer) return;
 
-        remoteSnapshots.Add(new PositionSnapshot { time = Time.time, position = current });
+        // Une téléportation (nouvelle manche) vide l'historique : interpoler entre l'ancienne
+        // position et le point de spawn ferait traverser la carte au personnage.
+        if (current.teleportId != lastTeleportId)
+        {
+            remoteSnapshots.Clear();
+            lastTeleportId = current.teleportId;
+        }
 
-        float cutoff = Time.time - 1f;
-        remoteSnapshots.RemoveAll(s => s.time < cutoff);
+        // Les poses arrivent dans l'ordre (livraison fiable et ordonnée), mais rien ne coûte de
+        // s'en garder : une pose plus ancienne que la dernière casserait la recherche par intervalle.
+        if (remoteSnapshots.Count > 0 && current.time <= remoteSnapshots[remoteSnapshots.Count - 1].time) return;
+
+        remoteSnapshots.Add(current);
+        double cutoff = current.time - 1.0;
+        remoteSnapshots.RemoveAll(snapshot => snapshot.time < cutoff);
     }
 
-    /// <summary>Publie l'état d'affichage. Appelée à CHAQUE frame serveur, même sans input traité —
-    /// même raison que pour l'historique de pose : sans ça, un drapeau resterait figé pendant une
-    /// micro-coupure réseau, et l'adversaire garderait une animation de chute après avoir atterri.
-    /// Une NetworkVariable n'émet que sur changement, donc écrire chaque frame ne coûte rien.</summary>
-    private void ServerPublishDisplayState()
+    /// <summary>
+    /// Publie la pose d'affichage, datée sur l'horloge du serveur. Appelée à CHAQUE frame serveur.
+    /// La date change à chaque frame, donc la variable part à chaque tick réseau (30 par seconde,
+    /// environ 1 Ko/s par joueur) : c'est voulu, un spectateur a besoin de poses régulières même
+    /// quand le joueur est immobile, sinon il interpolerait un départ sur plusieurs secondes.
+    /// </summary>
+    private void ServerPublishPose()
     {
-        networkGrounded.Value = controller.enabled && controller.isGrounded;
-        networkVaulting.Value = IsVaulting;
-        networkAiming.Value = IsAiming;
+        DisplayFlags flags = 0;
+        if (controller.enabled && controller.isGrounded) flags |= DisplayFlags.Grounded;
+        if (IsVaulting) flags |= DisplayFlags.Vaulting;
+        if (IsAiming) flags |= DisplayFlags.Aiming;
+
+        networkPose.Value = new DisplayPose
+        {
+            time = ServerClock,
+            position = transform.position,
+            yaw = transform.eulerAngles.y,
+            leanOffset = LeanOffset,
+            flags = (byte)flags,
+            teleportId = serverTeleportId,
+        };
     }
 
     private void UpdateRemoteInterpolation()
     {
-        // Yaw : pas d'historique nécessaire ici (contrairement à la position) — un léger à-coup
-        // de rotation est bien moins perceptible qu'un à-coup de position, donc on applique
-        // directement la dernière valeur connue plutôt que d'interpoler.
-        transform.rotation = Quaternion.Euler(0f, networkYaw.Value, 0f);
+        double viewTime = InterpolationTime;
+        shownViewTime = viewTime;
+        displayedPose = remoteSnapshots.Count > 0
+            ? SampleDisplayPose(remoteSnapshots, viewTime)
+            : networkPose.Value;
 
-        if (remoteSnapshots.Count == 0)
+#if UNITY_EDITOR
+        if (remoteSnapshots.Count > 0)
         {
-            transform.position = networkPosition.Value;
-            return;
+            double reserve = remoteSnapshots[remoteSnapshots.Count - 1].time - viewTime;
+            if (reserve < 0.0) DiagStarvedFrames++;
+            DiagReserveSum += reserve;
+            DiagReserveFrames++;
         }
+#endif
+        transform.SetPositionAndRotation(displayedPose.position, Quaternion.Euler(0f, displayedPose.yaw, 0f));
+    }
 
-        float renderTime = Time.time - interpolationDelay;
+#if UNITY_EDITOR
+    /// <summary>Frames où l'instant affiché dépassait la pose la plus récente reçue : le
+    /// spectateur n'avait plus rien entre quoi interpoler et figeait l'adversaire. Doit rester à
+    /// zéro hors coupure réseau ; sinon interpolationDelay est trop court. Lu par [DIAG-ANIM].</summary>
+    public int DiagStarvedFrames { get; set; }
 
-        for (int i = 0; i < remoteSnapshots.Count - 1; i++)
+    /// <summary>Somme, sur la fenêtre, de l'avance de la pose la plus récente reçue sur l'instant
+    /// affiché : la RÉSERVE réellement disponible pour absorber la gigue. Ce qui la dépasse est du
+    /// retard d'affichage payé pour rien. Lu par [DIAG-ANIM].</summary>
+    public double DiagReserveSum { get; set; }
+    public int DiagReserveFrames { get; set; }
+#endif
+
+    /// <summary>
+    /// Pose interpolée à un instant donné de l'horloge du serveur. Fonction PURE et statique,
+    /// testée sans réseau comme SampleHitboxHistory. Position et lean en ligne droite, rotation par
+    /// le plus court chemin, drapeaux d'animation (discrets) pris à la pose de début d'intervalle.
+    /// Hors de l'historique, la pose la plus proche, sans extrapolation : deviner où va un
+    /// adversaire serait pire que le montrer un instant immobile.
+    /// </summary>
+    public static DisplayPose SampleDisplayPose(IReadOnlyList<DisplayPose> snapshots, double time)
+    {
+        if (time <= snapshots[0].time) return snapshots[0];
+
+        for (int i = 0; i < snapshots.Count - 1; i++)
         {
-            if (remoteSnapshots[i].time <= renderTime && renderTime <= remoteSnapshots[i + 1].time)
+            DisplayPose a = snapshots[i];
+            DisplayPose b = snapshots[i + 1];
+            if (time > b.time) continue;
+
+            double span = b.time - a.time;
+            float t = span > 1e-6 ? (float)((time - a.time) / span) : 1f;
+            return new DisplayPose
             {
-                float span = remoteSnapshots[i + 1].time - remoteSnapshots[i].time;
-                float t = span > 0.0001f ? (renderTime - remoteSnapshots[i].time) / span : 0f;
-                transform.position = Vector3.Lerp(remoteSnapshots[i].position, remoteSnapshots[i + 1].position, t);
-                return;
-            }
+                time = time,
+                position = Vector3.Lerp(a.position, b.position, t),
+                yaw = Mathf.LerpAngle(a.yaw, b.yaw, t),
+                leanOffset = Mathf.Lerp(a.leanOffset, b.leanOffset, t),
+                flags = a.flags,
+                teleportId = b.teleportId,
+            };
         }
 
-        PositionSnapshot fallback = renderTime < remoteSnapshots[0].time
-            ? remoteSnapshots[0]
-            : remoteSnapshots[remoteSnapshots.Count - 1];
-        transform.position = fallback.position;
+        return snapshots[snapshots.Count - 1];
     }
 
     // ------------------------------------------------------------------
@@ -1244,7 +1392,9 @@ public class PlayerLocomotion : NetworkBehaviour
     // / catégorie B, gérées séparément par l'appelant selon son rôle (voir Update()).
     // ------------------------------------------------------------------
 
-    private void Move(MovementInputSnapshot snap, float dt)
+    /// <param name="simTime">Instant de simulation de cet input sur l'horloge du serveur (voir
+    /// PendingInput.simTime). Ne sert qu'à la progression d'une transition de posture.</param>
+    private void Move(MovementInputSnapshot snap, float dt, double simTime)
     {
         // Rotation (yaw) : appliquée ICI plutôt que dans PlayerCameraLook, pour qu'elle fasse
         // partie intégrante de la fonction déterministe rejouée par la prédiction/réconciliation.
@@ -1267,9 +1417,22 @@ public class PlayerLocomotion : NetworkBehaviour
             return;
         }
 
-        // Un vault ne démarre que pendant une manche : sinon on franchirait un obstacle pendant
-        // le décompte, alors que le déplacement normal est gelé.
-        if (snap.jumpPressed && RoundManager.MovementAllowed && TryFindVaultTarget(out Vector3 vaultLanding, out float vaultTop, false))
+        // TRANSITION DE POSTURE (2026-10-06) : la vitesse glisse de celle de la posture quittée à
+        // celle de la posture d'arrivée. Sans ça, se relever d'un plongeon au sol rendait la
+        // vitesse de marche d'un coup, pendant que le corps visible était encore à genoux : il
+        // glissait. La progression vient de l'instant de simulation de l'input, à peu près le
+        // même chez le client qui prédit et chez le serveur qui tranche ; le petit écart restant
+        // est absorbé par le seuil de réconciliation, comme celui que la posture confirmée par le
+        // serveur crée déjà.
+        StanceState stanceState = networkStance.Value;
+        Stance stance = stanceState.current;
+        float stanceProgress = TransitionProgress(stanceState.changedAt, simTime,
+                                                  TransitionDuration(stanceState.previous, stance));
+
+        // Un vault ne démarre que pendant une manche, et jamais en pleine transition de posture :
+        // on ne franchit pas un obstacle à moitié relevé.
+        if (snap.jumpPressed && RoundManager.MovementAllowed && stanceProgress >= 1f
+            && TryFindVaultTarget(out Vector3 vaultLanding, out float vaultTop, false))
         {
             BeginVault(vaultLanding, vaultTop);
             AdvanceVault(dt);
@@ -1291,7 +1454,6 @@ public class PlayerLocomotion : NetworkBehaviour
 
         IsAiming = snap.aimHeld; // TODO (avec le vrai système d'armes) : brancher FOV/sway ici.
 
-        Stance stance = networkStance.Value;
         StanceProfile profile = GetStanceProfile(stance);
 
         // Capsule de collision appliquée ICI, dans la fonction déterministe, et pas seulement
@@ -1304,7 +1466,9 @@ public class PlayerLocomotion : NetworkBehaviour
             && !snap.aimHeld && !snap.fireHeld && !snap.firePressedThisFrame;
         bool wantsSneak = snap.sneakHeld && !wantsSprint;
         float baseSpeed = wantsSprint ? runSpeed : (wantsSneak ? sneakSpeed : walkSpeed);
-        float targetSpeed = baseSpeed * profile.moveSpeedMultiplier;
+        float stanceMultiplier = Mathf.Lerp(GetStanceProfile(stanceState.previous).moveSpeedMultiplier,
+                                            profile.moveSpeedMultiplier, stanceProgress);
+        float targetSpeed = baseSpeed * stanceMultiplier;
 
         if (snap.aimHeld)
         {
@@ -1347,13 +1511,13 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         if (input.CrouchPressedThisFrame)
         {
-            Stance desired = networkStance.Value == Stance.Crouching ? Stance.Standing : Stance.Crouching;
+            Stance desired = networkStance.Value.current == Stance.Crouching ? Stance.Standing : Stance.Crouching;
             RequestStanceChangeServerRpc(desired);
         }
 
         if (input.PronePressedThisFrame)
         {
-            Stance desired = networkStance.Value == Stance.Prone ? Stance.Standing : Stance.Prone;
+            Stance desired = networkStance.Value.current == Stance.Prone ? Stance.Standing : Stance.Prone;
             RequestStanceChangeServerRpc(desired);
         }
 
@@ -1365,30 +1529,120 @@ public class PlayerLocomotion : NetworkBehaviour
     [ServerRpc]
     private void RequestStanceChangeServerRpc(Stance desired)
     {
-        Stance current = networkStance.Value;
-        if (desired == current) return;
-
-        if (desired != Stance.Standing || CanStandUp())
-        {
-            networkStance.Value = desired;
-            PlayerSoundEvent? sound = GetStanceSound(current, desired);
-            if (sound.HasValue) BroadcastPlayerSoundClientRpc(sound.Value, ComputeNoiseLevel());
-        }
+        ServerRequestStance(desired);
     }
 
     /// <summary>Relevé automatique en sprint, évalué côté serveur à partir de l'input de
     /// mouvement de CE tick (déjà soumis pour le déplacement) — pas de RPC dédiée nécessaire.</summary>
     private void ServerCheckAutoStand(MovementInputSnapshot snap)
     {
-        Stance current = networkStance.Value;
-        if (current == Stance.Standing) return;
+        if (networkStance.Value.current == Stance.Standing) return;
 
-        if (snap.sprintHeld && snap.move.y > 0.1f && CanStandUp())
+        if (snap.sprintHeld && snap.move.y > 0.1f)
         {
-            networkStance.Value = Stance.Standing;
-            PlayerSoundEvent? sound = GetStanceSound(current, Stance.Standing);
-            if (sound.HasValue) BroadcastPlayerSoundClientRpc(sound.Value, ComputeNoiseLevel());
+            ServerRequestStance(Stance.Standing);
         }
+    }
+
+    // Côté serveur : demande de posture arrivée PENDANT une transition, appliquée à sa fin.
+    private Stance? serverPendingStance;
+
+    /// <summary>
+    /// Une demande de posture, d'où qu'elle vienne (touche, relevé automatique). Pendant une
+    /// transition, elle est mise en attente et s'applique quand la transition se termine : une
+    /// seule transition à la fois.
+    ///
+    /// C'est aussi ce qui borne le débit de RequestStanceChangeServerRpc, ouvert depuis la relecture
+    /// du 2026-10-05 : un client modifié qui alternerait ses postures à chaque frame n'obtient plus
+    /// qu'un changement par transition, au moins 0,3 s, mesuré en temps réel (règle 2 des
+    /// garde-fous).
+    /// </summary>
+    private void ServerRequestStance(Stance desired)
+    {
+        if (ServerInStanceTransition())
+        {
+            serverPendingStance = desired;
+            return;
+        }
+        ServerTryChangeStance(desired);
+    }
+
+    private bool ServerInStanceTransition()
+    {
+        StanceState state = networkStance.Value;
+        return ServerClock < state.changedAt + TransitionDuration(state.previous, state.current);
+    }
+
+    /// <summary>Applique la demande en attente dès que la transition en cours est finie.</summary>
+    private void ServerUpdateStance()
+    {
+        if (!serverPendingStance.HasValue || ServerInStanceTransition()) return;
+
+        Stance desired = serverPendingStance.Value;
+        serverPendingStance = null;
+        ServerTryChangeStance(desired);
+    }
+
+    private void ServerTryChangeStance(Stance desired)
+    {
+        Stance current = networkStance.Value.current;
+        if (desired == current) return;
+        if (desired == Stance.Standing && !CanStandUp()) return;
+
+        networkStance.Value = new StanceState { current = desired, previous = current, changedAt = ServerClock };
+        PlayerSoundEvent? sound = GetStanceSound(current, desired);
+        if (sound.HasValue) BroadcastPlayerSoundClientRpc(sound.Value, ComputeNoiseLevel());
+    }
+
+    /// <summary>Change de posture SANS transition : apparition, début de manche.</summary>
+    private void ServerSetStanceImmediate(Stance stance)
+    {
+        serverPendingStance = null;
+        networkStance.Value = new StanceState { current = stance, previous = stance, changedAt = double.NegativeInfinity };
+    }
+
+    /// <summary>Durée de la transition entre deux postures (0 si elles sont identiques).</summary>
+    private float TransitionDuration(Stance from, Stance to)
+    {
+        if (from == to) return 0f;
+        bool prone = from == Stance.Prone || to == Stance.Prone;
+        bool standing = from == Stance.Standing || to == Stance.Standing;
+        if (prone && standing) return standProneTransition;
+        return prone ? crouchProneTransition : standCrouchTransition;
+    }
+
+    /// <summary>
+    /// Progression ADOUCIE d'une transition commencée à `changedAt`, à l'instant `time` : 0 au
+    /// départ, 1 à l'arrivée, avec un départ et une arrivée en douceur (smoothstep) — un corps ne
+    /// passe pas d'une posture à l'autre à vitesse constante. Fonction pure, testée.
+    /// </summary>
+    public static float TransitionProgress(double changedAt, double time, float duration)
+    {
+        if (duration <= 0f) return 1f;
+        float p = Mathf.Clamp01((float)((time - changedAt) / duration));
+        return p * p * (3f - 2f * p);
+    }
+
+    /// <summary>
+    /// Posture à afficher à un instant donné : avant le changement, l'ancienne posture, établie ;
+    /// après, la transition de l'ancienne vers la nouvelle. Fonction pure, testée. Le serveur
+    /// n'accepte un nouveau changement qu'une fois la transition précédente terminée, donc
+    /// l'ancienne posture était forcément établie au moment du changement.
+    /// </summary>
+    public static void ResolveStance(StanceState state, double time, float duration,
+                                     out Stance from, out Stance to, out float progress)
+    {
+        if (time < state.changedAt)
+        {
+            from = state.previous;
+            to = state.previous;
+            progress = 1f;
+            return;
+        }
+
+        from = state.previous;
+        to = state.current;
+        progress = TransitionProgress(state.changedAt, time, duration);
     }
 
     /// <summary>Son à jouer pour une transition de posture donnée, quelle que soit la touche qui
@@ -1413,9 +1667,12 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         if (Mathf.Approximately(controller.height, standingProfile.controllerHeight)) return true;
 
+        // Même placement que la vraie capsule debout : elle commence à la marge de peau au-dessus
+        // des pieds (voir CapsuleCenterHeight). Partir des pieds mêmes ferait toucher le sol au test.
         float radius = standingProfile.controllerRadius * 0.95f;
-        Vector3 feet = transform.position + Vector3.up * radius;
-        Vector3 head = transform.position + Vector3.up * (standingProfile.controllerHeight - radius);
+        float bottom = controller.skinWidth;
+        Vector3 feet = transform.position + Vector3.up * (bottom + radius);
+        Vector3 head = transform.position + Vector3.up * (bottom + standingProfile.controllerHeight - radius);
 
         bool blocked = Physics.CheckCapsule(feet, head, radius, obstacleMask, QueryTriggerInteraction.Ignore);
         if (debugDrawVaultRays)
@@ -1456,57 +1713,87 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         StanceProfile profile = GetStanceProfile(stance);
 
+        float centerY = CapsuleCenterHeight(profile);
+
         // Court-circuit : écrire height/radius force PhysX à reconstruire le collider, inutile de
         // le faire à chaque frame alors que la posture ne change que rarement.
         if (Mathf.Approximately(controller.height, profile.controllerHeight)
-            && Mathf.Approximately(controller.radius, profile.controllerRadius))
+            && Mathf.Approximately(controller.radius, profile.controllerRadius)
+            && Mathf.Approximately(controller.center.y, centerY))
         {
             return;
         }
 
         controller.height = profile.controllerHeight;
         controller.radius = profile.controllerRadius;
-        controller.center = new Vector3(0f, profile.controllerHeight / 2f, 0f);
+        controller.center = new Vector3(0f, centerY, 0f);
     }
 
     /// <summary>
-    /// Habillage de la posture — hauteur caméra et surface touchable. Tourne sur TOUTES les
-    /// instances (y compris les spectateurs, qui n'appellent jamais Move()). Seule la hauteur
-    /// caméra y est lissée avec Time.deltaTime, et elle n'influence pas la simulation.
+    /// Hauteur du centre de la capsule au-dessus de la RACINE du joueur, choisie pour que la
+    /// racine soit exactement au SOL. Tout ce qui se mesure « depuis les pieds » — l'œil, les zones
+    /// touchables, le modèle — en dépend.
+    ///
+    /// Corrigé le 2026-10-06 : le robot flottait de 8,6 cm debout et de 18,8 cm allongé. Deux
+    /// causes, toutes deux silencieuses. (1) Le CharacterController garde sa marge de peau
+    /// (skinWidth, 8 cm) entre la capsule et le sol : capsule posée sur la racine, la racine
+    /// restait 8 cm en l'air. (2) Allongé, la hauteur (0,5 m) est inférieure au diamètre (0,8 m) :
+    /// Unity en fait une sphère de 0,8 m, centrée à 0,25 m, qui dépassait de 15 cm sous les pieds.
+    /// La capsule commence donc maintenant à la marge de peau au-dessus de la racine. Son volume
+    /// dans le MONDE n'a pas bougé d'un millimètre : seule la racine, et tout ce qui s'y accroche,
+    /// est descendue au sol.
+    /// </summary>
+    private float CapsuleCenterHeight(StanceProfile profile)
+        => Mathf.Max(profile.controllerHeight, 2f * profile.controllerRadius) * 0.5f + controller.skinWidth;
+
+    /// <summary>
+    /// Habillage de la posture — œil de la caméra et surface touchable. Tourne sur TOUTES les
+    /// instances (y compris les spectateurs, qui n'appellent jamais Move()).
+    ///
+    /// Les deux suivent la MÊME transition, calculée pour l'instant que cette machine affiche
+    /// (GetDisplayedStance) : le corps visible, la caméra et la surface touchable passent ensemble
+    /// d'une posture à l'autre. Jusqu'au 2026-10-06, la caméra glissait en moins de 0,1 s et la
+    /// surface touchable changeait d'un coup : « trop instantané », et on visait un corps à
+    /// mi-hauteur que le serveur croyait déjà couché.
     /// </summary>
     private void UpdateStanceVisuals()
     {
-        Stance stance = networkStance.Value;
-        StanceProfile profile = GetStanceProfile(stance);
+        GetDisplayedStance(out Stance from, out Stance to, out float progress);
 
-        // SEULE la position de la caméra est interpolée : c'est le point de vue du propriétaire,
-        // et c'est ce lissage-là qui donne le confort de s'accroupir. Purement local.
-        float step = stanceTransitionSpeed * Time.deltaTime;
-        currentCameraHeight = Mathf.MoveTowards(currentCameraHeight, profile.cameraHeight, step);
-        currentCameraForward = Mathf.MoveTowards(currentCameraForward, profile.cameraForward, step);
-        currentCameraSide = Mathf.MoveTowards(currentCameraSide, profile.cameraSide, step);
+        Vector3 eye = Vector3.Lerp(EyeLocal(from), EyeLocal(to), progress);
+        currentCameraSide = eye.x;
+        currentCameraHeight = eye.y;
+        currentCameraForward = eye.z;
 
-        // La surface TOUCHABLE ne s'interpole pas : c'est une fonction PURE de (posture réseau,
-        // décalage de lean), donc identique sur toutes les machines. Un lissage local ferait
-        // diverger la surface d'un écran à l'autre pendant chaque transition, et le tireur
-        // viserait un corps que le serveur n'a pas au même endroit.
+        // La surface TOUCHABLE ne dépend que de données réseautées et de l'instant affiché : sur le
+        // serveur, seul à décider des dégâts, c'est son présent, identique à ce que le rewind
+        // recalculera plus tard pour le même instant.
         //
-        // L'animation, elle, AFFICHE la transition en douceur ; elle ne pilote jamais le hitbox.
         // 🚨 Ne JAMAIS dériver le hitbox des os animés : un Animator n'est pas déterministe entre
-        // machines. Les deux lisent la même source réseautée, aucun ne lit l'autre.
-        ApplyHitbox(stance, LeanOffset);
+        // machines. L'animation AFFICHE la transition, la surface touchable la CALCULE ; les deux
+        // lisent la même source réseautée, aucune ne lit l'autre.
+        ApplyHitboxBlended(from, to, progress, LeanOffset);
 
         // Les spectateurs n'appellent jamais Move() : sans ça, leur CharacterController local
         // garderait la capsule de la posture précédente.
-        ApplySimulationCapsule(stance);
+        ApplySimulationCapsule(networkStance.Value.current);
     }
 
-    /// <summary>Met la surface touchable en accord avec la posture et le lean. Tourne sur toutes
-    /// les instances, mais seule celle du SERVEUR décide des dégâts.</summary>
-    private void ApplyHitbox(Stance stance, float lateralOffset)
+    /// <summary>Met la surface touchable en accord avec une posture (en transition ou non) et le
+    /// lean. Tourne sur toutes les instances, mais seule celle du SERVEUR décide des dégâts.</summary>
+    private void ApplyHitboxBlended(Stance from, Stance to, float progress, float lateralOffset)
     {
         if (hitbox == null) return;
-        hitbox.Apply(stance, EyeLocal(stance), lateralOffset);
+        hitbox.ApplyBlended(from, EyeLocal(from), to, EyeLocal(to), progress, lateralOffset);
+    }
+
+    /// <summary>Surface touchable telle qu'elle était à un instant donné de l'horloge du serveur,
+    /// transition de posture comprise. Sert au rewind et à sa restauration.</summary>
+    private void ApplyHitboxAt(StanceState state, double time, float lateralOffset)
+    {
+        ResolveStance(state, time, TransitionDuration(state.previous, state.current),
+                      out Stance from, out Stance to, out float progress);
+        ApplyHitboxBlended(from, to, progress, lateralOffset);
     }
 
     private void ApplyStanceImmediate(Stance stance)
@@ -1523,7 +1810,7 @@ public class PlayerLocomotion : NetworkBehaviour
             cameraPivot.localPosition = new Vector3(currentCameraSide, currentCameraHeight, currentCameraForward);
         }
 
-        ApplyHitbox(stance, currentLeanOffset);
+        ApplyHitboxBlended(stance, stance, 1f, currentLeanOffset);
     }
 
     // ------------------------------------------------------------------
@@ -1542,7 +1829,7 @@ public class PlayerLocomotion : NetworkBehaviour
             return;
         }
 
-        Stance stance = networkStance.Value;
+        Stance stance = networkStance.Value.current;
         bool isCrawling = stance == Stance.Prone;
         float stepDistance;
         if (isCrawling) stepDistance = proneStepDistance;
@@ -1669,7 +1956,7 @@ public class PlayerLocomotion : NetworkBehaviour
     /// </summary>
     private float ComputeAllowedLeanOffset(int state)
     {
-        Stance stance = networkStance.Value;
+        Stance stance = networkStance.Value.current;
         float targetOffset = state * MaxLeanOffset(stance, state);
         if (Mathf.Abs(targetOffset) <= 0.01f) return targetOffset;
 
@@ -1712,14 +1999,21 @@ public class PlayerLocomotion : NetworkBehaviour
         float targetOffset = ComputeAllowedLeanOffset(leanState);
         currentLeanOffset = Mathf.MoveTowards(currentLeanOffset, targetOffset, leanSpeed * Time.deltaTime);
 
-        Stance stance = networkStance.Value;
         if (hitbox != null)
         {
-            Vector3 eye = EyeLocal(stance);
-            LeanCameraOffset = hitbox.LeanedEye(stance, eye, currentLeanOffset) - eye;
-            LeanCameraTilt = hitbox.LeanSwingsSideways(stance)
-                ? 0f
-                : (currentLeanOffset / Mathf.Max(0.01f, maxLeanOffset)) * -maxLeanTilt;
+            // Pendant une transition de posture, l'effet du lean glisse d'une posture à l'autre
+            // comme l'œil lui-même : la caméra reste au centre de la tête touchable.
+            GetDisplayedStance(out Stance from, out Stance to, out float progress);
+            Vector3 eyeFrom = EyeLocal(from);
+            Vector3 eyeTo = EyeLocal(to);
+            LeanCameraOffset = Vector3.Lerp(hitbox.LeanedEye(from, eyeFrom, currentLeanOffset) - eyeFrom,
+                                            hitbox.LeanedEye(to, eyeTo, currentLeanOffset) - eyeTo, progress);
+
+            // Roulis de la caméra proportionnel à l'angle du BUSTE, et non plus au décalage : allongé,
+            // le buste roule de 40° pour 15 cm de décalage seulement, et la vue doit le suivre.
+            float bustAngle = Mathf.Lerp(hitbox.LeanAngle(from, eyeFrom, currentLeanOffset),
+                                         hitbox.LeanAngle(to, eyeTo, currentLeanOffset), progress);
+            LeanCameraTilt = -(bustAngle / Mathf.Max(1f, maxLeanAngle)) * maxLeanTilt;
         }
         else
         {
@@ -1733,14 +2027,14 @@ public class PlayerLocomotion : NetworkBehaviour
     /// snapshot d'input et du dt de ce même input. C'est cette valeur qui déplace son hitbox côté
     /// serveur, donc celle qui décide s'il est touché quand il peek.
     ///
-    /// Ce décalage est en retard d'environ un RTT sur ce que le tireur voit à l'écran : c'est
-    /// pourquoi l'historique du rewind (HitboxPose) porte le lean au même titre que la position.
+    /// Il est publié avec la pose (ServerPublishPose) et enregistré dans l'historique du rewind
+    /// (HitboxPose) au même titre que la position : le tireur voit ce lean en retard, comme le
+    /// reste, et le rewind le replace à l'instant que le tireur voyait.
     /// </summary>
     private void ServerAdvanceLean(int state, float dt)
     {
         float targetOffset = ComputeAllowedLeanOffset(state);
         currentLeanOffset = Mathf.MoveTowards(currentLeanOffset, targetOffset, leanSpeed * dt);
-        networkLeanOffset.Value = currentLeanOffset;
     }
 
     private void TriggerLandingKick(float fallSpeed)
@@ -2077,9 +2371,16 @@ public class PlayerLocomotion : NetworkBehaviour
         Physics.SyncTransforms();
     }
 
+    /// <summary>Impose une posture, transition comprise, sans passer par le serveur.</summary>
+    public void TestSetStance(StanceState state)
+    {
+        networkStance.Value = state;
+    }
+
     /// <summary>Appelle Move() avec un input construit de toutes pièces, sans passer par le
-    /// clavier ni par le réseau.</summary>
-    public void TestMove(Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, bool jumpPressed, int leanState, float dt)
+    /// clavier ni par le réseau. Sans session, aucune transition de posture n'est en cours :
+    /// l'instant de simulation n'a donc aucun effet et vaut 0 par défaut.</summary>
+    public void TestMove(Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, bool jumpPressed, int leanState, float dt, double simTime = 0)
     {
         Move(new MovementInputSnapshot
         {
@@ -2092,7 +2393,7 @@ public class PlayerLocomotion : NetworkBehaviour
             firePressedThisFrame = false,
             leanState = leanState,
             jumpPressed = jumpPressed,
-        }, dt);
+        }, dt, simTime);
     }
 #endif
 

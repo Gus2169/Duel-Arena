@@ -52,7 +52,7 @@ public class PlayerCameraLook : MonoBehaviour
     {
         // Non-owner (perso d'un autre joueur affiché localement) : on ne touche à rien ici, ni au
         // curseur ni à la rotation — sa caméra est de toute façon désactivée par PlayerLocomotion,
-        // et son yaw suit désormais networkYaw (voir PlayerLocomotion.UpdateRemoteInterpolation).
+        // et son yaw suit la pose publiée par le serveur (voir PlayerLocomotion.UpdateRemoteInterpolation).
         if (networkObject != null && !networkObject.IsOwner) return;
 
         // Fait une fois, ici plutôt que dans Awake() : au moment d'Awake, IsOwner n'est pas

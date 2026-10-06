@@ -61,6 +61,33 @@ public class WeaponController : NetworkBehaviour
 
     [Tooltip("Décalage (m) appliqué quand 'Debug Fake Shot Origin' est coché. 50 m place l'origine largement au-delà de la tolérance serveur et de la plupart des murs de l'arène.")]
     [SerializeField] private float debugFakeShotOriginOffset = 50f;
+
+    /// <summary>
+    /// VISÉE AUTOMATIQUE DE TEST — Editor uniquement. Chaque tir part vers le centre du torse de
+    /// l'adversaire TEL QUE CETTE MACHINE L'AFFICHE, au centimètre près.
+    ///
+    /// C'est la mesure qui juge le rewind sans biais humain : un joueur anticipe instinctivement
+    /// une cible mobile, ce qui masque l'effet de la compensation (leçon du 2026-09-28). Ici, le
+    /// tireur vise exactement ce qu'il voit ; si le rewind replace la cible à l'instant affiché,
+    /// [DIAG-SERVEUR] doit trouver le rayon au centre du corps PASSÉ.
+    /// </summary>
+    public static bool AutopilotAimAtOpponent;
+
+    private bool TryAimAtOpponent(Vector3 origin, out Vector3 direction)
+    {
+        direction = default;
+        foreach (PlayerLocomotion other in PlayerLocomotion.SpawnedPlayers)
+        {
+            if (other == null || other == locomotion || other.Hitbox == null) continue;
+            // La position du TRANSFORM, pas bounds.center : avec autoSyncTransforms à false, les
+            // bounds d'un collider ne suivent son transform qu'au prochain pas de physique. La
+            // visée tombait alors 5 à 6 cm à côté, ce qui se lisait comme une erreur du rewind.
+            Vector3 target = other.Hitbox.TorsoCollider.transform.position;
+            direction = (target - origin).normalized;
+            return direction.sqrMagnitude > 0.5f;
+        }
+        return false;
+    }
 #endif
 
     private PlayerInputReader input;
@@ -102,7 +129,10 @@ public class WeaponController : NetworkBehaviour
 
     private static void DiagReportIfDue()
     {
-        if (Time.time < diagNextReportAt) return;
+        // Static, et le rechargement de domaine est désactivé à l'entrée en Play Mode : une
+        // échéance héritée d'une session précédente, où Time.time était plus grand, faisait taire
+        // ce rapport pendant des minutes. Une échéance à plus de 3 s dans le futur est périmée.
+        if (Time.time < diagNextReportAt && diagNextReportAt - Time.time <= 3f) return;
         diagNextReportAt = Time.time + 3f;
 
         int total = diagAccepted + diagRejectedRate + diagRejectedOrigin + diagRejectedPhase;
@@ -202,6 +232,9 @@ public class WeaponController : NetworkBehaviour
         // léger en crouch, marqué debout) : l'ampleur suit exactement GetRecoilMultiplier().
         Vector3 origin = aimCamera.transform.position;
         Vector3 direction = aimCamera.transform.forward;
+#if UNITY_EDITOR
+        if (AutopilotAimAtOpponent && TryAimAtOpponent(origin, out Vector3 autoDirection)) direction = autoDirection;
+#endif
 
         // Raycast LOCAL : ne sert qu'au feedback visuel instantané du tireur (tracer/impact), pas
         // aux dégâts ni à ce qui est envoyé au serveur — voir FireServerRpc. Il utilise la MÊME
@@ -228,9 +261,10 @@ public class WeaponController : NetworkBehaviour
             // donc bien à l'écran que le tir part d'où il devrait, alors que le serveur le rejette.
             if (debugFakeShotOrigin) sentOrigin = origin + direction * debugFakeShotOriginOffset;
 #endif
-            // Le tireur annonce de combien il estime que sa vue est en retard. Le serveur clampe
-            // cette valeur : c'est une suggestion, pas une donnée de confiance.
-            FireServerRpc(sentOrigin, direction, locomotion.EstimatedRewindSeconds);
+            // Le tireur annonce l'instant, sur l'horloge du serveur, de ce qu'il voit des autres.
+            // Le serveur borne le recul qui en découle : c'est une suggestion, pas une donnée de
+            // confiance.
+            FireServerRpc(sentOrigin, direction, locomotion.ViewServerTime);
         }
         else if (hitSomething)
         {
@@ -279,18 +313,21 @@ public class WeaponController : NetworkBehaviour
     /// près (RTT/2 + délai d'interpolation) × vitesse de la cible : à 150 ms de ping et 8 m/s, plus
     /// d'un mètre, soit largement la largeur d'un joueur.
     ///
-    /// `rewindSeconds` est une SUGGESTION du client (voir PlayerLocomotion.EstimatedRewindSeconds),
-    /// jamais une donnée de confiance : le serveur la clampe. Sans ce clamp, un client modifié
-    /// annoncerait un ping énorme pour rewind ses adversaires très loin en arrière et les toucher
-    /// là où ils n'ont plus été depuis longtemps. C'est le seul paramètre "libre" accepté par cette
-    /// RPC — tout le reste (hit, dégâts, position des cibles) est recalculé ici.
+    /// `viewServerTime` est l'instant, sur l'horloge du serveur, de ce que le tireur avait à
+    /// l'écran (PlayerLocomotion.ViewServerTime) : ses adversaires y sont interpolés à partir de
+    /// poses datées par le serveur lui-même, donc l'instant est EXACT — plus besoin d'estimer la
+    /// latence (2026-10-06). C'est malgré tout une SUGGESTION du client, jamais une donnée de
+    /// confiance : le recul qui en découle est borné. Sans cette borne, un client modifié
+    /// annoncerait un instant très ancien pour toucher ses adversaires là où ils n'ont plus été
+    /// depuis longtemps. C'est le seul paramètre "libre" accepté par cette RPC — tout le reste
+    /// (hit, dégâts, position des cibles) est recalculé ici.
     ///
     /// Le rewind ne déplace QUE les hitbox, jamais les joueurs eux-mêmes : la simulation en cours
     /// continue sur les vraies positions, et tout se déroule de façon synchrone dans ce handler,
     /// donc invisible pour le reste du jeu.
     /// </summary>
     [ServerRpc]
-    private void FireServerRpc(Vector3 origin, Vector3 direction, float rewindSeconds)
+    private void FireServerRpc(Vector3 origin, Vector3 direction, double viewServerTime)
     {
         // Garde-fou anti-triche : cooldown/HandleFireInput ne sont que des CONVENTIONS côté
         // client — rien n'empêche un client modifié d'appeler cette RPC aussi vite qu'il veut.
@@ -371,7 +408,9 @@ public class WeaponController : NetworkBehaviour
         // Garde-fou anti-triche : la suggestion du client est bornée. maxRewindSeconds doit couvrir
         // un ping élevé légitime sans permettre de toucher quelqu'un là où il était il y a une
         // éternité — au-delà, c'est la VICTIME qui subirait l'injustice, en mourant à couvert.
-        float clampedRewind = Mathf.Clamp(rewindSeconds, 0f, maxRewindSeconds);
+        // Un instant dans le futur est ramené au présent.
+        double serverNow = NetworkManager.ServerTime.Time;
+        float clampedRewind = Mathf.Clamp((float)(serverNow - viewServerTime), 0f, maxRewindSeconds);
 
 #if UNITY_EDITOR
         diagAccepted++;
@@ -379,7 +418,7 @@ public class WeaponController : NetworkBehaviour
         if (clampedRewind > diagRewindMax) diagRewindMax = clampedRewind;
         DiagReportIfDue();
 #endif
-        float targetTime = Time.time - clampedRewind;
+        double targetTime = serverNow - clampedRewind;
 
         var rewoundPlayers = new List<PlayerLocomotion>();
 #if UNITY_EDITOR

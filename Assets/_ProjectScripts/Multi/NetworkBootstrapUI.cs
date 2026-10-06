@@ -34,6 +34,45 @@ public class NetworkBootstrapUI : MonoBehaviour
         if (bootstrapCamera != null) bootstrapListener = bootstrapCamera.GetComponent<AudioListener>();
     }
 
+#if UNITY_EDITOR
+    // ------------------------------------------------------------------
+    // BANC DE TEST À DEUX INSTANCES — Editor uniquement, jamais embarqué en build.
+    //
+    // L'instance virtuelle de Multiplayer Play Mode ne se pilote pas depuis l'Editor principal :
+    // sans ces deux interrupteurs, observer le côté CLIENT exige quelqu'un pour cliquer « Client »
+    // et pour bouger. Ils sont lus dans les EditorPrefs, que les deux processus partagent (ils
+    // vivent dans le registre de l'utilisateur, pas dans le projet) : l'Editor principal les
+    // allume, le clone les lit au démarrage. Éteints par défaut : le flux normal ne change pas.
+    // ------------------------------------------------------------------
+    public const string CloneAutoClientPref = "DuelArena.Test.CloneAutoClient";
+    public const string CloneAutopilotPref = "DuelArena.Test.CloneAutopilot";
+    public const string CloneAutofirePref = "DuelArena.Test.CloneAutofire";
+
+    private void Start()
+    {
+        if (!IsVirtualPlayerClone()) return;
+
+        // Affecté dans les DEUX sens : le rechargement de domaine est désactivé à l'entrée en Play
+        // Mode dans ce projet, donc un static allumé lors d'une session y resterait à la suivante.
+        PlayerInputReader.AutopilotStrafe = UnityEditor.EditorPrefs.GetBool(CloneAutopilotPref, false);
+        bool autofire = UnityEditor.EditorPrefs.GetBool(CloneAutofirePref, false);
+        PlayerInputReader.AutopilotFire = autofire;
+        WeaponController.AutopilotAimAtOpponent = autofire;
+
+        NetworkManager nm = NetworkManager.Singleton;
+        if (UnityEditor.EditorPrefs.GetBool(CloneAutoClientPref, false) && nm != null && !nm.IsClient && !nm.IsServer)
+        {
+            // Le Host n'existe peut-être pas encore : UnityTransport réessaie de se connecter
+            // pendant une minute, ce qui laisse le temps de le démarrer dans l'Editor principal.
+            Debug.Log("[Test] Instance virtuelle : connexion automatique en client.");
+            nm.StartClient();
+        }
+    }
+
+    private static bool IsVirtualPlayerClone()
+        => System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "--virtual-project-clone") >= 0;
+#endif
+
     private void Update()
     {
         // Sondé dans Update plutôt que sur un callback de connexion : StartHost/StartServer/

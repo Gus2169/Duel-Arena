@@ -100,16 +100,25 @@ public class PlayerHitbox : MonoBehaviour
         return collider;
     }
 
-    /// <summary>
-    /// Met la surface touchable en accord avec la posture, l'œil et le lean. Appelée à chaque frame
-    /// par PlayerLocomotion sur TOUTES les instances, et par le rewind avec une pose passée.
-    /// </summary>
+    /// <summary>Surface touchable d'une posture établie, sans transition en cours.</summary>
     public void Apply(PlayerLocomotion.Stance stance, Vector3 eye, float lateralLeanOffset)
     {
+        ApplyBlended(stance, eye, stance, eye, 1f, lateralLeanOffset);
+    }
+
+    /// <summary>
+    /// Met la surface touchable en accord avec la posture, l'œil et le lean — y compris PENDANT
+    /// une transition de posture, `t` allant de 0 (posture de départ) à 1 (posture d'arrivée).
+    /// Appelée à chaque frame par PlayerLocomotion sur TOUTES les instances, et par le rewind avec
+    /// une pose passée.
+    /// </summary>
+    public void ApplyBlended(PlayerLocomotion.Stance from, Vector3 eyeFrom, PlayerLocomotion.Stance to, Vector3 eyeTo,
+                             float t, float lateralLeanOffset)
+    {
         EnsureZones();
-        BodyLayout.Compute(Body(stance), eye, lateralLeanOffset,
-                           out ZoneShape headShape, out ZoneShape torsoShape,
-                           out ZoneShape legsShape, out ZoneShape secondLegShape);
+        BodyLayout.ComputeBlended(Body(from), eyeFrom, Body(to), eyeTo, t, lateralLeanOffset,
+                                  out ZoneShape headShape, out ZoneShape torsoShape,
+                                  out ZoneShape legsShape, out ZoneShape secondLegShape);
 
         head.transform.localPosition = headShape.a;
         head.transform.localRotation = Quaternion.identity;
@@ -174,7 +183,9 @@ public class PlayerHitbox : MonoBehaviour
     public Vector3 LeanedEye(PlayerLocomotion.Stance stance, Vector3 eye, float lateralLeanOffset)
         => BodyLayout.LeanedEye(Body(stance), eye, lateralLeanOffset);
 
-    public bool LeanSwingsSideways(PlayerLocomotion.Stance stance) => Body(stance).leanSwingsSideways;
+    /// <summary>Angle signé (degrés) dont le buste tourne pour ce décalage de lean.</summary>
+    public float LeanAngle(PlayerLocomotion.Stance stance, Vector3 eye, float lateralLeanOffset)
+        => BodyLayout.LeanAngle(Body(stance), eye, lateralLeanOffset);
 
 #if UNITY_EDITOR
     /// <summary>Les zones n'existent qu'en jeu : dessine celles de la posture debout, sans lean,

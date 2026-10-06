@@ -8,7 +8,7 @@ using UnityEngine;
 /// Depuis le hit registration serveur (voir WeaponController.FireServerRpc), les dégâts ne sont
 /// décidés QUE par le serveur — plus question qu'un client applique directement ses propres dégâts
 /// sur un objet réseauté. Current devient donc une NetworkVariable écrite uniquement par le serveur,
-/// exactement le même principe que networkPosition dans PlayerLocomotion : tout le monde voit la
+/// exactement le même principe que la pose publiée par PlayerLocomotion : tout le monde voit la
 /// même vie, et ApplyDamage() ne fait plus rien si un client l'appelle sur un objet réseauté (garde
 /// IsServer ci-dessous — filet de sécurité, puisqu'en pratique seul WeaponController.FireServerRpc
 /// l'appelle désormais).

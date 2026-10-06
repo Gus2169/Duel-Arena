@@ -141,6 +141,97 @@ public class MoveDeterminismTests
         AssertBitIdentical(premierPassage, rejeu);
     }
 
+    /// <summary>
+    /// Se relever d'un plongeon au sol : la vitesse remonte AVEC la transition de posture, au lieu
+    /// de revenir d'un coup à la marche pendant que le corps est encore à genoux (2026-10-06). Et
+    /// un rejeu des mêmes inputs, aux mêmes instants de simulation, retombe exactement au même
+    /// endroit : l'instant de simulation fait partie de ce que le rejeu doit reproduire.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator SeRelever_LaVitesseRemonteAvecLaTransition_EtLeRejeuLaReproduit()
+    {
+        yield return null;
+        Settle();
+
+        const double changement = 10.0;
+        player.TestSetStance(new PlayerLocomotion.StanceState
+        {
+            current = PlayerLocomotion.Stance.Standing,
+            previous = PlayerLocomotion.Stance.Prone,
+            changedAt = changement,
+        });
+
+        PlayerLocomotion.SimulationState depart = player.TestCaptureState();
+
+        float VitesseApres(int pas)
+        {
+            for (int i = 0; i < pas; i++)
+                player.TestMove(Vector2.up, 0f, false, false, false, false, 0, Dt, changement + i * Dt);
+            Vector3 v = player.TestCaptureState().currentVelocity;
+            return new Vector2(v.x, v.z).magnitude;
+        }
+
+        float auDebut = VitesseApres(6);      // 0,1 s après le changement
+        player.TestRestoreState(depart);
+        float aLaFin = VitesseApres(72);      // 1,2 s : la transition (0,9 s) est finie
+        PlayerLocomotion.SimulationState premierPassage = player.TestCaptureState();
+
+        Assert.Less(auDebut, aLaFin * 0.4f,
+            $"0,1 s après avoir quitté l'allongé, on va déjà à {auDebut:F2} m/s sur {aLaFin:F2} : la vitesse n'attend pas le corps.");
+        Assert.Greater(aLaFin, 3f, "Garde anti-vacuité : une fois relevé, on doit marcher.");
+
+        player.TestRestoreState(depart);
+        VitesseApres(72);
+        AssertBitIdentical(premierPassage, player.TestCaptureState());
+    }
+
+    /// <summary>
+    /// Dans les trois postures, les pieds du joueur — sa racine, d'où se mesurent l'œil, les zones
+    /// touchables et le modèle — reposent SUR le sol.
+    ///
+    /// Le robot flottait de 8,6 cm debout et de 18,8 cm allongé (mesuré le 2026-10-06) : la marge
+    /// de peau du CharacterController, plus, allongé, une capsule plus courte que son diamètre qui
+    /// dépassait sous les pieds. Rien ne le signalait : le modèle, la caméra et la surface
+    /// touchable flottaient ensemble, donc restaient d'accord entre eux.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator DansChaquePosture_LesPiedsReposentSurLeSol()
+    {
+        yield return null;
+
+        // Les trois postures sont mesurées avant de conclure : un échec doit dire lesquelles sont
+        // fausses, pas seulement la première.
+        //
+        // Chaque posture repart posée juste au-dessus du sol, comme à l'apparition. Après une chute
+        // rapide, le CharacterController peut s'arrêter DANS sa marge de peau au lieu de s'y poser :
+        // la première version faisait tomber le joueur de 1,5 m, et la position debout passait
+        // pour juste même avec l'ancien placement.
+        string ecarts = "";
+        Settle();
+        PlayerLocomotion.SimulationState pose = player.TestCaptureState();
+        pose.position = new Vector3(0f, 0.3f, 0f);
+        pose.verticalVelocity = 0f;
+        pose.currentVelocity = Vector3.zero;
+
+        foreach (PlayerLocomotion.Stance stance in System.Enum.GetValues(typeof(PlayerLocomotion.Stance)))
+        {
+            player.TestSetStance(new PlayerLocomotion.StanceState
+            {
+                current = stance,
+                previous = stance,
+                changedAt = double.NegativeInfinity,
+            });
+            player.TestRestoreState(pose);
+            Settle();
+
+            // Le sol de test a sa face supérieure à y = 0.
+            float y = player.TestCaptureState().position.y;
+            Debug.Log($"[PIEDS] {stance} : {y * 100f:F2} cm du sol");
+            if (Mathf.Abs(y) > 0.01f) ecarts += $" {stance} à {y * 100f:F1} cm ;";
+        }
+        Assert.IsEmpty(ecarts, "Pieds hors du sol :" + ecarts);
+    }
+
     [UnityTest]
     public IEnumerator TroisRejeuxSuccessifs_NeDerivePasDuTout()
     {

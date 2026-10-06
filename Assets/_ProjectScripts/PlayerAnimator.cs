@@ -35,10 +35,12 @@ public class PlayerAnimator : MonoBehaviour
     [SerializeField] private float vaultClipLength = 0.70f;
 
     [Header("Lean et posture allongée (affichage)")]
-    [Tooltip("Recul du modèle en position allongée, en mètres (Z local). Sa tête tombe ainsi à l'intérieur du CharacterController, là où la caméra et la tête touchable la placent (voir BodyLayout.DefaultProne). Doit rester accordé à ces deux valeurs.")]
+    [Tooltip("Recul du modèle en position allongée, en mètres (Z local). Sa tête tombe ainsi à l'intérieur du CharacterController, là où la caméra et la tête touchable la placent (voir BodyLayout.DefaultProne). Doit rester accordé à ces deux valeurs. Le modèle y glisse au rythme de la transition de posture.")]
     [SerializeField] private float proneModelOffset = -0.30f;
-    [Tooltip("Vitesse (m/s) à laquelle le modèle glisse vers ce décalage. Purement visuel : la surface touchable, elle, change de posture d'un coup.")]
-    [SerializeField] private float modelOffsetSpeed = 1.5f;
+
+    [Header("Transitions de posture (affichage)")]
+    [Tooltip("Durée de la partie UTILE des clips genou ↔ allongé, en secondes — pas leur durée totale (1,97 s). Mesurée le 2026-10-06 : le corps descend de 0,25 s à 1,80 s du clip, et remonte de 0,35 s à 1,90 s. Sert à lire le geste à la vitesse qui le fait tenir dans la durée de la transition.")]
+    [SerializeField] private float proneTransitionClipLength = 1.55f;
 
     [Header("Cadence de lecture")]
     [Tooltip("Plancher du multiplicateur de vitesse de lecture. Ne descend pas à 0 : il s'applique aussi à l'animation d'attente, qui doit continuer de respirer à l'arrêt.")]
@@ -59,6 +61,10 @@ public class PlayerAnimator : MonoBehaviour
     private static readonly int StanceFId = Animator.StringToHash("StanceF");
     private static readonly int AimingId = Animator.StringToHash("Aiming");
     private static readonly int FireId = Animator.StringToHash("Fire");
+    private static readonly int PostureSpeedId = Animator.StringToHash("PostureSpeed");
+
+    /// <summary>Couche du haut du corps (torse, bras, tête au-dessus des hanches).</summary>
+    private const int UpperBodyLayer = 1;
 
     private PlayerLocomotion locomotion;
     private WeaponController weapon;
@@ -112,11 +118,13 @@ public class PlayerAnimator : MonoBehaviour
 
         Vector3 local = transform.InverseTransformDirection(delta / dt);
 
-        // NetworkedStance et non CurrentStance : cette dernière n'est mise à jour que dans Move(),
-        // qu'un spectateur n'appelle jamais. Elle y resterait bloquée sur Standing, et l'adversaire
-        // n'aurait jamais d'animation accroupie ni allongée. Symptôme vécu le 2026-09-29.
-        PlayerLocomotion.Stance stance = locomotion.NetworkedStance;
-        float reference = locomotion.NominalSpeed(stance);
+        // La posture AFFICHÉE, transition comprise, et non CurrentStance : cette dernière n'est
+        // mise à jour que dans Move(), qu'un spectateur n'appelle jamais. Elle y resterait bloquée
+        // sur Standing, et l'adversaire n'aurait jamais d'animation accroupie ni allongée.
+        // Symptôme vécu le 2026-09-29. Chez un spectateur, la transition est en plus calée sur
+        // l'instant interpolé : l'adversaire se couche au moment où on le voit arriver là.
+        locomotion.GetDisplayedStance(out PlayerLocomotion.Stance from, out PlayerLocomotion.Stance stance, out float progress);
+        float reference = Mathf.Lerp(locomotion.NominalSpeed(from), locomotion.NominalSpeed(stance), progress);
         Vector2 target = new Vector2(local.x, local.z) / Mathf.Max(0.01f, reference);
 
         // Borne volontaire. Une resynchronisation de réconciliation TÉLÉPORTE le propriétaire de
@@ -131,11 +139,7 @@ public class PlayerAnimator : MonoBehaviour
         animator.SetFloat(MoveYId, smoothedMove.y);
 
         animator.SetInteger(StanceId, (int)stance);
-
-        // Miroir FLOTTANT de la posture. Un arbre de melange n'accepte qu'un parametre float,
-        // alors que les transitions de la couche de deplacement ont besoin d'un entier pour
-        // comparer exactement. Duplication imposee par Unity, pas un choix.
-        animator.SetFloat(StanceFId, (int)stance);
+        ApplyPostureTransition(from, stance, progress);
 
         // Un arbre de mélange NE modifie PAS la cadence de ses clips. À mi-vitesse il mélange
         // l'attente et la course, mais la course joue à 100 % de sa cadence pendant que le corps
@@ -177,25 +181,157 @@ public class PlayerAnimator : MonoBehaviour
         // Move(), qu'un spectateur n'appelle jamais, donc l'adversaire n'épaulerait jamais.
         animator.SetBool(AimingId, locomotion.DisplayAiming);
 
-        ApplyProneModelOffset(stance, dt);
-        ApplyVisualLean(stance);
+        ApplyProneModelOffset(from, stance, progress);
+        ApplyVisualLean(from, stance, progress);
+
+#if UNITY_EDITOR
+        DiagRecord(delta.magnitude, locomotion.DisplayAirborne);
+#endif
+    }
+
+#if UNITY_EDITOR
+    // ------------------------------------------------------------------
+    // Diagnostic d'animation — Editor uniquement, jamais embarqué en build.
+    //
+    // Journalise [DIAG-ANIM] toutes les 3 s pour les joueurs que CETTE instance ne possède pas,
+    // c'est-à-dire ceux qu'elle voit bouger. Sert à distinguer, chiffres à l'appui, les causes
+    // possibles d'une animation saccadée chez un client : un état d'Animator relancé en boucle
+    // (entrées, relances), un drapeau réseau qui clignote (bascules « en l'air »), ou une
+    // position qui avance par à-coups (frames immobiles alors que le personnage court).
+    // Lisible côté client dans Library/VP/<clone>/Logs/Editor.log.
+    // ------------------------------------------------------------------
+    private struct DiagLayer
+    {
+        public int hash;
+        public float normalizedTime;
+        public int entries;
+        public int restarts;
+    }
+
+    private DiagLayer diagBase;
+    private DiagLayer diagUpper;
+    private int diagFrames;
+    private int diagAirFlips;
+    private int diagStalls;
+    private bool diagAir;
+    private float diagMaxStep;
+    private float diagWindowStart = -1f;
+
+    private void DiagRecord(float step, bool airborne)
+    {
+        if (locomotion.IsOwner) return;
+
+        if (diagWindowStart < 0f) diagWindowStart = Time.unscaledTime;
+        diagFrames++;
+        DiagLayerRecord(ref diagBase, 0);
+        if (animator.layerCount > 1) DiagLayerRecord(ref diagUpper, 1);
+
+        if (airborne != diagAir)
+        {
+            diagAirFlips++;
+            diagAir = airborne;
+        }
+
+        // Une frame IMMOBILE alors que le personnage est animé en pleine course : sa position
+        // avance par à-coups, ce que l'œil lit comme une saccade.
+        if (step < 1e-5f && smoothedMove.magnitude > 0.3f) diagStalls++;
+        if (step > diagMaxStep) diagMaxStep = step;
+
+        float elapsed = Time.unscaledTime - diagWindowStart;
+        if (elapsed < 3f) return;
+
+        Debug.Log($"[DIAG-ANIM] {name} fps={diagFrames / elapsed:F0} " +
+                  $"base_entrees={diagBase.entries} base_relances={diagBase.restarts} " +
+                  $"buste_entrees={diagUpper.entries} buste_relances={diagUpper.restarts} " +
+                  $"bascules_air={diagAirFlips} frames_immobiles={diagStalls}/{diagFrames} " +
+                  $"pas_max={diagMaxStep * 100f:F1}cm affamees={locomotion.DiagStarvedFrames} " +
+                  $"reserve={(locomotion.DiagReserveFrames > 0 ? locomotion.DiagReserveSum / locomotion.DiagReserveFrames * 1000.0 : 0.0):F0}ms " +
+                  $"posture={locomotion.NetworkedStance}");
+        locomotion.DiagStarvedFrames = 0;
+        locomotion.DiagReserveSum = 0.0;
+        locomotion.DiagReserveFrames = 0;
+
+        diagWindowStart = Time.unscaledTime;
+        diagFrames = 0;
+        diagAirFlips = 0;
+        diagStalls = 0;
+        diagMaxStep = 0f;
+        diagBase.entries = diagBase.restarts = 0;
+        diagUpper.entries = diagUpper.restarts = 0;
+    }
+
+    /// <summary>Compte les entrées dans un nouvel état ET les relances d'un même état : une
+    /// relance ramène son temps normalisé en arrière, alors qu'une boucle normale le fait
+    /// croître sans fin (3,2 → 3,25).</summary>
+    private void DiagLayerRecord(ref DiagLayer layer, int index)
+    {
+        AnimatorStateInfo info = animator.GetCurrentAnimatorStateInfo(index);
+        if (info.fullPathHash != layer.hash) layer.entries++;
+        else if (info.normalizedTime < layer.normalizedTime - 0.02f) layer.restarts++;
+        layer.hash = info.fullPathHash;
+        layer.normalizedTime = info.normalizedTime;
+    }
+#endif
+
+    /// <summary>
+    /// Transition de posture, VUE. La couche de déplacement passe d'une posture à l'autre par ses
+    /// propres transitions, déclenchées par le paramètre Stance ; ce qui se règle ici, c'est le
+    /// reste.
+    ///
+    /// Vers ou depuis la position allongée, le corps entier joue un clip de transition (genou à
+    /// terre ↔ allongé). Le haut du corps doit alors s'effacer : sa couche garderait sinon le buste
+    /// droit, arme à l'épaule, au-dessus de jambes en train de se coucher. Il s'efface au début et
+    /// revient à la fin, sur la posture d'arrivée. Entre debout et accroupi, rien de tel : le buste
+    /// reste armé et glisse simplement d'une posture à l'autre.
+    /// </summary>
+    private void ApplyPostureTransition(PlayerLocomotion.Stance from, PlayerLocomotion.Stance to, float progress)
+    {
+        bool viaGround = from != to && (from == PlayerLocomotion.Stance.Prone || to == PlayerLocomotion.Stance.Prone);
+
+        float upperWeight = 1f;
+        float stanceF;
+        if (viaGround)
+        {
+            // S'efface sur les premiers 10 % de la transition, revient sur les 20 derniers.
+            upperWeight = 1f - Mathf.Clamp01(Mathf.Min(progress / 0.1f, (1f - progress) / 0.2f));
+            stanceF = progress < 0.5f ? (int)from : (int)to;
+        }
+        else
+        {
+            stanceF = Mathf.Lerp((int)from, (int)to, progress);
+        }
+
+        if (animator.layerCount > UpperBodyLayer) animator.SetLayerWeight(UpperBodyLayer, upperWeight);
+
+        // Miroir FLOTTANT de la posture, pour les arbres du haut du corps. Un arbre de mélange
+        // n'accepte qu'un paramètre float, alors que les transitions de la couche de déplacement
+        // ont besoin d'un entier pour comparer exactement. Duplication imposée par Unity.
+        animator.SetFloat(StanceFId, stanceF);
+
+        // Le clip de transition est lu à la vitesse qui fait tenir sa partie UTILE dans la durée
+        // de la transition — même principe que le vault. Debout ↔ allongé ajoute un genou posé
+        // en fondu (0,25 s) avant ou après le même clip.
+        float duree = Mathf.Max(0.05f, locomotion.CrouchProneTransitionDuration);
+        animator.SetFloat(PostureSpeedId, proneTransitionClipLength / duree);
     }
 
     /// <summary>Allongé, le modèle recule pour que sa tête soit là où sont la caméra et la tête
-    /// touchable, à l'intérieur du CharacterController. Glissement en douceur : c'est de
-    /// l'affichage, la surface touchable change de posture d'un coup.</summary>
-    private void ApplyProneModelOffset(PlayerLocomotion.Stance stance, float dt)
+    /// touchable, à l'intérieur du CharacterController. Il y glisse au rythme de la transition de
+    /// posture, comme la surface touchable.</summary>
+    private void ApplyProneModelOffset(PlayerLocomotion.Stance from, PlayerLocomotion.Stance to, float progress)
     {
         Transform model = animator.transform;
-        float target = stance == PlayerLocomotion.Stance.Prone ? proneModelOffset : 0f;
         Vector3 p = model.localPosition;
-        p.z = Mathf.MoveTowards(p.z, target, modelOffsetSpeed * dt);
+        p.z = Mathf.Lerp(ModelOffset(from), ModelOffset(to), progress);
         model.localPosition = p;
     }
 
+    private float ModelOffset(PlayerLocomotion.Stance stance)
+        => stance == PlayerLocomotion.Stance.Prone ? proneModelOffset : 0f;
+
     /// <summary>
-    /// Lean façon Rainbow Six, VU : le buste pivote autour de la base de la colonne, les jambes ne
-    /// bougent pas.
+    /// Lean façon Rainbow Six, VU : le buste tourne autour de la base de la colonne — il s'incline
+    /// debout et accroupi, il roule sur lui-même allongé — et les jambes ne bougent pas.
     ///
     /// La rotation vient de BodyLayout, avec le même décalage réseauté que la surface touchable :
     /// l'animation et le hitbox lisent la même source, aucun ne lit l'autre. On touche ce qu'on
@@ -206,7 +342,7 @@ public class PlayerAnimator : MonoBehaviour
     /// l'Animator en AlwaysAnimate : s'il cessait d'évaluer (modèle hors champ), la rotation
     /// s'accumulerait frame après frame et le buste tournerait sur lui-même.
     /// </summary>
-    private void ApplyVisualLean(PlayerLocomotion.Stance stance)
+    private void ApplyVisualLean(PlayerLocomotion.Stance from, PlayerLocomotion.Stance to, float progress)
     {
         PlayerHitbox hitbox = locomotion.Hitbox;
         if (hitbox == null) return;
@@ -218,8 +354,10 @@ public class PlayerAnimator : MonoBehaviour
         if (spine == null) return;
 
         // Rotation exprimée dans l'espace du JOUEUR : on la convertit dans le repère monde, puis
-        // on l'applique à l'os autour de sa propre position (la base de la colonne).
-        Quaternion local = hitbox.LeanRotation(stance, locomotion.EyeLocal(stance), lean);
+        // on l'applique à l'os autour de sa propre position (la base de la colonne). Pendant une
+        // transition de posture, elle glisse d'une posture à l'autre, comme la surface touchable.
+        Quaternion local = Quaternion.Slerp(hitbox.LeanRotation(from, locomotion.EyeLocal(from), lean),
+                                            hitbox.LeanRotation(to, locomotion.EyeLocal(to), lean), progress);
         Quaternion world = transform.rotation * local * Quaternion.Inverse(transform.rotation);
         spine.rotation = world * spine.rotation;
     }

@@ -3,7 +3,7 @@ using UnityEngine;
 
 /// <summary>
 /// Points d'apparition des joueurs, posés dans la scène. Lu UNIQUEMENT par le serveur : c'est lui
-/// qui décide où chaque joueur apparaît, puis publie le résultat via networkPosition/networkYaw
+/// qui décide où chaque joueur apparaît, puis publie le résultat dans sa pose réseau
 /// (voir PlayerLocomotion.ServerMoveToSpawnPoint). Aucun client ne choisit son point de spawn —
 /// même principe que pour les dégâts.
 ///

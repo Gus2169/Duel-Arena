@@ -41,10 +41,14 @@ public class AnimatorStateTests
     /// transition n'étant pas interruptible par défaut. Or en PlayMode les frames défilent bien
     /// plus vite qu'à 60 Hz : une première version attendait 40 frames, ce qui ne faisait même
     /// pas 0,35 s, et les trois tests échouaient dès leur première assertion.</summary>
-    private static IEnumerator Settle()
+    private static IEnumerator Settle(float seconds = 0.6f)
     {
-        yield return new WaitForSeconds(0.6f);
+        yield return new WaitForSeconds(seconds);
     }
+
+    /// <summary>Se coucher ou se relever passe par un clip de transition d'environ une seconde
+    /// (2026-10-06) : il faut l'attendre avant de regarder la pose d'arrivée.</summary>
+    private const float ProneSettle = 1.4f;
 
     private void AssertState(string attendu)
     {
@@ -137,8 +141,53 @@ public class AnimatorStateTests
 
         animator.SetInteger("Stance", 2);
         animator.SetFloat("StanceF", 2f);
-        yield return Settle();
+        yield return Settle(ProneSettle);
         StringAssert.Contains("Prone", ClipDominant(1));
+    }
+
+    /// <summary>
+    /// Se coucher passe par le clip genou → allongé, puis finit dans la pose allongée ; se relever
+    /// passe par le clip inverse, puis finit debout (2026-10-06).
+    ///
+    /// Avant, un simple fondu de 0,2 s faisait basculer le corps d'une posture à l'autre : « trop
+    /// instantané ». Ce test garde le passage par le clip — un fondu direct remis par erreur
+    /// sauterait l'état de transition et le ferait échouer — ET l'arrivée, pour qu'un état de
+    /// transition qui ne sortirait jamais ne passe pas pour un succès.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator SeCoucherEtSeRelever_PassentParLeurClipDeTransition()
+    {
+        yield return Setup();
+        animator.SetFloat("SpeedMult", 1f);
+        animator.SetFloat("PostureSpeed", 2.4f);
+        yield return Settle();
+
+        animator.SetInteger("Stance", 2);
+        yield return AssertPassePar("GenouVersAllonge", ProneSettle);
+        AssertState("Prone");
+
+        animator.SetInteger("Stance", 0);
+        yield return AssertPassePar("AllongeVersGenou", ProneSettle);
+        AssertState("Debout");
+    }
+
+    /// <summary>Attend `duree` secondes en exigeant que le graphe traverse l'état demandé, comme
+    /// état courant ou comme destination d'une transition.</summary>
+    private IEnumerator AssertPassePar(string etat, float duree)
+    {
+        bool vu = false;
+        float ecoule = 0f;
+        while (ecoule < duree)
+        {
+            if (animator.GetCurrentAnimatorStateInfo(0).IsName(etat)
+                || (animator.IsInTransition(0) && animator.GetNextAnimatorStateInfo(0).IsName(etat)))
+            {
+                vu = true;
+            }
+            ecoule += Time.deltaTime;
+            yield return null;
+        }
+        Assert.IsTrue(vu, "Le graphe n'est jamais passé par « " + etat + " » : la transition de posture a été sautée.");
     }
 
     /// <summary>
@@ -159,7 +208,7 @@ public class AnimatorStateTests
         animator.SetFloat("StanceF", 2f);
         animator.SetFloat("MoveX", 0f);
         animator.SetFloat("MoveY", 0f);
-        yield return Settle();
+        yield return Settle(ProneSettle);
         StringAssert.Contains("Prone Idle", ClipDominant(0), "Immobile allongé, les jambes ne doivent pas ramper.");
 
         // Garde anti-vacuité : la reptation existe bien et se déclenche en bougeant. Sans elle, un

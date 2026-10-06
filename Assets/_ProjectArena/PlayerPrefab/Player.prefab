@@ -278,7 +278,9 @@ MonoBehaviour:
     cameraForward: 0.25
     cameraSide: -0.15
     moveSpeedMultiplier: 0.25
-  stanceTransitionSpeed: 4
+  standCrouchTransition: 0.3
+  crouchProneTransition: 0.65
+  standProneTransition: 0.9
   maxLeanOffset: 0.35
   maxLeanAngle: 40
   maxLeanTilt: 10
@@ -353,7 +355,7 @@ MonoBehaviour:
   debugFloodMultiplier: 10
   positionReconciliationThreshold: 0.05
   yawReconciliationThreshold: 1
-  interpolationDelay: 0.1
+  interpolationDelay: 0.05
   hitboxHistoryDuration: 1
 --- !u!114 &6943044066884809316
 MonoBehaviour:
@@ -549,7 +551,7 @@ MonoBehaviour:
   blendSmoothing: 12
   vaultClipLength: 1.17
   proneModelOffset: -0.3
-  modelOffsetSpeed: 1.5
+  proneTransitionClipLength: 1.55
   minPlaybackSpeed: 0.75
   standingPlaybackScale: 0.85
   crouchingPlaybackScale: 1
@@ -847,7 +849,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerHitbox
   standing:
     leanPivot: {x: 0, y: 1.08, z: -0.02}
-    leanSwingsSideways: 0
     legsA: {x: 0, y: 0.2, z: 0}
     legsB: {x: 0, y: 0.8, z: 0}
     legsRadius: 0.2
@@ -860,7 +861,6 @@ MonoBehaviour:
     headRadius: 0.14
   crouching:
     leanPivot: {x: 0, y: 0.56, z: -0.1}
-    leanSwingsSideways: 0
     legsA: {x: 0, y: 0.22, z: 0.08}
     legsB: {x: 0, y: 0.3, z: 0.08}
     legsRadius: 0.28
@@ -873,7 +873,6 @@ MonoBehaviour:
     headRadius: 0.14
   prone:
     leanPivot: {x: -0.03, y: 0.17, z: -0.28}
-    leanSwingsSideways: 1
     legsA: {x: -0.08, y: 0.13, z: -0.5}
     legsB: {x: 0, y: 0.13, z: -1.22}
     legsRadius: 0.13

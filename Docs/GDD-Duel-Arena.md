@@ -129,7 +129,11 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Postures** Debout / Accroupi / Prone, chacune avec sa vitesse, sa hauteur de vue et son empreinte. Se relever est bloqué s'il n'y a pas la place. **On peut tirer en rampant.**
 
-**Le lean façon Rainbow Six** : seul le **buste** se penche. Derrière un mur, en visant et en se penchant, on n'expose que le haut du corps ; les jambes restent à couvert. Le lean actuel, qui fait glisser tout le corps, est trop généreux et va changer. Contrairement à Rainbow Six, **le lean reste possible en position allongée**. Son amplitude se rapproche de celle de R6 : la tête sort d'environ 35 cm, valeur de départ à régler en jouant (tranché le 2026-10-05).
+**Changer de posture prend du temps**, même pour un robot : environ 0,3 s entre debout et accroupi, 0,65 s entre accroupi et allongé, 0,9 s entre debout et allongé. Pendant ce temps, le corps, la vue, la vitesse et l'endroit où l'on peut être touché passent progressivement d'une posture à l'autre ; on ne franchit pas d'obstacle à moitié relevé. Un plongeon au sol n'est donc pas une esquive instantanée. Valeurs de départ, à régler en jouant (2026-10-06).
+
+**Le lean façon Rainbow Six** : seul le **buste** se penche. Derrière un mur, en visant et en se penchant, on n'expose que le haut du corps ; les jambes restent à couvert. Son amplitude se rapproche de celle de R6 : la tête sort d'environ 35 cm, valeur de départ à régler en jouant (tranché le 2026-10-05 ; amplitude et vue accroupie jugées bonnes en jouant le 2026-10-06).
+
+Contrairement à Rainbow Six, **le lean reste possible en position allongée**, mais il y prend une autre forme : le buste **roule sur lui-même** et la vue bascule, la tête ne sortant que d'une dizaine de centimètres (demandé le 2026-10-06 ; un premier essai faisait glisser le haut du corps sur le côté).
 
 **Pas de saut libre.** La touche de saut sert au **vault** : un obstacle assez bas, du sol derrière, et on passe par-dessus. C'est un choix assumé.
 

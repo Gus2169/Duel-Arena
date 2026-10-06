@@ -12,7 +12,7 @@ using UnityEngine;
 public class HitboxHistoryTests
 {
     private static PlayerLocomotion.HitboxPose Pose(float time, float x, float yaw = 0f, float lean = 0f,
-        PlayerLocomotion.Stance stance = PlayerLocomotion.Stance.Standing)
+        PlayerLocomotion.StanceState? stance = null)
     {
         return new PlayerLocomotion.HitboxPose
         {
@@ -20,9 +20,12 @@ public class HitboxHistoryTests
             position = new Vector3(x, 0f, 0f),
             yaw = yaw,
             leanOffset = lean,
-            stance = stance,
+            stance = stance ?? Etablie(PlayerLocomotion.Stance.Standing),
         };
     }
+
+    private static PlayerLocomotion.StanceState Etablie(PlayerLocomotion.Stance stance)
+        => new PlayerLocomotion.StanceState { current = stance, previous = stance, changedAt = double.NegativeInfinity };
 
     [Test]
     public void HistoriqueVide_RenvoieFalse()
@@ -85,18 +88,29 @@ public class HitboxHistoryTests
     }
 
     [Test]
-    public void PostureNonInterpolee_GardeCelleDAvant()
+    public void LaPosture_EstCelleEnVigueurALInstantVise()
     {
-        // La posture est discrète. On garde volontairement celle d'AVANT : pendant une transition,
-        // la cible est rewind avec la capsule qu'elle quittait — le choix conservateur pour elle.
+        // La posture ne s'interpole pas : elle porte l'instant exact de son changement (10,4 ici),
+        // et la transition se recalcule ensuite à l'instant visé. Avant le changement, on doit
+        // retrouver l'ancienne posture ; après, la nouvelle, avec sa transition.
+        var accroupi = new PlayerLocomotion.StanceState
+        {
+            current = PlayerLocomotion.Stance.Crouching,
+            previous = PlayerLocomotion.Stance.Standing,
+            changedAt = 10.4,
+        };
         var history = new List<PlayerLocomotion.HitboxPose>
         {
-            Pose(10f, 0f, stance: PlayerLocomotion.Stance.Standing),
-            Pose(11f, 0f, stance: PlayerLocomotion.Stance.Crouching),
+            Pose(10f, 0f, stance: Etablie(PlayerLocomotion.Stance.Standing)),
+            Pose(11f, 0f, stance: accroupi),
         };
 
-        Assert.IsTrue(PlayerLocomotion.SampleHitboxHistory(history, 10.9f, out var result));
-        Assert.AreEqual(PlayerLocomotion.Stance.Standing, result.stance);
+        Assert.IsTrue(PlayerLocomotion.SampleHitboxHistory(history, 10.2f, out var avant));
+        Assert.AreEqual(PlayerLocomotion.Stance.Standing, avant.stance.current, "Avant le changement, la posture d'avant.");
+
+        Assert.IsTrue(PlayerLocomotion.SampleHitboxHistory(history, 10.6f, out var apres));
+        Assert.AreEqual(PlayerLocomotion.Stance.Crouching, apres.stance.current, "Après le changement, la nouvelle posture.");
+        Assert.AreEqual(10.4, apres.stance.changedAt, 1e-9, "L'instant du changement doit survivre à l'échantillonnage.");
     }
 
     [Test]

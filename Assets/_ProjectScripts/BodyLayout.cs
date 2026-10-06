@@ -12,11 +12,8 @@ public enum HitboxZoneType { Head, Torso, Legs }
 [System.Serializable]
 public struct StanceBody
 {
-    [Tooltip("Point autour duquel le buste pivote quand on se penche : la base de la colonne (l'os Spine du modèle, autour duquel l'animation fait pivoter le même buste).")]
+    [Tooltip("Point autour duquel le buste tourne quand on se penche : la base de la colonne (l'os Spine du modèle, autour duquel l'animation fait tourner le même buste). La rotation se fait toujours autour de l'axe avant du joueur : debout et accroupi le buste s'incline, allongé il roule sur lui-même.")]
     public Vector3 leanPivot;
-
-    [Tooltip("Faux : le buste s'incline sur le côté (rotation autour de l'axe avant, debout et accroupi). Vrai : le buste pivote à plat vers la gauche ou la droite (rotation autour de la verticale, allongé).")]
-    public bool leanSwingsSideways;
 
     [Tooltip("Jambes : capsule de A à B, rayon. Elles ne bougent JAMAIS avec le lean : c'est tout le principe du lean façon Rainbow Six.")]
     public Vector3 legsA;
@@ -43,6 +40,17 @@ public struct ZoneShape
     public Vector3 a;
     public Vector3 b;
     public float radius;
+
+    /// <summary>Zone intermédiaire entre deux postures, pendant une transition.</summary>
+    public static ZoneShape Lerp(ZoneShape from, ZoneShape to, float t)
+    {
+        return new ZoneShape
+        {
+            a = Vector3.Lerp(from.a, to.a, t),
+            b = Vector3.Lerp(from.b, to.b, t),
+            radius = Mathf.Lerp(from.radius, to.radius, t),
+        };
+    }
 }
 
 /// <summary>
@@ -54,10 +62,14 @@ public struct ZoneShape
 /// AFFICHE le même lean en lisant le même scalaire (PlayerAnimator) ; elle ne pilote jamais ces
 /// zones. Un Animator n'est pas déterministe entre machines.
 ///
-/// LE LEAN FAÇON RAINBOW SIX (GDD § 7) : seuls le torse et la tête pivotent autour de la base de
-/// la colonne ; les jambes restent derrière la couverture. Le scalaire réseauté ne change pas :
-/// c'est toujours le décalage LATÉRAL de l'œil, en mètres. L'angle s'en déduit, ce qui laisse
-/// intacts le réseau, l'historique du rewind et l'anti-clipping.
+/// LE LEAN FAÇON RAINBOW SIX (GDD § 7) : seuls le torse et la tête tournent autour de la base de
+/// la colonne, toujours autour de l'axe AVANT du joueur ; les jambes restent derrière la
+/// couverture. Debout et accroupi, le buste s'incline ; allongé, il roule sur lui-même — la tête
+/// sort peu, c'est surtout la vue qui bascule (demandé par l'utilisateur le 2026-10-06 : la
+/// première version faisait pivoter le buste à plat, ce qui se lisait comme un glissement de côté).
+///
+/// Le scalaire réseauté ne change pas : c'est toujours le décalage LATÉRAL de l'œil, en mètres.
+/// L'angle s'en déduit, ce qui laisse intacts le réseau, l'historique du rewind et l'anti-clipping.
 /// </summary>
 public static class BodyLayout
 {
@@ -66,7 +78,6 @@ public static class BodyLayout
     public static readonly StanceBody DefaultStanding = new StanceBody
     {
         leanPivot = new Vector3(0f, 1.08f, -0.02f),
-        leanSwingsSideways = false,
         legsA = new Vector3(0f, 0.20f, 0f),
         legsB = new Vector3(0f, 0.80f, 0f),
         legsRadius = 0.20f,
@@ -79,7 +90,6 @@ public static class BodyLayout
     public static readonly StanceBody DefaultCrouching = new StanceBody
     {
         leanPivot = new Vector3(0f, 0.56f, -0.10f),
-        leanSwingsSideways = false,
         legsA = new Vector3(0f, 0.22f, 0.08f),
         legsB = new Vector3(0f, 0.30f, 0.08f),
         legsRadius = 0.28f,
@@ -101,7 +111,6 @@ public static class BodyLayout
     public static readonly StanceBody DefaultProne = new StanceBody
     {
         leanPivot = new Vector3(-0.03f, 0.17f, -0.28f),
-        leanSwingsSideways = true,
         legsA = new Vector3(-0.08f, 0.13f, -0.50f),
         legsB = new Vector3(0f, 0.13f, -1.22f),
         legsRadius = 0.13f,
@@ -114,28 +123,26 @@ public static class BodyLayout
         headRadius = 0.13f,
     };
 
-    /// <summary>Axe de rotation du lean, dans l'espace du joueur.</summary>
-    public static Vector3 LeanAxis(in StanceBody body) => body.leanSwingsSideways ? Vector3.up : Vector3.forward;
-
     // ------------------------------------------------------------------
     // La géométrie du lean.
     //
-    // Dans le plan perpendiculaire à l'axe, l'œil est à (dx, u) du pivot : dx le long de X,
-    // u l'autre composante (la hauteur pour une inclinaison, l'avancée pour un pivot à plat). Une
-    // rotation d'angle a, dans le sens qui envoie vers +X, donne :
+    // L'axe est l'axe AVANT du joueur, passant par le pivot. Dans le plan perpendiculaire, l'œil
+    // est à (dx, u) du pivot : dx le long de X, u sa hauteur au-dessus du pivot. Une rotation
+    // d'angle a, dans le sens qui envoie vers +X, donne :
     //     x(a) = dx·cos a + u·sin a = R·sin(a + φ),   R = √(dx² + u²),   φ = atan2(dx, u)
     // donc un décalage latéral Δ(a) = R·sin(a + φ) − dx, qu'on inverse pour trouver l'angle.
     //
     // Exact même quand l'œil n'est pas dans l'axe du pivot — c'est le cas allongé, où la tête est
-    // penchée sur la crosse. Le lean y est alors un peu plus court d'un côté que de l'autre, ce
-    // qui est la conséquence honnête d'une pose asymétrique.
+    // penchée sur la crosse. En roulant vers la droite, la tête passe au-dessus du buste et sort
+    // plus loin (15 cm) ; vers la gauche, elle descend vers le sol et sort moins (9 cm). C'est la
+    // conséquence honnête d'une pose asymétrique.
     // ------------------------------------------------------------------
 
     private static void LeanPlane(in StanceBody body, Vector3 eye, out float dx, out float u)
     {
         Vector3 d = eye - body.leanPivot;
         dx = d.x;
-        u = body.leanSwingsSideways ? d.z : d.y;
+        u = d.y;
     }
 
     /// <summary>Bras de levier : distance de l'œil à l'axe de lean passant par le pivot.</summary>
@@ -184,12 +191,9 @@ public static class BodyLayout
         float angle = LeanAngle(body, eye, lateralOffset);
         if (Mathf.Abs(angle) < 1e-5f) return Quaternion.identity;
 
-        // AngleAxis(+a, haut) fait tourner l'avant vers la droite, AngleAxis(-a, avant) fait
-        // pencher le haut vers la droite : les deux envoient vers +X pour un angle positif.
-        // Vérifié par les tests.
-        return body.leanSwingsSideways
-            ? Quaternion.AngleAxis(angle, Vector3.up)
-            : Quaternion.AngleAxis(-angle, Vector3.forward);
+        // AngleAxis(-a, avant) fait pencher le haut vers la droite : un angle positif envoie
+        // vers +X. Vérifié par les tests.
+        return Quaternion.AngleAxis(-angle, Vector3.forward);
     }
 
     /// <summary>Position de l'œil une fois penché. La caméra du propriétaire s'y place, et la tête
@@ -219,6 +223,41 @@ public static class BodyLayout
         // Les jambes ignorent le lean, par construction : c'est tout le lean façon R6.
         legs = new ZoneShape { a = body.legsA, b = body.legsB, radius = body.legsRadius };
         secondLeg = new ZoneShape { a = body.secondLegA, b = body.secondLegB, radius = body.secondLegRadius };
+    }
+
+    /// <summary>
+    /// Les zones touchables PENDANT une transition de posture : chaque zone glisse de sa forme dans
+    /// la posture de départ vers sa forme dans la posture d'arrivée. `t` vaut 0 au départ, 1 à
+    /// l'arrivée (déjà adouci par l'appelant).
+    ///
+    /// Sans ça, la surface touchable changeait de posture d'un coup pendant que le corps visible
+    /// mettait une demi-seconde à se coucher : on visait un buste encore à mi-hauteur, alors que le
+    /// serveur ne connaissait plus qu'un corps allongé. Une forme interpolée n'épouse pas chaque
+    /// image du clip de transition, mais elle reste à quelques centimètres de lui au lieu d'en être
+    /// à un mètre.
+    ///
+    /// La seconde jambe, quand une seule des deux postures en a une, naît de la première : elle
+    /// s'en détache progressivement au lieu d'apparaître d'un coup au milieu de nulle part.
+    /// </summary>
+    public static void ComputeBlended(in StanceBody from, Vector3 eyeFrom, in StanceBody to, Vector3 eyeTo,
+                                      float t, float lateralOffset,
+                                      out ZoneShape head, out ZoneShape torso, out ZoneShape legs, out ZoneShape secondLeg)
+    {
+        if (t >= 1f)
+        {
+            Compute(to, eyeTo, lateralOffset, out head, out torso, out legs, out secondLeg);
+            return;
+        }
+        Compute(from, eyeFrom, lateralOffset, out ZoneShape headA, out ZoneShape torsoA, out ZoneShape legsA, out ZoneShape secondA);
+        Compute(to, eyeTo, lateralOffset, out ZoneShape headB, out ZoneShape torsoB, out ZoneShape legsB, out ZoneShape secondB);
+
+        if (secondA.radius <= 0f && secondB.radius > 0f) secondA = legsA;
+        if (secondB.radius <= 0f && secondA.radius > 0f) secondB = legsB;
+
+        head = ZoneShape.Lerp(headA, headB, t);
+        torso = ZoneShape.Lerp(torsoA, torsoB, t);
+        legs = ZoneShape.Lerp(legsA, legsB, t);
+        secondLeg = ZoneShape.Lerp(secondA, secondB, t);
     }
 
     private static Vector3 Rotate(in StanceBody body, Quaternion rotation, Vector3 point)

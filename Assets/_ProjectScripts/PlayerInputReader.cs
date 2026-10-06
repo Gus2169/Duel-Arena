@@ -73,6 +73,11 @@ public class PlayerInputReader : MonoBehaviour
 
     [Tooltip("Période (s) d'un aller-retour complet de l'autopilote de test.")]
     public static float AutopilotPeriod = 2f;
+
+    /// <summary>Tir automatique de test, gâchette maintenue — Editor uniquement. Couplé à
+    /// WeaponController.AutopilotAimAtOpponent, il fait tenir le rôle du tireur à une instance
+    /// que personne ne pilote (le clone de Multiplayer Play Mode).</summary>
+    public static bool AutopilotFire;
 #endif
 
     private void Update()
@@ -101,6 +106,9 @@ public class PlayerInputReader : MonoBehaviour
         SneakHeld = controls.Gameplay.Sneak.IsPressed();
         AimHeld = controls.Gameplay.Aim.IsPressed();
         FireHeld = controls.Gameplay.Fire.IsPressed();
+#if UNITY_EDITOR
+        if (AutopilotFire) FireHeld = true;
+#endif
     }
 
     /// <summary>
