@@ -15,6 +15,63 @@ MonoBehaviour:
   entries:
   - type: 0
     clips:
-    - {fileID: 8300000, guid: bd649b9ed3d3ee648bd27b5a9ad89943, type: 3}
+    - {fileID: 8300000, guid: a0c34a647ea646c394d879bcf0412bfa, type: 3}
+    - {fileID: 8300000, guid: c5a8b10ce50b4ac1b5ebe8103a70c3ed, type: 3}
+    - {fileID: 8300000, guid: 8c3ad1223eb74d889803585eef420917, type: 3}
+    - {fileID: 8300000, guid: 480dcfefd2544a0da411326407e400f9, type: 3}
+    volume: 0.22
+    pitchRange: {x: 0.94, y: 1.04}
+  - type: 1
+    clips:
+    - {fileID: 8300000, guid: 41ee2b67104147639e5f02805a292979, type: 3}
+    - {fileID: 8300000, guid: cefecfa5910646d8ba3f4023459c81a0, type: 3}
+    - {fileID: 8300000, guid: 82be67d4d6324ea3affd623c4ada1811, type: 3}
+    - {fileID: 8300000, guid: cb3d67ad1a514547b5d9f3ceb271a248, type: 3}
+    volume: 0.4
+    pitchRange: {x: 0.95, y: 1.05}
+  - type: 2
+    clips:
+    - {fileID: 8300000, guid: f2438dea9dab4b8eb962fa365565ca2e, type: 3}
+    - {fileID: 8300000, guid: b2fb8651255f48b4b36b28892e5faec5, type: 3}
+    - {fileID: 8300000, guid: 05de8520e52b471ba5762e3c604a406e, type: 3}
     volume: 0.2
-    pitchRange: {x: 0.92, y: 1}
+    pitchRange: {x: 0.93, y: 1.03}
+  - type: 3
+    clips:
+    - {fileID: 8300000, guid: 8f7103d75f2b46b2875e0fdcdddc5e70, type: 3}
+    - {fileID: 8300000, guid: 82dbde06c4fb4e41b07287d36342e077, type: 3}
+    - {fileID: 8300000, guid: a75c95becd3b4a5f9d584b3f75bf7abd, type: 3}
+    volume: 0.3
+    pitchRange: {x: 0.92, y: 1.05}
+  - type: 4
+    clips:
+    - {fileID: 8300000, guid: 83df5d4fceb44601a9460bc4a86ce7ab, type: 3}
+    - {fileID: 8300000, guid: 616426caebe14d92af6753208722d178, type: 3}
+    volume: 0.2
+    pitchRange: {x: 0.96, y: 1.04}
+  - type: 5
+    clips:
+    - {fileID: 8300000, guid: dd6f234d53de4c33a4511267cd476421, type: 3}
+    - {fileID: 8300000, guid: 90ffb38f6aee44879290319be8901655, type: 3}
+    volume: 0.2
+    pitchRange: {x: 0.96, y: 1.04}
+  - type: 6
+    clips:
+    - {fileID: 8300000, guid: fb6db3972b8243318985b802a2150371, type: 3}
+    volume: 0.3
+    pitchRange: {x: 0.96, y: 1.03}
+  - type: 7
+    clips:
+    - {fileID: 8300000, guid: 5df4606d9f1648b499da02573c7792f9, type: 3}
+    volume: 0.3
+    pitchRange: {x: 0.96, y: 1.03}
+  - type: 8
+    clips:
+    - {fileID: 8300000, guid: 9bf505fe1c824fdea624f5505f66bffe, type: 3}
+    volume: 0.35
+    pitchRange: {x: 0.97, y: 1.03}
+  - type: 9
+    clips:
+    - {fileID: 8300000, guid: 338c45aeb1754c089cd63b32f4e86692, type: 3}
+    volume: 0.35
+    pitchRange: {x: 0.97, y: 1.03}

@@ -219,10 +219,9 @@ MonoBehaviour:
   recoilRecoverySpeed: 6
   recoilResetDelay: 0.35
   fireSounds:
-  - {fileID: 8300000, guid: 66909c5efdc80f34ea647a8ab51a32e0, type: 3}
-  - {fileID: 8300000, guid: cdd62695e7789ab488fd4c9cf66213bb, type: 3}
-  - {fileID: 8300000, guid: 14086e541038c2b49ae437d12a7b18c1, type: 3}
-  - {fileID: 8300000, guid: fd5f61990ab943c43bf42b96b664f0ef, type: 3}
-  - {fileID: 8300000, guid: e1ba3e386daa80545aebd30b2e5b566c, type: 3}
+  - {fileID: 8300000, guid: 2d0f85a479fd49bc8d67a6db408d7942, type: 3}
+  - {fileID: 8300000, guid: ba6c28b5a3234848a49cd460d39f38e2, type: 3}
+  - {fileID: 8300000, guid: c08855d7ca81446990d3025c97c88be1, type: 3}
+  - {fileID: 8300000, guid: f707d20a121f4d0f8164b738c4de360d, type: 3}
   fireVolume: 0.9
   firePitchRange: {x: 0.97, y: 1.03}

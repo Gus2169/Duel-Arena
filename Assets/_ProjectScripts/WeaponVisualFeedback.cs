@@ -1,29 +1,45 @@
 using UnityEngine;
 
 /// <summary>
-/// Feedback visuel de tir en Game view : trace lumineuse du tir + marqueur d'impact temporaire.
-/// PLACEHOLDER assumé, appelé par WeaponController.Fire() (feedback local du tireur) et par
-/// BroadcastShotClientRpc (ce que voient les autres joueurs).
+/// Feedback visuel de tir : flash de bouche, balle traçante, impact (étincelles, poussière,
+/// trace sur le décor ; gerbe d'étincelles sur un robot) et son d'impact au point touché. Appelé
+/// par WeaponController.Fire() (feedback local du tireur) et par BroadcastShotClientRpc (ce que
+/// voient les autres joueurs).
 ///
-/// Entièrement procédural : pas de prefab à préparer, pas de matériau à créer à la main. Le shader
-/// utilisé est détecté automatiquement pour rester compatible Built-in RP / URP. Pensé pour être
-/// remplacé plus tard par de vrais VFX (Particle System, tracer avec traînée, décal d'impact
-/// texturé...) sans changer l'API publique (SpawnTracer / SpawnImpact) — les appelants n'auront
-/// rien à changer le jour où le visuel sera amélioré.
+/// L'API publique (SpawnTracer / SpawnImpact) n'a pas changé depuis le placeholder procédural :
+/// WeaponController n'a rien eu à modifier. Les effets eux-mêmes vivent dans <see cref="Vfx"/>.
+/// Sans l'asset Resources/VfxLibrary, on retombe sur l'ancien rendu (ligne + sphère), pour qu'un
+/// asset manquant ne rende jamais les tirs invisibles.
+///
+/// Tireur ou spectateur ? Les deux appels reçoivent l'origine du rayon, qui est l'oeil du tireur.
+/// Si elle coïncide avec la caméra active de cette machine, c'est notre propre tir, vu à la
+/// première personne : le flash se réduit à sa lumière, et le traceur part d'une bouche virtuelle
+/// sous la vue au lieu de sortir de l'oeil.
 /// </summary>
 public class WeaponVisualFeedback : MonoBehaviour
 {
-    [Header("Trace de tir")]
+    [Header("Bouche du canon (en attendant une arme visible)")]
+    [Tooltip("Vue à la première personne : décalage (droite, haut, avant) de la bouche virtuelle par rapport à la caméra, en mètres.")]
+    [SerializeField] private Vector3 firstPersonMuzzleOffset = new Vector3(0.13f, -0.12f, 0.45f);
+    [Tooltip("Vue d'un adversaire : décalage (droite, haut, avant) depuis son oeil — l'arme épaulée du robot.")]
+    [SerializeField] private Vector3 thirdPersonMuzzleOffset = new Vector3(0.12f, -0.1f, 0.6f);
+
+    [Header("Secours sans VfxLibrary — trace de tir")]
     [SerializeField] private Color tracerColor = new Color(1f, 0.85f, 0.3f);
     [SerializeField] private float tracerWidth = 0.015f;
     [SerializeField] private float tracerDuration = 0.05f;
 
-    [Header("Marqueur d'impact")]
+    [Header("Secours sans VfxLibrary — marqueur d'impact")]
     [SerializeField] private Color impactColor = new Color(1f, 0.3f, 0.1f);
     [SerializeField] private float impactSize = 0.12f;
     [SerializeField] private float impactLifetime = 1.2f;
 
     private static Shader cachedUnlitShader;
+    private static readonly Collider[] overlap = new Collider[8];
+
+    // SpawnTracer précède toujours SpawnImpact pour un même tir (dans Fire() comme dans la RPC) :
+    // le premier dit au second si le tir est le nôtre.
+    private bool pendingLocalShot;
 
     private static Shader GetUnlitShader()
     {
@@ -37,8 +53,112 @@ public class WeaponVisualFeedback : MonoBehaviour
         return cachedUnlitShader;
     }
 
-    /// <summary>Trace visuelle instantanée entre le point de départ et le point d'arrivée du tir.</summary>
+    /// <summary>Flash de bouche + balle traçante entre le point de départ et le point d'arrivée du tir.</summary>
     public void SpawnTracer(Vector3 start, Vector3 end)
+    {
+        bool firstPerson = Vfx.IsLocalViewOrigin(start);
+        pendingLocalShot = firstPerson;
+
+        if (VfxLibrary.Instance == null)
+        {
+            SpawnFallbackTracer(start, end);
+            return;
+        }
+
+        Vector3 dir = end - start;
+        if (dir.sqrMagnitude < 0.0001f) return;
+        dir.Normalize();
+
+        Vector3 muzzle;
+        if (firstPerson && Camera.main != null)
+        {
+            Transform cam = Camera.main.transform;
+            muzzle = start + cam.right * firstPersonMuzzleOffset.x + cam.up * firstPersonMuzzleOffset.y + cam.forward * firstPersonMuzzleOffset.z;
+        }
+        else
+        {
+            Vector3 right = Vector3.Cross(Vector3.up, dir);
+            right = right.sqrMagnitude > 0.0001f ? right.normalized : transform.right;
+            muzzle = start + right * thirdPersonMuzzleOffset.x + Vector3.up * thirdPersonMuzzleOffset.y + dir * thirdPersonMuzzleOffset.z;
+        }
+
+        Vfx.MuzzleFlash(muzzle, dir, firstPerson);
+        Vfx.Tracer(muzzle, end);
+    }
+
+    /// <summary>Impact à l'endroit précis où le tir a touché quelque chose.</summary>
+    public void SpawnImpact(Vector3 point, Vector3 normal)
+    {
+        bool localShot = pendingLocalShot;
+        pendingLocalShot = false;
+
+        if (VfxLibrary.Instance == null)
+        {
+            SpawnFallbackImpact(point, normal);
+            return;
+        }
+
+        bool onRobot = TryFindHitZone(point, ZoneRadius, out PlayerHitboxZone zone);
+        bool onWorld = !onRobot && Physics.CheckSphere(point, 0.05f, WorldMask, QueryTriggerInteraction.Ignore);
+        if (!onRobot && !onWorld)
+        {
+            // Ni robot ni décor sous le point : c'est un impact décidé par le serveur sur la pose
+            // REMBOBINÉE d'un adversaire, que cette machine affiche ailleurs (son propre retard
+            // d'interpolation). Un robot tout proche ? Alors c'était lui. Sans ça, on poserait une
+            // trace de balle flottant dans le vide.
+            onRobot = TryFindHitZone(point, NearRobotRadius, out zone);
+        }
+        Vfx.BulletImpact(point, normal, onRobot ? ImpactSurface.Chassis : ImpactSurface.World, decal: onWorld);
+
+        // La zone touchée ne voyage pas sur le réseau : le hitmarker (confirmé par le serveur)
+        // vient la chercher ici, dans le tir local.
+        if (onRobot && localShot)
+        {
+            Health target = zone.GetComponentInParent<Health>();
+            if (target != null) CombatFeedback.ReportLocalHit(target, zone.Zone);
+        }
+    }
+
+    private const float ZoneRadius = 0.06f;
+    private const float NearRobotRadius = 0.6f;
+
+    private static int HitboxMask
+    {
+        get
+        {
+            int mask = LayerMask.GetMask("Hitbox");
+            return mask != 0 ? mask : 1 << 7;
+        }
+    }
+
+    // La géométrie qui arrête les balles (WeaponData.worldMask vaut Default) : c'est sur elle, et
+    // seulement sur elle, qu'une trace d'impact a un sens.
+    private static int WorldMask => LayerMask.GetMask("Default");
+
+    /// <summary>Le point touché est-il sur un hitbox de joueur ? Rien d'autre ne vit sur ce
+    /// layer. La zone retenue est la plus proche du point, au cas où deux zones se touchent.</summary>
+    private static bool TryFindHitZone(Vector3 point, float radius, out PlayerHitboxZone zone)
+    {
+        zone = null;
+        int count = Physics.OverlapSphereNonAlloc(point, radius, overlap, HitboxMask, QueryTriggerInteraction.Collide);
+        float best = float.MaxValue;
+        for (int i = 0; i < count; i++)
+        {
+            var z = overlap[i].GetComponent<PlayerHitboxZone>();
+            if (z == null) continue;
+            float d = (overlap[i].ClosestPoint(point) - point).sqrMagnitude;
+            if (d < best)
+            {
+                best = d;
+                zone = z;
+            }
+        }
+        return zone != null;
+    }
+
+    // ------------------------------------------------------------------ secours
+
+    private void SpawnFallbackTracer(Vector3 start, Vector3 end)
     {
         var go = new GameObject("ShotTracer");
         var lr = go.AddComponent<LineRenderer>();
@@ -60,8 +180,7 @@ public class WeaponVisualFeedback : MonoBehaviour
         Destroy(go, tracerDuration);
     }
 
-    /// <summary>Petit marqueur temporaire à l'endroit précis où le tir a touché quelque chose.</summary>
-    public void SpawnImpact(Vector3 point, Vector3 normal)
+    private void SpawnFallbackImpact(Vector3 point, Vector3 normal)
     {
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         go.name = "ImpactMarker";

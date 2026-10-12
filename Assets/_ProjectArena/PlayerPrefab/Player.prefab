@@ -156,6 +156,7 @@ GameObject:
   - component: {fileID: 8499542872561817817}
   - component: {fileID: 7504234295997836428}
   - component: {fileID: 1947947766437247315}
+  - component: {fileID: 2215249526330943336}
   m_Layer: 3
   m_Name: Player
   m_TagString: Untagged
@@ -424,6 +425,42 @@ MonoBehaviour:
   audioSource: {fileID: 7504234295997836428}
   soundBank: {fileID: 11400000, guid: 772ac07e0f7c32340ad0fcd08213ad54, type: 2}
   faintVolumeScale: 0.35
+--- !u!114 &2215249526330943336
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4948709451476686498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c5cb6455ab4a4680a9a1e65caba7f342, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::CombatFeedback
+  hitBodySounds:
+  - {fileID: 8300000, guid: 17fc24f4f30e406ebddccb79aeabfc77, type: 3}
+  hitHeadSounds:
+  - {fileID: 8300000, guid: 084e0d78dce94c568545e9d6a48d9aa3, type: 3}
+  killSounds:
+  - {fileID: 8300000, guid: d22221e0b0cf4a798ecc9cb8e26a0fcd, type: 3}
+  damageTakenSounds:
+  - {fileID: 8300000, guid: d76797b2766445f59c82395767eed0f2, type: 3}
+  - {fileID: 8300000, guid: 752890517fe74bc6a912e17fb7bfb3cb, type: 3}
+  - {fileID: 8300000, guid: 261693d184bb4a948c3f9bc9ac7765ba, type: 3}
+  hitVolume: 0.75
+  damageVolume: 0.8
+  hitmarkerDuration: 0.22
+  hitmarkerGap: 7
+  hitmarkerLength: 7
+  hitmarkerThickness: 2
+  hitmarkerColor: {r: 1, g: 1, b: 1, a: 1}
+  headshotColor: {r: 1, g: 0.32, b: 0.22, a: 1}
+  zoneMatchWindow: 0.6
+  interferenceDuration: 0.35
+  interferenceStrength: 0.55
+  interferenceBands: 14
+  cameraJoltDegrees: 0.5
+  cameraJoltReturnTime: 0.12
 --- !u!114 &8499542872561817817
 MonoBehaviour:
   m_ObjectHideFlags: 0

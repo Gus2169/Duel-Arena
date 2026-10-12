@@ -1,0 +1,57 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8c5dca77b6e04abf8f6ec8890a7bf6da, type: 3}
+  m_Name: VfxLibrary
+  m_EditorClassIdentifier: DuelArena.Runtime::VfxLibrary
+  glow: {fileID: 2100000, guid: b578629cc79d471e9fe6db037d38aff1, type: 2}
+  star: {fileID: 2100000, guid: 4248be02795c4cb2a4b6917cb4679165, type: 2}
+  crackle: {fileID: 2100000, guid: 80e5c77eb4b44b50929bdb80d8571168, type: 2}
+  muzzle: {fileID: 2100000, guid: 20dc794c2e6741cd8880bc2bcb0758a7, type: 2}
+  beam: {fileID: 2100000, guid: fffe9fb70b9a467abf2c4dd7714c9e87, type: 2}
+  smoke: {fileID: 2100000, guid: 15733160e549467686799518a4c085b7, type: 2}
+  scorch: {fileID: 2100000, guid: 746c8e2ff52647f9b10e8aca294199a9, type: 2}
+  electricCore: {r: 0.86, g: 0.95, b: 1, a: 1}
+  electricGlow: {r: 0.3, g: 0.66, b: 1, a: 1}
+  sparkHot: {r: 1, g: 0.82, b: 0.55, a: 1}
+  sparkCool: {r: 1, g: 0.45, b: 0.15, a: 1}
+  muzzleColor: {r: 1, g: 0.78, b: 0.45, a: 1}
+  tracerColor: {r: 1, g: 0.86, b: 0.62, a: 1}
+  dustColor: {r: 0.52, g: 0.5, b: 0.47, a: 0.55}
+  smokeColor: {r: 0.2, g: 0.21, b: 0.23, a: 0.45}
+  scorchColor: {r: 0.04, g: 0.04, b: 0.04, a: 0.85}
+  impactWorld:
+  - {fileID: 8300000, guid: c25d031c85cf49448ef5399404fb6314, type: 3}
+  - {fileID: 8300000, guid: 1f303908603144c0aa3e32bb3107f5a9, type: 3}
+  - {fileID: 8300000, guid: eb6bc81bd419430fbf88623471431044, type: 3}
+  - {fileID: 8300000, guid: 574ebc51c36a4c81bf2ca43e1790dcc6, type: 3}
+  impactChassis:
+  - {fileID: 8300000, guid: e2904c8ac6fc4dd28f9aadd8bba35c11, type: 3}
+  - {fileID: 8300000, guid: f2bf4e0fa42747ea8d114f5c1da2a7fd, type: 3}
+  - {fileID: 8300000, guid: 18550651e4e8459f8b8c12a98abb25f7, type: 3}
+  - {fileID: 8300000, guid: 77edcf34d2c94881a106e2e91bee10d7, type: 3}
+  impactVolume: 0.8
+  impactMinDistance: 2
+  impactMaxDistance: 35
+  electricHit:
+  - {fileID: 8300000, guid: 5374fd28d56c4d0d8497dd88c093bef5, type: 3}
+  - {fileID: 8300000, guid: 62e76c3ac39f4053837716c1012d2eeb, type: 3}
+  electricZap:
+  - {fileID: 8300000, guid: 9da8cbb760c846ab88f880378da438f0, type: 3}
+  - {fileID: 8300000, guid: d2dbbcfec9e14bd780ceca8ce62597bf, type: 3}
+  - {fileID: 8300000, guid: e0721a41d1c24b0885b3c4fc13305459, type: 3}
+  electricVolume: 0.95
+  deathShutdown:
+  - {fileID: 8300000, guid: ca0b29e0ddd742f3b97bfcdb80b27ff3, type: 3}
+  deathVolume: 1
+  maxScorchMarks: 32
+  scorchLifetime: 12
+  maxFlashLights: 4
