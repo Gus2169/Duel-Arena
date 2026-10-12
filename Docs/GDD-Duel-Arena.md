@@ -111,7 +111,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Utilitaires** : des grenades, soit cachées dans l'arène, soit données par les spectateurs.
 
-**Mêlée** : un **taser** plutôt qu'un couteau, plus logique contre des robots (tranché le 2026-10-05). **Mort instantanée**, pour l'instant. Il sort **automatiquement** quand l'arme est vide.
+**Mêlée** : un **taser** plutôt qu'un couteau, plus logique contre des robots (tranché le 2026-10-05). **Mort instantanée**, pour l'instant. Il sort **automatiquement** quand l'arme est vide. Sorti, il **crépite en permanence et l'adversaire l'entend** (§ 8, tranché le 2026-10-12).
 
 **Recul** — référence de sensation : la R-301 d'Apex. **Les rafales longues doivent être viables et agréables** : pas de jeu qui force les rafales courtes, sauf pour une DMR au coup par coup. Le recul est stylisé et lisible : montée rapide sur les premiers tirs puis plafonnement, avec un pattern horizontal en « S » quand la rafale s'allonge. Il est modulé par la posture, le déplacement et la visée.
 
@@ -154,6 +154,8 @@ Un adversaire proche doit pouvoir **entendre** les pas, le ramper, les changemen
 **Chat vocal entre duellistes** : possible, si la partie l'active.
 
 **La voix de l'IA** : pendant une manche, elle peut parler, mais **rarement, brièvement, et jamais fort** : juste assez pour que les deux joueurs l'entendent (tranché le 2026-10-04). Les deux l'entendent donc au même volume, quelle que soit leur position. Le reste (présentation, résultats, piques) vit avant et après la manche.
+
+**Le taser sorti crépite en permanence, et ça s'entend** (tranché le 2026-10-12). Au corps à corps, les deux joueurs savent déjà où est l'autre : le son n'y retire rien. Avant, il oblige à choisir le moment de sortir le taser, puisque le sortir, c'est s'annoncer. *Conséquence à surveiller en playtest : comme il sort tout seul quand l'arme est vide, son crépitement annonce aussi un chargeur vide à qui l'entend.*
 
 **Tous les robots font exactement les mêmes bruits.** Les cosmétiques changent la peinture et la forme, jamais le son : un robot plus discret qu'un autre serait un avantage (tranché le 2026-10-04).
 

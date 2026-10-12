@@ -41,6 +41,8 @@ MonoBehaviour:
   impactVolume: 0.8
   impactMinDistance: 2
   impactMaxDistance: 35
+  taserDraw: {fileID: 8300000, guid: ba781242010f45f481f241a889d0fd44, type: 3}
+  taserIdleLoop: {fileID: 8300000, guid: b4cd2ab94b184970bff332052104f48f, type: 3}
   electricHit:
   - {fileID: 8300000, guid: 5374fd28d56c4d0d8497dd88c093bef5, type: 3}
   - {fileID: 8300000, guid: 62e76c3ac39f4053837716c1012d2eeb, type: 3}

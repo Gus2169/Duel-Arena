@@ -58,6 +58,10 @@ public class VfxLibrary : ScriptableObject
     public float impactMaxDistance = 35f;
 
     [Header("Sons électriques (taser)")]
+    [Tooltip("Charge du condensateur à la sortie du taser. Défaut d'ElectricArc.")]
+    public AudioClip taserDraw;
+    [Tooltip("Crépitement tant que le taser est sorti : 2,000 s, 18 claquements par seconde, calés avec l'arc. Défaut d'ElectricArc.")]
+    public AudioClip taserIdleLoop;
     public AudioClip[] electricHit;
     public AudioClip[] electricZap;
     [Range(0f, 1f)] public float electricVolume = 0.95f;
