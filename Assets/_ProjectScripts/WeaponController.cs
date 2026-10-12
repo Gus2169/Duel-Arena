@@ -114,6 +114,7 @@ public class WeaponController : NetworkBehaviour
     private PlayerInputReader input;
     private PlayerLocomotion locomotion;
     private TaserController taser;
+    private Health ownHealth; // un robot mort ne tire plus (voir ServerFire)
 
     private float cooldown;
     private float timeSinceLastShot;
@@ -332,7 +333,7 @@ public class WeaponController : NetworkBehaviour
     // Diagnostics de session (Editor uniquement). Comptés côté SERVEUR, seul endroit qui décide.
     // Ce qu'on cherche : des tirs rejetés qui ne devraient pas l'être (garde-fous trop serrés) et
     // la part réelle du rewind, invisibles autrement.
-    private static int diagAccepted, diagRejectedRate, diagRejectedOrigin, diagRejectedPhase, diagRejectedAmmo, diagRejectedVault, diagHits;
+    private static int diagAccepted, diagRejectedRate, diagRejectedOrigin, diagRejectedPhase, diagRejectedAmmo, diagRejectedVault, diagRejectedDead, diagHits;
     private static float diagRewindSum, diagRewindMax;
     private static float diagNextReportAt;
     private static int diagDeferred;
@@ -364,14 +365,14 @@ public class WeaponController : NetworkBehaviour
         if (Time.time < diagNextReportAt && diagNextReportAt - Time.time <= 3f) return;
         diagNextReportAt = Time.time + 3f;
 
-        int total = diagAccepted + diagRejectedRate + diagRejectedOrigin + diagRejectedPhase + diagRejectedAmmo + diagRejectedVault;
+        int total = diagAccepted + diagRejectedRate + diagRejectedOrigin + diagRejectedPhase + diagRejectedAmmo + diagRejectedVault + diagRejectedDead;
         if (total == 0) return;
 
         float avgRewind = diagAccepted > 0 ? diagRewindSum / diagAccepted : 0f;
         int compared = diagRewindGained + diagRewindLost + diagBothHit + diagNeitherHit;
 
         Debug.Log($"[DIAG-SERVEUR] tirs={total} acceptes={diagAccepted} touches={diagHits} " +
-                  $"rejets(cadence={diagRejectedRate} origine={diagRejectedOrigin} hors_manche={diagRejectedPhase} chargeur={diagRejectedAmmo} franchissement={diagRejectedVault}) " +
+                  $"rejets(cadence={diagRejectedRate} origine={diagRejectedOrigin} hors_manche={diagRejectedPhase} chargeur={diagRejectedAmmo} franchissement={diagRejectedVault} tireur_mort={diagRejectedDead}) " +
                   $"rewind_moy={avgRewind * 1000f:F0}ms rewind_max={diagRewindMax * 1000f:F0}ms " +
                   $"en_attente_de_l_input={diagQueuedAtArrival} differes_d_une_image={diagDeferred} attente_moy={(diagDeferred > 0 ? diagDeferWaitSum / diagDeferred * 1000f : 0f):F0}ms | " +
                   $"DIFFERENTIEL sur {compared} tirs : gagnes_par_rewind={diagRewindGained} " +
@@ -382,7 +383,7 @@ public class WeaponController : NetworkBehaviour
                         $"distance_au_corps_ACTUEL={diagDistNowSum / diagDistSamples:F2}m"
                       : ""));
 
-        diagAccepted = diagRejectedRate = diagRejectedOrigin = diagRejectedPhase = diagRejectedAmmo = diagRejectedVault = diagHits = 0;
+        diagAccepted = diagRejectedRate = diagRejectedOrigin = diagRejectedPhase = diagRejectedAmmo = diagRejectedVault = diagRejectedDead = diagHits = 0;
         diagRewindSum = diagRewindMax = 0f;
         diagDeferred = 0;
         diagDeferWaitSum = 0f;
@@ -398,6 +399,7 @@ public class WeaponController : NetworkBehaviour
         input = GetComponentInParent<PlayerInputReader>();
         locomotion = GetComponentInParent<PlayerLocomotion>();
         taser = GetComponent<TaserController>();
+        ownHealth = GetComponentInParent<Health>();
 
         if (input == null || locomotion == null)
         {
@@ -541,7 +543,8 @@ public class WeaponController : NetworkBehaviour
         if (PlayerLocomotion.DebugVaultIgnoresRules) vaulting = false; // client tricheur simulé
 #endif
         if (wantsToFire && cooldown <= 0f && armed && !locomotion.IsSprinting && !vaulting
-            && ReadyAfterSprint && RoundManager.FiringAllowed && (taser == null || !taser.IsStriking))
+            && ReadyAfterSprint && RoundManager.FiringAllowed && (taser == null || !taser.IsStriking)
+            && (ownHealth == null || !ownHealth.IsDead))
         {
             // Le cooldown doit être posé AVANT Fire() : si Fire() lève une exception (ex.
             // référence non assignée dans l'inspecteur), on ne veut surtout pas rester avec
@@ -711,6 +714,12 @@ public class WeaponController : NetworkBehaviour
 
     private readonly Queue<ArmsAction> serverArmsActions = new Queue<ArmsAction>();
 
+    /// <summary>Demandes en attente au plus (2026-10-12). Un joueur honnête n'en a jamais plus de
+    /// quelques-unes : elles attendent au plus l'input qui les précède. Sans borne, un client modifié
+    /// qui inonderait le rechargement ou le changement d'arme faisait grandir la file sans limite
+    /// (règle 2 des garde-fous). Au-delà, la demande est ignorée.</summary>
+    private const int MaxQueuedArmsActions = 64;
+
     /// <summary>Attente maximale (s, temps réel) d'une demande dont l'input n'est jamais simulé
     /// (inputs jetés par le plafond de la file, client qui n'envoie plus rien) : elle est alors
     /// traitée sans l'état de cet input.</summary>
@@ -728,6 +737,7 @@ public class WeaponController : NetworkBehaviour
     [ServerRpc]
     private void FireServerRpc(Vector3 origin, Vector3 direction, double viewServerTime, byte slot)
     {
+        if (serverArmsActions.Count >= MaxQueuedArmsActions) return;
         ArmsAction action = Received(ArmsActionKind.Fire);
         action.origin = origin;
         action.direction = direction;
@@ -745,6 +755,7 @@ public class WeaponController : NetworkBehaviour
     [ServerRpc]
     private void ReloadServerRpc()
     {
+        if (serverArmsActions.Count >= MaxQueuedArmsActions) return;
         serverArmsActions.Enqueue(Received(ArmsActionKind.Reload));
         ServerProcessArmsActions();
     }
@@ -755,6 +766,7 @@ public class WeaponController : NetworkBehaviour
     [ServerRpc]
     private void SwitchWeaponServerRpc(byte slot)
     {
+        if (serverArmsActions.Count >= MaxQueuedArmsActions) return;
         ArmsAction action = Received(ArmsActionKind.Switch);
         action.slot = slot;
         if (slot < SlotCount && DataOf(slot) != null && locomotion != null)
@@ -834,6 +846,23 @@ public class WeaponController : NetworkBehaviour
 
         WeaponData data = ServerData;
         if (data == null) return;
+
+        // Un robot mort ne tire plus (2026-10-12, tranché par l'utilisateur : quand deux joueurs se
+        // tirent dessus au même instant, le premier tir reçu gagne). Sans ce test, le tir d'un joueur
+        // tué plus tôt dans la même image passait encore : les deux tombaient, et la manche allait au
+        // « survivant », mort lui aussi, toujours le même. Le taser vérifiait déjà son attaquant.
+        if (ownHealth != null && ownHealth.IsDead)
+        {
+#if UNITY_EDITOR
+            diagRejectedDead++;
+            DiagReportIfDue();
+#endif
+            return;
+        }
+
+        // Une valeur invalide (NaN, infini) ne vient que d'un client modifié. Refusée ici, avant les
+        // comparaisons : avec NaN, elles sont toutes fausses, et l'origine passait le test de distance.
+        if (!IsFinite(action.origin) || !IsFinite(action.direction) || !IsFinite(action.viewServerTime)) return;
 
         // L'arme du tir est celle que le serveur sait en main : la place annoncée ne sert qu'à
         // repérer un désaccord (client modifié, ou changement d'arme refusé).
@@ -1382,6 +1411,13 @@ public class WeaponController : NetworkBehaviour
     /// plus rapide.
     /// </summary>
     public static void ResetShotRateOnSwitch(ref double lastCheck) => lastCheck = double.NegativeInfinity;
+
+    /// <summary>Aucune composante NaN ni infinie. Ce qu'un client envoie passe par là avant toute
+    /// comparaison : avec NaN, elles sont toutes fausses, donc un garde-fou écrit « refuser si trop
+    /// loin » laissait passer (relecture du 2026-10-12). Sans état, testée.</summary>
+    public static bool IsFinite(Vector3 v) => IsFinite(v.x) && IsFinite(v.y) && IsFinite(v.z);
+    public static bool IsFinite(Vector2 v) => IsFinite(v.x) && IsFinite(v.y);
+    public static bool IsFinite(double d) => !double.IsNaN(d) && !double.IsInfinity(d);
 
     public static bool TryAcceptShotRate(ref double credit, ref double lastCheck, double now, float interval)
     {

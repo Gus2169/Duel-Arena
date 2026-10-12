@@ -37,8 +37,8 @@ public class WeaponVisualFeedback : MonoBehaviour
         return cachedUnlitShader;
     }
 
-    // Un matériau par couleur de traçant, partagé : en créer un par trace (huit par coup de pompe)
-    // en laissait un derrière chaque trace détruite.
+    // Un matériau par couleur (traçants et impacts), partagé : en créer un par trace (huit par coup
+    // de pompe) en laissait un derrière chaque trace détruite.
     private static readonly System.Collections.Generic.Dictionary<Color, Material> tracerMaterials =
         new System.Collections.Generic.Dictionary<Color, Material>();
 
@@ -102,10 +102,9 @@ public class WeaponVisualFeedback : MonoBehaviour
         go.transform.position = point + normal * 0.01f; // léger décalage pour éviter le z-fighting
         go.transform.localScale = Vector3.one * impactSize;
 
-        var renderer = go.GetComponent<Renderer>();
-        var mat = new Material(GetUnlitShader());
-        mat.color = impactColor;
-        renderer.material = mat;
+        // Matériau partagé, comme celui des traçants : en créer un par impact en laissait un derrière
+        // chaque marqueur détruit, des milliers au fil d'une soirée (relecture du 2026-10-12).
+        go.GetComponent<Renderer>().sharedMaterial = TracerMaterial(impactColor);
 
         Destroy(go, impactLifetime);
     }

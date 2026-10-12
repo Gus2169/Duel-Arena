@@ -94,6 +94,25 @@ public class PlayerInputReader : MonoBehaviour
         controls.Gameplay.Disable();
     }
 
+    // Chaque `new PlayerControls()` crée sa propre copie de l'asset d'actions : sans Dispose, elle
+    // restait en mémoire après le départ du joueur (relecture du 2026-10-12).
+    private void OnDestroy()
+    {
+        controls?.Dispose();
+        controls = null;
+    }
+
+    /// <summary>Coupe ou rend toutes les commandes de jeu (menu d'Échap, PauseMenu) : coupées, elles
+    /// lisent zéro, le joueur s'arrête et ne tire plus pendant qu'il clique dans le menu.</summary>
+    public void SetGameplayEnabled(bool enabled)
+    {
+        if (controls == null) return;
+        if (enabled) controls.Gameplay.Enable();
+        else controls.Gameplay.Disable();
+    }
+
+    public bool GameplayEnabled => controls != null && controls.Gameplay.enabled;
+
 #if UNITY_EDITOR
     /// <summary>
     /// AUTOPILOTE DE TEST — Editor uniquement, jamais embarqué en build.

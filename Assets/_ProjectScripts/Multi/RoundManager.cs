@@ -196,27 +196,31 @@ public class RoundManager : NetworkBehaviour
         }
     }
 
+    // Réutilisées à chaque image, pour ne rien allouer pendant une manche.
+    private readonly List<PlayerLocomotion> roundPlayers = new List<PlayerLocomotion>();
+    private readonly List<bool> roundDead = new List<bool>();
+    private readonly List<int> roundScorers = new List<int>();
+
     private void TickActiveRound()
     {
         // Sondage plutôt qu'abonnement : voir la doc de classe.
-        PlayerLocomotion dead = null;
+        roundPlayers.Clear();
+        roundDead.Clear();
         foreach (PlayerLocomotion player in PlayerLocomotion.SpawnedPlayers)
         {
             if (player == null) continue;
             Health health = player.GetComponent<Health>();
-            if (health != null && health.IsDead) { dead = player; break; }
+            roundPlayers.Add(player);
+            roundDead.Add(health != null && health.IsDead);
         }
 
-        if (dead != null)
+        if (RoundScorers(roundDead, roundScorers))
         {
-            // Le SURVIVANT marque — pas "celui qui a tiré". En 1v1 c'est équivalent, et ça évite de
-            // faire remonter l'identité du tireur jusqu'ici. À revoir le jour où un joueur pourra
+            // Les SURVIVANTS marquent — pas "celui qui a tiré". En 1v1 c'est équivalent, et ça évite
+            // de faire remonter l'identité du tireur jusqu'ici. À revoir le jour où un joueur pourra
             // mourir autrement que sous les balles de son adversaire (chute, zone, etc.).
-            foreach (PlayerLocomotion player in PlayerLocomotion.SpawnedPlayers)
-            {
-                if (player == null || player == dead) continue;
-                AddWin(player.OwnerClientId);
-            }
+            foreach (int index in roundScorers) AddWin(roundPlayers[index].OwnerClientId);
+            if (roundScorers.Count == 0) Debug.Log("[Round] Les deux joueurs sont tombés : manche nulle.");
 
             EndRound();
             return;
@@ -229,6 +233,30 @@ public class RoundManager : NetworkBehaviour
             Debug.Log("[Round] Temps écoulé, manche nulle.");
             EndRound();
         }
+    }
+
+    /// <summary>
+    /// La manche est-elle finie, et qui marque ? Finie dès qu'un joueur est mort ; marquent ceux qui
+    /// sont encore en vie (indices dans `dead`, écrits dans `scorers`). Fonction pure, testée.
+    ///
+    /// Corrigé le 2026-10-12 : le « survivant » était tout joueur autre que le premier mort trouvé,
+    /// même mort lui aussi. Comme le serveur acceptait encore le tir d'un joueur déjà tué dans la
+    /// même image, un échange de tirs faisait tomber les deux joueurs et donnait la manche au
+    /// second de la liste, toujours le même (le client). Le serveur refuse désormais le tir d'un
+    /// robot mort (le premier tir reçu gagne, tranché par l'utilisateur) ; si les deux tombaient
+    /// malgré tout, personne ne marquerait.
+    /// </summary>
+    public static bool RoundScorers(IReadOnlyList<bool> dead, List<int> scorers)
+    {
+        scorers.Clear();
+        bool anyDead = false;
+        for (int i = 0; i < dead.Count; i++)
+        {
+            if (dead[i]) anyDead = true;
+            else scorers.Add(i);
+        }
+        if (!anyDead) scorers.Clear();
+        return anyDead;
     }
 
     private void EndRound()
@@ -341,9 +369,11 @@ public class RoundManager : NetworkBehaviour
     // ------------------------------------------------------------------
 
     // Styles construits une seule fois : OnGUI tourne à chaque frame, y créer des GUIStyle
-    // allouerait en continu.
-    private GUIStyle centerBigStyle;
-    private GUIStyle centerMediumStyle;
+    // allouerait en continu. Jamais sérialisés : une recompilation recrée sinon des GUIStyle vides
+    // sur l'objet de la scène ouverte, que le Play Mode (sans rechargement de scène) croit déjà
+    // construits (voir PauseMenu, 2026-10-12).
+    [System.NonSerialized] private GUIStyle centerBigStyle;
+    [System.NonSerialized] private GUIStyle centerMediumStyle;
 
     private void BuildStylesIfNeeded()
     {

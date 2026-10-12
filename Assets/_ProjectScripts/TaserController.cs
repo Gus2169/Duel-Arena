@@ -154,6 +154,11 @@ public class TaserController : NetworkBehaviour
     [ServerRpc]
     private void StrikeServerRpc(Vector3 origin, Vector3 direction, double viewServerTime)
     {
+        // Une valeur invalide (NaN, infini) ne vient que d'un client modifié : avec NaN, le test de
+        // distance de l'origine ci-dessous serait toujours faux, donc passé (2026-10-12).
+        if (!WeaponController.IsFinite(origin) || !WeaponController.IsFinite(direction)
+            || !WeaponController.IsFinite(viewServerTime)) return;
+
         // Garde-fou : au plus un coup par geste, en temps RÉEL (règle des garde-fous). Tolérance de
         // 15 % pour la gigue : à 0,6 s d'intervalle, elle couvre 90 ms.
         double now = Time.timeAsDouble;

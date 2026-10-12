@@ -58,9 +58,10 @@ public class CrosshairUI : MonoBehaviour
     private Texture2D pixel;
     private Texture2D scopeMask; // disque transparent sur fond noir, construit une fois
     private FirstPersonView firstPersonView;
-    private GUIStyle ammoStyle;
-    private GUIStyle nameStyle;
-    private GUIStyle hintStyle;
+    // Jamais sérialisés : voir PauseMenu (une recompilation recrée sinon des GUIStyle vides).
+    [System.NonSerialized] private GUIStyle ammoStyle;
+    [System.NonSerialized] private GUIStyle nameStyle;
+    [System.NonSerialized] private GUIStyle hintStyle;
 
     private void Awake()
     {

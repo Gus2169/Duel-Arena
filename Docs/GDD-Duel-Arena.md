@@ -75,6 +75,8 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **À 2-2**, la manche décisive est une manche normale.
 
+**Échange de tirs** : quand deux joueurs se tirent dessus au même instant, le premier tir reçu par le serveur gagne ; un robot mort ne tire plus (tranché le 2026-10-12). Cela donne un léger avantage à l'hôte, comme le reste du mode hôte (§ 3).
+
 **Le kill** déclenche une **mini-célébration** : une phrase écrite à l'écran pour le gagnant, et une autre pour le perdant.
 
 **Entre deux manches** : fondu au noir. Toutes les lumières de l'arène s'éteignent, les deux joueurs sont replacés dans l'obscurité, puis la lumière revient et la manche suivante démarre. Le replacement n'est jamais vu, pas même par les spectateurs. Dans le noir, **on entend la reconstruction des châssis** (perceuses, servomoteurs). Une killcam pour les deux joueurs est envisagée, à condition de ne pas casser le rythme.
@@ -112,6 +114,8 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 **Visée (ADS)** : ralentit le déplacement. Viser en courant **coupe le sprint** et lance la visée. On ne tire pas en sprintant.
 
 **Viseurs** : de vrais viseurs (point rouge, holographique…), dont la réticule reste sur la cible quand on vise. **Chaque joueur choisit le sien avant la partie**, dans un menu « armurerie » : son style **et** son grossissement. Tous les viseurs sont accessibles à tous, c'est ce qui garde l'équité (tranché le 2026-10-09). Le premier en jeu est le viseur intégré au fusil d'assaut. **Le sniper vise en lunette plein écran**, façon *Call of Duty* (×4, sensibilité réduite d'autant, tranché le 2026-10-11).
+
+**Les accessoires de l'armurerie** (poignée, viseur, laser, chargeur étendu), façon création de classe de *Call of Duty Cold War* : **cosmétiques**, sans aucun effet de jeu. Pour l'instant, ils ne se voient que dans l'armurerie du menu, pas sur l'arme tenue en partie (adopté le 2026-10-12).
 
 **Tir à la hanche** : possible, et c'est là que les armes à gerbe brillent. Leur gerbe suit un motif fixe (§ 3) : un tir au jugé au fusil à pompe couvre un grand angle, de façon lisible, et deux tirs identiques donnent toujours le même résultat ; en visée, elle se resserre. **Le sniper tire juste à la hanche, mais sans réticule** (tranché le 2026-10-11) : aucun hasard, il faut viser au jugé.
 
@@ -236,6 +240,7 @@ Le **classique** est le cœur, et le seul du premier prototype. Les autres sont 
 - **Tag Team** — un 2v2 façon catch : quand un joueur meurt, son coéquipier prend sa place. Communication entre coéquipiers ouverte ou fermée (fermée se contourne facilement par Discord). Victoire au plus de kills en temps donné, ou au premier à 100 points.
 - **Golden Gun** — une seule arme, une balle tue, munitions illimitées. En temps donné ou à un objectif de points.
 - **Gun Game** — chaque kill fait passer à l'arme suivante, dans un ordre fixe. Se faire tuer au taser fait redescendre d'un cran. Le premier à tuer avec la dernière arme gagne.
+- **Capture** et **Zone** — deux modes annoncés dans le menu principal, encore à définir (adoptés tels quels le 2026-10-12).
 - *Coop Zombie* — deux joueurs contre des vagues de zombies, comme dans Call of Duty. Noté pour mémoire : ce n'est pas du duel, donc hors de l'identité du jeu.
 
 ## 12. Univers et ton

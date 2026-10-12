@@ -237,7 +237,7 @@ Les armes peuvent être issues du programme militaire, de prototypes jamais fina
 
 **Les armes bricolées sont un style visuel** : elles fonctionnent exactement comme les autres, sans défaut ni enrayement.
 
-**L'arme de corps à corps est un taser**, pas un couteau : une lame n'a guère de sens contre un châssis de métal, une décharge électrique si. Ses règles sont dans le GDD (§ 6) ; son apparence reste à définir.
+**L'arme de corps à corps est un taser**, pas un couteau : une lame n'a guère de sens contre un châssis de métal, une décharge électrique si. Ses règles sont dans le GDD (§ 6). **C'est un gant à décharge électrique**, porté sur l'avant-bras gauche, dans l'esprit des gantelets de *Fallout* : le coup est un direct du poing, qui crépite d'étincelles au contact (modèle fourni par l'utilisateur, 2026-10-11).
 
 La variété doit soutenir le fun sans détruire le skill. Chaque arme ou power-up doit être évalué selon sa lisibilité, sa contre-mesure, son impact sur les distances de combat et son potentiel de frustration.
 

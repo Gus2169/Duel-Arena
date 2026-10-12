@@ -499,6 +499,10 @@ public class PlayerLocomotion : NetworkBehaviour
     /// l'input `fromInput` (le premier produit après la demande).</summary>
     public void ServerScheduleWeaponSlot(int fromInput, byte slot)
     {
+        // Borne de la file (2026-10-12) : elle ne se vide qu'au fil des inputs simulés, donc un client
+        // modifié qui changerait d'arme sans envoyer d'input la ferait grandir sans limite. Un joueur
+        // honnête n'a jamais plus d'un ou deux changements en attente.
+        if (serverWeaponSlotChanges.Count >= 64) return;
         serverWeaponSlotChanges.Enqueue((fromInput, slot));
     }
 
@@ -1216,7 +1220,11 @@ public class PlayerLocomotion : NetworkBehaviour
         return new MovementInputSnapshot
         {
             move = input.MoveInput,
-            lookX = input.LookInput.x * LookScale,
+            // La sensibilité du menu Options vaut pour les deux axes : PlayerCameraLook l'applique au
+            // tangage, et ici au lacet, avant le snapshot (Move() reste une fonction du seul
+            // snapshot). Oubliée jusqu'au 2026-10-12 : régler la sensibilité ne changeait que l'axe
+            // vertical.
+            lookX = input.LookInput.x * LookScale * GameSettings.SensitivityMultiplier,
             sprintHeld = input.SprintHeld && sprintAllowed,
             sneakHeld = input.SneakHeld,
             aimHeld = input.AimHeld,
@@ -1293,6 +1301,12 @@ public class PlayerLocomotion : NetworkBehaviour
     [ServerRpc]
     private void SubmitInputServerRpc(int sequence, Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, float aimPitch, bool fireHeld, bool firePressedThisFrame, int leanState, bool jumpPressed, float deltaTime)
     {
+        // Un input invalide ne vient que d'un client modifié : il est ignoré, comme s'il n'avait
+        // jamais été envoyé (voir IsValidInput). Le lean est ramené à ses trois états : au-delà, le
+        // buste se couchait presque à l'horizontale, emportant la surface touchable avec lui.
+        if (!IsValidInput(move, lookX, deltaTime)) return;
+        leanState = Mathf.Clamp(leanState, -1, 1);
+
         // Garde-fou anti-flood (mémoire) : les ServerRpc sont livrées en Reliable, donc TOUT ce
         // qu'un client envoie finit par arriver. Sans plafond, un client qui spamme cette RPC fait
         // grossir la queue indéfiniment — la mémoire du serveur monte, et le retard de simulation
@@ -1358,6 +1372,18 @@ public class PlayerLocomotion : NetworkBehaviour
     private const float InputTimeBudgetRefillFactor = 1.1f;  // 10% de marge pour la gigue réseau/frame.
     private const float MaxInputTimeBudget = 0.25f;          // réserve max : permet un vrai rattrapage après un à-coup réseau, sans plus.
     private const int MaxQueuedInputs = 120;                 // ≈ 2 s de jeu à 60 FPS — voir SubmitInputServerRpc.
+
+    /// <summary>
+    /// Un input reçu d'un client est-il recevable ? Toutes ses valeurs finies et une durée positive.
+    /// Fonction pure, testée (relecture du 2026-10-12). Sans ce filtre, une seule durée NaN
+    /// empoisonnait pour toujours l'horloge de sortie de sprint (serverInputClock) : avec NaN,
+    /// « trop tôt après un sprint » est toujours faux, et le serveur ne refusait plus jamais un tir
+    /// ni un rechargement en sortant d'un sprint. Un NaN dans la direction ou la souris, lui,
+    /// rendait la position du joueur NaN, publiée à tout le monde.
+    /// </summary>
+    public static bool IsValidInput(Vector2 move, float lookX, float deltaTime)
+        => WeaponController.IsFinite(move) && WeaponController.IsFinite(lookX)
+           && WeaponController.IsFinite(deltaTime) && deltaTime >= 0f;
 
     private float serverInputTimeBudget;
 
@@ -1825,6 +1851,8 @@ public class PlayerLocomotion : NetworkBehaviour
     [ServerRpc]
     private void RequestStanceChangeServerRpc(Stance desired)
     {
+        // Une posture hors de l'énumération ne vient que d'un client modifié (2026-10-12).
+        if (desired < Stance.Standing || desired > Stance.Prone) return;
         ServerRequestStance(desired);
     }
 

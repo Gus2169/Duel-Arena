@@ -66,20 +66,35 @@ public class MainMenuController : MonoBehaviour
 
         ShowScreenByName("screenTitle");
 
-        if (NetworkManager.Singleton != null)
+        // De retour d'une partie (l'hôte est parti, la connexion est tombée...) : l'écran Jouer,
+        // avec la raison (SessionFlow.ReturnToMenu).
+        if (!string.IsNullOrEmpty(SessionFlow.PendingMenuMessage))
         {
-            NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
-            NetworkManager.Singleton.OnClientDisconnectCallback += HandleClientDisconnected;
+            ShowScreenByName("screenPlay");
+            SetStatus(SessionFlow.PendingMenuMessage, true);
+            SessionFlow.PendingMenuMessage = "";
         }
     }
 
-    private void OnDisable()
+    // Abonnement fait au Start, une fois tous les objets de la scène réveillés : dans OnEnable, le
+    // NetworkManager de la scène pouvait ne pas encore être le singleton (ordre d'activation non
+    // garanti, et au retour d'une partie l'ancien vient à peine d'être détruit, 2026-10-12).
+    private NetworkManager subscribedManager;
+
+    private void Start()
     {
-        if (NetworkManager.Singleton != null)
-        {
-            NetworkManager.Singleton.OnClientConnectedCallback -= HandleClientConnected;
-            NetworkManager.Singleton.OnClientDisconnectCallback -= HandleClientDisconnected;
-        }
+        subscribedManager = NetworkManager.Singleton != null ? NetworkManager.Singleton : FindAnyObjectByType<NetworkManager>();
+        if (subscribedManager == null) return;
+        subscribedManager.OnClientConnectedCallback += HandleClientConnected;
+        subscribedManager.OnClientDisconnectCallback += HandleClientDisconnected;
+    }
+
+    private void OnDestroy()
+    {
+        if (subscribedManager == null) return;
+        subscribedManager.OnClientConnectedCallback -= HandleClientConnected;
+        subscribedManager.OnClientDisconnectCallback -= HandleClientDisconnected;
+        subscribedManager = null;
     }
 
     // ------------------------------------------------------------------
@@ -253,7 +268,12 @@ public class MainMenuController : MonoBehaviour
     {
         if (joinAttemptInProgress)
         {
-            EndJoinAttempt("Connexion échouée : vérifie l'adresse, le port, et que l'hôte a bien cliqué sur Héberger.", true);
+            // Refusé par l'hôte (partie pleine, version différente : voir SessionFlow), on dit
+            // pourquoi ; sinon, la connexion n'a simplement pas abouti.
+            string reason = NetworkManager.Singleton != null ? NetworkManager.Singleton.DisconnectReason : "";
+            EndJoinAttempt(string.IsNullOrEmpty(reason)
+                ? "Connexion échouée : vérifie l'adresse, le port, et que l'hôte a bien cliqué sur Héberger."
+                : "Connexion refusée : " + reason, true);
         }
     }
 
