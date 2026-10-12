@@ -37,17 +37,31 @@ public class WeaponVisualFeedback : MonoBehaviour
         return cachedUnlitShader;
     }
 
+    // Un matériau par couleur de traçant, partagé : en créer un par trace (huit par coup de pompe)
+    // en laissait un derrière chaque trace détruite.
+    private static readonly System.Collections.Generic.Dictionary<Color, Material> tracerMaterials =
+        new System.Collections.Generic.Dictionary<Color, Material>();
+
+    private static Material TracerMaterial(Color color)
+    {
+        if (tracerMaterials.TryGetValue(color, out Material material) && material != null) return material;
+        material = new Material(GetUnlitShader()) { color = color, name = "Traçant" };
+        tracerMaterials[color] = material;
+        return material;
+    }
+
     /// <summary>Trace visuelle instantanée entre le point de départ et le point d'arrivée du tir.</summary>
-    public void SpawnTracer(Vector3 start, Vector3 end)
+    public void SpawnTracer(Vector3 start, Vector3 end) => SpawnTracer(start, end, tracerColor);
+
+    /// <summary>Même trace, à la couleur de l'arme (WeaponData.tracerColor : le rayon du raygun).</summary>
+    public void SpawnTracer(Vector3 start, Vector3 end, Color color)
     {
         var go = new GameObject("ShotTracer");
         var lr = go.AddComponent<LineRenderer>();
 
-        var mat = new Material(GetUnlitShader());
-        mat.color = tracerColor;
-        lr.material = mat;
-        lr.startColor = tracerColor;
-        lr.endColor = tracerColor;
+        lr.sharedMaterial = TracerMaterial(color);
+        lr.startColor = color;
+        lr.endColor = color;
         lr.startWidth = tracerWidth;
         lr.endWidth = tracerWidth;
         lr.positionCount = 2;

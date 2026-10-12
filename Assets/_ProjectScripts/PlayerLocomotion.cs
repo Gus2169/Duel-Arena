@@ -75,6 +75,7 @@ public class PlayerLocomotion : NetworkBehaviour
         public Vector3 position;
         public float yaw;
         public float leanOffset;
+        public float aimPitch;   // tangage du regard, en degrés (+ = vers le bas, comme la caméra)
         public byte flags;       // DisplayFlags
         public byte teleportId;  // change à chaque téléportation : l'interpolation repart de zéro
     }
@@ -117,9 +118,14 @@ public class PlayerLocomotion : NetworkBehaviour
 
     [Header("Vitesses (m/s)")]
     [SerializeField] private float walkSpeed = 4.4f;   // marche normale
-    [SerializeField] private float sneakSpeed = 2.2f;   // approche furtive : plus lente et plus discrète que la marche
+    [Tooltip("Approche furtive : plus lente et plus discrète que la marche. Les autres postures en prennent leur part (×0,6 accroupi). Debout, elle joue les marches du Y Bot ; un sneak à 1,3 m/s sur les Rifle Sneak a été essayé le 2026-10-11, puis écarté par l'utilisateur.")]
+    [SerializeField] private float sneakSpeed = 2f;
     [SerializeField] private float runSpeed = 8.8f;    // course : rapide mais bruyante
     [SerializeField] private float adsSpeedMultiplier = 0.55f;
+    [Tooltip("Vitesse de côté, rapportée à celle vers l'avant (2026-10-10, « comme beaucoup de FPS »). Les diagonales avant gardent toute leur vitesse ; de là, elle décroît jusqu'à cette valeur plein côté. Ressenti ET équilibrage : c'est la vitesse d'un peek en pas chassé.")]
+    [SerializeField, Range(0.3f, 1f)] private float strafeSpeedMultiplier = 0.85f;
+    [Tooltip("Vitesse à reculer, rapportée à celle vers l'avant. Du côté vers l'arrière, elle décroît jusqu'à cette valeur. Ressenti ET équilibrage : c'est la vitesse à laquelle on rompt un engagement.")]
+    [SerializeField, Range(0.3f, 1f)] private float backwardSpeedMultiplier = 0.7f;
     [SerializeField] private float gravity = -18f;
 
     [Header("Accélération")]
@@ -127,6 +133,8 @@ public class PlayerLocomotion : NetworkBehaviour
     [SerializeField] private float acceleration = 60f;
     [Tooltip("m/s² quand on freine vers une vitesse cible plus basse (plus rapide que l'accélération pour rester réactif en duel).")]
     [SerializeField] private float deceleration = 80f;
+    [Tooltip("m/s² : au-dessus de l'allure de marche, la vitesse ne retombe qu'à ce rythme (2026-10-11). On met du temps à casser un sprint : 10 → 5 m/s en 0,2 s à 25. Ressenti ET équilibrage, avec WeaponData.sprintToFireTime. Seul l'élan dans la direction de course est freiné ainsi : on tourne et on part de côté comme avant, sans jamais aller de côté plus vite qu'un pas de côté normal.")]
+    [SerializeField] private float sprintDeceleration = 25f;
 
     [Header("Postures")]
     // Yeux calés sur la tête du robot le 2026-10-05 (voir BodyLayout) : accroupi et allongé, la
@@ -140,9 +148,12 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         controllerHeight = 1.1f, controllerRadius = 0.35f, cameraHeight = 1.05f, cameraForward = 0.10f, moveSpeedMultiplier = 0.6f
     };
+    // Allongé, on rampe à la vitesse de l'animation (2026-10-10) : la reptation avance à 0,28 m/s,
+    // et ×0,085 donne 0,43 m/s à l'allure de marche, soit une cadence de ×1,5. À 1,25 m/s (×0,25
+    // jusque-là), le corps glissait trois fois plus vite que ses mains et ses genoux.
     [SerializeField] private StanceProfile proneProfile = new StanceProfile
     {
-        controllerHeight = 0.5f, controllerRadius = 0.4f, cameraHeight = 0.36f, cameraForward = 0.25f, cameraSide = -0.15f, moveSpeedMultiplier = 0.25f
+        controllerHeight = 0.5f, controllerRadius = 0.4f, cameraHeight = 0.36f, cameraForward = 0.25f, cameraSide = -0.15f, moveSpeedMultiplier = 0.085f
     };
 
     [Header("Transitions de posture (ressenti, à régler en jouant)")]
@@ -229,6 +240,18 @@ public class PlayerLocomotion : NetworkBehaviour
 
     [Tooltip("Nombre d'envois de la RPC d'input par frame quand 'Debug Flood Server Inputs' est coché (1 = comportement normal). Avant le budget de temps, une valeur de 10 suffisait à traverser la carte.")]
     [SerializeField, Range(1, 30)] private int debugFloodMultiplier = 10;
+
+    /// <summary>SIMULE UN CLIENT MODIFIÉ qui sprinte sans respecter GateSprint : il court en
+    /// rechargeant et en frappant, sans annuler son rechargement. Attendu : le serveur annule le
+    /// rechargement et fait rater le coup (ServerSprintedSince). Statique, pour le banc de test à
+    /// deux instances (NetworkBootstrapUI, « cheatsprint ») ; sans effet en Host.</summary>
+    public static bool DebugSprintIgnoresRules;
+
+    /// <summary>SIMULE UN CLIENT MODIFIÉ qui tire et frappe en franchissant un obstacle (2026-10-11).
+    /// Attendu : « [Serveur] Tir rejeté : le joueur franchissait un obstacle » et « Coup de taser
+    /// annulé ». Statique, pour le banc de test (« cheatvault ») ; marche aussi en Host, dont les
+    /// demandes passent par la même file du serveur.</summary>
+    public static bool DebugVaultIgnoresRules;
 #endif
 
     [Header("Réseau — réconciliation (client distant)")]
@@ -292,6 +315,25 @@ public class PlayerLocomotion : NetworkBehaviour
     /// le prefab, constaté le 2026-10-05).</summary>
     public float NominalSpeed(Stance stance) => walkSpeed * GetStanceProfile(stance).moveSpeedMultiplier;
 
+    /// <summary>Ce que la direction retire à la vitesse (DirectionSpeedMultiplier), avec les
+    /// réglages de ce joueur. Lu aussi par l'affichage, pour que l'allure jouée suive.</summary>
+    public float DirectionMultiplier(Vector2 move) => DirectionSpeedMultiplier(move, strafeSpeedMultiplier, backwardSpeedMultiplier);
+
+    /// <summary>
+    /// On recule et on va de côté moins vite qu'en avançant (2026-10-10, demandé par l'utilisateur,
+    /// comme dans beaucoup de FPS). Jusqu'à 45° de l'avant (les diagonales avant du clavier), toute
+    /// la vitesse ; de 45° au plein côté, elle décroît jusqu'à `strafe` ; du côté à l'arrière,
+    /// jusqu'à `backward`. Fonction pure de l'input, donc déterministe pour Move(), testée.
+    /// </summary>
+    public static float DirectionSpeedMultiplier(Vector2 move, float strafe, float backward)
+    {
+        if (move.sqrMagnitude < 1e-6f) return 1f;
+        float angle = Vector2.Angle(Vector2.up, move);
+        if (angle <= 45f) return 1f;
+        if (angle <= 90f) return Mathf.Lerp(1f, strafe, (angle - 45f) / 45f);
+        return Mathf.Lerp(strafe, backward, (angle - 90f) / 90f);
+    }
+
     /// <summary>Position de l'œil dans une posture, dans l'espace du joueur, SANS lean ni head
     /// bob. C'est la valeur autoritaire, identique sur toutes les machines : elle sert au calcul
     /// des zones touchables et à l'anti-clipping du lean. La caméra du propriétaire, elle, y
@@ -330,6 +372,16 @@ public class PlayerLocomotion : NetworkBehaviour
     /// aiguillage que pour la posture, la chute et le franchissement.</summary>
     public bool DisplayAiming => Simulates ? IsAiming : HasDisplayFlag(DisplayFlags.Aiming);
 
+    /// <summary>Tangage du regard à AFFICHER pour ce joueur sur cette machine, en degrés (+ = vers
+    /// le bas, la convention de la caméra). Même aiguillage que la visée : la valeur de la
+    /// simulation chez qui la fait tourner, la pose interpolée chez un spectateur. Le buste s'en
+    /// sert pour pointer le fusil là où le joueur regarde (PlayerAnimator.ApplyAimDirection).
+    ///
+    /// Catégorie C réseautée : rien ne la relit dans la simulation, le hitbox ou le tir. Un client
+    /// modifié peut mentir sur la sienne, comme sur son lean : il ne change que l'endroit où les
+    /// autres VOIENT pointer son fusil, jamais où partent ses balles.</summary>
+    public float DisplayAimPitch => Simulates ? AimPitch : displayedPose.aimPitch;
+
     /// <summary>Le joueur est-il en l'air, du point de vue de l'AFFICHAGE ?
     ///
     /// Le franchissement en est EXCLU explicitement : il coupe le CharacterController, donc
@@ -346,6 +398,10 @@ public class PlayerLocomotion : NetworkBehaviour
     }
     public NoiseLevel CurrentNoise { get; private set; } = NoiseLevel.Silent;
     public bool IsAiming { get; private set; }
+
+    /// <summary>Tangage du regard de l'input en cours (degrés, + = vers le bas). Affecté dans
+    /// Move() comme IsAiming, donc juste chez le propriétaire et sur le serveur.</summary>
+    public float AimPitch { get; private set; }
     public bool IsVaulting { get; private set; } // état simulé : confirmé par le serveur, restauré avant rejeu
     public bool IsSprinting { get; private set; }
     public bool IsSneaking { get; private set; }
@@ -358,6 +414,130 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private CharacterController controller;
     private PlayerInputReader input;
+    private PlayerCameraLook cameraLook; // le tangage du regard, chez le propriétaire
+    private WeaponController weapon;     // le sprint s'efface devant le rechargement (GateSprint)
+    private TaserController taser;       // et devant le coup de taser
+    private FirstPersonView firstPersonView; // la lunette du sniper réduit la sensibilité
+
+    /// <summary>Chez le propriétaire : facteur de sensibilité de la souris, réduit dans la lunette
+    /// du sniper comme le champ de vision (2026-10-11). Appliqué au mouvement de souris AVANT qu'il
+    /// n'entre dans le snapshot : Move() reste une fonction du seul snapshot.</summary>
+    private float LookScale => firstPersonView != null ? firstPersonView.LookScale : 1f;
+
+    /// <summary>Chez le propriétaire : voulait-il sprinter à l'image précédente ? Sert à repérer
+    /// le moment où il SE MET à courir (GateSprint). Hors simulation : rien dans Move() ne le lit.</summary>
+    private bool sprintIntentLastFrame;
+
+    /// <summary>Serveur : numéro du dernier input reçu de ce joueur, et du dernier input simulé où il
+    /// voulait sprinter. Les demandes de rechargement et de taser voyagent par RPC fiables, livrées
+    /// dans l'ordre d'envoi : un input de numéro supérieur à celui reçu avant une demande a été
+    /// produit APRÈS l'appui. C'est ce qui permet au serveur d'annuler un rechargement ou un coup
+    /// suivis d'un sprint, sans jamais punir le sprint qui les précédait (voir ServerNextInput).</summary>
+    public int ServerLastReceivedInput { get; private set; } = -1;
+    public int ServerLastSprintInput { get; private set; } = -1;
+
+    /// <summary>Serveur : numéro du premier input postérieur à une demande qui arrive maintenant.</summary>
+    public int ServerNextInput => ServerLastReceivedInput + 1;
+
+    /// <summary>Serveur : le joueur a-t-il voulu sprinter dans un input simulé depuis `firstInput` ?</summary>
+    public bool ServerSprintedSince(int firstInput) => ServerLastSprintInput >= firstInput;
+
+    /// <summary>Serveur : numéro du dernier input simulé pendant un franchissement. On ne recharge
+    /// pas en franchissant (2026-10-11) : un rechargement suivi d'un input en franchissement est
+    /// annulé, comme pour le sprint.</summary>
+    public int ServerLastVaultInput { get; private set; } = -1;
+    public bool ServerVaultedSince(int firstInput) => ServerLastVaultInput >= firstInput;
+
+    /// <summary>Serveur : numéro du dernier input de ce joueur que le serveur a SIMULÉ. Une demande
+    /// de tir, de rechargement ou de changement d'arme attend que l'input qui la précède le soit
+    /// (WeaponController.ServerProcessArmsActions) : c'est l'état qui en découle qui compte.</summary>
+    public int ServerLastSimulatedInput { get; private set; } = -1;
+
+    // Serveur : ce que chaque input simulé récemment a donné — franchissement après sa simulation,
+    // visée demandée. Un anneau de taille fixe, indexé par numéro d'input.
+    private const int ServerInputRecordSize = 256;
+    private readonly int[] serverInputRecordSequence = InitRecordSequences();
+    private readonly byte[] serverInputRecordFlags = new byte[ServerInputRecordSize];
+    private const byte RecordVaulting = 1, RecordAiming = 2;
+
+    private static int[] InitRecordSequences()
+    {
+        var sequences = new int[ServerInputRecordSize];
+        for (int i = 0; i < sequences.Length; i++) sequences[i] = -1;
+        return sequences;
+    }
+
+    /// <summary>Serveur, après la simulation d'un input : on retient ce qu'il a donné.</summary>
+    private void ServerRecordSimulatedInput(int sequence, bool aiming)
+    {
+        int index = sequence & (ServerInputRecordSize - 1);
+        serverInputRecordSequence[index] = sequence;
+        serverInputRecordFlags[index] = (byte)((IsVaulting ? RecordVaulting : 0) | (aiming ? RecordAiming : 0));
+        ServerLastSimulatedInput = Mathf.Max(ServerLastSimulatedInput, sequence);
+        if (weapon != null) weapon.ServerProcessArmsActions();
+    }
+
+    /// <summary>Serveur : l'état qui suivait la simulation de l'input `sequence` — franchissait-il,
+    /// visait-il ? Faux s'il n'est pas (ou plus) connu.</summary>
+    public bool ServerInputFlags(int sequence, out bool vaulting, out bool aiming)
+    {
+        int index = sequence & (ServerInputRecordSize - 1);
+        bool known = sequence >= 0 && serverInputRecordSequence[index] == sequence;
+        byte flags = known ? serverInputRecordFlags[index] : (byte)0;
+        vaulting = (flags & RecordVaulting) != 0;
+        aiming = (flags & RecordAiming) != 0;
+        return known;
+    }
+
+    // Serveur : l'arme en main input par input (2026-10-11). Son poids pèse sur la vitesse dans
+    // Move() ; le serveur ne croit pas le client, il applique les changements d'arme qu'il a reçus,
+    // à partir de l'input qui suit chacun.
+    private readonly Queue<(int fromInput, byte slot)> serverWeaponSlotChanges = new Queue<(int, byte)>();
+    private byte serverWeaponSlot;
+
+    /// <summary>Serveur, à l'arrivée d'un changement d'arme : l'arme `slot` est en main à partir de
+    /// l'input `fromInput` (le premier produit après la demande).</summary>
+    public void ServerScheduleWeaponSlot(int fromInput, byte slot)
+    {
+        serverWeaponSlotChanges.Enqueue((fromInput, slot));
+    }
+
+    /// <summary>Serveur : l'arme en main pour l'input `sequence`, changements reçus appliqués.</summary>
+    private byte ServerWeaponSlotFor(int sequence)
+    {
+        while (serverWeaponSlotChanges.Count > 0 && serverWeaponSlotChanges.Peek().fromInput <= sequence)
+            serverWeaponSlot = serverWeaponSlotChanges.Dequeue().slot;
+        return serverWeaponSlot;
+    }
+
+    /// <summary>Le poids de l'arme `slot` : sa vitesse de déplacement relative (1 sans arme).</summary>
+    private float WeaponSpeedMultiplier(byte slot) => weapon != null ? weapon.SpeedMultiplierOf(slot) : 1f;
+
+    /// <summary>Le poids de l'arme affichée en main : la vitesse de référence de l'animation le suit.</summary>
+    public float DisplayedWeaponSpeedMultiplier => weapon != null ? weapon.SpeedMultiplierOf(weapon.DisplayedSlot) : 1f;
+
+    // Sortie de sprint (2026-10-11) : le temps écoulé depuis le dernier input qui voulait sprinter,
+    // compté sur les inputs eux-mêmes (la somme de leurs durées, bornées comme sur le serveur). Le
+    // joueur compte les inputs qu'il a envoyés, le serveur ceux qu'il a reçus : une demande (tir,
+    // rechargement) voyage par RPC fiable, livrée après tous les inputs envoyés avant elle, donc les
+    // deux comptes sont identiques au moment où le serveur la juge. Aucune gigue du réseau n'y entre.
+    private double localInputClock, localLastSprintClock = double.NegativeInfinity;
+    private double serverInputClock, serverLastSprintClock = double.NegativeInfinity;
+
+    /// <summary>Chez le propriétaire : temps (s) depuis le dernier input envoyé qui voulait sprinter.</summary>
+    public float TimeSinceSprint => (float)(localInputClock - localLastSprintClock);
+
+    /// <summary>Serveur : le même temps, sur les inputs reçus de ce joueur.</summary>
+    public float ServerTimeSinceSprint => (float)(serverInputClock - serverLastSprintClock);
+
+    /// <summary>Avance une horloge d'inputs d'un input de durée `dt` (bornée), et la marque si cet
+    /// input voulait sprinter. Fonction pure, testée.</summary>
+    public static void AdvanceInputClock(ref double clock, ref double lastSprint, float dt, bool sprint)
+    {
+        clock += Mathf.Clamp(dt, 0f, MaxSingleInputDeltaTime);
+        if (sprint) lastSprint = clock;
+    }
+
     private float verticalVelocity;
     private float currentLeanOffset;
     private int leanState; // -1 = gauche, 0 = aucun, 1 = droite
@@ -447,10 +627,12 @@ public class PlayerLocomotion : NetworkBehaviour
         public bool sprintHeld;
         public bool sneakHeld;
         public bool aimHeld;
+        public float aimPitch; // tangage du regard, affichage seulement — voir DisplayAimPitch
         public bool fireHeld;
         public bool firePressedThisFrame;
         public int leanState; // -1 gauche / 0 / +1 droite — voir UpdateLeanState
         public bool jumpPressed; // déclenche un vault si un obstacle franchissable est devant
+        public byte weaponSlot;  // l'arme en main : son poids pèse sur la vitesse (le serveur la fixe lui-même)
     }
 
     private struct PendingInput
@@ -546,6 +728,10 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         controller = GetComponent<CharacterController>();
         input = GetComponent<PlayerInputReader>();
+        if (cameraPivot != null) cameraLook = cameraPivot.GetComponent<PlayerCameraLook>();
+        weapon = GetComponentInChildren<WeaponController>();
+        taser = GetComponentInChildren<TaserController>();
+        firstPersonView = GetComponent<FirstPersonView>();
         ApplyStanceImmediate(Stance.Standing);
 
         // Voir commentaire équivalent de l'ancienne version : évite que le joueur ne se bloque
@@ -914,8 +1100,20 @@ public class PlayerLocomotion : NetworkBehaviour
             float dt = Time.deltaTime;
             bool wasGrounded = controller.isGrounded;
 
+            // Numérotés comme ceux d'un client distant, pour que le rechargement et le taser du
+            // Host suivent la même règle face au sprint (ServerSprintedSince).
+            int sequence = nextInputSequence++;
+            ServerLastReceivedInput = sequence;
+            bool sprintInput = WantsToSprint(snap.sprintHeld, snap.move, snap.aimHeld, snap.fireHeld);
+            AdvanceInputClock(ref localInputClock, ref localLastSprintClock, dt, sprintInput);
+            AdvanceInputClock(ref serverInputClock, ref serverLastSprintClock, dt, sprintInput);
+
             ServerCheckAutoStand(snap);
             Move(snap, dt, ServerClock);
+            CancelReloadIfVaulting();
+            if (sprintInput) ServerLastSprintInput = sequence;
+            if (IsVaulting) ServerLastVaultInput = sequence;
+            ServerRecordSimulatedInput(sequence, snap.aimHeld);
             ServerTrackLeanSound(snap.leanState);
 
             if (controller.isGrounded && !wasGrounded) TriggerLandingKick(Mathf.Abs(verticalVelocity));
@@ -985,19 +1183,51 @@ public class PlayerLocomotion : NetworkBehaviour
 #endif
     }
 
+    /// <summary>Chez le propriétaire, après sa simulation (jamais dans Move(), qu'un rejeu
+    /// rappellerait) : on ne recharge pas en franchissant un obstacle (2026-10-11), le
+    /// franchissement annule le rechargement en cours. Le serveur fait de même de son côté
+    /// (ServerVaultedSince).</summary>
+    private void CancelReloadIfVaulting()
+    {
+        if (IsVaulting && weapon != null && weapon.IsReloading) weapon.CancelLocalReload();
+    }
+
     private MovementInputSnapshot ReadLocalInput()
     {
+        // Le sprint s'efface devant le rechargement et le taser, et se mettre à courir annule un
+        // rechargement (GateSprint). Décidé ici, chez le propriétaire, et envoyé tel quel : Move()
+        // reste une fonction du seul snapshot. Le serveur vérifie de son côté (ServerSprintedSince).
+        bool intent = WantsToSprint(input.SprintHeld, input.MoveInput, input.AimHeld, input.FireHeld);
+        // Un rechargement en attente (sortie de sprint, franchissement) arrête le sprint comme un
+        // rechargement en cours : il partira dès que l'arme sera remontée.
+        bool sprintAllowed = GateSprint(intent, ref sprintIntentLastFrame,
+                                        weapon != null && (weapon.IsReloading || weapon.ReloadPending),
+                                        taser != null && taser.IsStriking, out bool cancelReload);
+#if UNITY_EDITOR
+        if (DebugSprintIgnoresRules)
+        {
+            sprintAllowed = true;
+            cancelReload = false;
+        }
+        if (cancelReload) Debug.Log("[DIAG-CHARGEUR] rechargement annulé par le sprint (joueur)");
+#endif
+        if (cancelReload) weapon.CancelLocalReload();
+
         return new MovementInputSnapshot
         {
             move = input.MoveInput,
-            lookX = input.LookInput.x,
-            sprintHeld = input.SprintHeld,
+            lookX = input.LookInput.x * LookScale,
+            sprintHeld = input.SprintHeld && sprintAllowed,
             sneakHeld = input.SneakHeld,
             aimHeld = input.AimHeld,
+            aimPitch = cameraLook != null ? cameraLook.Pitch : 0f,
             fireHeld = input.FireHeld,
             firePressedThisFrame = input.FirePressedThisFrame,
             leanState = leanState,
-            jumpPressed = input.JumpPressedThisFrame,
+            // On ne franchit pas d'obstacle pendant un coup de taser (2026-10-11) : le geste va à son
+            // terme, comme pour le sprint. Filtré ici, hors de Move().
+            jumpPressed = input.JumpPressedThisFrame && (taser == null || !taser.IsStriking),
+            weaponSlot = weapon != null ? weapon.LocalSlot : (byte)0,
         };
     }
 
@@ -1018,6 +1248,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
         bool wasGrounded = controller.isGrounded;
         Move(snap, dt, simTime);
+        CancelReloadIfVaulting();
         if (controller.isGrounded && !wasGrounded) TriggerLandingKick(Mathf.Abs(verticalVelocity));
 
         // L'input est enregistré APRÈS Move() : on a besoin de l'état prédit qui en résulte pour
@@ -1035,7 +1266,9 @@ public class PlayerLocomotion : NetworkBehaviour
             simTime = simTime,
         });
 
-        SubmitInputServerRpc(sequence, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, snap.jumpPressed, dt);
+        SubmitInputServerRpc(sequence, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.aimPitch, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, snap.jumpPressed, dt);
+        AdvanceInputClock(ref localInputClock, ref localLastSprintClock, dt,
+                          WantsToSprint(snap.sprintHeld, snap.move, snap.aimHeld, snap.fireHeld));
 
 #if UNITY_EDITOR
         // Triche simulée : on renvoie le MÊME input plusieurs fois, avec des numéros de séquence
@@ -1051,14 +1284,14 @@ public class PlayerLocomotion : NetworkBehaviour
         {
             for (int i = 1; i < debugFloodMultiplier; i++)
             {
-                SubmitInputServerRpc(nextInputSequence++, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, snap.jumpPressed, dt);
+                SubmitInputServerRpc(nextInputSequence++, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.aimPitch, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, snap.jumpPressed, dt);
             }
         }
 #endif
     }
 
     [ServerRpc]
-    private void SubmitInputServerRpc(int sequence, Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, bool fireHeld, bool firePressedThisFrame, int leanState, bool jumpPressed, float deltaTime)
+    private void SubmitInputServerRpc(int sequence, Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, float aimPitch, bool fireHeld, bool firePressedThisFrame, int leanState, bool jumpPressed, float deltaTime)
     {
         // Garde-fou anti-flood (mémoire) : les ServerRpc sont livrées en Reliable, donc TOUT ce
         // qu'un client envoie finit par arriver. Sans plafond, un client qui spamme cette RPC fait
@@ -1068,6 +1301,14 @@ public class PlayerLocomotion : NetworkBehaviour
         // excédentaires plutôt que de les accumuler : un client légitime n'atteint jamais ce
         // plafond (MaxQueuedInputs ≈ 2 s de jeu à 60 FPS), et un client qui le dépasse se pénalise
         // lui-même par une réconciliation plus brutale — ce qui est exactement le comportement voulu.
+        // Compté AVANT le plafond : même jeté, cet input a été produit avant toute demande qui
+        // arrivera après lui (voir ServerNextInput).
+        ServerLastReceivedInput = Mathf.Max(ServerLastReceivedInput, sequence);
+        // L'horloge de la sortie de sprint avance à la RÉCEPTION, dans l'ordre d'envoi : c'est ce
+        // que le joueur avait envoyé quand il a tiré ou rechargé (voir TimeSinceSprint).
+        AdvanceInputClock(ref serverInputClock, ref serverLastSprintClock, deltaTime,
+                          WantsToSprint(sprintHeld, move, aimHeld, fireHeld));
+
         if (serverInputQueue.Count >= MaxQueuedInputs) return;
 
         serverInputQueue.Enqueue(new PendingInput
@@ -1080,6 +1321,7 @@ public class PlayerLocomotion : NetworkBehaviour
                 sprintHeld = sprintHeld,
                 sneakHeld = sneakHeld,
                 aimHeld = aimHeld,
+                aimPitch = SanitizeAimPitch(aimPitch),
                 fireHeld = fireHeld,
                 firePressedThisFrame = firePressedThisFrame,
                 leanState = leanState,
@@ -1141,9 +1383,16 @@ public class PlayerLocomotion : NetworkBehaviour
             serverInputTimeBudget -= dt;
 
             ServerCheckAutoStand(next.snapshot);
+            // L'arme en main est celle que le serveur sait, jamais celle que le client annonce : son
+            // poids pèse sur la vitesse (2026-10-11).
+            next.snapshot.weaponSlot = ServerWeaponSlotFor(next.sequence);
             // L'horloge du serveur, jamais un instant fourni par le client : il pourrait sinon
             // sauter la fin d'une transition (se relever d'un coup) en annonçant un instant futur.
             Move(next.snapshot, dt, ServerClock);
+            if (WantsToSprint(next.snapshot.sprintHeld, next.snapshot.move, next.snapshot.aimHeld, next.snapshot.fireHeld))
+                ServerLastSprintInput = next.sequence;
+            if (IsVaulting) ServerLastVaultInput = next.sequence;
+            ServerRecordSimulatedInput(next.sequence, next.snapshot.aimHeld);
             ServerAdvanceFootsteps(dt);
             ServerAdvanceLean(next.snapshot.leanState, dt);
             ServerTrackLeanSound(next.snapshot.leanState);
@@ -1319,6 +1568,7 @@ public class PlayerLocomotion : NetworkBehaviour
             position = transform.position,
             yaw = transform.eulerAngles.y,
             leanOffset = LeanOffset,
+            aimPitch = AimPitch,
             flags = (byte)flags,
             teleportId = serverTeleportId,
         };
@@ -1364,6 +1614,10 @@ public class PlayerLocomotion : NetworkBehaviour
     /// Hors de l'historique, la pose la plus proche, sans extrapolation : deviner où va un
     /// adversaire serait pire que le montrer un instant immobile.
     /// </summary>
+    /// <summary>Tangage reçu d'un client : borné à la verticale, et un NaN (client modifié) ramené à
+    /// l'horizontale, pour qu'il ne se propage pas jusqu'à l'animation des autres joueurs.</summary>
+    public static float SanitizeAimPitch(float pitch) => float.IsNaN(pitch) ? 0f : Mathf.Clamp(pitch, -90f, 90f);
+
     public static DisplayPose SampleDisplayPose(IReadOnlyList<DisplayPose> snapshots, double time)
     {
         if (time <= snapshots[0].time) return snapshots[0];
@@ -1382,6 +1636,7 @@ public class PlayerLocomotion : NetworkBehaviour
                 position = Vector3.Lerp(a.position, b.position, t),
                 yaw = Mathf.LerpAngle(a.yaw, b.yaw, t),
                 leanOffset = Mathf.Lerp(a.leanOffset, b.leanOffset, t),
+                aimPitch = Mathf.Lerp(a.aimPitch, b.aimPitch, t),
                 flags = a.flags,
                 teleportId = b.teleportId,
             };
@@ -1456,11 +1711,17 @@ public class PlayerLocomotion : NetworkBehaviour
         // même test sur sa propre simulation.
         Vector2 moveInput = RoundManager.MovementAllowed ? snap.move : Vector2.zero;
 
+        // Allongé, on ne se déplace pas de côté (2026-10-10) : aucune animation ne le montre, et le
+        // corps glissait en pose d'attente. Aucune glissade n'est tolérée. À rouvrir avec un clip
+        // de reptation latérale.
+        if (stance == Stance.Prone) moveInput.x = 0f;
+
         Vector3 inputDir = new Vector3(moveInput.x, 0f, moveInput.y);
         inputDir = Vector3.ClampMagnitude(inputDir, 1f);
         Vector3 worldDir = transform.TransformDirection(inputDir);
 
         IsAiming = snap.aimHeld; // TODO (avec le vrai système d'armes) : brancher FOV/sway ici.
+        AimPitch = snap.aimPitch; // affichage seulement : rien dans Move() ne le relit
 
         StanceProfile profile = GetStanceProfile(stance);
 
@@ -1470,13 +1731,14 @@ public class PlayerLocomotion : NetworkBehaviour
         // d'appeler controller.Move(). Voir ApplySimulationCapsule.
         ApplySimulationCapsule(stance);
 
-        bool wantsSprint = snap.sprintHeld && stance == Stance.Standing && inputDir.z > 0.1f
-            && !snap.aimHeld && !snap.fireHeld && !snap.firePressedThisFrame;
+        // Vers l'avant seulement, diagonales avant comprises : ni de côté, ni en arrière (2026-10-10).
+        bool wantsSprint = WantsToSprint(snap.sprintHeld, moveInput, snap.aimHeld, snap.fireHeld)
+            && stance == Stance.Standing && !snap.firePressedThisFrame;
         bool wantsSneak = snap.sneakHeld && !wantsSprint;
         float baseSpeed = wantsSprint ? runSpeed : (wantsSneak ? sneakSpeed : walkSpeed);
         float stanceMultiplier = Mathf.Lerp(GetStanceProfile(stanceState.previous).moveSpeedMultiplier,
                                             profile.moveSpeedMultiplier, stanceProgress);
-        float targetSpeed = baseSpeed * stanceMultiplier;
+        float targetSpeed = baseSpeed * stanceMultiplier * DirectionMultiplier(moveInput) * WeaponSpeedMultiplier(snap.weaponSlot);
 
         if (snap.aimHeld)
         {
@@ -1484,8 +1746,34 @@ public class PlayerLocomotion : NetworkBehaviour
         }
 
         Vector3 targetVelocity = worldDir * targetSpeed;
-        float rate = targetVelocity.sqrMagnitude > currentVelocity.sqrMagnitude ? acceleration : deceleration;
-        currentVelocity = Vector3.MoveTowards(currentVelocity, targetVelocity, rate * dt);
+        // On met du temps à casser un sprint (2026-10-11) : au-dessus de l'allure de marche, l'élan
+        // de la course ne retombe qu'à sprintDeceleration. La vitesse se décompose selon la
+        // direction où le joueur VEUT aller (ou celle où il va, s'il s'arrête) : cette composante
+        // se règle comme d'habitude, et ce qui reste de la course s'éteint lentement, sans jamais
+        // être réorienté. Partir de côté en sortant d'un sprint garde donc l'élan vers l'avant,
+        // sans jamais aller de côté plus vite qu'un pas de côté normal. (Deux premières versions
+        // freinaient le long du mouvement lui-même : l'élan tournait avec lui et finissait de côté,
+        // à 7,6 m/s, soit un peek deux fois plus rapide en sortant d'un sprint.)
+        Vector3 horizontal = new Vector3(currentVelocity.x, 0f, currentVelocity.z);
+        float speedNow = horizontal.magnitude;
+        if (speedNow > walkSpeed && targetSpeed < speedNow)
+        {
+            Vector3 axis = targetVelocity.sqrMagnitude > 1e-6f ? targetVelocity.normalized : horizontal / speedNow;
+            float along = Vector3.Dot(horizontal, axis);
+            float wanted = Vector3.Dot(targetVelocity, axis);
+            along = along > wanted
+                ? Mathf.Max(wanted, along - sprintDeceleration * dt)
+                : Mathf.Min(wanted, along + acceleration * dt);
+            Vector3 carried = horizontal - axis * Vector3.Dot(horizontal, axis);
+            float carriedSpeed = carried.magnitude;
+            if (carriedSpeed > 1e-6f) carried *= Mathf.Max(0f, carriedSpeed - sprintDeceleration * dt) / carriedSpeed;
+            currentVelocity = axis * along + carried;
+        }
+        else
+        {
+            float rate = targetVelocity.sqrMagnitude > currentVelocity.sqrMagnitude ? acceleration : deceleration;
+            currentVelocity = Vector3.MoveTowards(currentVelocity, targetVelocity, rate * dt);
+        }
 
         if (controller.isGrounded && verticalVelocity < 0f)
         {
@@ -1546,10 +1834,64 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         if (networkStance.Value.current == Stance.Standing) return;
 
-        if (snap.sprintHeld && snap.move.y > 0.1f)
+        if (snap.sprintHeld && IsSprintDirection(snap.move))
         {
             ServerRequestStance(Stance.Standing);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Le sprint : vers l'avant seulement, et jamais en rechargeant ni en frappant (2026-10-10)
+    // ------------------------------------------------------------------
+
+    /// <summary>Écart maximal (degrés) entre la direction demandée et l'avant pour sprinter. Les
+    /// diagonales avant du clavier (45°) passent ; le côté et l'arrière, non, comme dans Call of
+    /// Duty ou Rainbow Six. Les 5° de marge couvrent un stick de manette tenu à peu près en
+    /// diagonale.</summary>
+    public const float SprintMaxAngle = 50f;
+
+    /// <summary>La direction demandée permet-elle de sprinter ? Fonction pure, testée.</summary>
+    public static bool IsSprintDirection(Vector2 move)
+    {
+        return move.sqrMagnitude > 0.01f && Vector2.Angle(Vector2.up, move) <= SprintMaxAngle;
+    }
+
+    /// <summary>Le joueur veut-il sprinter : touche tenue, direction permise, ni visée ni tir ?
+    /// La posture n'en fait pas partie : sprinter accroupi ou allongé relève d'abord le joueur.
+    /// Fonction pure, testée.</summary>
+    public static bool WantsToSprint(bool sprintHeld, Vector2 move, bool aimHeld, bool fireHeld)
+    {
+        return sprintHeld && IsSprintDirection(move) && !aimHeld && !fireHeld;
+    }
+
+    /// <summary>
+    /// Le sprint face au rechargement et au taser, chez le joueur. Fonction pure, testée.
+    ///
+    /// Comme dans Call of Duty ou Rainbow Six, c'est la DERNIÈRE action qui l'emporte :
+    /// - recharger ou frapper en sprintant arrête le sprint : on ne recharge jamais en courant ;
+    /// - se mettre à courir pendant un rechargement l'annule ;
+    /// - le coup de taser va à son terme : pas de sprint pendant le geste.
+    ///
+    /// « Se mettre à courir », c'est l'intention de sprinter qui NAÎT (touche enfoncée, ou poussée
+    /// vers l'avant touche tenue). Une touche tenue depuis avant le rechargement ne l'annule pas :
+    /// sinon, appuyer sur recharger en sprintant n'aurait aucun effet.
+    /// </summary>
+    /// <param name="intent">Le joueur veut-il sprinter (WantsToSprint) ?</param>
+    /// <param name="previousIntent">L'intention de l'image précédente, mise à jour ici.</param>
+    /// <param name="cancelReload">Vrai quand le rechargement en cours doit être annulé.</param>
+    /// <returns>Le sprint est-il permis à cette image ?</returns>
+    public static bool GateSprint(bool intent, ref bool previousIntent, bool reloading, bool striking, out bool cancelReload)
+    {
+        bool startsRunning = intent && !previousIntent;
+        previousIntent = intent;
+        cancelReload = false;
+        if (striking) return false;
+        if (reloading)
+        {
+            if (!startsRunning) return false;
+            cancelReload = true;
+        }
+        return true;
     }
 
     // Côté serveur : demande de posture arrivée PENDANT une transition, appliquée à sa fin.
@@ -2402,11 +2744,13 @@ public class PlayerLocomotion : NetworkBehaviour
 
     /// <summary>Appelle Move() avec un input construit de toutes pièces, sans passer par le
     /// clavier ni par le réseau. Sans session, aucune transition de posture n'est en cours :
-    /// l'instant de simulation n'a donc aucun effet et vaut 0 par défaut.</summary>
-    public void TestMove(Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, bool jumpPressed, int leanState, float dt, double simTime = 0)
+    /// l'instant de simulation n'a donc aucun effet et vaut 0 par défaut. `weaponSlot` : l'arme en
+    /// main, dont le poids pèse sur la vitesse.</summary>
+    public void TestMove(Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, bool jumpPressed, int leanState, float dt, double simTime = 0, byte weaponSlot = 0)
     {
         Move(new MovementInputSnapshot
         {
+            weaponSlot = weaponSlot,
             move = move,
             lookX = lookX,
             sprintHeld = sprintHeld,

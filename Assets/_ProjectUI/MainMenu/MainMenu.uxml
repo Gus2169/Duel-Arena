@@ -1,0 +1,144 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:Style src="MainMenu.uss" />
+    <ui:VisualElement name="root" class="root" picking-mode="Position">
+
+        <!-- ================= Écran titre ================= -->
+        <ui:VisualElement name="screenTitle" class="screen">
+            <ui:Label name="gameTitle" class="game-title" text="DUEL ARENA" />
+            <ui:Label name="gameSubtitle" class="game-subtitle" text="DUEL 1V1 — ROBOTS DE COMBAT" />
+            <ui:Button name="playButton" class="menu-button menu-button--primary" text="Jouer" />
+            <ui:Button name="armoryButton" class="menu-button" text="Personnalisation" />
+            <ui:Button name="optionsButton" class="menu-button" text="Options" />
+            <ui:Button name="quitButton" class="menu-button menu-button--quit" text="Quitter" />
+        </ui:VisualElement>
+
+        <!-- ================= Jouer : mode + Host/Join ================= -->
+        <ui:VisualElement name="screenPlay" class="screen hidden">
+            <ui:VisualElement class="panel">
+                <ui:Label class="panel-title" text="Choisir un mode" />
+                <ui:VisualElement name="modeCardRow" class="wrap-row">
+                    <ui:Button name="modeBo5" class="mode-card mode-card--active" text="Duel BO5&#10;&#10;Premier à 3 manches gagnées." />
+                    <ui:Button name="modeRanked" class="mode-card" text="Classé&#10;&#10;Arrive après la sortie." />
+                    <ui:Button name="modeCapture" class="mode-card" text="Capture&#10;&#10;Mode à venir." />
+                    <ui:Button name="modeZone" class="mode-card" text="Zone&#10;&#10;Mode à venir." />
+                </ui:VisualElement>
+
+                <ui:VisualElement class="host-join-split">
+                    <ui:VisualElement class="host-join-column">
+                        <ui:Label class="section-label" text="HÉBERGER" />
+                        <ui:Label class="field-label" text="Port d'écoute" />
+                        <ui:TextField name="hostPortField" class="text-field" value="7777" max-length="5" />
+                        <ui:Button name="hostButton" class="menu-button menu-button--primary" text="Héberger" />
+                        <ui:Label name="localIpLabel" class="local-ip-label" text="" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement class="host-join-column host-join-column--last">
+                        <ui:Label class="section-label" text="REJOINDRE" />
+                        <ui:Label class="field-label" text="Adresse IP de l'hôte" />
+                        <ui:TextField name="joinIpField" class="text-field" value="127.0.0.1" />
+                        <ui:Label class="field-label" text="Port" />
+                        <ui:TextField name="joinPortField" class="text-field" value="7777" max-length="5" />
+                        <ui:Button name="joinButton" class="menu-button menu-button--primary" text="Rejoindre" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:Label name="playStatusLabel" class="status-label" text="" />
+            </ui:VisualElement>
+            <ui:Button name="playBackButton" class="back-button" text="Retour" />
+        </ui:VisualElement>
+
+        <!-- ================= Personnalisation ================= -->
+        <ui:VisualElement name="screenArmory" class="screen screen--wide hidden">
+            <ui:VisualElement class="panel">
+                <ui:Label class="panel-title" text="Personnalisation" />
+
+                <ui:VisualElement class="armory-layout">
+                    <ui:VisualElement class="viewport-column">
+                        <ui:Image name="characterPreviewImage" class="preview-viewport" />
+                        <ui:Label class="preview-hint" text="Glisse pour faire tourner" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement class="armory-controls-column">
+                        <ui:Label class="section-label" text="COULEUR SOUHAITÉE" />
+                        <ui:VisualElement name="colorSwatchRow" class="wrap-row" />
+                        <ui:Label class="hint-text" text="Dans le prototype, le serveur attribue encore seul la couleur de chaque robot (la première libre de la palette). Ton choix sera pris en compte une fois la personnalisation branchée au serveur." />
+
+                        <ui:Label class="section-label" text="ARME DE DÉPART" />
+                        <ui:VisualElement name="weaponCardRow" class="wrap-row" />
+                        <ui:Label class="hint-text" text="L'arme choisie ici est équipée à l'arrivée sur le terrain. Les touches 1 à 4 permettent toujours de changer d'arme librement en jeu." />
+
+                        <ui:Button name="openWeaponCustomizeButton" class="menu-button" text="Personnaliser les armes →" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:Button name="armoryBackButton" class="back-button" text="Retour" />
+        </ui:VisualElement>
+
+        <!-- ================= Armurerie avancée (accessoires) ================= -->
+        <ui:VisualElement name="screenWeaponCustomize" class="screen screen--wide hidden">
+            <ui:VisualElement class="panel">
+                <ui:Label class="panel-title" text="Armurerie avancée" />
+
+                <ui:VisualElement name="weaponSwitchRow" class="wrap-row weapon-switch-row" />
+
+                <ui:VisualElement class="viewport-column viewport-column--centered">
+                    <ui:Image name="weaponPreviewImage" class="preview-viewport preview-viewport--wide" />
+                    <ui:Label name="weaponCustomizeName" class="weapon-customize-name" text="" />
+                    <ui:Label class="preview-hint" text="Glisse pour faire tourner" />
+                </ui:VisualElement>
+
+                <ui:VisualElement name="categoryTabRow" class="tab-row" />
+                <ui:VisualElement name="weaponOptionRow" class="wrap-row" />
+
+                <ui:Label class="hint-text" text="Accessoires cosmétiques : pour l'instant visibles seulement ici, dans l'armurerie — ils ne changent pas (encore) l'arme que tu tiens en match." />
+            </ui:VisualElement>
+            <ui:Button name="weaponCustomizeBackButton" class="back-button" text="Retour" />
+        </ui:VisualElement>
+
+        <!-- ================= Options ================= -->
+        <ui:VisualElement name="screenOptions" class="screen hidden">
+            <ui:VisualElement class="panel">
+                <ui:Label class="panel-title" text="Options" />
+
+                <ui:VisualElement class="tab-row">
+                    <ui:Button name="tabGraphicsButton" class="tab-button tab-button--active" text="Graphismes" />
+                    <ui:Button name="tabControlsButton" class="tab-button" text="Commandes" />
+                </ui:VisualElement>
+
+                <!-- Graphismes -->
+                <ui:VisualElement name="pageGraphics" class="options-page">
+                    <ui:VisualElement class="option-row">
+                        <ui:Label text="Résolution" />
+                        <ui:DropdownField name="resolutionDropdown" class="option-control" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="option-row">
+                        <ui:Label text="Plein écran" />
+                        <ui:Toggle name="fullscreenToggle" class="option-control" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="option-row">
+                        <ui:Label text="Synchronisation verticale" />
+                        <ui:Toggle name="vsyncToggle" class="option-control" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="option-row">
+                        <ui:Label text="Limite d'images / seconde" />
+                        <ui:DropdownField name="frameRateDropdown" class="option-control" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <!-- Commandes -->
+                <ui:VisualElement name="pageControls" class="options-page hidden">
+                    <ui:VisualElement class="option-row">
+                        <ui:Label text="Sensibilité de la souris" />
+                        <ui:Slider name="sensitivitySlider" class="option-control" low-value="0.2" high-value="3" />
+                    </ui:VisualElement>
+
+                    <ui:Label class="section-label" text="TOUCHES" />
+                    <ui:ScrollView name="bindRowScroll" class="controls-scroll" />
+                    <ui:Button name="resetBindingsButton" class="reset-bindings-button" text="Réinitialiser les touches" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:Button name="optionsBackButton" class="back-button" text="Retour" />
+        </ui:VisualElement>
+
+    </ui:VisualElement>
+</ui:UXML>

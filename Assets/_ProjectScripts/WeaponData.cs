@@ -1,15 +1,17 @@
 using UnityEngine;
 
 /// <summary>
-/// Données d'une arme. Tout est data-driven : ajouter une arme = créer un nouvel asset,
-/// jamais toucher au code de WeaponController.
+/// Données d'une arme. Tout est data-driven : ajouter une arme = créer un nouvel asset et l'ajouter
+/// à la panoplie de WeaponController (touches 1 à 4), jamais toucher au code.
 ///
 /// Créer un asset : clic droit dans le Project > Create > Duel Arena > Weapon Data.
 ///
-/// Valeurs de départ calées pour un TTK ≈ 0.7s (confirmé) : 6 impacts à 17 dégâts
-/// (17 x 6 = 102, donc le 6e tir tue toujours), à une cadence de 7 tirs/seconde
-/// (~420 coups/minute) : TTK = 5 intervalles x (1/7)s ≈ 0.71s. Ajuste librement dans
-/// l'inspecteur — c'est fait pour ça.
+/// Les références sont Call of Duty et Rainbow Six (2026-10-11). Le fusil d'assaut est calé sur un
+/// TTK ≈ 0,7 s : 6 impacts au buste à 17 dégâts (le 6e tue toujours), à 7 tirs/seconde. Toutes les
+/// valeurs sont provisoires, à juger en jouant : ressenti ET équilibrage.
+///
+/// 🚨 Tout ce que lit le serveur (dégâts, cadence, chargeur, gerbe, poids) doit être identique sur
+/// toutes les machines : ces assets ne se modifient jamais en jeu.
 /// </summary>
 [CreateAssetMenu(fileName = "NewWeapon", menuName = "Duel Arena/Weapon Data")]
 public class WeaponData : ScriptableObject
@@ -17,17 +19,68 @@ public class WeaponData : ScriptableObject
     [Header("Identité")]
     public string weaponName = "Arme sans nom";
 
+    [Tooltip("Le modèle tenu en main droite (préfab : poignée à l'origine, canon vers +Z, repères « Mire » et « Bouche »). Le même sert au corps vu par les autres et aux bras de la vue subjective.")]
+    public GameObject modelPrefab;
+
     [Header("Dégâts & cadence")]
+    [Tooltip("Dégâts d'une balle (ou d'un plomb) au BUSTE, à courte distance. Les autres zones en sont des multiples.")]
     public float damagePerHit = 17f;
     public float shotsPerSecond = 7f;
     public bool isAutomatic = true; // maintenir Fire pour tirer en rafale, sinon un appui = un coup
     public float maxRange = 60f;
+
+    [Header("Zones de tir (2026-10-11, façon Call of Duty)")]
+    [Tooltip("Multiplicateur des dégâts à la tête. Le sniper tue d'une balle au buste et à la tête ; le pompe ne compte pas la tête (×1).")]
+    public float headMultiplier = 1.4f;
+    [Tooltip("Multiplicateur des dégâts aux jambes. Le sniper ne tue pas d'une balle dans les jambes.")]
+    public float legsMultiplier = 1f;
+
+    [Header("Portée des dégâts (GDD § 6 : constants par défaut, à définir arme par arme)")]
+    [Tooltip("Jusqu'à cette distance (m), dégâts pleins. Au-delà de falloffEnd, minDamageMultiplier. Entre les deux, en ligne droite. falloffEnd ≤ falloffStart : aucune baisse.")]
+    public float falloffStart = 0f;
+    public float falloffEnd = 0f;
+    [Range(0f, 1f)] public float minDamageMultiplier = 1f;
+
+    [Header("Gerbe (armes à plombs, GDD § 3 : motif fixe, jamais aléatoire)")]
+    [Tooltip("Écart de chaque plomb par rapport à l'axe du regard, en degrés (x à droite, y en haut). Vide = une seule balle, dans l'axe. Le motif est le même à chaque tir : large et lisible au jugé, jamais aléatoire.")]
+    public Vector2[] pelletPattern = new Vector2[0];
+    [Tooltip("Resserrement de la gerbe en visée (1 = même gerbe).")]
+    [Range(0.1f, 1f)] public float aimPatternScale = 1f;
+
+    [Header("En main (2026-10-11)")]
+    [Tooltip("Temps (s) pour sortir cette arme quand on la prend (touches 1 à 4). On ne tire pas avant. Changer d'arme annule un rechargement, comme dans Call of Duty.")]
+    public float raiseTime = 0.6f;
+    [Tooltip("Vitesse de déplacement avec cette arme en main, relative à la vitesse du joueur (« le poids de l'arme », comme dans CoD et R6). Lu par Move() : le serveur fait foi.")]
+    [Range(0.5f, 1.1f)] public float moveSpeedMultiplier = 1f;
+    [Tooltip("Temps (s) pour épauler : passer de la hanche à la visée. La lunette du sniper n'apparaît qu'une fois l'arme épaulée (environ 0,35 s dans CoD).")]
+    public float aimTime = 0.125f;
+    [Tooltip("Lunette plein écran façon Call of Duty : grossissement de la vue en visée. 1 = pas de lunette (viseur ou mire de l'arme).")]
+    [Min(1f)] public float scopeMagnification = 1f;
+    [Tooltip("Le réticule du HUD s'affiche-t-il à la hanche ? Non pour le sniper, comme dans CoD : la balle part quand même au centre (aucun hasard, GDD § 3), mais il faut le deviner.")]
+    public bool hipCrosshair = true;
+    [Tooltip("Couleur du traçant (le rayon du raygun se voit de loin).")]
+    public Color tracerColor = new Color(1f, 0.85f, 0.4f, 1f);
 
     [Tooltip("Layers qui ARRÊTENT une balle : la géométrie du monde. NE DOIT PAS contenir le layer des joueurs ni celui des hitbox — le tir est résolu en deux traces distinctes (voir WeaponController.FireServerRpc), et mélanger les deux ferait bloquer les balles par le collider de MOUVEMENT des joueurs, qui ne suit pas le lean.")]
     public LayerMask worldMask = 1; // Default
 
     [Tooltip("Layers des surfaces TOUCHABLES des joueurs — en pratique le seul layer \"Hitbox\". C'est la seule chose que le serveur accepte comme cible de dégâts.")]
     public LayerMask hitboxMask = 1 << 7; // Hitbox
+
+    [Header("Chargeur (GDD § 6 : chargeur limité, rechargement)")]
+    [Tooltip("Balles par chargeur. Tenu par le serveur, qui refuse tout tir à vide. 255 au plus (il voyage sur un octet).")]
+    [Range(1, 255)] public int magazineSize = 30;
+    [Tooltip("Durée (s) d'un rechargement complet — ou d'UNE cartouche si reloadPerRound est coché. On ne tire pas pendant ce temps ; le taser, la course, le franchissement et un changement d'arme l'interrompent. Réglage de ressenti ET d'équilibrage : c'est la fenêtre où l'adversaire peut pousser.")]
+    public float reloadDuration = 2.2f;
+    [Tooltip("Rechargement cartouche par cartouche (fusil à pompe, comme dans CoD et R6) : une cartouche toutes les reloadDuration secondes, jusqu'au plein. Tirer l'interrompt et tire avec ce qui est chargé.")]
+    public bool reloadPerRound = false;
+    [Tooltip("Son du rechargement, entendu par tout le monde : c'est une information de jeu (l'adversaire sait qu'on ne peut plus tirer). Vide = silencieux.")]
+    public AudioClip reloadSound;
+    [Range(0f, 1f)] public float reloadVolume = 0.8f;
+
+    [Header("Sortie de sprint (2026-10-11)")]
+    [Tooltip("Temps (s) entre la fin d'un sprint et le premier tir ou le début d'un rechargement, le temps de remonter l'arme. Comme dans Call of Duty : se mettre à courir engage, l'adversaire qui tient l'angle tire le premier. Ressenti ET équilibrage, propre à chaque arme. Le serveur le vérifie.")]
+    public float sprintToFireTime = 0.3f;
 
     [Header("Recul (déterministe, pas de RNG)")]
     [Tooltip("Multiplicateur du kick vertical à chaque tir. L'axe X de la courbe = numéro du tir dans la rafale (0, 1, 2...). Monte vite sur les premiers tirs puis plafonne, comme une vraie arme.")]
@@ -43,6 +96,41 @@ public class WeaponData : ScriptableObject
     public AudioClip[] fireSounds;
     [Range(0f, 1f)] public float fireVolume = 0.9f;
     public Vector2 firePitchRange = new Vector2(0.97f, 1.03f);
+
+    /// <summary>Nombre de projectiles d'un tir : les plombs du motif, ou une balle.</summary>
+    public int PelletCount => pelletPattern != null && pelletPattern.Length > 0 ? pelletPattern.Length : 1;
+
+    /// <summary>Écart (degrés) du projectile `index`, gerbe resserrée en visée. Une balle seule
+    /// part dans l'axe.</summary>
+    public Vector2 PelletOffset(int index, bool aiming)
+    {
+        if (pelletPattern == null || pelletPattern.Length == 0) return Vector2.zero;
+        return pelletPattern[index] * (aiming ? aimPatternScale : 1f);
+    }
+
+    /// <summary>
+    /// Dégâts d'un impact, selon la zone touchée et la distance. Fonction pure, testée : c'est le
+    /// serveur qui l'appelle, et elle ne dépend que de l'asset.
+    /// </summary>
+    public float DamageAt(HitboxZoneType zone, float distance)
+    {
+        float zoneMultiplier = zone switch
+        {
+            HitboxZoneType.Head => headMultiplier,
+            HitboxZoneType.Legs => legsMultiplier,
+            _ => 1f,
+        };
+        return damagePerHit * zoneMultiplier * RangeMultiplier(distance);
+    }
+
+    /// <summary>Multiplicateur de portée : 1 jusqu'à falloffStart, minDamageMultiplier au-delà de
+    /// falloffEnd, en ligne droite entre les deux.</summary>
+    public float RangeMultiplier(float distance)
+    {
+        if (falloffEnd <= falloffStart) return 1f;
+        float t = Mathf.InverseLerp(falloffStart, falloffEnd, distance);
+        return Mathf.Lerp(1f, minDamageMultiplier, t);
+    }
 
     // Pattern par défaut : les 4 premiers tirs grimpent presque à la verticale (comme un vrai
     // canon qui monte sous la pression des gaz), puis le kick vertical plafonne pendant que

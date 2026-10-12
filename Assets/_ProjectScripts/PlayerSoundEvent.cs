@@ -18,6 +18,6 @@ public enum PlayerSoundEvent
     ProneDown,
     ProneUp,
 
-    // Réservé : quand le système d'armes aura des munitions, WeaponController pourra émettre
-    // ReloadStart/ReloadEnd à travers ce même enum et le même PlayerSoundBank.
+    // Le son du rechargement ne passe PAS par ici (2026-10-08) : il dépend de l'arme, comme le son
+    // de tir, donc il vit dans WeaponData.reloadSound.
 }

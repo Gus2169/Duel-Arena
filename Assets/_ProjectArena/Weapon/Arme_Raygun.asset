@@ -1,0 +1,156 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe33acf964d9c684b81db736a07bf7db, type: 3}
+  m_Name: Arme_Raygun
+  m_EditorClassIdentifier: DuelArena.Runtime::WeaponData
+  weaponName: Raygun
+  modelPrefab: {fileID: 3487734175870485312, guid: 54c47c45e8d0ad44dbb6bc95687ff31d, type: 3}
+  damagePerHit: 26
+  shotsPerSecond: 4.5
+  isAutomatic: 0
+  maxRange: 60
+  headMultiplier: 1.5
+  legsMultiplier: 1
+  falloffStart: 15
+  falloffEnd: 35
+  minDamageMultiplier: 0.75
+  pelletPattern: []
+  aimPatternScale: 1
+  raiseTime: 0.4
+  moveSpeedMultiplier: 1
+  aimTime: 0.1
+  scopeMagnification: 1
+  hipCrosshair: 1
+  tracerColor: {r: 0.35, g: 1, b: 0.35, a: 1}
+  worldMask:
+    serializedVersion: 2
+    m_Bits: 1
+  hitboxMask:
+    serializedVersion: 2
+    m_Bits: 128
+  magazineSize: 12
+  reloadDuration: 1.6
+  reloadPerRound: 0
+  reloadSound: {fileID: 8300000, guid: 0475bb2f811afeb42b69994a43a43c6b, type: 3}
+  reloadVolume: 0.8
+  sprintToFireTime: 0.2
+  verticalRecoilPattern:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1.1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 3
+      value: 1.2
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 12
+      value: 1.2
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  horizontalRecoilPattern:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 0.2
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 2
+      value: -0.2
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 3
+      value: 0.25
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 4
+      value: -0.25
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 12
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  recoilPerShotDegrees: 1.8
+  recoilRecoverySpeed: 8
+  recoilResetDelay: 0.3
+  fireSounds:
+  - {fileID: 8300000, guid: 14086e541038c2b49ae437d12a7b18c1, type: 3}
+  - {fileID: 8300000, guid: e1ba3e386daa80545aebd30b2e5b566c, type: 3}
+  - {fileID: 8300000, guid: b08fdef442fa2d845814c15c0cc021af, type: 3}
+  fireVolume: 0.9
+  firePitchRange: {x: 0.97, y: 1.03}

@@ -85,9 +85,17 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **TTK** — la cible de départ est ≈ **0,7 seconde** de tir soutenu, mais elle est **à retravailler**, notamment avec l'arrivée des headshots. Elle vit dans l'inspecteur, pas en dur dans le code.
 
-**Le MP5 actuel est une arme de test.** L'apparence des armes est décrite dans la bible (§ 12 de la bible) : conventionnelles, prototypes, bricolées, absurdes.
+**Les armes du prototype sont des armes de test** (le « MP5 » d'origine est devenu le fusil d'assaut). L'apparence des armes est décrite dans la bible (§ 12 de la bible) : conventionnelles, prototypes, bricolées, absurdes.
 
-**L'arsenal du prototype** (tranché le 2026-10-05) : une arme automatique à chargeur, le MP5 ou une arme d'apparence plus robotique ou futuriste, et le **taser** de corps à corps (voir *Mêlée*). Le choix de l'arme (pile ou face, classes) attend la suite.
+**L'arsenal du prototype** (tranché le 2026-10-05, élargi le 2026-10-11) : quatre armes, réglées sur *Call of Duty* et *Rainbow Six*, et le **taser** de corps à corps (voir *Mêlée*). Les modèles sont fournis par l'utilisateur ; toutes les valeurs sont provisoires, à juger en jouant.
+- **Fusil d'assaut** (touche 1) : automatique, 7 coups/s, 30 balles, 6 balles au buste.
+- **Sniper** (touche 2) : à verrou, tue d'une balle au buste et à la tête, deux aux jambes. 5 balles.
+- **Fusil à pompe** (touche 3) : 8 plombs en motif fixe, tue de près, plus du tout à 25 m. 6 cartouches glissées une à une ; tirer interrompt le rechargement.
+- **Raygun** (touche 4) : la classe « pistolet », coup par coup, rayon instantané, 4 tirs au buste. 12 coups.
+
+**Changer d'arme** : touches 1 à 4. L'arme met un temps à sortir (0,4 s au raygun, 0,8 s au sniper), pendant lequel on ne tire pas. Changer annule le rechargement en cours ; chaque arme garde son chargeur.
+
+**Le choix de l'arme** : en attendant la règle du pile ou face (ci-dessous), **chaque joueur prend librement la sienne** (tranché le 2026-10-11, pour tester les armes).
 
 **L'identité « insolite »** : des armes qui jouent sur le décalage entre leur apparence et leur effet. Exemples cités : un énorme pistolet bionique démesuré qui tire un minuscule rayon paralysant (ralentit beaucoup, blesse peu), ou à l'inverse un petit pistolet qui tire un énorme trou noir.
 
@@ -97,21 +105,23 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Obtenir son arme — pas encore tranché.** La piste la plus avancée : avant le match, un tirage à pile ou face désigne un joueur, qui choisit une **classe d'arme** (sniper, fusil d'assaut, pompe, pistolet…) et l'**impose aussi à l'adversaire**. À la manche suivante, c'est le perdant qui choisit. Le risque à étudier : la frustration de jouer une arme qu'on n'a pas choisie. Les spectateurs peuvent aussi, selon les réglages, voter l'arme ou en lancer une dans l'arène.
 
-**Headshots** : nécessaires pour certaines armes. Punitifs sur le papier, mais très satisfaisants en jeu. Multiplicateur à trancher par playtest.
+**Headshots** : nécessaires pour certaines armes. Punitifs sur le papier, mais très satisfaisants en jeu. **Façon *Call of Duty*, propres à chaque arme** (tranché le 2026-10-11) : ×1,4 au fusil d'assaut, ×1,5 au raygun et au sniper, aucun bonus au pompe ; les jambes ×0,6 au sniper, qui ne tue donc pas d'une balle aux jambes. À rejuger en jouant.
 
 **Munitions** : chargeur limité, rechargement.
 
 **Visée (ADS)** : ralentit le déplacement. Viser en courant **coupe le sprint** et lance la visée. On ne tire pas en sprintant.
 
-**Tir à la hanche** : possible, et c'est là que les armes à gerbe brillent. Leur gerbe suit un motif fixe (§ 3) : un tir au jugé au fusil à pompe couvre un grand angle, de façon lisible, et deux tirs identiques donnent toujours le même résultat.
+**Viseurs** : de vrais viseurs (point rouge, holographique…), dont la réticule reste sur la cible quand on vise. **Chaque joueur choisit le sien avant la partie**, dans un menu « armurerie » : son style **et** son grossissement. Tous les viseurs sont accessibles à tous, c'est ce qui garde l'équité (tranché le 2026-10-09). Le premier en jeu est le viseur intégré au fusil d'assaut. **Le sniper vise en lunette plein écran**, façon *Call of Duty* (×4, sensibilité réduite d'autant, tranché le 2026-10-11).
 
-**Dégâts selon la distance** : constants par défaut, à définir arme par arme.
+**Tir à la hanche** : possible, et c'est là que les armes à gerbe brillent. Leur gerbe suit un motif fixe (§ 3) : un tir au jugé au fusil à pompe couvre un grand angle, de façon lisible, et deux tirs identiques donnent toujours le même résultat ; en visée, elle se resserre. **Le sniper tire juste à la hanche, mais sans réticule** (tranché le 2026-10-11) : aucun hasard, il faut viser au jugé.
+
+**Dégâts selon la distance** : constants par défaut, à définir arme par arme. Au 2026-10-11 : le pompe perd ses dégâts de 8 à 20 m (jusqu'à ×0,3), le raygun de 15 à 35 m (jusqu'à ×0,75) ; le fusil d'assaut et le sniper n'en perdent pas.
 
 **Matériaux traversables** : aucun pour l'instant, à voir selon les arènes.
 
 **Utilitaires** : des grenades, soit cachées dans l'arène, soit données par les spectateurs.
 
-**Mêlée** : un **taser** plutôt qu'un couteau, plus logique contre des robots (tranché le 2026-10-05). **Mort instantanée**, pour l'instant. Il sort **automatiquement** quand l'arme est vide.
+**Mêlée** : un **taser** plutôt qu'un couteau, plus logique contre des robots (tranché le 2026-10-05). **Mort instantanée**, pour l'instant. C'est une **action brève, au choix du joueur**, comme le coup de couteau rapide de *Call of Duty* : on le déclenche, il frappe, on reprend son arme (tranché le 2026-10-08). Il ne sort plus automatiquement quand l'arme est vide. **C'est un gant à décharge électrique** (modèle de l'utilisateur, référence *Fallout*, 2026-10-11), porté sur l'avant-bras gauche : le coup est un direct du poing gauche. Les autres le voient toujours au bras du robot ; en vue subjective, il n'apparaît que pendant le coup, comme le couteau de *Call of Duty*, pour ne jamais masquer l'arme.
 
 **Recul** — référence de sensation : la R-301 d'Apex. **Les rafales longues doivent être viables et agréables** : pas de jeu qui force les rafales courtes, sauf pour une DMR au coup par coup. Le recul est stylisé et lisible : montée rapide sur les premiers tirs puis plafonnement, avec un pattern horizontal en « S » quand la rafale s'allonge. Il est modulé par la posture, le déplacement et la visée.
 
@@ -127,7 +137,17 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Sprint illimité**, pas d'endurance.
 
+**Sprint vers l'avant seulement**, diagonales avant comprises : jamais de côté ni en arrière, comme dans la plupart des FPS (tranché le 2026-10-10). **On ne recharge pas et on ne frappe pas en courant** : recharger ou donner un coup de taser arrête le sprint, et se mettre à courir pendant un rechargement l'annule, comme dans *Call of Duty* ou *Rainbow Six*. Le coup de taser, lui, va à son terme : pas de sprint pendant le geste. **Sortir d'un sprint prend du temps** (tranché le 2026-10-11) : l'élan de la course retombe de 10 à 5 m/s en 0,2 s au lieu de 0,06, et il faut 0,3 s après la fin du sprint pour tirer ou commencer un rechargement, le temps de remonter l'arme. Se mettre à courir engage : un adversaire qui tient l'angle tire le premier. Le coup de taser, lui, part tout de suite, comme le couteau rapide de *Call of Duty*. **On ne recharge pas en franchissant un obstacle** : un rechargement demandé pendant le franchissement part à la réception, et franchir pendant un rechargement l'interrompt. **On n'y tire pas et on n'y frappe pas non plus** (tranché le 2026-10-11).
+
+**Le poids des armes** (tranché le 2026-10-11, façon *Call of Duty*) : l'arme en main ralentit légèrement le déplacement. Pistolet ×1, fusil d'assaut et pompe ×0,95, sniper ×0,9.
+
+**On recule et on va de côté moins vite qu'en avançant** (tranché le 2026-10-10, comme dans beaucoup de FPS) : de côté ×0,85, en arrière ×0,7, les diagonales avant gardant toute la vitesse. Valeurs provisoires, à juger en jouant : c'est la vitesse d'un peek en pas chassé et celle à laquelle on rompt un engagement.
+
+**Les pieds ne glissent jamais** (exigence de l'utilisateur, 2026-10-10) : « on n'accepte pas les glissades ». Quand une animation ne peut pas suivre une vitesse, c'est la vitesse qui s'adapte, pas l'inverse. À l'arrêt, le bas du corps garde son cap quand on tourne : seul le buste suit le regard, puis les jambes pivotent à petits pas. Se baisser et se relever font de même : le pied qui doit changer de place se lève.
+
 **Postures** Debout / Accroupi / Prone, chacune avec sa vitesse, sa hauteur de vue et son empreinte. Se relever est bloqué s'il n'y a pas la place. **On peut tirer en rampant.**
+
+**Allongé, on rampe lentement et seulement vers l'avant ou l'arrière** (2026-10-10, conséquence de « les pieds ne glissent jamais ») : environ 0,43 m/s à l'allure de marche, la vitesse de l'animation de reptation (1,25 m/s jusque-là, où le corps glissait trois fois plus vite que ses mains et ses genoux), et pas de déplacement de côté, faute d'animation. À rouvrir avec une reptation plus rapide et une reptation latérale.
 
 **Changer de posture prend du temps**, même pour un robot : environ 0,3 s entre debout et accroupi, 0,65 s entre accroupi et allongé, 0,9 s entre debout et allongé. Pendant ce temps, le corps, la vue, la vitesse et l'endroit où l'on peut être touché passent progressivement d'une posture à l'autre ; on ne franchit pas d'obstacle à moitié relevé. Un plongeon au sol n'est donc pas une esquive instantanée. Valeurs de départ, à régler en jouant (2026-10-06).
 
@@ -303,9 +323,8 @@ Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touch
 
 **Toujours ouvert** :
 - Comment le joueur obtient son arme (§ 6).
-- L'apparence de l'arme automatique du prototype : le MP5, ou une arme plus robotique ou futuriste (§ 6).
 - Ce que lancent les spectateurs : la bible parle de *power-ups* (§ 8 et § 15 de la bible), alors que ce document réserve les power-ups à des emplacements fixes de l'arène (§ 10) et fait lancer du *matériel* aux spectateurs (§ 9). Un objet lancé par un spectateur est-il un power-up ? Relevé le 2026-10-05, sans urgence avant les interactions des spectateurs.
-- Le multiplicateur des headshots, et le TTK qui en découle.
+- Les multiplicateurs des headshots (posés arme par arme le 2026-10-11, façon *Call of Duty*), et le TTK qui en découle : à juger en jouant.
 - Les power-ups concrets : lesquels, et leurs effets.
 - L'ordre de priorité entre les modes, au-delà du classique.
 - Ce qui relève du lore et reste ouvert est listé dans la bible (§ 18 de la bible) : la créature de l'événement légendaire, le nom de l'IA, le style de rendu final.

@@ -17,12 +17,24 @@ using UnityEngine;
 /// BroadcastShotClientRpc.
 ///
 /// Le serveur valide chaque tir contre la pose PASSÉE des adversaires, celle que le tireur avait
-/// à l'écran (compensation de latence, voir FireServerRpc).
+/// à l'écran (compensation de latence, voir ServerFire).
+///
+/// LA PANOPLIE (2026-10-11) : une arme par touche, de 1 à 4 (fusil d'assaut, sniper, pompe,
+/// raygun), chacune avec son chargeur, comme un loadout de Call of Duty. Le choix d'arme est libre
+/// pour chaque joueur en attendant le pile ou face du GDD (§ 6). Changer d'arme prend le temps de la
+/// sortir (WeaponData.raiseTime) et annule un rechargement.
+///
+/// Le CHARGEUR et l'arme en main sont tenus par le serveur (MagazineState) et prédits par le
+/// tireur, qui tire, recharge et change d'arme sans attendre de réponse (voir « Chargeur » plus bas).
 /// </summary>
 [RequireComponent(typeof(Transform))]
 public class WeaponController : NetworkBehaviour
 {
-    [SerializeField] private WeaponData data;
+    /// <summary>Places de la panoplie (touches 1 à 4). Le chargeur réseauté en garde une par arme.</summary>
+    public const int MaxSlots = 4;
+
+    [Tooltip("La panoplie du joueur, une arme par touche (1 à 4, dans cet ordre). Chacune garde son chargeur quand on en change, comme dans Call of Duty. Au plus 4.")]
+    [SerializeField] private WeaponData[] loadout = new WeaponData[0];
     [SerializeField] private Camera aimCamera;
     [SerializeField] private PlayerCameraLook cameraLook;
     [SerializeField] private WeaponVisualFeedback visualFeedback;
@@ -44,7 +56,7 @@ public class WeaponController : NetworkBehaviour
     [SerializeField, Range(0f, 100f)] private float recoilPercentWhileAiming = 50f;
 
     [Header("Garde-fous serveur (anti-triche)")]
-    [Tooltip("Distance max (m) tolérée entre l'origine de tir annoncée par le client et la position du joueur connue du SERVEUR. Au-delà, le tir est rejeté : c'est ce qui empêche un client modifié de tirer depuis n'importe où sur la carte. Doit couvrir la hauteur caméra + le lean + l'avance de prédiction du tireur sous latence — voir le détail dans FireServerRpc. Si tu vois des tirs légitimes rejetés en Console pendant un test à fort ping, augmente cette valeur plutôt que de retirer le garde-fou.")]
+    [Tooltip("Distance max (m) tolérée entre l'origine de tir annoncée par le client et la position du joueur connue du SERVEUR. Au-delà, le tir est rejeté : c'est ce qui empêche un client modifié de tirer depuis n'importe où sur la carte. Doit couvrir la hauteur caméra + le lean + l'avance de prédiction du tireur sous latence — voir le détail dans ServerFire. Si tu vois des tirs légitimes rejetés en Console pendant un test à fort ping, augmente cette valeur plutôt que de retirer le garde-fou.")]
     [SerializeField] private float maxOriginDistanceFromPlayer = 4f;
 
     [Tooltip("Rewind maximum (s) que le serveur accepte d'appliquer, quelle que soit la latence annoncée par le client. Couvre un ping légitime élevé (0,3 s ≈ 400 ms de ping avec le délai d'interpolation) sans permettre de tuer quelqu'un là où il était il y a une éternité — au-delà, c'est la VICTIME qui subit l'injustice, en mourant à couvert. Doit rester inférieur à 'Hitbox History Duration' sur PlayerLocomotion.")]
@@ -73,6 +85,15 @@ public class WeaponController : NetworkBehaviour
     /// </summary>
     public static bool AutopilotAimAtOpponent;
 
+    /// <summary>Arme imposée au joueur de test (banc à deux instances), -1 = son choix. Editor
+    /// uniquement.</summary>
+    public static int AutopilotWeaponSlot = -1;
+
+    /// <summary>Le joueur de test fait tourner sa panoplie (banc à deux instances, « autoswitch ») :
+    /// une arme toutes les `AutopilotWeaponCyclePeriod` secondes. Editor uniquement.</summary>
+    public static bool AutopilotWeaponCycle;
+    public static float AutopilotWeaponCyclePeriod = 6f;
+
     private bool TryAimAtOpponent(Vector3 origin, out Vector3 direction)
     {
         direction = default;
@@ -92,25 +113,233 @@ public class WeaponController : NetworkBehaviour
 
     private PlayerInputReader input;
     private PlayerLocomotion locomotion;
+    private TaserController taser;
 
     private float cooldown;
     private float timeSinceLastShot;
     private int shotIndexInBurst;
 
-    // Garde-fou anti-triche (voir FireServerRpc) : dernier tir ACCEPTÉ par le serveur, pour
-    // faire respecter data.shotsPerSecond indépendamment de ce que le client prétend faire.
-    private float serverLastAcceptedFireTime = -Mathf.Infinity;
+    /// <summary>Une arme au coup par coup garde un appui de gâchette un court instant : cliquer un
+    /// peu avant la fin de l'intervalle de tir tire dès qu'il est écoulé, au lieu d'être perdu.</summary>
+    private const float FirePressBuffer = 0.1f;
+    private float firePressBufferedUntil = float.NegativeInfinity;
+
+    // Garde-fou anti-triche (voir ServerFire et TryAcceptShotRate) : crédit de temps du tireur,
+    // côté serveur, pour faire respecter data.shotsPerSecond quoi que le client prétende faire.
+    private double serverFireCredit;
+    private double serverLastFireCheck = double.NegativeInfinity;
 
     private float verticalRecoilAccumulated;
     private float horizontalRecoilAccumulated;
+
+    // ------------------------------------------------------------------
+    // Chargeur et arme en main (2026-10-08, panoplie le 2026-10-11)
+    //
+    // Le SERVEUR tient le compte qui fait foi : il refuse tout tir à vide, pendant un rechargement
+    // ou avant que l'arme soit sortie, et décide seul de la fin d'un rechargement, sur sa propre
+    // horloge. Le PROPRIÉTAIRE prédit le même compte pour tirer, recharger et changer d'arme sans
+    // attendre l'aller-retour, et se recale sur le serveur dès que plus aucune de ses demandes n'est
+    // en route.
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// État du chargeur et de l'arme en main, écrit par le serveur seul et publié à tous (les
+    /// spectateurs voient l'arme et entendent le rechargement, le futur HUD de tribune pourra montrer
+    /// les munitions des duellistes). Un chargeur par place de la panoplie : changer d'arme garde
+    /// les balles de l'autre.
+    ///
+    /// `actionsProcessed` compte les demandes du propriétaire (tirs, rechargements, changements
+    /// d'arme) que le serveur a traitées, acceptées ou refusées : quand il égale le nombre de
+    /// demandes envoyées, plus rien n'est en route, et l'état publié est directement comparable à la
+    /// prédiction.
+    /// </summary>
+    public struct MagazineState : INetworkSerializeByMemcpy
+    {
+        /// <summary>Instant serveur de la fin du rechargement en cours — ou de la prochaine
+        /// cartouche, pour une arme qui recharge cartouche par cartouche ; 0 = aucun.</summary>
+        public double reloadEndsAt;
+        /// <summary>Instant serveur où l'arme en main est sortie (changement d'arme) : on ne tire
+        /// pas avant.</summary>
+        public double readyAt;
+        public ushort actionsProcessed;
+        /// <summary>Place de l'arme en main (0 à 3).</summary>
+        public byte equipped;
+        public byte ammo0, ammo1, ammo2, ammo3;
+
+        /// <summary>Balles de l'arme en main.</summary>
+        public byte ammo
+        {
+            get => AmmoOf(equipped);
+            set => SetAmmo(equipped, value);
+        }
+
+        public byte AmmoOf(int slot) => slot switch { 0 => ammo0, 1 => ammo1, 2 => ammo2, 3 => ammo3, _ => (byte)0 };
+
+        public void SetAmmo(int slot, byte value)
+        {
+            switch (slot)
+            {
+                case 0: ammo0 = value; break;
+                case 1: ammo1 = value; break;
+                case 2: ammo2 = value; break;
+                case 3: ammo3 = value; break;
+            }
+        }
+    }
+
+    private readonly NetworkVariable<MagazineState> networkMagazine = new NetworkVariable<MagazineState>(
+        default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    /// <summary>Marge (s) accordée à un tir qui arrive juste avant la fin du rechargement (ou de la
+    /// sortie de l'arme) côté serveur. Le propriétaire prédit cette fin sur son horloge, et la gigue
+    /// du réseau peut faire arriver son premier tir quelques millisecondes trop tôt : sans marge, ce
+    /// tir serait refusé alors que le joueur l'a vu partir. Borne en temps serveur : même un client
+    /// modifié ne raccourcit pas un rechargement de plus de 50 ms.</summary>
+    public const double ReloadCompletionTolerance = 0.05;
+
+    // Le chargeur PRÉDIT, chez le propriétaire (et seul chargeur hors réseau), sur l'horloge
+    // MagazineClock.
+    private MagazineState localMagazine;
+    // Une demande de rechargement qui attend son moment : la sortie d'un sprint, ou la fin d'un
+    // franchissement (2026-10-11). Chez le propriétaire seulement.
+    private bool reloadPending;
+    private ushort actionsSent;
+
+    private bool IsNetworked => NetworkObject != null && IsSpawned;
+    private bool UsesLocalMagazine => !IsNetworked || IsOwner;
+
+    /// <summary>L'horloge du chargeur prédit : chez un client, NetworkManager.LocalTime, l'instant
+    /// où le serveur recevra ce qu'on envoie maintenant. Une fin de rechargement prédite sur cette
+    /// horloge tombe donc au même instant que celle que le serveur calculera à réception.</summary>
+    private double MagazineClock => IsNetworked ? NetworkManager.LocalTime.Time : Time.timeAsDouble;
+
+    /// <summary>L'état et l'horloge que cette machine doit montrer : la prédiction chez le
+    /// propriétaire, le serveur ailleurs.</summary>
+    private MagazineState ShownMagazine => UsesLocalMagazine ? localMagazine : networkMagazine.Value;
+    private double ShownClock => UsesLocalMagazine ? MagazineClock : NetworkManager.ServerTime.Time;
+
+    // ------------------------------------------------------------------
+    // La panoplie
+    // ------------------------------------------------------------------
+
+    public IReadOnlyList<WeaponData> Loadout => loadout;
+    public int SlotCount => loadout == null ? 0 : Mathf.Min(loadout.Length, MaxSlots);
+    public WeaponData DataOf(int slot) => slot >= 0 && slot < SlotCount ? loadout[slot] : null;
+
+    /// <summary>Place de l'arme en main, telle que cette machine doit la montrer.</summary>
+    public int DisplayedSlot => ShownMagazine.equipped;
+
+    /// <summary>L'arme en main, telle que cette machine doit la montrer.</summary>
+    public WeaponData Data => DataOf(DisplayedSlot) ?? DataOf(0);
+
+    /// <summary>Chez le propriétaire : la place de l'arme en main, jointe à chaque input (le poids de
+    /// l'arme pèse sur la vitesse dans Move()).</summary>
+    public byte LocalSlot => localMagazine.equipped;
+
+    private WeaponData LocalData => DataOf(localMagazine.equipped) ?? DataOf(0);
+    private WeaponData ServerData => DataOf(networkMagazine.Value.equipped) ?? DataOf(0);
+
+    /// <summary>Le poids d'une arme de la panoplie : sa vitesse de déplacement relative. Lu par
+    /// Move(), donc identique partout (les WeaponData ne changent pas en jeu).</summary>
+    public float SpeedMultiplierOf(int slot)
+    {
+        WeaponData data = DataOf(slot);
+        return data != null ? data.moveSpeedMultiplier : 1f;
+    }
+
+    /// <summary>Balles dans le chargeur de l'arme en main, telles que cette machine doit les montrer.</summary>
+    public int DisplayedAmmo => ShownMagazine.ammo;
+    public int MagazineSize => Data != null ? Data.magazineSize : 0;
+    public float ReloadDuration => Data != null ? Data.reloadDuration : 0f;
+
+    /// <summary>La caméra d'où partent les tirs — et les coups de taser, qui la partagent.</summary>
+    public Camera AimCamera => aimCamera;
+    public bool IsReloading => ShownMagazine.reloadEndsAt > 0.0;
+
+    /// <summary>Temps restant (s) jusqu'au chargeur plein, rechargement en cours (animation).</summary>
+    public float ReloadTimeRemaining
+    {
+        get
+        {
+            MagazineState m = ShownMagazine;
+            WeaponData data = Data;
+            if (m.reloadEndsAt <= 0.0 || data == null) return 0f;
+            float first = Mathf.Max(0f, (float)(m.reloadEndsAt - ShownClock));
+            if (!data.reloadPerRound) return first;
+            return first + Mathf.Max(0, data.magazineSize - m.ammo - 1) * data.reloadDuration;
+        }
+    }
+
+    /// <summary>Sortie de l'arme en main, de 0 (on vient d'en changer) à 1 (prête à tirer).</summary>
+    public float RaiseProgress
+    {
+        get
+        {
+            WeaponData data = Data;
+            if (data == null || data.raiseTime <= 0f) return 1f;
+            return Mathf.Clamp01(1f - (float)(ShownMagazine.readyAt - ShownClock) / data.raiseTime);
+        }
+    }
+
+    /// <summary>Chez le propriétaire : un rechargement demandé attend la fin d'un sprint ou d'un
+    /// franchissement. Il arrête le sprint comme un rechargement en cours (PlayerLocomotion.GateSprint).</summary>
+    public bool ReloadPending => reloadPending;
+
+    /// <summary>Marge (s) du serveur sur la sortie de sprint : les deux côtés comptent exactement
+    /// les mêmes inputs (PlayerLocomotion.TimeSinceSprint), il ne reste que l'arrondi.</summary>
+    public const float SprintOutTolerance = 0.01f;
+
+    /// <summary>Chez le propriétaire : l'arme est-elle remontée depuis le dernier sprint ? On ne tire
+    /// ni ne commence de rechargement avant (WeaponData.sprintToFireTime).</summary>
+    public bool ReadyAfterSprint
+    {
+        get
+        {
+#if UNITY_EDITOR
+            if (PlayerLocomotion.DebugSprintIgnoresRules) return true; // client tricheur simulé
+#endif
+            WeaponData data = LocalData;
+            return locomotion == null || data == null || locomotion.TimeSinceSprint >= data.sprintToFireTime;
+        }
+    }
+
+    /// <summary>De 0 (en plein sprint) à 1 (arme remontée), pour la vue subjective.</summary>
+    public float SprintRecovery
+    {
+        get
+        {
+            WeaponData data = LocalData;
+            return locomotion == null || data == null || data.sprintToFireTime <= 0f
+                ? 1f : Mathf.Clamp01(locomotion.TimeSinceSprint / data.sprintToFireTime);
+        }
+    }
+
+    /// <summary>Avancement du rechargement en cours, de 0 à 1 (HUD). Cartouche par cartouche : la
+    /// part du chargeur déjà remplie.</summary>
+    public float ReloadProgress
+    {
+        get
+        {
+            WeaponData data = Data;
+            MagazineState m = ShownMagazine;
+            if (m.reloadEndsAt <= 0.0 || data == null || data.reloadDuration <= 0f) return 0f;
+            if (data.reloadPerRound) return Mathf.Clamp01((float)m.ammo / Mathf.Max(1, data.magazineSize));
+            return Mathf.Clamp01(1f - (float)((m.reloadEndsAt - ShownClock) / data.reloadDuration));
+        }
+    }
 
 #if UNITY_EDITOR
     // Diagnostics de session (Editor uniquement). Comptés côté SERVEUR, seul endroit qui décide.
     // Ce qu'on cherche : des tirs rejetés qui ne devraient pas l'être (garde-fous trop serrés) et
     // la part réelle du rewind, invisibles autrement.
-    private static int diagAccepted, diagRejectedRate, diagRejectedOrigin, diagRejectedPhase, diagHits;
+    private static int diagAccepted, diagRejectedRate, diagRejectedOrigin, diagRejectedPhase, diagRejectedAmmo, diagRejectedVault, diagHits;
     private static float diagRewindSum, diagRewindMax;
     private static float diagNextReportAt;
+    private static int diagDeferred;
+    private static float diagDeferWaitSum;
+    // Tirs qui, à leur arrivée, attendaient que leur input soit simulé (traités plus tard dans la
+    // même image, ou à une image suivante : ces derniers sont aussi comptés dans diagDeferred).
+    private static int diagQueuedAtArrival;
 
     // Mesure différentielle : combien de tirs le rewind fait BASCULER, et dans quel sens.
     // diagRewindLost devrait rester à 0 — le rewind ne doit jamais faire rater un tir qui
@@ -135,15 +364,16 @@ public class WeaponController : NetworkBehaviour
         if (Time.time < diagNextReportAt && diagNextReportAt - Time.time <= 3f) return;
         diagNextReportAt = Time.time + 3f;
 
-        int total = diagAccepted + diagRejectedRate + diagRejectedOrigin + diagRejectedPhase;
+        int total = diagAccepted + diagRejectedRate + diagRejectedOrigin + diagRejectedPhase + diagRejectedAmmo + diagRejectedVault;
         if (total == 0) return;
 
         float avgRewind = diagAccepted > 0 ? diagRewindSum / diagAccepted : 0f;
         int compared = diagRewindGained + diagRewindLost + diagBothHit + diagNeitherHit;
 
         Debug.Log($"[DIAG-SERVEUR] tirs={total} acceptes={diagAccepted} touches={diagHits} " +
-                  $"rejets(cadence={diagRejectedRate} origine={diagRejectedOrigin} hors_manche={diagRejectedPhase}) " +
-                  $"rewind_moy={avgRewind * 1000f:F0}ms rewind_max={diagRewindMax * 1000f:F0}ms | " +
+                  $"rejets(cadence={diagRejectedRate} origine={diagRejectedOrigin} hors_manche={diagRejectedPhase} chargeur={diagRejectedAmmo} franchissement={diagRejectedVault}) " +
+                  $"rewind_moy={avgRewind * 1000f:F0}ms rewind_max={diagRewindMax * 1000f:F0}ms " +
+                  $"en_attente_de_l_input={diagQueuedAtArrival} differes_d_une_image={diagDeferred} attente_moy={(diagDeferred > 0 ? diagDeferWaitSum / diagDeferred * 1000f : 0f):F0}ms | " +
                   $"DIFFERENTIEL sur {compared} tirs : gagnes_par_rewind={diagRewindGained} " +
                   $"perdus_par_rewind={diagRewindLost} touches_dans_les_2_cas={diagBothHit} " +
                   $"rates_dans_les_2_cas={diagNeitherHit}" +
@@ -152,8 +382,11 @@ public class WeaponController : NetworkBehaviour
                         $"distance_au_corps_ACTUEL={diagDistNowSum / diagDistSamples:F2}m"
                       : ""));
 
-        diagAccepted = diagRejectedRate = diagRejectedOrigin = diagRejectedPhase = diagHits = 0;
+        diagAccepted = diagRejectedRate = diagRejectedOrigin = diagRejectedPhase = diagRejectedAmmo = diagRejectedVault = diagHits = 0;
         diagRewindSum = diagRewindMax = 0f;
+        diagDeferred = 0;
+        diagDeferWaitSum = 0f;
+        diagQueuedAtArrival = 0;
         diagRewindGained = diagRewindLost = diagBothHit = diagNeitherHit = 0;
         diagDistPastSum = diagDistNowSum = 0f;
         diagDistSamples = 0;
@@ -164,6 +397,7 @@ public class WeaponController : NetworkBehaviour
     {
         input = GetComponentInParent<PlayerInputReader>();
         locomotion = GetComponentInParent<PlayerLocomotion>();
+        taser = GetComponent<TaserController>();
 
         if (input == null || locomotion == null)
         {
@@ -174,10 +408,47 @@ public class WeaponController : NetworkBehaviour
         {
             Debug.LogError("WeaponController : assigne 'Aim Camera' et 'Visual Feedback' dans l'inspecteur.", this);
         }
+
+        if (SlotCount == 0) Debug.LogError("WeaponController : la panoplie est vide.", this);
+        RefillAll(ref localMagazine);
+    }
+
+    /// <summary>Arme choisie à l'armurerie du menu principal (GameSettings.PreferredWeaponSlot),
+    /// à appliquer une seule fois dès que possible — consommée par HandleSwitchInput, qui passe
+    /// par le MÊME changement d'arme authentifié que les touches 1 à 4 (aucune confiance nouvelle
+    /// demandée au serveur). -1 = rien en attente.</summary>
+    private int pendingStartupSlot = -1;
+
+    public override void OnNetworkSpawn()
+    {
+        if (IsServer) ServerRefillMagazine();
+
+        localMagazine = networkMagazine.Value;
+        actionsSent = localMagazine.actionsProcessed;
+        networkMagazine.OnValueChanged += HandleMagazineChanged;
+
+        if (IsOwner)
+        {
+            int preferred = GameSettings.PreferredWeaponSlot;
+            if (preferred > 0 && preferred < MaxSlots) pendingStartupSlot = preferred;
+        }
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        networkMagazine.OnValueChanged -= HandleMagazineChanged;
     }
 
     private void Update()
     {
+        // Le serveur traite les demandes et termine les rechargements de TOUS les joueurs, donc
+        // avant la garde IsOwner.
+        if (IsNetworked && IsServer)
+        {
+            ServerProcessArmsActions();
+            ServerUpdateMagazine();
+        }
+
         // Maintenant que PlayerLocomotion est réseauté, il y a potentiellement plusieurs
         // instances de Player dans la scène en même temps. PlayerInputReader lit le clavier/la
         // souris PHYSIQUE de la machine sans savoir à qui elle appartient — sans ce garde-fou,
@@ -185,6 +456,8 @@ public class WeaponController : NetworkBehaviour
         // écran) tirerait à chaque clic. On ne traite l'input que pour SON PROPRE joueur.
         // (NetworkObject == null : composant testé hors contexte réseau, on laisse passer.)
         if (NetworkObject != null && !IsOwner) return;
+        WeaponData data = LocalData;
+        if (data == null || input == null) return;
 
         timeSinceLastShot += Time.deltaTime;
         if (timeSinceLastShot > data.recoilResetDelay)
@@ -193,36 +466,104 @@ public class WeaponController : NetworkBehaviour
         }
 
         cooldown -= Time.deltaTime;
-        ApplyRecoilRecovery();
+        ApplyRecoilRecovery(data);
+        UpdateLocalMagazine();
+        HandleSwitchInput();
+        HandleReloadInput();
         HandleFireInput();
     }
 
+    // ------------------------------------------------------------------
+    // Changer d'arme (touches 1 à 4, 2026-10-11)
+    // ------------------------------------------------------------------
+
+    private void HandleSwitchInput()
+    {
+        int wanted = input.WeaponSlotPressedThisFrame;
+        if (wanted < 0 && pendingStartupSlot >= 0) wanted = pendingStartupSlot;
+        pendingStartupSlot = -1; // un seul essai, qu'il réussisse ou non (place déjà équipée, etc.)
+#if UNITY_EDITOR
+        if (AutopilotWeaponSlot >= 0 && AutopilotWeaponSlot != localMagazine.equipped) wanted = AutopilotWeaponSlot;
+        if (AutopilotWeaponCycle && SlotCount > 0)
+        {
+            int cycled = (int)(Time.time / Mathf.Max(0.5f, AutopilotWeaponCyclePeriod)) % SlotCount;
+            if (cycled != localMagazine.equipped) wanted = cycled;
+        }
+#endif
+        if (wanted < 0 || wanted == localMagazine.equipped || DataOf(wanted) == null) return;
+
+        // Prédit : l'arme change tout de suite chez le joueur, et le serveur la changera à réception,
+        // à l'instant que MagazineClock annonce. Un rechargement en cours ou en attente est annulé.
+        WeaponData current = LocalData;
+        CompleteReloadIfDue(ref localMagazine, MagazineClock, current.magazineSize, current.reloadPerRound, current.reloadDuration);
+        TrySwitchWeapon(ref localMagazine, wanted, MagazineClock, DataOf(wanted).raiseTime);
+        reloadPending = false;
+        cooldown = 0f;
+        shotIndexInBurst = 0;
+        firePressBufferedUntil = float.NegativeInfinity;
+
+        if (IsNetworked)
+        {
+            actionsSent++; // AVANT l'appel : chez le Host, la RPC s'exécute immédiatement
+            SwitchWeaponServerRpc((byte)wanted);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Tir
+    // ------------------------------------------------------------------
+
     private void HandleFireInput()
     {
-        bool wantsToFire = data.isAutomatic ? input.FireHeld : input.FirePressedThisFrame;
+        WeaponData data = LocalData;
+        bool wantsToFire;
+        if (data.isAutomatic)
+        {
+            wantsToFire = input.FireHeld;
+        }
+        else
+        {
+            if (input.FireWasPressedThisFrame) firePressBufferedUntil = Time.time + FirePressBuffer;
+            wantsToFire = Time.time <= firePressBufferedUntil;
+#if UNITY_EDITOR
+            if (PlayerInputReader.AutopilotFire) wantsToFire = input.FireHeld;
+#endif
+        }
 
         // Le tir n'est possible qu'en déplacement normal/sneak/accroupi/allongé (lean ou non),
-        // jamais en sprint — PlayerLocomotion coupe déjà le sprint dès que Fire est appuyé, donc
-        // ce garde-fou ne bloque en pratique que la frame où IsSprinting n'a pas encore été
-        // remise à jour ce tick (WeaponController tourne avant PlayerLocomotion.Update()).
-        // Confort local : on ne déclenche même pas le recul ni le son hors manche. Le vrai
-        // verrou est côté serveur dans FireServerRpc — celui-ci n'est qu'une convention client.
-        if (wantsToFire && cooldown <= 0f && !locomotion.IsSprinting && RoundManager.FiringAllowed)
+        // jamais en sprint ni en franchissant un obstacle (2026-10-11), ni avant que l'arme soit
+        // sortie. Confort local : on ne déclenche même pas le recul ni le son hors manche. Le vrai
+        // verrou est côté serveur dans ServerFire — celui-ci n'est qu'une convention client.
+        bool armed = MagazineClock >= localMagazine.readyAt && localMagazine.ammo > 0
+                     && (localMagazine.reloadEndsAt <= 0.0 || data.reloadPerRound);
+        bool vaulting = locomotion.IsVaulting;
+#if UNITY_EDITOR
+        if (PlayerLocomotion.DebugVaultIgnoresRules) vaulting = false; // client tricheur simulé
+#endif
+        if (wantsToFire && cooldown <= 0f && armed && !locomotion.IsSprinting && !vaulting
+            && ReadyAfterSprint && RoundManager.FiringAllowed && (taser == null || !taser.IsStriking))
         {
             // Le cooldown doit être posé AVANT Fire() : si Fire() lève une exception (ex.
             // référence non assignée dans l'inspecteur), on ne veut surtout pas rester avec
             // cooldown <= 0, sinon HandleFireInput retire au tir (et donc au recul) à chaque
             // frame suivante au lieu de respecter shotsPerSecond.
             cooldown = 1f / Mathf.Max(0.01f, data.shotsPerSecond);
-            Fire();
+            firePressBufferedUntil = float.NegativeInfinity;
+            Fire(data);
         }
     }
 
-    private void Fire()
+    private void Fire(WeaponData data)
     {
+#if UNITY_EDITOR
+        if (locomotion != null && locomotion.TimeSinceSprint < 1f)
+            Debug.Log($"[DIAG-SPRINT] tir à {locomotion.TimeSinceSprint * 1000f:F0} ms de la fin du sprint");
+#endif
+        // Prédit, sans la marge du serveur : le joueur ne tire jamais avant ce qu'il voit.
+        TryConsumeRound(ref localMagazine, MagazineClock, data.magazineSize, data.reloadPerRound, data.reloadDuration, 0.0);
         timeSinceLastShot = 0f;
         OnShotFired?.Invoke();
-        PlayFireSound();
+        PlayFireSound(data);
 
         // IMPORTANT : on lit origin/direction AVANT d'appliquer le recul de CE tir. Sinon
         // (comme c'était le cas avant ce fix), la caméra a déjà tourné au moment où on lit
@@ -235,24 +576,29 @@ public class WeaponController : NetworkBehaviour
 #if UNITY_EDITOR
         if (AutopilotAimAtOpponent && TryAimAtOpponent(origin, out Vector3 autoDirection)) direction = autoDirection;
 #endif
+        // La gerbe se resserre en visée : celle du dernier input envoyé, que le serveur relira.
+        bool aiming = locomotion != null && locomotion.IsAiming;
 
         // Raycast LOCAL : ne sert qu'au feedback visuel instantané du tireur (tracer/impact), pas
-        // aux dégâts ni à ce qui est envoyé au serveur — voir FireServerRpc. Il utilise la MÊME
-        // résolution que le serveur (ResolveShot) pour que ce que le tireur voit corresponde à ce
-        // que le serveur décide, aux différences de latence près.
-        bool hitSomething = ResolveShot(origin, direction, out Vector3 end, out Vector3 localNormal, out _);
-
-        Debug.DrawLine(origin, end, hitSomething ? Color.red : Color.gray, 0.5f);
-        if (visualFeedback != null)
+        // aux dégâts ni à ce qui est envoyé au serveur — voir ServerFire. Il utilise la MÊME
+        // résolution que le serveur (ResolveShot, PelletDirection) pour que ce que le tireur voit
+        // corresponde à ce que le serveur décide, aux différences de latence près.
+        for (int i = 0; i < data.PelletCount; i++)
         {
-            visualFeedback.SpawnTracer(origin, end);
-            if (hitSomething) visualFeedback.SpawnImpact(end, localNormal);
+            Vector3 pellet = PelletDirection(direction, data.PelletOffset(i, aiming));
+            bool hitSomething = ResolveShot(data, origin, pellet, out Vector3 end, out Vector3 localNormal, out _, out _);
+            Debug.DrawLine(origin, end, hitSomething ? Color.red : Color.gray, 0.5f);
+            if (visualFeedback != null)
+            {
+                visualFeedback.SpawnTracer(origin, end, data.tracerColor);
+                if (hitSomething) visualFeedback.SpawnImpact(end, localNormal);
+            }
         }
 
         if (NetworkObject != null)
         {
             // Contexte réseau normal : seuls origin/direction partent au serveur, qui refait SEUL
-            // son propre raycast et décide SEUL du résultat (voir FireServerRpc) — un client modifié
+            // son propre raycast et décide SEUL du résultat (voir ServerFire) — un client modifié
             // ne peut donc plus mentir sur ce qu'il prétend avoir touché.
             Vector3 sentOrigin = origin;
 #if UNITY_EDITOR
@@ -263,22 +609,28 @@ public class WeaponController : NetworkBehaviour
 #endif
             // Le tireur annonce l'instant, sur l'horloge du serveur, de ce qu'il voit des autres.
             // Le serveur borne le recul qui en découle : c'est une suggestion, pas une donnée de
-            // confiance.
-            FireServerRpc(sentOrigin, direction, locomotion.ViewServerTime);
+            // confiance. La place de l'arme sert à repérer un désaccord, jamais à choisir l'arme.
+            actionsSent++; // AVANT l'appel : chez le Host, la RPC s'exécute immédiatement
+            FireServerRpc(sentOrigin, direction, locomotion.ViewServerTime, localMagazine.equipped);
         }
-        else if (hitSomething)
+        else
         {
             // Composant testé hors contexte réseau (pas de NetworkObject) : pas de serveur à qui
             // déléguer, on applique les dégâts directement en local comme avant le passage réseau.
-            ResolveShot(origin, direction, out _, out _, out Collider localBody);
-            Health targetHealth = localBody != null ? localBody.GetComponentInParent<Health>() : null;
-            if (targetHealth != null) targetHealth.ApplyDamage(data.damagePerHit, transform.root.gameObject);
+            var damage = new Dictionary<Health, float>();
+            for (int i = 0; i < data.PelletCount; i++)
+            {
+                Vector3 pellet = PelletDirection(direction, data.PelletOffset(i, aiming));
+                ResolveShot(data, origin, pellet, out _, out _, out Collider body, out float distance);
+                AddDamage(damage, data, body, distance);
+            }
+            foreach (var pair in damage) pair.Key.ApplyDamage(pair.Value, transform.root.gameObject);
         }
 
         // Le recul de CE tir est appliqué maintenant, après avoir déterminé où il a atterri —
         // il influence donc la visée du PROCHAIN tir (comportement voulu pour une rafale
         // progressive), jamais celui qui vient d'être tiré.
-        ApplyRecoilKick();
+        ApplyRecoilKick(data);
 
         shotIndexInBurst++;
     }
@@ -291,16 +643,162 @@ public class WeaponController : NetworkBehaviour
     /// supplémentaire n'a été nécessaire, seulement un point d'accroche.</summary>
     public event System.Action OnShotFired;
 
-    /// <summary>Joue le son de tir de l'arme équipée (data.fireSounds). Appelé localement par le
-    /// tireur dans Fire(), et rediffusé aux autres clients par BroadcastShotClientRpc — sinon,
-    /// comme pour le visuel avant l'ajout du ClientRpc, seul le tireur entendrait ses propres tirs.</summary>
-    private void PlayFireSound()
+    /// <summary>Joue le son de tir de l'arme (data.fireSounds). Appelé localement par le tireur dans
+    /// Fire(), et rediffusé aux autres clients par BroadcastShotClientRpc — sinon, comme pour le
+    /// visuel avant l'ajout du ClientRpc, seul le tireur entendrait ses propres tirs.</summary>
+    private void PlayFireSound(WeaponData data)
     {
-        if (audioSource == null || data.fireSounds == null || data.fireSounds.Length == 0) return;
+        if (audioSource == null || data == null || data.fireSounds == null || data.fireSounds.Length == 0) return;
 
         AudioClip clip = data.fireSounds[Random.Range(0, data.fireSounds.Length)];
         audioSource.pitch = Random.Range(data.firePitchRange.x, data.firePitchRange.y);
         audioSource.PlayOneShot(clip, data.fireVolume);
+    }
+
+    /// <summary>
+    /// Direction d'un plomb : l'axe du regard tourné de `offsetDegrees` (x à droite, y en haut),
+    /// dans un repère construit sur la verticale du monde. Fonction pure, testée.
+    ///
+    /// Le repère ne dépend QUE de la direction : le tireur et le serveur, qui ne connaît pas le
+    /// roulis de la caméra (lean), calculent donc exactement la même gerbe. C'est ce qui la rend
+    /// « motif fixe » (GDD § 3) : deux tirs identiques touchent exactement les mêmes points.
+    /// </summary>
+    public static Vector3 PelletDirection(Vector3 forward, Vector2 offsetDegrees)
+    {
+        forward = forward.normalized;
+        if (offsetDegrees == Vector2.zero) return forward;
+        Vector3 right = Vector3.Cross(Vector3.up, forward);
+        if (right.sqrMagnitude < 1e-6f) right = Vector3.right; // regard à la verticale
+        right.Normalize();
+        Vector3 up = Vector3.Cross(forward, right);
+        return (Quaternion.AngleAxis(offsetDegrees.x, up) * Quaternion.AngleAxis(-offsetDegrees.y, right) * forward).normalized;
+    }
+
+    // ------------------------------------------------------------------
+    // Les demandes du joueur, côté serveur : une file ORDONNÉE (2026-10-11)
+    //
+    // Pourquoi une file. On ne tire pas en franchissant un obstacle, et le serveur doit le vérifier
+    // sans croire le client. Il sait QUAND le joueur a tiré : la demande voyage par RPC fiable,
+    // livrée après tous les inputs envoyés avant elle, donc l'état qui compte est celui qui suit le
+    // dernier input reçu à l'arrivée (inputSequence). Mais cet input n'est pas toujours SIMULÉ à
+    // l'arrivée de la demande (les inputs attendent dans la file de PlayerLocomotion) : la demande
+    // attend donc qu'il le soit. Et toutes les demandes attendent dans l'ordre, sinon un
+    // rechargement pourrait doubler le tir qui le précédait.
+    //
+    // Ce qui dépend de l'instant d'ARRIVÉE (horloge du chargeur, cadence, sortie de sprint, recul du
+    // rewind) est relevé à l'arrivée et voyage avec la demande : la traiter une image plus tard ne
+    // change rien au résultat.
+    // ------------------------------------------------------------------
+
+    private enum ArmsActionKind : byte { Fire, Reload, Switch, CancelReload }
+
+    private struct ArmsAction
+    {
+        public ArmsActionKind kind;
+        /// <summary>Dernier input reçu avant la demande : l'état du joueur qui compte.</summary>
+        public int inputSequence;
+        /// <summary>Horloge du serveur à l'arrivée (chargeur, rewind).</summary>
+        public double serverTime;
+        /// <summary>Temps réel à l'arrivée (cadence de tir).</summary>
+        public double realTime;
+        /// <summary>Sortie de sprint, comptée sur les inputs reçus à l'arrivée.</summary>
+        public float timeSinceSprint;
+        public Vector3 origin;
+        public Vector3 direction;
+        public double viewServerTime;
+        public byte slot;
+    }
+
+    private readonly Queue<ArmsAction> serverArmsActions = new Queue<ArmsAction>();
+
+    /// <summary>Attente maximale (s, temps réel) d'une demande dont l'input n'est jamais simulé
+    /// (inputs jetés par le plafond de la file, client qui n'envoie plus rien) : elle est alors
+    /// traitée sans l'état de cet input.</summary>
+    private const double MaxArmsActionWait = 0.3;
+
+    private ArmsAction Received(ArmsActionKind kind) => new ArmsAction
+    {
+        kind = kind,
+        inputSequence = locomotion != null ? locomotion.ServerLastReceivedInput : -1,
+        serverTime = NetworkManager.ServerTime.Time,
+        realTime = Time.timeAsDouble,
+        timeSinceSprint = locomotion != null ? locomotion.ServerTimeSinceSprint : float.PositiveInfinity,
+    };
+
+    [ServerRpc]
+    private void FireServerRpc(Vector3 origin, Vector3 direction, double viewServerTime, byte slot)
+    {
+        ArmsAction action = Received(ArmsActionKind.Fire);
+        action.origin = origin;
+        action.direction = direction;
+        action.viewServerTime = viewServerTime;
+        action.slot = slot;
+        serverArmsActions.Enqueue(action);
+        ServerProcessArmsActions();
+#if UNITY_EDITOR
+        if (serverArmsActions.Count > 0) diagQueuedAtArrival++;
+#endif
+    }
+
+    /// <summary>Le serveur décide seul du début d'un rechargement, sur sa propre horloge : le
+    /// client ne transmet aucun instant.</summary>
+    [ServerRpc]
+    private void ReloadServerRpc()
+    {
+        serverArmsActions.Enqueue(Received(ArmsActionKind.Reload));
+        ServerProcessArmsActions();
+    }
+
+    /// <summary>Changement d'arme. Le poids de la nouvelle arme pèse sur le déplacement à partir de
+    /// l'input qui suit la demande — décidé ICI, à l'arrivée, avant que cet input ne soit simulé
+    /// (PlayerLocomotion.ServerScheduleWeaponSlot).</summary>
+    [ServerRpc]
+    private void SwitchWeaponServerRpc(byte slot)
+    {
+        ArmsAction action = Received(ArmsActionKind.Switch);
+        action.slot = slot;
+        if (slot < SlotCount && DataOf(slot) != null && locomotion != null)
+            locomotion.ServerScheduleWeaponSlot(action.inputSequence + 1, slot);
+        serverArmsActions.Enqueue(action);
+        ServerProcessArmsActions();
+    }
+
+    /// <summary>Le taser annule le rechargement en cours, dans l'ordre des demandes du joueur
+    /// (TaserController). Ne compte pas comme une demande : le recalage du chargeur rattrape l'écart.</summary>
+    public void ServerQueueCancelReload()
+    {
+        if (!IsServer) return;
+        serverArmsActions.Enqueue(Received(ArmsActionKind.CancelReload));
+        ServerProcessArmsActions();
+    }
+
+    /// <summary>Traite, dans l'ordre, les demandes dont l'input de référence a été simulé. Appelé à
+    /// l'arrivée de chaque demande, après chaque simulation des inputs (PlayerLocomotion), et à
+    /// chaque image.</summary>
+    public void ServerProcessArmsActions()
+    {
+        if (!IsServer) return;
+        while (serverArmsActions.Count > 0)
+        {
+            ArmsAction action = serverArmsActions.Peek();
+            bool simulated = locomotion == null || locomotion.ServerLastSimulatedInput >= action.inputSequence;
+            if (!simulated && Time.timeAsDouble - action.realTime < MaxArmsActionWait) return;
+            serverArmsActions.Dequeue();
+#if UNITY_EDITOR
+            if (Time.timeAsDouble > action.realTime)
+            {
+                diagDeferred++;
+                diagDeferWaitSum += (float)(Time.timeAsDouble - action.realTime);
+            }
+#endif
+            switch (action.kind)
+            {
+                case ArmsActionKind.Fire: ServerFire(action); break;
+                case ArmsActionKind.Reload: ServerReload(action); break;
+                case ArmsActionKind.Switch: ServerSwitch(action); break;
+                case ArmsActionKind.CancelReload: ServerCancelReload(); break;
+            }
+        }
     }
 
     /// <summary>
@@ -319,25 +817,44 @@ public class WeaponController : NetworkBehaviour
     /// latence (2026-10-06). C'est malgré tout une SUGGESTION du client, jamais une donnée de
     /// confiance : le recul qui en découle est borné. Sans cette borne, un client modifié
     /// annoncerait un instant très ancien pour toucher ses adversaires là où ils n'ont plus été
-    /// depuis longtemps. C'est le seul paramètre "libre" accepté par cette RPC — tout le reste
-    /// (hit, dégâts, position des cibles) est recalculé ici.
+    /// depuis longtemps. C'est le seul paramètre "libre" accepté — tout le reste (hit, dégâts,
+    /// position des cibles, arme en main, gerbe) est recalculé ici.
     ///
     /// Le rewind ne déplace QUE les hitbox, jamais les joueurs eux-mêmes : la simulation en cours
-    /// continue sur les vraies positions, et tout se déroule de façon synchrone dans ce handler,
-    /// donc invisible pour le reste du jeu.
+    /// continue sur les vraies positions, et tout se déroule de façon synchrone ici, donc invisible
+    /// pour le reste du jeu.
     /// </summary>
-    [ServerRpc]
-    private void FireServerRpc(Vector3 origin, Vector3 direction, double viewServerTime)
+    private void ServerFire(ArmsAction action)
     {
+        // Chaque demande compte, acceptée ou refusée : c'est ce qui dit au propriétaire que plus
+        // rien n'est en route, donc qu'il peut se recaler sur le chargeur publié (ReconcileMagazine).
+        MagazineState magazine = networkMagazine.Value;
+        magazine.actionsProcessed++;
+        networkMagazine.Value = magazine;
+
+        WeaponData data = ServerData;
+        if (data == null) return;
+
+        // L'arme du tir est celle que le serveur sait en main : la place annoncée ne sert qu'à
+        // repérer un désaccord (client modifié, ou changement d'arme refusé).
+        if (action.slot != magazine.equipped)
+        {
+            Debug.LogWarning($"[Serveur] Tir rejeté : le joueur annonce l'arme {action.slot + 1}, le serveur lui sait la {magazine.equipped + 1} en main.", this);
+#if UNITY_EDITOR
+            diagRejectedAmmo++;
+            DiagReportIfDue();
+#endif
+            return;
+        }
+
         // Garde-fou anti-triche : cooldown/HandleFireInput ne sont que des CONVENTIONS côté
-        // client — rien n'empêche un client modifié d'appeler cette RPC aussi vite qu'il veut.
-        // Le serveur doit donc lui-même refuser tout tir arrivant plus vite que shotsPerSecond
-        // ne l'autorise, sans quoi la cadence de tir n'est jamais réellement protégée malgré
-        // tout le soin apporté au hit registration ci-dessous. Tolérance de 15% pour absorber
-        // la gigue réseau/frame sans pénaliser un tir légitime tombé pile à la limite.
+        // client — rien n'empêche un client modifié d'appeler la RPC aussi vite qu'il veut. Le
+        // serveur doit donc lui-même refuser tout tir arrivant plus vite que shotsPerSecond ne
+        // l'autorise, sans quoi la cadence de tir n'est jamais réellement protégée malgré tout le
+        // soin apporté au hit registration ci-dessous. Voir TryAcceptShotRate pour la tolérance à
+        // la gigue. Le temps est celui de l'ARRIVÉE.
         float minInterval = 1f / Mathf.Max(0.01f, data.shotsPerSecond);
-        float now = Time.time;
-        if (now - serverLastAcceptedFireTime < minInterval * 0.85f)
+        if (!TryAcceptShotRate(ref serverFireCredit, ref serverLastFireCheck, action.realTime, minInterval))
         {
 #if UNITY_EDITOR
             diagRejectedRate++;
@@ -345,7 +862,6 @@ public class WeaponController : NetworkBehaviour
 #endif
             return;
         }
-        serverLastAcceptedFireTime = now;
 
         // Garde-fou anti-triche : hors manche, aucun tir n'est accepté. Sans ce test serveur, un
         // client modifié tirerait pendant le décompte ou après la mort de son adversaire — le test
@@ -359,17 +875,55 @@ public class WeaponController : NetworkBehaviour
             return;
         }
 
+        // Garde-fou anti-triche : pas de tir en sortant d'un sprint (2026-10-11). Le temps se compte
+        // sur les inputs reçus, exactement ceux que le tireur avait envoyés quand il a tiré
+        // (PlayerLocomotion.ServerTimeSinceSprint) : un tir honnête n'est jamais refusé.
+        if (locomotion != null && action.timeSinceSprint < data.sprintToFireTime - SprintOutTolerance)
+        {
+            Debug.LogWarning($"[Serveur] Tir rejeté : sortie de sprint ({action.timeSinceSprint * 1000f:F0} ms sur {data.sprintToFireTime * 1000f:F0}).", this);
+            return;
+        }
+
+        // Garde-fou anti-triche : pas de tir en franchissant un obstacle (2026-10-11). L'état qui
+        // compte est celui qui suit le dernier input reçu avant le tir, que la file a attendu.
+        if (locomotion != null && locomotion.ServerInputFlags(action.inputSequence, out bool vaulting, out _) && vaulting)
+        {
+            Debug.LogWarning("[Serveur] Tir rejeté : le joueur franchissait un obstacle.", this);
+#if UNITY_EDITOR
+            diagRejectedVault++;
+            DiagReportIfDue();
+#endif
+            return;
+        }
+
+        // Garde-fou anti-triche : pas de tir à vide, pendant un rechargement ou avant que l'arme
+        // soit sortie. Le chargeur prédit du client n'est qu'une convention ; c'est ce compte-ci
+        // qui fait foi, à l'instant d'arrivée.
+        magazine = networkMagazine.Value;
+        bool roundConsumed = TryConsumeRound(ref magazine, action.serverTime, data.magazineSize, data.reloadPerRound,
+                                             data.reloadDuration, ReloadCompletionTolerance);
+        networkMagazine.Value = magazine; // même refusé : le tir a pu terminer un rechargement
+        if (!roundConsumed)
+        {
+#if UNITY_EDITOR
+            diagRejectedAmmo++;
+            DiagReportIfDue();
+#endif
+            return;
+        }
+
         // Garde-fou anti-triche : une direction nulle (ou non fournie) ferait un Raycast dans une
         // direction indéfinie — .normalized d'un vecteur nul renvoie déjà Vector3.zero sans lever
         // d'exception, mais autant refuser explicitement plutôt que de raycaster pour rien.
+        Vector3 origin = action.origin;
+        Vector3 direction = action.direction;
         if (direction.sqrMagnitude < 0.0001f) return;
         direction = direction.normalized;
 
-        // Garde-fou anti-triche : `origin` est fourni par le CLIENT et servait jusqu'ici tel quel.
-        // Sans cette vérification, un client modifié peut raycaster depuis N'IMPORTE QUEL point de
-        // la carte — derrière l'adversaire, de l'autre côté d'un mur, depuis le spawn d'en face —
-        // tout en respectant parfaitement la cadence de tir. C'était le trou le plus grave restant
-        // dans le hit registration, plus grave que l'absence de rewind.
+        // Garde-fou anti-triche : `origin` est fourni par le CLIENT. Sans cette vérification, un
+        // client modifié peut raycaster depuis N'IMPORTE QUEL point de la carte — derrière
+        // l'adversaire, de l'autre côté d'un mur, depuis le spawn d'en face — tout en respectant
+        // parfaitement la cadence de tir.
         //
         // On compare à la racine du joueur côté SERVEUR (aux pieds), pas à la caméra : le
         // cameraPivot n'est mis à jour que sur l'instance du propriétaire (catégorie C), donc sa
@@ -394,6 +948,10 @@ public class WeaponController : NetworkBehaviour
             return;
         }
 
+        // La gerbe se resserre en visée : la visée du serveur, celle de l'input de référence, jamais
+        // ce que le client prétend.
+        bool aiming = locomotion != null && locomotion.ServerInputFlags(action.inputSequence, out _, out bool aimHeld) && aimHeld;
+
         // Le tireur ne doit pas se tirer dessus : son propre hitbox entoure sa caméra, et en lean
         // celle-ci peut carrément en sortir, ce qui mettrait son propre collider en travers du
         // rayon. On le retire de la requête le temps du tir. Le try/finally garantit qu'il revient
@@ -408,9 +966,10 @@ public class WeaponController : NetworkBehaviour
         // Garde-fou anti-triche : la suggestion du client est bornée. maxRewindSeconds doit couvrir
         // un ping élevé légitime sans permettre de toucher quelqu'un là où il était il y a une
         // éternité — au-delà, c'est la VICTIME qui subirait l'injustice, en mourant à couvert.
-        // Un instant dans le futur est ramené au présent.
-        double serverNow = NetworkManager.ServerTime.Time;
-        float clampedRewind = Mathf.Clamp((float)(serverNow - viewServerTime), 0f, maxRewindSeconds);
+        // Un instant dans le futur est ramené au présent. Borné depuis l'ARRIVÉE du tir : l'attente
+        // dans la file n'entame pas la marge.
+        float clampedRewind = Mathf.Clamp((float)(action.serverTime - action.viewServerTime), 0f, maxRewindSeconds);
+        double targetTime = action.serverTime - clampedRewind;
 
 #if UNITY_EDITOR
         diagAccepted++;
@@ -418,7 +977,6 @@ public class WeaponController : NetworkBehaviour
         if (clampedRewind > diagRewindMax) diagRewindMax = clampedRewind;
         DiagReportIfDue();
 #endif
-        double targetTime = serverNow - clampedRewind;
 
         var rewoundPlayers = new List<PlayerLocomotion>();
 #if UNITY_EDITOR
@@ -427,7 +985,7 @@ public class WeaponController : NetworkBehaviour
 #endif
         try
         {
-            if (clampedRewind > 0f)
+            if (NetworkManager.ServerTime.Time - targetTime > 1e-4)
             {
                 foreach (PlayerLocomotion other in PlayerLocomotion.SpawnedPlayers)
                 {
@@ -453,36 +1011,46 @@ public class WeaponController : NetworkBehaviour
 #endif
             }
 
-            bool hitSomething = ResolveShot(origin, direction, out Vector3 end, out Vector3 hitNormal, out Collider bodyHit);
-#if UNITY_EDITOR
-            diagHitWithRewind = bodyHit != null;
-#endif
-
-            if (bodyHit != null)
+            // Chaque plomb (ou la balle) est résolu seul ; les dégâts s'additionnent par cible et
+            // tombent en une fois.
+            int count = data.PelletCount;
+            var ends = new Vector3[count];
+            var normals = new Vector3[count];
+            int hitMask = 0;
+            var damage = new Dictionary<Health, float>();
+            var zones = new System.Text.StringBuilder();
+            for (int i = 0; i < count; i++)
             {
-                Health targetHealth = bodyHit.GetComponentInParent<Health>();
-                if (targetHealth != null)
-                {
-                    targetHealth.ApplyDamage(data.damagePerHit, transform.root.gameObject);
+                Vector3 pellet = PelletDirection(direction, data.PelletOffset(i, aiming));
+                bool hitSomething = ResolveShot(data, origin, pellet, out ends[i], out normals[i], out Collider bodyHit, out float distance);
+                if (hitSomething && i < 31) hitMask |= 1 << i;
 #if UNITY_EDITOR
-                    diagHits++;
+                if (i == 0) diagHitWithRewind = bodyHit != null;
 #endif
-                    // La zone est journalisée sans encore peser sur les dégâts : les multiplicateurs
-                    // par zone sont une décision de design, à trancher par playtest (GDD § 6).
-                    PlayerHitboxZone zone = bodyHit.GetComponent<PlayerHitboxZone>();
-                    string zoneName = zone != null ? zone.Zone.ToString() : "?";
-                    Debug.Log($"[Serveur] {data.weaponName} : {bodyHit.transform.root.name} touché ({zoneName}) pour {data.damagePerHit} dégâts (vie restante : {targetHealth.Current}).");
-                }
-                else
+                if (bodyHit == null) continue;
+                if (bodyHit.GetComponentInParent<Health>() == null)
                 {
                     // Un collider sur le layer Hitbox sans Health au-dessus : configuration
                     // incohérente, silencieuse autrement, et qui se traduirait par des tirs qui
                     // "ne font rien" sans la moindre trace.
                     Debug.LogWarning($"[Serveur] {bodyHit.name} est sur le layer Hitbox mais n'a aucun Health parent — aucun dégât appliqué.", bodyHit);
+                    continue;
                 }
+                AddDamage(damage, data, bodyHit, distance);
+                PlayerHitboxZone zone = bodyHit.GetComponent<PlayerHitboxZone>();
+                zones.Append(zone != null ? zone.Zone.ToString() : "?").Append(' ');
             }
 
-            BroadcastShotClientRpc(origin, end, hitSomething, end, hitNormal);
+            foreach (var pair in damage)
+            {
+                pair.Key.ApplyDamage(pair.Value, transform.root.gameObject);
+#if UNITY_EDITOR
+                diagHits++;
+#endif
+                Debug.Log($"[Serveur] {data.weaponName} : {pair.Key.transform.root.name} touché ({zones.ToString().TrimEnd()}) pour {pair.Value:F0} dégâts (vie restante : {pair.Key.Current}).");
+            }
+
+            BroadcastShotClientRpc(origin, ends, normals, hitMask, magazine.equipped);
         }
         finally
         {
@@ -499,16 +1067,17 @@ public class WeaponController : NetworkBehaviour
             // MESURE DIFFÉRENTIELLE DU REWIND (Editor uniquement, sans aucun effet sur le jeu).
             //
             // Les hitbox viennent d'être remis à leur position ACTUELLE : on refait donc exactement
-            // la même trace, et on compare au résultat rewind. Ça répond sans ambiguïté à « à quoi
-            // sert le rewind », là où comparer des taux de touche entre deux sessions humaines ne
-            // répond à rien — un joueur vise instinctivement devant une cible mobile et compense
-            // donc l'absence de compensation, ce qui masque l'effet qu'on cherche à mesurer.
+            // la même trace (la balle, ou le plomb central), et on compare au résultat rewind. Ça
+            // répond sans ambiguïté à « à quoi sert le rewind », là où comparer des taux de touche
+            // entre deux sessions humaines ne répond à rien — un joueur vise instinctivement devant
+            // une cible mobile et compense donc l'absence de compensation, ce qui masque l'effet
+            // qu'on cherche à mesurer.
             //
             // Faite AVANT de réactiver le hitbox du tireur, pour que les deux traces excluent les
             // mêmes colliders et restent comparables.
             if (rewoundPlayers.Count > 0)
             {
-                ResolveShot(origin, direction, out _, out _, out Collider bodyHitLive);
+                ResolveShot(data, origin, PelletDirection(direction, data.PelletOffset(0, aiming)), out _, out _, out Collider bodyHitLive, out _);
                 bool hitWithoutRewind = bodyHitLive != null;
 
                 if (diagHitWithRewind && !hitWithoutRewind) diagRewindGained++;
@@ -538,6 +1107,395 @@ public class WeaponController : NetworkBehaviour
         }
     }
 
+    /// <summary>Ajoute les dégâts d'un impact à sa cible : zone touchée (tête, buste, jambes) et
+    /// distance (WeaponData.DamageAt).</summary>
+    private static void AddDamage(Dictionary<Health, float> damage, WeaponData data, Collider body, float distance)
+    {
+        if (body == null) return;
+        Health target = body.GetComponentInParent<Health>();
+        if (target == null) return;
+        PlayerHitboxZone zone = body.GetComponent<PlayerHitboxZone>();
+        float amount = data.DamageAt(zone != null ? zone.Zone : HitboxZoneType.Torso, distance);
+        damage[target] = (damage.TryGetValue(target, out float sum) ? sum : 0f) + amount;
+    }
+
+    // ------------------------------------------------------------------
+    // Chargeur
+    // ------------------------------------------------------------------
+
+    private void HandleReloadInput()
+    {
+        WeaponData data = LocalData;
+        bool wantsReload = input.ReloadPressedThisFrame;
+#if UNITY_EDITOR
+        // Le banc de tir automatique garde la gâchette enfoncée : il recharge à vide.
+        if (PlayerInputReader.AutopilotFire && localMagazine.ammo == 0) wantsReload = true;
+        if (input.DrillReloadPressed) wantsReload = true;
+#endif
+        if (wantsReload) reloadPending = true;
+        if (!reloadPending) return;
+        if (localMagazine.reloadEndsAt > 0.0 || localMagazine.ammo >= data.magazineSize)
+        {
+            reloadPending = false;
+            return;
+        }
+        // On ne commence pas un rechargement en sortant d'un sprint, en franchissant un obstacle
+        // (2026-10-11) ou avant que l'arme soit sortie : la demande attend, et part dès que c'est
+        // possible.
+        if (!ReadyAfterSprint || (locomotion != null && locomotion.IsVaulting) || MagazineClock < localMagazine.readyAt) return;
+        reloadPending = false;
+
+        // Prédit : le rechargement commence tout de suite chez le tireur, et le serveur le
+        // commencera à réception, à l'instant que MagazineClock annonce.
+        TryStartReload(ref localMagazine, MagazineClock, data.magazineSize, data.reloadDuration);
+        PlayReloadSound(data);
+#if UNITY_EDITOR
+        Debug.Log($"[DIAG-CHARGEUR] rechargement à {localMagazine.ammo} balles ({data.weaponName})" +
+                  (locomotion != null && locomotion.TimeSinceSprint < 1f ? $", {locomotion.TimeSinceSprint * 1000f:F0} ms après le sprint" : ""));
+#endif
+
+        if (IsNetworked)
+        {
+            actionsSent++;
+            ReloadServerRpc();
+        }
+    }
+
+    private void UpdateLocalMagazine()
+    {
+        WeaponData data = LocalData;
+        CompleteReloadIfDue(ref localMagazine, MagazineClock, data.magazineSize, data.reloadPerRound, data.reloadDuration);
+
+        if (!IsNetworked) return;
+#if UNITY_EDITOR
+        int predicted = localMagazine.ammo;
+        int predictedSlot = localMagazine.equipped;
+#endif
+        ReconcileMagazine(networkMagazine.Value, actionsSent, ref localMagazine);
+#if UNITY_EDITOR
+        // Un recalage hors début de manche signale un tir refusé par le serveur : la prédiction et
+        // le serveur n'étaient pas d'accord. Doit rester rare.
+        if (localMagazine.ammo != predicted || localMagazine.equipped != predictedSlot)
+            Debug.Log($"[DIAG-CHARGEUR] recalé de {predicted} à {localMagazine.ammo} balles" +
+                      (localMagazine.equipped != predictedSlot ? $", arme {predictedSlot + 1} → {localMagazine.equipped + 1}" : ""));
+
+        // État complet toutes les 3 s, chez un client distant seulement (comme [DIAG-CLIENT]) :
+        // c'est lui qui a révélé une gâchette automatique restée éteinte sur le clone.
+        if (!IsServer && (Time.time >= diagMagazineNextReportAt || diagMagazineNextReportAt - Time.time > 3f))
+        {
+            diagMagazineNextReportAt = Time.time + 3f;
+            MagazineState s = networkMagazine.Value;
+            Debug.Log($"[DIAG-CHARGEUR] arme={localMagazine.equipped + 1} predit={localMagazine.ammo} recharge={localMagazine.reloadEndsAt > 0.0} envoyees={actionsSent} | " +
+                      $"serveur: arme={s.equipped + 1} balles={s.ammo} traitees={s.actionsProcessed} fin_recharge={s.reloadEndsAt:F2} | " +
+                      $"gachette={input.FireHeld} tir_permis={RoundManager.FiringAllowed} sprint={locomotion.IsSprinting} cooldown={cooldown:F2}");
+        }
+#endif
+    }
+
+#if UNITY_EDITOR
+    private float diagMagazineNextReportAt;
+#endif
+
+    /// <summary>Refusé sans bruit s'il recharge déjà ou si le chargeur est plein ; l'accusé de
+    /// réception, lui, compte toujours.</summary>
+    private void ServerReload(ArmsAction action)
+    {
+        MagazineState magazine = networkMagazine.Value;
+        magazine.actionsProcessed++;
+        WeaponData data = ServerData;
+        // On ne commence pas un rechargement en sortant d'un sprint ni en franchissant un obstacle
+        // (2026-10-11). Le joueur honnête attend ; la demande d'un client modifié est refusée, et
+        // son chargeur se recale.
+        if (locomotion != null && data != null && action.timeSinceSprint < data.sprintToFireTime - SprintOutTolerance)
+        {
+            networkMagazine.Value = magazine;
+            Debug.LogWarning($"[Serveur] Rechargement refusé : sortie de sprint ({action.timeSinceSprint * 1000f:F0} ms sur {data.sprintToFireTime * 1000f:F0}).", this);
+            return;
+        }
+        if (locomotion != null && locomotion.ServerInputFlags(action.inputSequence, out bool vaulting, out _) && vaulting)
+        {
+            networkMagazine.Value = magazine;
+            Debug.LogWarning("[Serveur] Rechargement refusé : le joueur franchissait un obstacle.", this);
+            return;
+        }
+        if (data != null && action.serverTime + ReloadCompletionTolerance >= magazine.readyAt
+            && TryStartReload(ref magazine, action.serverTime, data.magazineSize, data.reloadDuration))
+        {
+            serverReloadFirstInput = action.inputSequence + 1;
+        }
+        networkMagazine.Value = magazine;
+    }
+
+    /// <summary>Changement d'arme : la nouvelle arme sort en WeaponData.raiseTime, le rechargement en
+    /// cours est annulé (les cartouches déjà glissées restent).</summary>
+    private void ServerSwitch(ArmsAction action)
+    {
+        MagazineState magazine = networkMagazine.Value;
+        magazine.actionsProcessed++;
+        WeaponData next = DataOf(action.slot);
+        WeaponData current = ServerData;
+        if (next != null && current != null)
+        {
+            CompleteReloadIfDue(ref magazine, action.serverTime + ReloadCompletionTolerance, current.magazineSize,
+                                current.reloadPerRound, current.reloadDuration);
+            if (TrySwitchWeapon(ref magazine, action.slot, action.serverTime, next.raiseTime))
+                ResetShotRateOnSwitch(ref serverLastFireCheck);
+        }
+        else
+        {
+            Debug.LogWarning($"[Serveur] Changement d'arme refusé : place {action.slot + 1} vide.", this);
+        }
+        networkMagazine.Value = magazine;
+    }
+
+    /// <summary>Serveur : premier input du joueur produit après sa demande de rechargement. Un
+    /// sprint dans l'un d'eux annule le rechargement (PlayerLocomotion.GateSprint) ; ceux d'avant,
+    /// même traités plus tard, ne comptent pas.</summary>
+    private int serverReloadFirstInput = int.MaxValue;
+
+    private void ServerUpdateMagazine()
+    {
+        MagazineState magazine = networkMagazine.Value;
+        WeaponData data = ServerData;
+        if (data == null) return;
+        if (CompleteReloadIfDue(ref magazine, NetworkManager.ServerTime.Time, data.magazineSize, data.reloadPerRound, data.reloadDuration))
+        {
+            networkMagazine.Value = magazine;
+            if (magazine.reloadEndsAt <= 0.0) return;
+        }
+
+        // On ne recharge jamais en courant (2026-10-10). Le joueur honnête a déjà annulé chez lui
+        // en se mettant à courir ; un client modifié qui sprinterait sans annuler perd ici son
+        // rechargement, sans rien y gagner.
+        if (magazine.reloadEndsAt > 0.0 && locomotion != null && locomotion.ServerSprintedSince(serverReloadFirstInput))
+        {
+            ServerCancelReload();
+#if UNITY_EDITOR
+            Debug.Log("[DIAG-CHARGEUR] rechargement annulé par le sprint (serveur)");
+#endif
+        }
+        // On ne recharge pas en franchissant un obstacle (2026-10-11) : un franchissement après la
+        // demande annule le rechargement, comme le sprint.
+        else if (magazine.reloadEndsAt > 0.0 && locomotion != null && locomotion.ServerVaultedSince(serverReloadFirstInput))
+        {
+            ServerCancelReload();
+#if UNITY_EDITOR
+            Debug.Log("[DIAG-CHARGEUR] rechargement annulé par le franchissement (serveur)");
+#endif
+        }
+    }
+
+    /// <summary>Tous les chargeurs pleins et rechargement annulé. Serveur uniquement : à
+    /// l'apparition, et au début de chaque manche (RoundManager.BeginRound) — on ne reprend pas une
+    /// manche avec les chargeurs de la précédente. L'arme en main ne change pas.</summary>
+    public void ServerRefillMagazine()
+    {
+        if (!IsServer) return;
+
+        MagazineState magazine = networkMagazine.Value;
+        RefillAll(ref magazine);
+        networkMagazine.Value = magazine;
+    }
+
+    private void RefillAll(ref MagazineState magazine)
+    {
+        for (int slot = 0; slot < SlotCount; slot++)
+        {
+            if (loadout[slot] != null) magazine.SetAmmo(slot, ClampAmmo(loadout[slot].magazineSize));
+        }
+        magazine.reloadEndsAt = 0.0;
+        magazine.readyAt = 0.0;
+    }
+
+    /// <summary>Le taser annule le rechargement en cours, comme le couteau de Call of Duty, et se
+    /// mettre à courir ou franchir un obstacle aussi. Chez le joueur, tout de suite ; le serveur
+    /// fera de même à réception, et le recalage du chargeur rattrape l'écart d'ici là. Les
+    /// cartouches déjà glissées restent.</summary>
+    public void CancelLocalReload()
+    {
+        WeaponData data = LocalData;
+        if (data != null)
+            CompleteReloadIfDue(ref localMagazine, MagazineClock, data.magazineSize, data.reloadPerRound, data.reloadDuration);
+        localMagazine.reloadEndsAt = 0.0;
+        reloadPending = false;
+    }
+
+    /// <summary>Annulation côté serveur. Un rechargement à moins de ReloadCompletionTolerance de sa
+    /// fin est considéré comme fini, avec la même marge que pour un tir : le joueur l'a vu se
+    /// terminer avant d'appuyer, il ne doit pas perdre son chargeur.</summary>
+    public void ServerCancelReload()
+    {
+        if (!IsServer) return;
+        MagazineState magazine = networkMagazine.Value;
+        WeaponData data = ServerData;
+        if (magazine.reloadEndsAt <= 0.0 || data == null) return;
+        CompleteReloadIfDue(ref magazine, NetworkManager.ServerTime.Time + ReloadCompletionTolerance, data.magazineSize,
+                            data.reloadPerRound, data.reloadDuration);
+        magazine.reloadEndsAt = 0.0;
+        networkMagazine.Value = magazine;
+    }
+
+    private void HandleMagazineChanged(MagazineState previous, MagazineState current)
+    {
+        // Le rechargement s'entend : l'adversaire sait qu'on ne peut plus tirer (catégorie B,
+        // décidée par le serveur). Le propriétaire l'a déjà joué en appuyant.
+        if (!IsOwner && previous.reloadEndsAt <= 0.0 && current.reloadEndsAt > 0.0) PlayReloadSound(DataOf(current.equipped));
+    }
+
+    private void PlayReloadSound(WeaponData data)
+    {
+        if (audioSource == null || data == null || data.reloadSound == null) return;
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(data.reloadSound, data.reloadVolume);
+    }
+
+    private static byte ClampAmmo(int ammo) => (byte)Mathf.Clamp(ammo, 0, 255);
+
+    /// <summary>Réserve maximale du crédit de tir, en intervalles de tir. Avec le seuil ci-dessous,
+    /// un tir retardé jusqu'à 0,65 intervalle (93 ms au MP5) ne fait pas refuser le suivant, arrivé
+    /// à l'heure ; en échange, un client modifié gagne au plus 0,65 intervalle au début d'une
+    /// rafale, jamais en continu.</summary>
+    public const double FireCreditCapacity = 1.5;
+
+    /// <summary>Part d'un intervalle de crédit qu'il faut avoir pour tirer : le crédit peut
+    /// passer légèrement sous zéro, ce qui garde la cadence MOYENNE exacte.</summary>
+    public const double FireCreditThreshold = 0.85;
+
+    /// <summary>
+    /// Garde-fou de cadence côté serveur, en temps réel (2026-10-08). Fonction pure, testée.
+    ///
+    /// Chaque tir coûte un intervalle de crédit ; le crédit se recharge avec le temps qui passe,
+    /// jusqu'à `FireCreditCapacity` intervalles. La cadence moyenne ne peut donc jamais dépasser
+    /// celle de l'arme, mais deux tirs légitimes qui ARRIVENT rapprochés passent : le premier,
+    /// retardé par la gigue du réseau ou un à-coup du serveur, a laissé du crédit au second.
+    ///
+    /// L'ancienne règle exigeait 85 % de l'intervalle entre deux arrivées : un à-coup de plus de
+    /// 21 ms suffisait à refuser un tir légitime (environ un sur cent à deux instances, mesuré le
+    /// 2026-10-08), et elle laissait un client modifié tirer en continu 17 % trop vite.
+    /// </summary>
+    /// <summary>
+    /// Changer d'arme remet le crédit de cadence à plein (2026-10-11), comme le joueur remet son
+    /// délai entre deux tirs à zéro : c'est la sortie de l'arme (readyAt) qui borne son premier tir.
+    /// Sinon le crédit de l'arme précédente restait : mesuré à deux instances, le premier tir du
+    /// sniper (intervalle 1,25 s) parti 0,8 s après une rafale de fusil, à la fin de sa sortie, était
+    /// refusé. Changer d'arme coûte au moins sa sortie (0,4 s et plus) : on n'en tire pas une cadence
+    /// plus rapide.
+    /// </summary>
+    public static void ResetShotRateOnSwitch(ref double lastCheck) => lastCheck = double.NegativeInfinity;
+
+    public static bool TryAcceptShotRate(ref double credit, ref double lastCheck, double now, float interval)
+    {
+        double elapsed = now - lastCheck; // +infini au premier tir : crédit plein
+        credit = System.Math.Min(interval * FireCreditCapacity, credit + System.Math.Max(0.0, elapsed));
+        lastCheck = now;
+        if (credit < interval * FireCreditThreshold) return false;
+        credit -= interval;
+        return true;
+    }
+
+    /// <summary>Termine le rechargement en cours si son heure est passée. Fonction pure, testée.</summary>
+    public static bool CompleteReloadIfDue(ref MagazineState magazine, double now, int magazineSize)
+        => CompleteReloadIfDue(ref magazine, now, magazineSize, false, 0f);
+
+    /// <summary>
+    /// Termine le rechargement en cours si son heure est passée — ou, cartouche par cartouche,
+    /// glisse toutes celles dont l'heure est passée, jusqu'au plein. Fonction pure, testée.
+    /// </summary>
+    public static bool CompleteReloadIfDue(ref MagazineState magazine, double now, int magazineSize, bool perRound, float roundTime)
+    {
+        if (magazine.reloadEndsAt <= 0.0 || now < magazine.reloadEndsAt) return false;
+        if (!perRound)
+        {
+            magazine.ammo = ClampAmmo(magazineSize);
+            magazine.reloadEndsAt = 0.0;
+            return true;
+        }
+        int ammo = magazine.ammo;
+        while (magazine.reloadEndsAt > 0.0 && now >= magazine.reloadEndsAt)
+        {
+            ammo = Mathf.Min(ammo + 1, magazineSize);
+            magazine.reloadEndsAt = ammo >= magazineSize ? 0.0 : magazine.reloadEndsAt + Mathf.Max(0.01f, roundTime);
+        }
+        magazine.ammo = ClampAmmo(ammo);
+        return true;
+    }
+
+    /// <summary>Commence un rechargement, sauf s'il y en a déjà un ou si le chargeur est plein.
+    /// `duration` : le rechargement complet, ou la première cartouche. Fonction pure, testée.</summary>
+    public static bool TryStartReload(ref MagazineState magazine, double now, int magazineSize, float duration)
+    {
+        if (magazine.reloadEndsAt > 0.0 || magazine.ammo >= magazineSize) return false;
+        magazine.reloadEndsAt = now + Mathf.Max(0.01f, duration);
+        return true;
+    }
+
+    /// <summary>Consomme une balle pour un tir arrivé à `now`. Refusé à vide ou pendant un
+    /// rechargement, sauf dans les derniers `ReloadCompletionTolerance` d'un rechargement, qui se
+    /// termine alors un peu en avance. Fonction pure, testée.</summary>
+    public static bool TryConsumeRound(ref MagazineState magazine, double now, int magazineSize)
+        => TryConsumeRound(ref magazine, now, magazineSize, false, 0f, ReloadCompletionTolerance);
+
+    /// <summary>
+    /// Consomme une balle pour un tir arrivé à `now`, avec `tolerance` de marge (celle du serveur,
+    /// ou 0 chez le tireur). Refusé à vide, avant que l'arme soit sortie, et pendant un rechargement
+    /// complet. Cartouche par cartouche (pompe), tirer interrompt le rechargement et tire avec ce
+    /// qui est chargé, comme dans Call of Duty et Rainbow Six. Fonction pure, testée.
+    /// </summary>
+    public static bool TryConsumeRound(ref MagazineState magazine, double now, int magazineSize, bool perRound, float roundTime, double tolerance)
+    {
+        CompleteReloadIfDue(ref magazine, now + tolerance, magazineSize, perRound, roundTime);
+        if (now + tolerance < magazine.readyAt) return false;
+        if (magazine.reloadEndsAt > 0.0)
+        {
+            if (!perRound || magazine.ammo == 0) return false;
+            magazine.reloadEndsAt = 0.0;
+        }
+        if (magazine.ammo == 0) return false;
+        magazine.ammo--;
+        return true;
+    }
+
+    /// <summary>Prend l'arme de la place `slot` : elle sort en `raiseTime` à partir de `now`, et le
+    /// rechargement en cours est abandonné. Refusé pour l'arme déjà en main ou une place hors de la
+    /// panoplie. Fonction pure, testée.</summary>
+    public static bool TrySwitchWeapon(ref MagazineState magazine, int slot, double now, float raiseTime)
+    {
+        if (slot < 0 || slot >= MaxSlots || slot == magazine.equipped) return false;
+        magazine.equipped = (byte)slot;
+        magazine.reloadEndsAt = 0.0;
+        magazine.readyAt = now + Mathf.Max(0f, raiseTime);
+        return true;
+    }
+
+    /// <summary>
+    /// Recale le chargeur prédit sur celui du serveur, quand c'est possible. Fonction pure, testée.
+    ///
+    /// Tant qu'une demande est en route, l'état publié est en retard sur la prédiction : le
+    /// comparer serait aussi faux que de comparer une position prédite à une position confirmée
+    /// d'une autre séquence (voir « Comparer une prédiction, c'est comparer à séquence ÉGALE »).
+    /// Une fois tout accusé, le serveur fait foi — sauf s'il recharge encore : sa fin arrive, et
+    /// recopier son chargeur vide ferait clignoter le compte d'un tireur qui a déjà fini.
+    ///
+    /// Ce qui se recale ainsi : un tir refusé par le serveur (cadence, hors manche), un
+    /// rechargement refusé ou annulé par un début de manche, une fin de rechargement arrivée
+    /// quelques millisecondes plus tôt sur le serveur, un changement d'arme refusé.
+    /// </summary>
+    public static void ReconcileMagazine(MagazineState server, ushort actionsSent, ref MagazineState local)
+    {
+        if (server.actionsProcessed != actionsSent) return;
+        if (server.reloadEndsAt > 0.0) return;
+        local = server;
+    }
+
+    /// <summary>Même recalage, réduit au chargeur de l'arme en main (tests du chargeur seul).</summary>
+    public static void ReconcileMagazine(MagazineState server, ushort actionsSent, ref int localAmmo, ref bool localReloading)
+    {
+        if (server.actionsProcessed != actionsSent) return;
+        if (server.reloadEndsAt > 0.0) return;
+        localReloading = false;
+        localAmmo = server.ammo;
+    }
+
     /// <summary>
     /// Résout un tir en DEUX traces distinctes, au lieu d'un raycast unique contre « tout ».
     ///
@@ -554,7 +1512,8 @@ public class WeaponController : NetworkBehaviour
     /// Partagée entre le feedback visuel local du tireur et la décision serveur : une seule
     /// logique, donc pas de dérive possible entre ce qu'on voit et ce qui compte.
     /// </summary>
-    private bool ResolveShot(Vector3 origin, Vector3 direction, out Vector3 end, out Vector3 normal, out Collider bodyHit)
+    private static bool ResolveShot(WeaponData data, Vector3 origin, Vector3 direction, out Vector3 end, out Vector3 normal,
+                                    out Collider bodyHit, out float distance)
     {
         bool worldHit = Physics.Raycast(origin, direction, out RaycastHit world, data.maxRange, data.worldMask, QueryTriggerInteraction.Ignore);
         float blockingDistance = worldHit ? world.distance : data.maxRange;
@@ -564,27 +1523,34 @@ public class WeaponController : NetworkBehaviour
         bodyHit = playerHit ? body.collider : null;
         end = playerHit ? body.point : (worldHit ? world.point : origin + direction * data.maxRange);
         normal = playerHit ? body.normal : (worldHit ? world.normal : Vector3.zero);
+        distance = playerHit ? body.distance : blockingDistance;
         return worldHit || playerHit;
     }
 
-    /// <summary>Rediffuse à tout le monde (sauf au tireur, déjà servi localement dans Fire()) le
-    /// tracer/impact + le son de tir, tels que DÉCIDÉS PAR LE SERVEUR dans FireServerRpc.</summary>
+    /// <summary>Rediffuse à tout le monde (sauf au tireur, déjà servi localement dans Fire()) les
+    /// traçants, impacts et le son de tir, tels que DÉCIDÉS PAR LE SERVEUR dans ServerFire : un
+    /// point d'arrivée par plomb (ou par balle), et un bit par plomb qui a touché quelque chose.</summary>
     [ClientRpc]
-    private void BroadcastShotClientRpc(Vector3 origin, Vector3 end, bool hitSomething, Vector3 hitPoint, Vector3 hitNormal)
+    private void BroadcastShotClientRpc(Vector3 origin, Vector3[] ends, Vector3[] normals, int hitMask, byte slot)
     {
         if (IsOwner) return; // déjà joué/affiché localement par le tireur, dans Fire()
 
         OnShotFired?.Invoke();
 
-        PlayFireSound();
+        WeaponData data = DataOf(slot) ?? Data;
+        PlayFireSound(data);
 
-        if (visualFeedback == null) return;
+        if (visualFeedback == null || ends == null) return;
 
-        visualFeedback.SpawnTracer(origin, end);
-        if (hitSomething) visualFeedback.SpawnImpact(hitPoint, hitNormal);
+        for (int i = 0; i < ends.Length; i++)
+        {
+            visualFeedback.SpawnTracer(origin, ends[i], data != null ? data.tracerColor : Color.yellow);
+            if (i < 31 && (hitMask & (1 << i)) != 0 && normals != null && i < normals.Length)
+                visualFeedback.SpawnImpact(ends[i], normals[i]);
+        }
     }
 
-    private void ApplyRecoilKick()
+    private void ApplyRecoilKick(WeaponData data)
     {
         float recoilMultiplier = GetRecoilMultiplier();
         float verticalKick = data.verticalRecoilPattern.Evaluate(shotIndexInBurst) * data.recoilPerShotDegrees * recoilMultiplier;
@@ -639,7 +1605,7 @@ public class WeaponController : NetworkBehaviour
         return percent / 100f;
     }
 
-    private void ApplyRecoilRecovery()
+    private void ApplyRecoilRecovery(WeaponData data)
     {
         float step = data.recoilRecoverySpeed * Time.deltaTime;
 

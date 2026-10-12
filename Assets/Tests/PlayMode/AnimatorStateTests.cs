@@ -206,14 +206,15 @@ public class AnimatorStateTests
         animator.SetFloat("SpeedMult", 1f);
         animator.SetInteger("Stance", 2);
         animator.SetFloat("StanceF", 2f);
-        animator.SetFloat("MoveX", 0f);
-        animator.SetFloat("MoveY", 0f);
+        PlayerAnimator.SetLocomotion(animator, Vector2.zero);
         yield return Settle(ProneSettle);
         StringAssert.Contains("Prone Idle", ClipDominant(0), "Immobile allongé, les jambes ne doivent pas ramper.");
 
         // Garde anti-vacuité : la reptation existe bien et se déclenche en bougeant. Sans elle, un
-        // arbre qui ne jouerait QUE l'attente passerait ce test.
-        animator.SetFloat("MoveY", -1f);
+        // arbre qui ne jouerait QUE l'attente passerait ce test. Depuis le 2026-10-09, bouger passe
+        // aussi par Marche, qui sépare l'attente du déplacement.
+        PlayerAnimator.SetLocomotion(animator, new Vector2(0f, -1f));
+        animator.SetFloat("Marche", 1f);
         yield return Settle();
         StringAssert.Contains("Prone Position", ClipDominant(0), "En reculant allongé, les jambes doivent ramper.");
     }
@@ -270,7 +271,8 @@ public class AnimatorStateTests
         yield return Setup();
 
         animator.SetInteger("Stance", 0);
-        animator.SetFloat("MoveY", 1f);        // course
+        PlayerAnimator.SetLocomotion(animator, new Vector2(0f, 1f)); // course
+        animator.SetFloat("Marche", 1f);
         animator.SetFloat("SpeedMult", 1f);
         animator.SetBool("Aiming", true);      // et visée en même temps
         yield return Settle();
@@ -341,6 +343,147 @@ public class AnimatorStateTests
         animator.SetBool("Airborne", false);
         yield return AssertNePasseJamaisPar("Debout", 0.5f);
         AssertState("Prone");
+    }
+
+    /// <summary>
+    /// Un pas de côté en VISÉE et en SNEAK joue la marche de côté du Y Bot, des deux côtés ; à
+    /// l'allure de marche, la course de côté. La marche avance de 1,79 m/s : à pleine marche
+    /// (5 m/s), elle glisserait ou serait accélérée trois fois. (Jusqu'au 2026-10-11, l'anneau lent
+    /// jouait un pas chassé accroupi, faute de marche.)
+    ///
+    /// À gauche, c'est un clip à part, « Walk Left Miroir », mis en miroir À L'IMPORT : un enfant
+    /// mis en miroir dans l'arbre faussait le déplacement de racine dès qu'il se mêlait à un autre
+    /// clip (voir PlayerAnimator.DriveGait et CLAUDE.md).
+    /// </summary>
+    [UnityTest]
+    public IEnumerator PasDeCoteLent_JoueLaMarche_EtLaMarcheGardeLaCourse()
+    {
+        yield return Setup();
+        animator.SetFloat("SpeedMult", 1f);
+        animator.SetFloat("Marche", 1f);
+
+        // En visée (allure 0,55) : la marche de côté.
+        PlayerAnimator.SetLocomotion(animator, new Vector2(0.55f, 0f));
+        yield return Settle(0.3f);
+        Assert.AreEqual("Walk Right", ClipDominant(0), "Pas de côté en visée, à droite.");
+
+        PlayerAnimator.SetLocomotion(animator, new Vector2(-0.55f, 0f));
+        yield return Settle(0.3f);
+        Assert.AreEqual("Walk Left Miroir", ClipDominant(0), "Pas de côté en visée, à gauche (le clip miroir importé).");
+
+        // En sneak debout (allure 0,4) : la marche de côté aussi.
+        PlayerAnimator.SetLocomotion(animator, new Vector2(0.4f, 0f));
+        yield return Settle(0.3f);
+        Assert.AreEqual("Walk Right", ClipDominant(0), "Pas de côté en sneak, à droite.");
+
+        PlayerAnimator.SetLocomotion(animator, new Vector2(-0.4f, 0f));
+        yield return Settle(0.3f);
+        Assert.AreEqual("Walk Left Miroir", ClipDominant(0), "Pas de côté en sneak, à gauche.");
+
+        PlayerAnimator.SetLocomotion(animator, new Vector2(1f, 0f));
+        yield return Settle(0.3f);
+        Assert.AreEqual("Run Right", ClipDominant(0), "À l'allure de marche, la course de côté reste.");
+    }
+
+    /// <summary>
+    /// Recharger joue le geste sur le haut du corps, debout comme accroupi (chacun le sien depuis
+    /// le 2026-10-10), puis rend l'arme (2026-10-08). Un état qui ne sortirait jamais laisserait le robot recharger indéfiniment ; un
+    /// arbre aux seuils automatiques jouerait la pose allongée accroupi (voir le piège des seuils).
+    /// </summary>
+    [UnityTest]
+    public IEnumerator Recharger_JoueLeGesteSurLeHautDuCorps_PuisRendLArme()
+    {
+        yield return Setup();
+        animator.SetFloat("SpeedMult", 1f);
+        animator.SetFloat("ReloadSpeed", 1f);
+
+        animator.SetBool("Reloading", true);
+        yield return Settle(0.4f);
+        AssertStateSurCouche(1, "Recharge");
+        Assert.AreEqual("Reloading", ClipDominant(1));
+
+        // Accroupi, son propre geste depuis le 2026-10-10 : buste penché en squat.
+        animator.SetInteger("Stance", 1);
+        animator.SetFloat("StanceF", 1f);
+        yield return Settle(0.4f);
+        Assert.AreEqual("Crouch Reload", ClipDominant(1), "Accroupi, le haut du corps doit recharger avec le geste accroupi.");
+
+        animator.SetBool("Reloading", false);
+        yield return Settle(0.5f);
+        AssertStateSurCouche(1, "Arme");
+    }
+
+    /// <summary>
+    /// Allongé, le rechargement (2026-10-10) : le haut du corps joue le geste couché de Mixamo.
+    /// Joué sur le corps entier, ce clip roule le robot sur le flanc, tête 33 cm sur le côté et
+    /// 12 cm plus haut, hors de sa tête touchable, qui ne bouge pas. Sur le seul haut du corps, les
+    /// hanches restent à plat : la main gauche va chercher le chargeur, et la tête, coudes relevés,
+    /// reste dans sa sphère touchable (13 cm de rayon allongé).
+    /// </summary>
+    [UnityTest]
+    public IEnumerator Allonge_RechargerChangeLeChargeur_EtLaTeteResteDansSaZone()
+    {
+        yield return Setup();
+        animator.SetFloat("SpeedMult", 1f);
+        animator.SetFloat("ReloadSpeed", 2.1f / 2.2f); // le geste utile dans les 2,2 s du rechargement
+        animator.SetInteger("Stance", 2);
+        animator.SetFloat("StanceF", 2f);
+        yield return Settle(ProneSettle);
+        AssertState("Prone");
+
+        Transform head = animator.GetBoneTransform(HumanBodyBones.Head);
+        Transform left = animator.GetBoneTransform(HumanBodyBones.LeftHand);
+        Transform right = animator.GetBoneTransform(HumanBodyBones.RightHand);
+        Vector3 idleHead = instance.transform.InverseTransformPoint(head.position);
+        float idleHands = Vector3.Distance(left.position, right.position);
+
+        animator.SetBool("Reloading", true);
+        float maxHead = 0f, maxHands = 0f;
+        for (float t = 0f; t < 2.2f; t += Time.deltaTime)
+        {
+            yield return null;
+            maxHead = Mathf.Max(maxHead, Vector3.Distance(instance.transform.InverseTransformPoint(head.position), idleHead));
+            maxHands = Mathf.Max(maxHands, Vector3.Distance(left.position, right.position));
+        }
+        Assert.AreEqual("Prone Reloading", ClipDominant(1), "Allongé, le haut du corps doit recharger avec le geste couché.");
+        Debug.Log($"[RECHARGE-ALLONGE] tête à {maxHead * 100f:F1} cm au plus de sa place, mains écartées jusqu'à {maxHands * 100f:F0} cm (au repos : {idleHands * 100f:F0})");
+        Assert.Greater(maxHands, idleHands + 0.25f, "La main gauche doit quitter le fusil pour changer le chargeur.");
+        // Mesuré le 2026-10-10 : 11 cm au plus (coudes relevés), contre 35 cm sur le corps entier.
+        Assert.Less(maxHead, 0.13f, $"La tête visible s'écarte de {maxHead * 100f:F1} cm : elle sort de la tête touchable (13 cm de rayon).");
+    }
+
+    /// <summary>
+    /// Le taser frappe de la main GAUCHE (2026-10-08) : l'estocade de Mixamo est donnée du bras
+    /// droit, celui qui tient le fusil. Elle est donc jouée en miroir, sur une couche qui ne pilote
+    /// que le buste et le bras gauche. Sans le miroir, c'est le fusil qui partirait en avant — et
+    /// avec ce masque, le bras gauche ferait le geste de garde, en arrière.
+    ///
+    /// Mesure au contact : la main gauche doit être loin devant, et devant la droite.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator LeTaser_FrappeDeLaMainGauche_PuisRevientAuRepos()
+    {
+        yield return Setup();
+        animator.SetFloat("SpeedMult", 1f);
+        // Les valeurs du jeu : 0,72 s de geste utile (Taser Punch) en 0,6 s (strikeDuration).
+        animator.SetFloat("TaserSpeed", 0.72f / 0.6f);
+        animator.SetLayerWeight(2, 1f); // en jeu, PlayerAnimator pilote ce poids pendant le geste
+        yield return Settle(0.3f);
+
+        animator.SetTrigger("Taser");
+        yield return new WaitForSeconds(0.18f); // contact : TaserController.contactDelay
+        AssertStateSurCouche(2, "Coup");
+        Assert.AreEqual("Taser Punch", ClipDominant(2), "Le coup de taser joue le Taser Punch (2026-10-11).");
+
+        Transform root = animator.transform;
+        Vector3 left = root.InverseTransformPoint(animator.GetBoneTransform(HumanBodyBones.LeftHand).position);
+        Vector3 right = root.InverseTransformPoint(animator.GetBoneTransform(HumanBodyBones.RightHand).position);
+        Debug.Log($"[TASER] main gauche z={left.z:F2} m, main droite z={right.z:F2} m");
+        Assert.Greater(left.z, 0.5f, "Au contact, la main gauche n'est pas tendue vers l'avant.");
+        Assert.Greater(left.z, right.z + 0.15f, "Au contact, c'est la main droite (celle du fusil) qui frappe.");
+
+        yield return Settle(0.6f);
+        AssertStateSurCouche(2, "Repos");
     }
 }
 #endif

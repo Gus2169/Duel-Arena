@@ -1,0 +1,108 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe33acf964d9c684b81db736a07bf7db, type: 3}
+  m_Name: Arme_Pompe
+  m_EditorClassIdentifier: DuelArena.Runtime::WeaponData
+  weaponName: "Fusil \xE0 pompe"
+  modelPrefab: {fileID: 504960164000510015, guid: e11001377362f0a42ad6c2c297972cb5, type: 3}
+  damagePerHit: 18
+  shotsPerSecond: 1.1
+  isAutomatic: 0
+  maxRange: 35
+  headMultiplier: 1
+  legsMultiplier: 1
+  falloffStart: 8
+  falloffEnd: 20
+  minDamageMultiplier: 0.3
+  pelletPattern:
+  - {x: 0, y: 0}
+  - {x: -0.00000006556708, y: 1.5}
+  - {x: -1.299038, y: -0.74999994}
+  - {x: 1.2990379, y: -0.75000024}
+  - {x: 2.4748738, y: 2.4748738}
+  - {x: -2.4748738, y: 2.4748738}
+  - {x: -2.474874, y: -2.4748735}
+  - {x: 2.4748733, y: -2.474874}
+  aimPatternScale: 0.7
+  raiseTime: 0.65
+  moveSpeedMultiplier: 0.95
+  aimTime: 0.18
+  scopeMagnification: 1
+  hipCrosshair: 1
+  tracerColor: {r: 1, g: 0.75, b: 0.35, a: 1}
+  worldMask:
+    serializedVersion: 2
+    m_Bits: 1
+  hitboxMask:
+    serializedVersion: 2
+    m_Bits: 128
+  magazineSize: 6
+  reloadDuration: 0.55
+  reloadPerRound: 1
+  reloadSound: {fileID: 8300000, guid: 201cef09f12706743b86840c1d21f153, type: 3}
+  reloadVolume: 0.8
+  sprintToFireTime: 0.3
+  verticalRecoilPattern:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 12
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  horizontalRecoilPattern:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 12
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  recoilPerShotDegrees: 4.5
+  recoilRecoverySpeed: 9
+  recoilResetDelay: 0.35
+  fireSounds:
+  - {fileID: 8300000, guid: cdd62695e7789ab488fd4c9cf66213bb, type: 3}
+  fireVolume: 1
+  firePitchRange: {x: 0.95, y: 1.02}

@@ -31,8 +31,14 @@ public class PlayerCameraLook : MonoBehaviour
 
     private PlayerInputReader input;
     private PlayerLocomotion locomotion;
+    private FirstPersonView firstPersonView; // la lunette du sniper (zoom et sensibilité)
     private NetworkObject networkObject;
     private float pitch;
+
+    /// <summary>Tangage de la caméra, en degrés (+ = vers le bas). Propriétaire uniquement (0
+    /// ailleurs) : PlayerLocomotion le joint à chaque input pour que les autres joueurs voient le
+    /// fusil pointer là où ce joueur regarde.</summary>
+    public float Pitch => pitch;
 
     /// <summary>Décalage horizontal du RECUL, appliqué à la caméra seule (degrés). Le yaw du corps
     /// appartient à la simulation (PlayerLocomotion.Move) et n'en reçoit jamais : voir
@@ -44,6 +50,7 @@ public class PlayerCameraLook : MonoBehaviour
     {
         input = GetComponentInParent<PlayerInputReader>();
         locomotion = GetComponentInParent<PlayerLocomotion>();
+        firstPersonView = GetComponentInParent<FirstPersonView>();
         networkObject = GetComponentInParent<NetworkObject>();
         if (leanPivot == null) leanPivot = transform.Find("Leanpivot");
     }
@@ -67,7 +74,12 @@ public class PlayerCameraLook : MonoBehaviour
 
         if (input == null) return;
 
-        Vector2 look = input.LookInput * mouseSensitivity;
+        // Dans la lunette du sniper, la sensibilité baisse comme le champ de vision (le yaw du
+        // corps suit la même règle, dans PlayerLocomotion.ReadLocalInput). GameSettings.
+        // SensitivityMultiplier est le réglage du menu Options — catégorie C pure, appliqué
+        // après coup sur l'input, comme le reste de ce script.
+        Vector2 look = input.LookInput * mouseSensitivity * GameSettings.SensitivityMultiplier
+            * (firstPersonView != null ? firstPersonView.LookScale : 1f);
 
         pitch = Mathf.Clamp(pitch - look.y, minPitch, maxPitch);
         ApplyLocalRotation();
@@ -97,9 +109,24 @@ public class PlayerCameraLook : MonoBehaviour
     {
         if (targetCamera == null || locomotion == null) return;
 
+        // La lunette du sniper (2026-10-11) : la vue zoome d'un coup quand on y entre, comme dans
+        // Call of Duty, et revient d'un coup quand on en sort.
+        float zoom = firstPersonView != null ? firstPersonView.ScopeZoom : 1f;
+        if (zoom > 1f)
+        {
+            targetCamera.fieldOfView = ZoomedFov(baseFov, zoom);
+            return;
+        }
+        if (targetCamera.fieldOfView < baseFov - 0.01f && !locomotion.IsSprinting) targetCamera.fieldOfView = baseFov;
+
         float target = locomotion.IsSprinting ? sprintFov : baseFov;
         targetCamera.fieldOfView = Mathf.MoveTowards(targetCamera.fieldOfView, target, fovTransitionSpeed * Time.deltaTime);
     }
+
+    /// <summary>Champ de vision vertical (degrés) qui grossit `zoom` fois le champ `fov` : la
+    /// tangente du demi-angle est divisée d'autant. Sans état, testée.</summary>
+    public static float ZoomedFov(float fov, float zoom)
+        => 2f * Mathf.Atan(Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad) / Mathf.Max(1f, zoom)) * Mathf.Rad2Deg;
 
     /// <summary>
     /// Applique une rotation instantanée à la CAMÉRA, indépendamment de l'input souris. Utilisé

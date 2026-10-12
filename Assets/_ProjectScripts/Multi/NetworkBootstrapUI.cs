@@ -2,69 +2,106 @@ using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// Boutons de test temporaires pour valider une connexion réseau, avant toute vraie UI de lobby.
-/// Posé sur le MÊME GameObject que le NetworkManager.
+/// Posé sur le MÊME GameObject que le NetworkManager, dans la scène MainMenu (persistant d'une
+/// scène à l'autre, voir CLAUDE.md « Le menu principal »).
 ///
-/// Affiche 3 boutons (Host / Server / Client) tant qu'aucune connexion n'est active, puis affiche
-/// le rôle courant et le nombre de clients connectés une fois connecté. Logue aussi dans la
-/// Console à chaque connexion/déconnexion, pour confirmer sans ambiguïté que ça fonctionne.
-///
-/// À désactiver/supprimer une fois qu'un vrai flow de connexion (lobby, Relay) existera.
-///
-/// Gère aussi la CAMÉRA DE SECOURS de la scène : celle qui affiche quelque chose tant qu'aucun
-/// joueur n'existe (écran des boutons Host/Server/Client). Elle DOIT être éteinte dès qu'une
-/// session démarre, sinon elle continue de rendre toute la scène en parallèle de la caméra du
-/// joueur — deux caméras plein écran à la même depth, donc la scène dessinée DEUX FOIS par frame,
-/// et un AudioListener de trop. PlayerLocomotion ne peut pas s'en charger : sa boucle de garde ne
-/// voit que les enfants du Player, et cette caméra n'en est pas un.
+/// Ne gère plus les boutons Host/Server/Client (remplacés par MainMenuController, écran « Jouer »
+/// de la scène MainMenu) ni la caméra de secours (chaque scène gère désormais la sienne — voir
+/// ArenaFallbackCamera dans MultiTestScene). Ne reste ici que ce qui a vocation à vivre là où vit
+/// le NetworkManager : les logs de connexion/déconnexion, et le banc de test à deux instances
+/// ci-dessous.
 /// </summary>
 public class NetworkBootstrapUI : MonoBehaviour
 {
-    [Tooltip("Caméra affichée tant qu'aucune session réseau n'est démarrée (l'écran des boutons). Éteinte automatiquement dès qu'une session démarre. Si laissé vide, Camera.main est utilisée au démarrage — assigne-la explicitement si ta scène a plusieurs caméras hors joueur. À ASSIGNER EN MODE ÉDITION : une assignation faite pendant le Play Mode n'est jamais sauvegardée.")]
-    [SerializeField] private Camera bootstrapCamera;
-
-    private AudioListener bootstrapListener;
-    private bool bootstrapCameraDisabled;
-
-    private void Awake()
-    {
-        // Repli automatique : évite que le fix dépende silencieusement d'une case d'inspecteur
-        // qu'on peut oublier de remplir (ou perdre en la remplissant pendant le Play Mode).
-        if (bootstrapCamera == null) bootstrapCamera = Camera.main;
-        if (bootstrapCamera != null) bootstrapListener = bootstrapCamera.GetComponent<AudioListener>();
-    }
-
 #if UNITY_EDITOR
     // ------------------------------------------------------------------
     // BANC DE TEST À DEUX INSTANCES — Editor uniquement, jamais embarqué en build.
     //
     // L'instance virtuelle de Multiplayer Play Mode ne se pilote pas depuis l'Editor principal :
-    // sans ces deux interrupteurs, observer le côté CLIENT exige quelqu'un pour cliquer « Client »
-    // et pour bouger. Ils sont lus dans les EditorPrefs, que les deux processus partagent (ils
-    // vivent dans le registre de l'utilisateur, pas dans le projet) : l'Editor principal les
-    // allume, le clone les lit au démarrage. Éteints par défaut : le flux normal ne change pas.
+    // sans ces interrupteurs, observer le côté CLIENT exige quelqu'un pour cliquer « Client » et
+    // pour bouger. L'Editor principal les écrit dans un petit fichier (SetCloneTestBench), le
+    // clone le relit à chaque entrée en Play Mode. Éteints par défaut : le flux normal ne change pas.
+    //
+    // 🚨 Pas dans les EditorPrefs (2026-10-08). Ils étaient d'abord lus là, puisque les deux
+    // processus partagent le même registre. Mais le clone ne voyait pas les changements : registre
+    // à 1, clone qui lisait 0. Il tournait depuis le matin et a vraisemblablement gardé en mémoire
+    // les valeurs lues à son démarrage. Le 2026-10-06, le banc n'avait marché que parce que le clone
+    // venait de redémarrer.
     // ------------------------------------------------------------------
-    public const string CloneAutoClientPref = "DuelArena.Test.CloneAutoClient";
-    public const string CloneAutopilotPref = "DuelArena.Test.CloneAutopilot";
-    public const string CloneAutofirePref = "DuelArena.Test.CloneAutofire";
+
+    /// <summary>Fichier des interrupteurs, dans le dossier local de l'utilisateur : hors du
+    /// projet (rien à importer ni à committer) et commun aux deux processus.</summary>
+    public static string CloneTestBenchFile => System.IO.Path.Combine(
+        System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
+        "DuelArena", "banc-de-test.txt");
+
+    /// <summary>Appelé depuis l'Editor principal, AVANT d'entrer en Play Mode. Tout à false pour
+    /// éteindre le banc — à faire après chaque mesure, sinon la session suivante de l'utilisateur
+    /// se connecte et tire toute seule.</summary>
+    public static void SetCloneTestBench(bool autoClient, bool autopilot, bool autofire, bool autotaser = false,
+                                         bool autosneak = false, bool autoaim = false,
+                                         bool autodrill = false, bool cheatsprint = false, bool autoswitch = false,
+                                         bool autovault = false, bool cheatvault = false)
+    {
+        string path = CloneTestBenchFile;
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
+        System.IO.File.WriteAllLines(path, new[]
+        {
+            "autoClient=" + (autoClient ? 1 : 0),
+            "autopilot=" + (autopilot ? 1 : 0),
+            "autofire=" + (autofire ? 1 : 0),
+            "autotaser=" + (autotaser ? 1 : 0),
+            "autosneak=" + (autosneak ? 1 : 0),
+            "autoaim=" + (autoaim ? 1 : 0),
+            "autodrill=" + (autodrill ? 1 : 0),
+            "cheatsprint=" + (cheatsprint ? 1 : 0),
+            "autoswitch=" + (autoswitch ? 1 : 0),
+            "autovault=" + (autovault ? 1 : 0),
+            "cheatvault=" + (cheatvault ? 1 : 0),
+        });
+    }
+
+    private static bool ReadCloneTestFlag(string[] lines, string key)
+    {
+        foreach (string line in lines)
+        {
+            if (line.Trim() == key + "=1") return true;
+        }
+        return false;
+    }
 
     private void Start()
     {
         if (!IsVirtualPlayerClone()) return;
 
+        string path = CloneTestBenchFile;
+        string[] lines = System.IO.File.Exists(path) ? System.IO.File.ReadAllLines(path) : new string[0];
+
         // Affecté dans les DEUX sens : le rechargement de domaine est désactivé à l'entrée en Play
         // Mode dans ce projet, donc un static allumé lors d'une session y resterait à la suivante.
-        PlayerInputReader.AutopilotStrafe = UnityEditor.EditorPrefs.GetBool(CloneAutopilotPref, false);
-        bool autofire = UnityEditor.EditorPrefs.GetBool(CloneAutofirePref, false);
+        PlayerInputReader.AutopilotStrafe = ReadCloneTestFlag(lines, "autopilot");
+        bool autofire = ReadCloneTestFlag(lines, "autofire");
         PlayerInputReader.AutopilotFire = autofire;
         WeaponController.AutopilotAimAtOpponent = autofire;
+        TaserController.AutopilotStrike = ReadCloneTestFlag(lines, "autotaser");
+        // Va-et-vient en sneak et en visée (2026-10-09) : l'allure où les pieds glissaient.
+        PlayerInputReader.AutopilotSneak = ReadCloneTestFlag(lines, "autosneak");
+        PlayerInputReader.AutopilotAim = ReadCloneTestFlag(lines, "autoaim");
+        // Exercice du sprint face au rechargement et au taser (2026-10-10), honnête ou tricheur.
+        PlayerInputReader.AutopilotSprintDrill = ReadCloneTestFlag(lines, "autodrill");
+        PlayerLocomotion.DebugSprintIgnoresRules = ReadCloneTestFlag(lines, "cheatsprint");
+        // La panoplie qui tourne (2026-10-11) : changements d'arme, chargeurs par arme, gerbe du pompe.
+        WeaponController.AutopilotWeaponCycle = ReadCloneTestFlag(lines, "autoswitch");
+        // Le franchissement en tirant (2026-10-11), honnête ou tricheur.
+        PlayerInputReader.AutopilotVaultDrill = ReadCloneTestFlag(lines, "autovault");
+        PlayerLocomotion.DebugVaultIgnoresRules = ReadCloneTestFlag(lines, "cheatvault");
 
         NetworkManager nm = NetworkManager.Singleton;
-        if (UnityEditor.EditorPrefs.GetBool(CloneAutoClientPref, false) && nm != null && !nm.IsClient && !nm.IsServer)
+        if (ReadCloneTestFlag(lines, "autoClient") && nm != null && !nm.IsClient && !nm.IsServer)
         {
             // Le Host n'existe peut-être pas encore : UnityTransport réessaie de se connecter
             // pendant une minute, ce qui laisse le temps de le démarrer dans l'Editor principal.
-            Debug.Log("[Test] Instance virtuelle : connexion automatique en client.");
+            Debug.Log($"[Test] Instance virtuelle : connexion automatique en client (va-et-vient={PlayerInputReader.AutopilotStrafe}, sneak={PlayerInputReader.AutopilotSneak}, visée={PlayerInputReader.AutopilotAim}, tir={autofire}, taser={TaserController.AutopilotStrike}, exercice sprint={PlayerInputReader.AutopilotSprintDrill}, triche sprint={PlayerLocomotion.DebugSprintIgnoresRules}, panoplie={WeaponController.AutopilotWeaponCycle}).");
             nm.StartClient();
         }
     }
@@ -72,20 +109,6 @@ public class NetworkBootstrapUI : MonoBehaviour
     private static bool IsVirtualPlayerClone()
         => System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "--virtual-project-clone") >= 0;
 #endif
-
-    private void Update()
-    {
-        // Sondé dans Update plutôt que sur un callback de connexion : StartHost/StartServer/
-        // StartClient peuvent être appelés depuis ailleurs que les boutons ci-dessous (script de
-        // test, futur lobby), et on veut que la caméra s'éteigne dans tous les cas.
-        if (bootstrapCameraDisabled || bootstrapCamera == null) return;
-        if (NetworkManager.Singleton == null) return;
-        if (!NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer) return;
-
-        bootstrapCamera.enabled = false;
-        if (bootstrapListener != null) bootstrapListener.enabled = false;
-        bootstrapCameraDisabled = true;
-    }
 
     private void OnEnable()
     {
@@ -113,31 +136,5 @@ public class NetworkBootstrapUI : MonoBehaviour
     private void HandleClientDisconnected(ulong clientId)
     {
         Debug.Log($"[Netcode] Client déconnecté : id={clientId}.");
-    }
-
-    private void OnGUI()
-    {
-        if (NetworkManager.Singleton == null)
-        {
-            GUI.Label(new Rect(10, 10, 420, 30), "NetworkManager.Singleton est null — vérifie qu'il y a bien un NetworkManager actif dans cette scène.");
-            return;
-        }
-
-        GUILayout.BeginArea(new Rect(10, 10, 240, 160));
-
-        if (!NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
-        {
-            if (GUILayout.Button("Host")) NetworkManager.Singleton.StartHost();
-            if (GUILayout.Button("Server")) NetworkManager.Singleton.StartServer();
-            if (GUILayout.Button("Client")) NetworkManager.Singleton.StartClient();
-        }
-        else
-        {
-            string role = NetworkManager.Singleton.IsHost ? "Host" : (NetworkManager.Singleton.IsServer ? "Server" : "Client");
-            GUILayout.Label($"Connecté en tant que : {role}");
-            GUILayout.Label($"Clients connectés : {NetworkManager.Singleton.ConnectedClients.Count}");
-        }
-
-        GUILayout.EndArea();
     }
 }

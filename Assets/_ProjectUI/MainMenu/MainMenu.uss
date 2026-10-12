@@ -1,0 +1,451 @@
+.root {
+    flex-grow: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(10, 13, 17, 0.72);
+}
+
+.backdrop-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.screen {
+    flex-direction: column;
+    align-items: center;
+    width: 820px;
+    max-width: 92%;
+}
+
+.screen--wide {
+    width: 1120px;
+}
+
+.hidden {
+    display: none;
+}
+
+.game-title {
+    font-size: 64px;
+    color: rgb(255, 106, 19);
+    -unity-font-style: bold;
+    letter-spacing: 6px;
+    margin-bottom: 4px;
+    -unity-text-align: upper-center;
+}
+
+.game-subtitle {
+    font-size: 16px;
+    color: rgb(180, 188, 198);
+    letter-spacing: 3px;
+    margin-bottom: 40px;
+    -unity-text-align: upper-center;
+}
+
+.panel {
+    background-color: rgba(22, 27, 34, 0.92);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 28px;
+    width: 100%;
+}
+
+.panel-title {
+    font-size: 26px;
+    color: rgb(240, 242, 245);
+    -unity-font-style: bold;
+    margin-bottom: 18px;
+    -unity-text-align: upper-left;
+}
+
+.menu-button {
+    width: 320px;
+    height: 52px;
+    margin-top: 10px;
+    background-color: rgba(255, 255, 255, 0.06);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    color: rgb(235, 238, 242);
+    font-size: 18px;
+    -unity-text-align: middle-center;
+    transition-duration: 0.1s;
+}
+
+.menu-button:hover {
+    background-color: rgba(255, 106, 19, 0.18);
+    border-color: rgba(255, 106, 19, 0.6);
+}
+
+.menu-button:active {
+    background-color: rgba(255, 106, 19, 0.32);
+}
+
+.menu-button--primary {
+    background-color: rgb(255, 106, 19);
+    border-color: rgb(255, 106, 19);
+    color: rgb(20, 14, 8);
+    -unity-font-style: bold;
+}
+
+.menu-button--primary:hover {
+    background-color: rgb(255, 140, 70);
+}
+
+.menu-button--quit {
+    border-color: rgba(220, 80, 80, 0.35);
+}
+
+.menu-button--quit:hover {
+    background-color: rgba(220, 80, 80, 0.2);
+    border-color: rgba(220, 80, 80, 0.7);
+}
+
+.back-button {
+    width: 160px;
+    height: 36px;
+    margin-top: 22px;
+    align-self: flex-start;
+    background-color: transparent;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    color: rgb(200, 205, 212);
+    font-size: 13px;
+}
+
+.back-button:hover {
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+.row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.wrap-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: stretch;
+}
+
+.section-label {
+    font-size: 13px;
+    color: rgb(150, 158, 168);
+    letter-spacing: 1px;
+    margin-top: 16px;
+    margin-bottom: 8px;
+    -unity-text-align: upper-left;
+}
+
+/* -------------------- Sélection de mode -------------------- */
+
+.mode-card {
+    width: 180px;
+    height: 110px;
+    margin-right: 12px;
+    margin-bottom: 12px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-width: 2px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    -unity-text-align: upper-left;
+    padding: 12px;
+    font-size: 16px;
+    color: rgb(230, 233, 237);
+    white-space: normal;
+}
+
+.mode-card--active {
+    border-color: rgb(255, 106, 19);
+    background-color: rgba(255, 106, 19, 0.14);
+}
+
+.mode-card:disabled {
+    opacity: 0.45;
+}
+
+.mode-card-tag {
+    font-size: 11px;
+    color: rgb(255, 106, 19);
+    margin-top: 6px;
+    letter-spacing: 1px;
+}
+
+.mode-card-tag--soon {
+    color: rgb(150, 158, 168);
+}
+
+.host-join-split {
+    flex-direction: row;
+    margin-top: 18px;
+}
+
+.host-join-column {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-right: 16px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.host-join-column--last {
+    margin-right: 0;
+}
+
+.field-label {
+    font-size: 13px;
+    color: rgb(170, 177, 186);
+    margin-top: 8px;
+    margin-bottom: 3px;
+}
+
+.text-field {
+    margin-bottom: 4px;
+}
+
+.status-label {
+    margin-top: 14px;
+    font-size: 13px;
+    color: rgb(200, 205, 212);
+    white-space: normal;
+}
+
+.status-label--error {
+    color: rgb(235, 110, 110);
+}
+
+.status-label--ok {
+    color: rgb(120, 220, 140);
+}
+
+.local-ip-label {
+    margin-top: 10px;
+    font-size: 12px;
+    color: rgb(150, 158, 168);
+}
+
+/* -------------------- Personnalisation -------------------- */
+
+.armory-layout {
+    flex-direction: row;
+    width: 100%;
+}
+
+.armory-controls-column {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-left: 24px;
+}
+
+.viewport-column {
+    width: 320px;
+    align-items: center;
+}
+
+.viewport-column--centered {
+    width: 100%;
+    margin-bottom: 12px;
+}
+
+.preview-viewport {
+    width: 320px;
+    height: 380px;
+    background-color: rgba(0, 0, 0, 0.35);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+.preview-viewport--wide {
+    width: 100%;
+    height: 360px;
+}
+
+.preview-hint {
+    margin-top: 8px;
+    font-size: 11px;
+    color: rgb(130, 138, 148);
+    letter-spacing: 1px;
+}
+
+.weapon-switch-row {
+    margin-bottom: 14px;
+}
+
+.weapon-switch-button {
+    height: 34px;
+    padding: 0 14px;
+    margin-right: 8px;
+    margin-bottom: 8px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    color: rgb(215, 219, 224);
+    font-size: 13px;
+}
+
+.weapon-switch-button--active {
+    border-color: rgb(255, 106, 19);
+    background-color: rgba(255, 106, 19, 0.16);
+    color: rgb(255, 255, 255);
+}
+
+.weapon-customize-name {
+    margin-top: 10px;
+    font-size: 18px;
+    -unity-font-style: bold;
+    color: rgb(240, 242, 245);
+}
+
+.color-swatch {
+    width: 46px;
+    height: 46px;
+    margin-right: 10px;
+    margin-bottom: 10px;
+    border-radius: 23px;
+    border-width: 3px;
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.color-swatch--active {
+    border-color: rgb(255, 255, 255);
+}
+
+.weapon-card {
+    width: 180px;
+    height: 70px;
+    margin-right: 12px;
+    margin-bottom: 12px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-width: 2px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    -unity-text-align: middle-center;
+    font-size: 15px;
+    color: rgb(230, 233, 237);
+    white-space: normal;
+}
+
+.weapon-card--active {
+    border-color: rgb(255, 106, 19);
+    background-color: rgba(255, 106, 19, 0.14);
+}
+
+.hint-text {
+    margin-top: 16px;
+    font-size: 12px;
+    color: rgb(140, 148, 158);
+    white-space: normal;
+}
+
+/* -------------------- Options -------------------- */
+
+.tab-row {
+    flex-direction: row;
+    margin-bottom: 16px;
+}
+
+.tab-button {
+    width: 160px;
+    height: 36px;
+    margin-right: 8px;
+    background-color: transparent;
+    border-width: 1px;
+    border-bottom-width: 2px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+    border-radius: 0;
+    color: rgb(190, 196, 204);
+    font-size: 14px;
+}
+
+.tab-button--active {
+    border-bottom-color: rgb(255, 106, 19);
+    color: rgb(255, 255, 255);
+    -unity-font-style: bold;
+}
+
+.options-page {
+    width: 100%;
+}
+
+.option-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.option-row Label {
+    font-size: 14px;
+    color: rgb(215, 219, 224);
+    width: 220px;
+}
+
+.option-control {
+    width: 260px;
+}
+
+.controls-scroll {
+    height: 320px;
+    margin-bottom: 12px;
+    background-color: rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    padding: 6px;
+}
+
+.bind-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    margin-bottom: 2px;
+}
+
+.bind-row-label {
+    font-size: 14px;
+    color: rgb(215, 219, 224);
+}
+
+.bind-button {
+    width: 170px;
+    height: 30px;
+    background-color: rgba(255, 255, 255, 0.06);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.15);
+    border-radius: 5px;
+    font-size: 13px;
+    color: rgb(230, 233, 237);
+}
+
+.bind-button--listening {
+    border-color: rgb(255, 106, 19);
+    color: rgb(255, 106, 19);
+}
+
+.reset-bindings-button {
+    width: 220px;
+    height: 34px;
+    align-self: flex-end;
+    background-color: transparent;
+    border-width: 1px;
+    border-color: rgba(220, 80, 80, 0.35);
+    border-radius: 6px;
+    color: rgb(230, 150, 150);
+    font-size: 12px;
+}
+
+.reset-bindings-button:hover {
+    background-color: rgba(220, 80, 80, 0.15);
+    border-color: rgba(220, 80, 80, 0.7);
+}

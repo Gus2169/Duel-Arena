@@ -153,7 +153,17 @@ public class RoundManager : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         cached = this;
-        if (IsServer) SetPhase(Phase.WaitingForPlayers, 0f);
+        if (!IsServer) return;
+        SetPhase(Phase.WaitingForPlayers, 0f);
+
+        // Le joueur du Host naît dans la scène du menu, AVANT que l'arène ne soit chargée (voir
+        // « Le menu principal ») : sans point d'apparition ni sol, il y tombait dans le vide pendant
+        // le chargement, et l'arène le trouvait des centaines de mètres sous le terrain. L'arène
+        // prête, on place ceux qui sont déjà là. Un joueur qui arrive ensuite naît dans l'arène.
+        foreach (PlayerLocomotion player in PlayerLocomotion.SpawnedPlayers)
+        {
+            if (player != null) player.ServerMoveToSpawnPoint();
+        }
     }
 
     private void Update()
@@ -267,6 +277,11 @@ public class RoundManager : NetworkBehaviour
             // sont morts au même endroit.
             Health health = player.GetComponent<Health>();
             if (health != null) health.ResetHealth();
+
+            // Chargeur plein et rechargement annulé : on ne reprend pas une manche avec le
+            // chargeur de la précédente.
+            WeaponController weapon = player.GetComponentInChildren<WeaponController>();
+            if (weapon != null) weapon.ServerRefillMagazine();
 
             player.ServerMoveToSpawnPoint();
         }

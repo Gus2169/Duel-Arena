@@ -1,0 +1,325 @@
+using System.Collections.Generic;
+using NUnit.Framework;
+using UnityEngine;
+using MagazineState = WeaponController.MagazineState;
+
+/// <summary>
+/// La panoplie (2026-10-11) : fusil d'assaut, sniper, pompe et raygun, touches 1 à 4, réglés sur
+/// Call of Duty et Rainbow Six.
+///
+/// Ce qui casse ici ne lève aucune erreur : un sniper qui ne tue plus d'une balle au buste, une gerbe
+/// qui change d'un tir à l'autre (le GDD § 3 interdit le hasard), un pompe qui recharge tout d'un
+/// coup, une arme qu'on tire avant de l'avoir sortie. Les seuils de dégâts sont lus dans les VRAIS
+/// assets : ce sont eux qui tournent en jeu, pas des valeurs de test.
+/// </summary>
+public class WeaponLoadoutTests
+{
+    private const string PlayerPrefabPath = "Assets/_ProjectArena/PlayerPrefab/Player.prefab";
+    private const float Health = 100f;
+
+    private static WeaponController PrefabWeapon()
+    {
+        var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        Assert.IsNotNull(prefab, "Prefab joueur introuvable : " + PlayerPrefabPath);
+        var weapon = prefab.GetComponentInChildren<WeaponController>(true);
+        Assert.IsNotNull(weapon, "Le prefab joueur n'a pas de WeaponController.");
+        return weapon;
+    }
+
+    private static WeaponData Slot(int slot)
+    {
+        WeaponData data = PrefabWeapon().DataOf(slot);
+        Assert.IsNotNull(data, $"La place {slot + 1} de la panoplie est vide.");
+        return data;
+    }
+
+    private static int ShotsToKill(float damagePerShot) => Mathf.CeilToInt(Health / damagePerShot - 1e-4f);
+
+    // ------------------------------------------------------------------
+    // La panoplie du prefab
+    // ------------------------------------------------------------------
+
+    [Test]
+    public void LaPanoplie_ADesModelesTenusEnMain_AvecMireEtBouche()
+    {
+        WeaponController weapon = PrefabWeapon();
+        Assert.AreEqual(WeaponController.MaxSlots, weapon.SlotCount, "Quatre armes, une par touche (1 à 4).");
+
+        var names = new HashSet<string>();
+        for (int slot = 0; slot < weapon.SlotCount; slot++)
+        {
+            WeaponData data = weapon.DataOf(slot);
+            Assert.IsNotNull(data.modelPrefab, $"{data.weaponName} n'a pas de modèle.");
+            Assert.IsTrue(names.Add(data.modelPrefab.name), $"Deux armes portent le modèle {data.modelPrefab.name} : HeldWeapons les confondrait.");
+
+            var model = data.modelPrefab.GetComponent<WeaponModel>();
+            Assert.IsNotNull(model, $"{data.modelPrefab.name} n'a pas de WeaponModel.");
+            Assert.IsNotNull(model.Sight, $"{data.modelPrefab.name} n'a pas de mire.");
+            Assert.IsNotNull(model.Muzzle, $"{data.modelPrefab.name} n'a pas de bouche.");
+            Assert.Less(Quaternion.Angle(Quaternion.identity, model.Sight.localRotation), 0.01f, $"La mire de {data.weaponName} doit regarder dans l'axe du canon (+Z).");
+            Assert.Greater(model.Muzzle.localPosition.z, model.Sight.localPosition.z, $"La bouche de {data.weaponName} doit être devant la mire.");
+            Assert.Greater(model.Muzzle.localPosition.z, 0.1f, $"La bouche de {data.weaponName} doit être devant la poignée (origine).");
+        }
+        Assert.AreEqual(HeldWeapons.ReferenceModelName, weapon.DataOf(0).modelPrefab.name,
+            "La touche 1 est le fusil d'assaut, posé dans le prefab : il donne le décalage de la main aux autres armes.");
+    }
+
+    /// <summary>L'armurerie du menu (2026-10-12) accroche ses accessoires aux points posés sous
+    /// `Accessoires` dans le préfab de chaque arme ; une arme sans point pour une rubrique ne l'a
+    /// pas. Un modèle remplacé sans ses points perdrait ses accessoires en silence (onglets grisés).</summary>
+    [Test]
+    public void ChaqueArme_ASesPointsDAccroche_SaufLaPoigneeDuPistolet()
+    {
+        WeaponController weapon = PrefabWeapon();
+        for (int slot = 0; slot < weapon.SlotCount; slot++)
+        {
+            WeaponData data = weapon.DataOf(slot);
+            Transform group = data.modelPrefab.transform.Find(WeaponCustomizationController.SocketGroupName);
+            Assert.IsNotNull(group, $"{data.weaponName} n'a pas de groupe « {WeaponCustomizationController.SocketGroupName} ».");
+
+            bool pistol = data.modelPrefab.GetComponent<WeaponModel>().PistolHold;
+            foreach (AttachmentCategory category in System.Enum.GetValues(typeof(AttachmentCategory)))
+            {
+                Transform socket = group.Find(WeaponCustomizationController.SocketNames[(int)category]);
+                if (category == AttachmentCategory.Grip && pistol)
+                {
+                    Assert.IsNull(socket, $"{data.weaponName} est un pistolet : pas de poignée avant.");
+                    continue;
+                }
+                Assert.IsNotNull(socket, $"{data.weaponName} n'a pas de point d'accroche pour {category}.");
+                Assert.AreEqual(0, socket.childCount, $"Le point {socket.name} de {data.weaponName} doit rester vide : l'accessoire y naît au menu.");
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Dégâts : zones et distance (façon Call of Duty)
+    // ------------------------------------------------------------------
+
+    /// <summary>Le gant à décharge du taser (2026-10-11), modèle généré par IA de 1,4 million de
+    /// triangles, allégé à l'import. Porté sur l'avant-bras gauche, la main qui frappe.</summary>
+    [Test]
+    public void LeGant_EstSurLAvantBrasGauche_LegerEtTexture()
+    {
+        var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        Transform glove = null, hand = null;
+        foreach (Transform t in prefab.GetComponentsInChildren<Transform>(true))
+        {
+            if (t.name == HeldWeapons.TaserGloveName) glove = t;
+            if (t.name == "mixamorig:LeftHand") hand = t;
+        }
+        Assert.IsNotNull(glove, "Le préfab joueur ne porte pas le gant du taser.");
+        Assert.AreEqual("mixamorig:LeftForeArm", glove.parent.name, "Le gant se porte sur l'avant-bras gauche : c'est la main gauche qui frappe.");
+        Assert.AreEqual(hand.localPosition, glove.localPosition, "L'origine du gant est au poignet.");
+        Assert.AreEqual(Vector3.zero, hand.localScale, "La main du robot traverserait le poing du gant.");
+
+        Transform fist = glove.Find("Poing");
+        Assert.IsNotNull(fist, "Le gant n'a pas de repère « Poing ».");
+        Assert.Greater(fist.localPosition.z, 0.12f, "Le poing est devant les jointures (12,8 cm du poignet).");
+
+        var filter = glove.GetComponentInChildren<MeshFilter>(true);
+        Assert.IsNotNull(filter, "Le gant n'a pas de maillage.");
+        int triangles = filter.sharedMesh.triangles.Length / 3;
+        Assert.Less(triangles, 40000, $"Le gant pèse {triangles} triangles : à alléger (le fichier source en a 1,4 million).");
+        var material = glove.GetComponentInChildren<MeshRenderer>(true).sharedMaterial;
+        Assert.IsNotNull(material.GetTexture("_BaseMap"), "Le gant a perdu sa texture de couleur.");
+        Assert.IsNotNull(material.GetTexture("_BumpMap"), "Le gant a perdu sa normale.");
+    }
+
+    [Test]
+    public void LeFusilDAssaut_GardeSesSixBallesAuBuste_EtLaTeteAccelere()
+    {
+        WeaponData ar = Slot(0);
+        Assert.AreEqual(6, ShotsToKill(ar.DamageAt(HitboxZoneType.Torso, 10f)), "TTK du GDD : 6 balles au buste.");
+        Assert.Less(ShotsToKill(ar.DamageAt(HitboxZoneType.Head, 10f)), 6, "Viser la tête doit payer.");
+        Assert.AreEqual(ar.DamageAt(HitboxZoneType.Torso, 1f), ar.DamageAt(HitboxZoneType.Torso, 90f), 1e-4f, "Pas de baisse de dégâts avec la distance.");
+    }
+
+    [Test]
+    public void LeSniper_TueDUneBalleAuBusteEtALaTete_PasAuxJambes()
+    {
+        WeaponData sniper = Slot(1);
+        Assert.AreEqual(1, ShotsToKill(sniper.DamageAt(HitboxZoneType.Torso, 60f)), "Au buste, à toute distance.");
+        Assert.AreEqual(1, ShotsToKill(sniper.DamageAt(HitboxZoneType.Head, 60f)));
+        Assert.AreEqual(2, ShotsToKill(sniper.DamageAt(HitboxZoneType.Legs, 60f)), "Aux jambes, il en faut deux.");
+        Assert.IsFalse(sniper.isAutomatic, "Un sniper à verrou tire coup par coup.");
+        Assert.Greater(sniper.scopeMagnification, 1f, "Le sniper a sa lunette plein écran.");
+        Assert.IsFalse(sniper.hipCrosshair, "Pas de réticule à la hanche, comme dans CoD.");
+    }
+
+    [Test]
+    public void LePompe_TueDePres_PasDeLoin_SansBonusALaTete()
+    {
+        WeaponData pompe = Slot(2);
+        Assert.Greater(pompe.PelletCount, 1, "Le pompe tire des plombs.");
+        float pointBlank = pompe.PelletCount * pompe.DamageAt(HitboxZoneType.Torso, 3f);
+        float far = pompe.PelletCount * pompe.DamageAt(HitboxZoneType.Torso, 25f);
+        Assert.GreaterOrEqual(pointBlank, Health, "Tous les plombs au buste, à bout portant, tuent.");
+        Assert.Less(far, Health, "À 25 m, même tous les plombs ne tuent pas.");
+        Assert.AreEqual(pompe.DamageAt(HitboxZoneType.Torso, 3f), pompe.DamageAt(HitboxZoneType.Head, 3f), 1e-4f,
+            "Les plombs ne comptent pas la tête (CoD).");
+        Assert.IsTrue(pompe.reloadPerRound, "Le pompe recharge cartouche par cartouche.");
+    }
+
+    [Test]
+    public void LeRaygun_EstUnPistolet_QuatreTirsAuBuste()
+    {
+        WeaponData raygun = Slot(3);
+        Assert.IsFalse(raygun.isAutomatic, "Coup par coup.");
+        Assert.AreEqual(1, raygun.PelletCount, "Un rayon, pas une gerbe.");
+        Assert.AreEqual(4, ShotsToKill(raygun.DamageAt(HitboxZoneType.Torso, 10f)));
+        Assert.IsTrue(raygun.modelPrefab.GetComponent<WeaponModel>().PistolHold, "Tenu à bout de bras en vue subjective.");
+        // Le plus léger : on le sort le plus vite et on court avec.
+        for (int slot = 0; slot < 3; slot++)
+        {
+            Assert.Less(raygun.raiseTime, Slot(slot).raiseTime, $"Le raygun se sort plus vite que {Slot(slot).weaponName}.");
+            Assert.GreaterOrEqual(raygun.moveSpeedMultiplier, Slot(slot).moveSpeedMultiplier);
+        }
+    }
+
+    [Test]
+    public void LaBaisseDeDegatsAvecLaDistance_EstContinue()
+    {
+        var data = ScriptableObject.CreateInstance<WeaponData>();
+        data.damagePerHit = 20f;
+        data.falloffStart = 10f;
+        data.falloffEnd = 20f;
+        data.minDamageMultiplier = 0.5f;
+        Assert.AreEqual(20f, data.DamageAt(HitboxZoneType.Torso, 5f), 1e-4f);
+        Assert.AreEqual(20f, data.DamageAt(HitboxZoneType.Torso, 10f), 1e-4f);
+        Assert.AreEqual(15f, data.DamageAt(HitboxZoneType.Torso, 15f), 1e-4f);
+        Assert.AreEqual(10f, data.DamageAt(HitboxZoneType.Torso, 20f), 1e-4f);
+        Assert.AreEqual(10f, data.DamageAt(HitboxZoneType.Torso, 80f), 1e-4f);
+        Object.DestroyImmediate(data);
+    }
+
+    // ------------------------------------------------------------------
+    // La gerbe : un motif fixe (GDD § 3)
+    // ------------------------------------------------------------------
+
+    [Test]
+    public void LaGerbe_EstUnMotifFixe_DansLeRepereDuRegard()
+    {
+        WeaponData pompe = Slot(2);
+        Vector3 forward = new Vector3(0.3f, -0.2f, 1f).normalized;
+        Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
+        Vector3 up = Vector3.Cross(forward, right);
+        for (int i = 0; i < pompe.PelletCount; i++)
+        {
+            Vector2 offset = pompe.PelletOffset(i, false);
+            Vector3 a = WeaponController.PelletDirection(forward, offset);
+            Vector3 b = WeaponController.PelletDirection(forward, offset);
+            Assert.AreEqual(a, b, $"Plomb {i} : deux tirs identiques doivent partir exactement pareil.");
+            Assert.AreEqual(offset.magnitude, Vector3.Angle(forward, a), 0.05f, $"Plomb {i} : écart angulaire.");
+            if (Mathf.Abs(offset.x) > 0.1f) Assert.AreEqual(Mathf.Sign(offset.x), Mathf.Sign(Vector3.Dot(a, right)), $"Plomb {i} : côté.");
+            if (Mathf.Abs(offset.y) > 0.1f) Assert.AreEqual(Mathf.Sign(offset.y), Mathf.Sign(Vector3.Dot(a, up)), $"Plomb {i} : hauteur.");
+        }
+        // En visée, la gerbe se resserre.
+        float hip = 0f, aim = 0f;
+        for (int i = 0; i < pompe.PelletCount; i++)
+        {
+            hip = Mathf.Max(hip, pompe.PelletOffset(i, false).magnitude);
+            aim = Mathf.Max(aim, pompe.PelletOffset(i, true).magnitude);
+        }
+        Assert.Less(aim, hip, "La gerbe ne se resserre pas en visée.");
+
+        // Regard à la verticale : pas de NaN.
+        Vector3 vertical = WeaponController.PelletDirection(Vector3.up, new Vector2(2f, 1f));
+        Assert.IsFalse(float.IsNaN(vertical.x) || float.IsNaN(vertical.y) || float.IsNaN(vertical.z));
+        Assert.AreEqual(Vector3.forward, WeaponController.PelletDirection(Vector3.forward, Vector2.zero), "Une balle seule part dans l'axe.");
+    }
+
+    // ------------------------------------------------------------------
+    // Chargeur : cartouche par cartouche, changement d'arme
+    // ------------------------------------------------------------------
+
+    [Test]
+    public void LePompe_GlisseSesCartouchesUneAUne_EtTirerInterromptLeRechargement()
+    {
+        const int size = 6;
+        const float shell = 0.5f;
+        var m = new MagazineState { ammo = 1 };
+        Assert.IsTrue(WeaponController.TryStartReload(ref m, 10.0, size, shell));
+
+        Assert.IsFalse(WeaponController.CompleteReloadIfDue(ref m, 10.4, size, true, shell));
+        Assert.AreEqual(1, m.ammo);
+        Assert.IsTrue(WeaponController.CompleteReloadIfDue(ref m, 10.5, size, true, shell));
+        Assert.AreEqual(2, m.ammo, "Une cartouche à 0,5 s.");
+        Assert.Greater(m.reloadEndsAt, 0.0, "Le rechargement continue.");
+        WeaponController.CompleteReloadIfDue(ref m, 11.6, size, true, shell);
+        Assert.AreEqual(4, m.ammo, "Deux de plus à 1,5 s (et pas trois à 1,6 s).");
+
+        // Tirer pendant le rechargement : il s'arrête, le coup part avec ce qui est chargé.
+        Assert.IsTrue(WeaponController.TryConsumeRound(ref m, 11.7, size, true, shell, 0.0));
+        Assert.AreEqual(3, m.ammo);
+        Assert.AreEqual(0.0, m.reloadEndsAt, "Le tir n'a pas interrompu le rechargement.");
+
+        // Jusqu'au plein, puis plus rien.
+        var full = new MagazineState { ammo = 4 };
+        WeaponController.TryStartReload(ref full, 0.0, size, shell);
+        WeaponController.CompleteReloadIfDue(ref full, 10.0, size, true, shell);
+        Assert.AreEqual(size, full.ammo);
+        Assert.AreEqual(0.0, full.reloadEndsAt);
+
+        // Un chargeur complet, lui, ne se tire pas en rechargeant.
+        var rifle = new MagazineState { ammo = 3 };
+        WeaponController.TryStartReload(ref rifle, 0.0, 30, 2f);
+        Assert.IsFalse(WeaponController.TryConsumeRound(ref rifle, 1.0, 30, false, 0f, 0.0));
+        // Et un pompe vide en rechargement attend sa première cartouche.
+        var empty = new MagazineState { ammo = 0 };
+        WeaponController.TryStartReload(ref empty, 0.0, size, shell);
+        Assert.IsFalse(WeaponController.TryConsumeRound(ref empty, 0.2, size, true, shell, 0.0));
+        Assert.IsTrue(WeaponController.TryConsumeRound(ref empty, 0.47, size, true, shell, WeaponController.ReloadCompletionTolerance),
+            "La première cartouche à 50 ms près compte (gigue du réseau), comme pour un rechargement complet.");
+    }
+
+    [Test]
+    public void ChangerDArme_GardeLesBallesDeChacune_EtLaNouvelleSeSortAvantDeTirer()
+    {
+        var m = new MagazineState { equipped = 0 };
+        m.SetAmmo(0, 12);
+        m.SetAmmo(1, 5);
+        WeaponController.TryStartReload(ref m, 0.0, 30, 2.2f);
+
+        Assert.IsTrue(WeaponController.TrySwitchWeapon(ref m, 1, 1.0, 0.8f));
+        Assert.AreEqual(1, m.equipped);
+        Assert.AreEqual(5, m.ammo, "Le chargeur de la nouvelle arme.");
+        Assert.AreEqual(12, m.AmmoOf(0), "Celui de l'ancienne n'a pas bougé.");
+        Assert.AreEqual(0.0, m.reloadEndsAt, "Changer d'arme annule le rechargement (CoD).");
+
+        Assert.IsFalse(WeaponController.TryConsumeRound(ref m, 1.5, 5, false, 0f, 0.0), "L'arme n'est pas encore sortie.");
+        Assert.IsTrue(WeaponController.TryConsumeRound(ref m, 1.81, 5, false, 0f, 0.0));
+        Assert.AreEqual(4, m.ammo);
+
+        Assert.IsFalse(WeaponController.TrySwitchWeapon(ref m, 1, 2.0, 0.8f), "Déjà en main.");
+        Assert.IsFalse(WeaponController.TrySwitchWeapon(ref m, WeaponController.MaxSlots, 2.0, 0.8f), "Hors de la panoplie.");
+    }
+
+    [Test]
+    public void LeRecalage_ReprendArmeEtChargeurs_UneFoisToutAccuse()
+    {
+        var local = new MagazineState { equipped = 2, actionsProcessed = 0 };
+        local.SetAmmo(0, 30);
+        local.SetAmmo(2, 6);
+        var server = local;
+        server.actionsProcessed = 3;
+        server.equipped = 0; // le serveur a refusé le changement
+        server.SetAmmo(2, 4);
+
+        MagazineState before = local;
+        WeaponController.ReconcileMagazine(server, 4, ref local);
+        Assert.AreEqual(before.equipped, local.equipped, "Une demande est encore en route : pas de recalage.");
+
+        WeaponController.ReconcileMagazine(server, 3, ref local);
+        Assert.AreEqual(0, local.equipped, "Tout est accusé : le serveur fait foi, arme en main comprise.");
+        Assert.AreEqual(4, local.AmmoOf(2), "Et pour le chargeur de chaque arme.");
+    }
+
+    [Test]
+    public void LaLunette_GrossitLeChamp_Exactement()
+    {
+        float fov = PlayerCameraLook.ZoomedFov(90f, 4f);
+        Assert.AreEqual(0.25f, Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad) / Mathf.Tan(45f * Mathf.Deg2Rad), 1e-4f);
+        Assert.AreEqual(90f, PlayerCameraLook.ZoomedFov(90f, 1f), 1e-4f);
+    }
+}

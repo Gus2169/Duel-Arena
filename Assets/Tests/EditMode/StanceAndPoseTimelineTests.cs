@@ -67,7 +67,7 @@ public class StanceAndPoseTimelineTests
     // Poses datées par le serveur
     // ------------------------------------------------------------------
 
-    private static PlayerLocomotion.DisplayPose Pose(double time, float x, float yaw = 0f, float lean = 0f, byte flags = 0)
+    private static PlayerLocomotion.DisplayPose Pose(double time, float x, float yaw = 0f, float lean = 0f, byte flags = 0, float pitch = 0f)
     {
         return new PlayerLocomotion.DisplayPose
         {
@@ -75,6 +75,7 @@ public class StanceAndPoseTimelineTests
             position = new Vector3(x, 0f, 0f),
             yaw = yaw,
             leanOffset = lean,
+            aimPitch = pitch,
             flags = flags,
         };
     }
@@ -90,6 +91,26 @@ public class StanceAndPoseTimelineTests
         PlayerLocomotion.DisplayPose p = PlayerLocomotion.SampleDisplayPose(poses, 5.0165);
         Assert.AreEqual(0.165f, p.position.x, Eps);
         Assert.AreEqual(0.1f, p.leanOffset, Eps, "Le lean doit suivre la même ligne de temps que la position.");
+    }
+
+    /// <summary>Le tangage du regard (2026-10-09) voyage dans la pose : l'adversaire lève son fusil
+    /// au même instant qu'il arrive là où on le voit, pas avant.</summary>
+    [Test]
+    public void Pose_LeTangageSuitLaMemeLigneDeTemps()
+    {
+        var poses = new List<PlayerLocomotion.DisplayPose> { Pose(5.000, 0f, pitch: 0f), Pose(5.033, 0.33f, pitch: -30f) };
+        Assert.AreEqual(-15f, PlayerLocomotion.SampleDisplayPose(poses, 5.0165).aimPitch, Eps);
+    }
+
+    /// <summary>Le tangage vient d'un client : un client modifié pourrait envoyer n'importe quoi. Il
+    /// ne fait qu'orienter un buste à l'écran des autres, mais un NaN s'y propagerait jusqu'aux os.</summary>
+    [Test]
+    public void LeTangageRecu_EstBorne_EtUnNaNRameneALHorizontale()
+    {
+        Assert.AreEqual(0f, PlayerLocomotion.SanitizeAimPitch(float.NaN));
+        Assert.AreEqual(90f, PlayerLocomotion.SanitizeAimPitch(1e9f));
+        Assert.AreEqual(-90f, PlayerLocomotion.SanitizeAimPitch(float.NegativeInfinity));
+        Assert.AreEqual(-30f, PlayerLocomotion.SanitizeAimPitch(-30f));
     }
 
     [Test]

@@ -1,0 +1,101 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe33acf964d9c684b81db736a07bf7db, type: 3}
+  m_Name: Arme_Sniper
+  m_EditorClassIdentifier: DuelArena.Runtime::WeaponData
+  weaponName: Sniper
+  modelPrefab: {fileID: 3718279557179644195, guid: 1788ac61b4ac8784bb7c6c251b102491, type: 3}
+  damagePerHit: 100
+  shotsPerSecond: 0.8
+  isAutomatic: 0
+  maxRange: 150
+  headMultiplier: 1.5
+  legsMultiplier: 0.6
+  falloffStart: 0
+  falloffEnd: 0
+  minDamageMultiplier: 1
+  pelletPattern: []
+  aimPatternScale: 1
+  raiseTime: 0.8
+  moveSpeedMultiplier: 0.9
+  aimTime: 0.35
+  scopeMagnification: 4
+  hipCrosshair: 0
+  tracerColor: {r: 0.9, g: 0.95, b: 1, a: 1}
+  worldMask:
+    serializedVersion: 2
+    m_Bits: 1
+  hitboxMask:
+    serializedVersion: 2
+    m_Bits: 128
+  magazineSize: 5
+  reloadDuration: 3
+  reloadPerRound: 0
+  reloadSound: {fileID: 8300000, guid: 5d45f43de5fc8624a8415f4dfd27caa2, type: 3}
+  reloadVolume: 0.8
+  sprintToFireTime: 0.45
+  verticalRecoilPattern:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 12
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  horizontalRecoilPattern:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0.15
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 12
+      value: 0.15
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  recoilPerShotDegrees: 6
+  recoilRecoverySpeed: 9
+  recoilResetDelay: 0.35
+  fireSounds:
+  - {fileID: 8300000, guid: 022b183c71e13cc41bab0263015029a6, type: 3}
+  - {fileID: 8300000, guid: f9d2124bf9db1334db6f083995cce78a, type: 3}
+  fireVolume: 1
+  firePitchRange: {x: 0.6, y: 0.64}

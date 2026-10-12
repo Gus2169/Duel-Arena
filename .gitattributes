@@ -120,3 +120,13 @@
 # Terrain : les .asset de Unity sont normalement du YAML texte (le projet est en
 # Force Text), donc ils restent gérés en texte ci-dessus, PAS en LFS. Si un jour un
 # .asset devient binaire (passage en Force Binary), il faudra le basculer ici.
+
+# Meshes générés par fusion (2026-10-08) : du YAML texte, mais de plusieurs Mo de
+# sommets encodés, illisibles et sans intérêt à fusionner. En LFS, pour que chaque
+# régénération n'alourdisse pas l'historique de 8 Mo.
+*_Fusionne.asset filter=lfs diff=lfs merge=lfs -text
+# Même chose pour les meshes allégés ou nettoyés par script (2026-10-11) : le gant du
+# taser (1,4 million de triangles ramenés à 28 000) et le sniper débarrassé de ses pièces
+# détachées.
+*_Allege.asset filter=lfs diff=lfs merge=lfs -text
+*_Nettoye.asset filter=lfs diff=lfs merge=lfs -text

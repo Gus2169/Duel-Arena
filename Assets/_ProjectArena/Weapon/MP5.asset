@@ -12,17 +12,37 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe33acf964d9c684b81db736a07bf7db, type: 3}
   m_Name: MP5
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
-  weaponName: MP5
+  weaponName: Fusil d'assaut
+  modelPrefab: {fileID: 1894665579383966096, guid: cf2fca44804ffb844a968114ac961920, type: 3}
   damagePerHit: 17
   shotsPerSecond: 7
   isAutomatic: 1
-  maxRange: 60
+  maxRange: 100
+  headMultiplier: 1.4
+  legsMultiplier: 1
+  falloffStart: 0
+  falloffEnd: 0
+  minDamageMultiplier: 1
+  pelletPattern: []
+  aimPatternScale: 1
+  raiseTime: 0.6
+  moveSpeedMultiplier: 0.95
+  aimTime: 0.125
+  scopeMagnification: 1
+  hipCrosshair: 1
+  tracerColor: {r: 1, g: 0.85, b: 0.3, a: 1}
   worldMask:
     serializedVersion: 2
     m_Bits: 1
   hitboxMask:
     serializedVersion: 2
     m_Bits: 128
+  magazineSize: 30
+  reloadDuration: 2.2
+  reloadPerRound: 0
+  reloadSound: {fileID: 8300000, guid: 9c426805e939b294c84a43901a0ba7cc, type: 3}
+  reloadVolume: 0.8
+  sprintToFireTime: 0.3
   verticalRecoilPattern:
     serializedVersion: 2
     m_Curve:
@@ -219,10 +239,7 @@ MonoBehaviour:
   recoilRecoverySpeed: 6
   recoilResetDelay: 0.35
   fireSounds:
-  - {fileID: 8300000, guid: 66909c5efdc80f34ea647a8ab51a32e0, type: 3}
-  - {fileID: 8300000, guid: cdd62695e7789ab488fd4c9cf66213bb, type: 3}
-  - {fileID: 8300000, guid: 14086e541038c2b49ae437d12a7b18c1, type: 3}
-  - {fileID: 8300000, guid: fd5f61990ab943c43bf42b96b664f0ef, type: 3}
-  - {fileID: 8300000, guid: e1ba3e386daa80545aebd30b2e5b566c, type: 3}
+  - {fileID: 8300000, guid: 5a620fce47a844644bbbb671ffe1b851, type: 3}
+  - {fileID: 8300000, guid: 7bbfab167807f3c4cb0d3903a9d16363, type: 3}
   fireVolume: 0.9
   firePitchRange: {x: 0.97, y: 1.03}

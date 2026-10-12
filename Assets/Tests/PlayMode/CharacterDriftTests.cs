@@ -39,15 +39,25 @@ public class CharacterDriftTests
     private static IEnumerator MeasureDrift(GameObject go, Animator animator, int stance, float moveY, int frames, System.Action<float> report)
     {
         animator.SetInteger("Stance", stance);
-        animator.SetFloat("MoveX", 0f);
-        animator.SetFloat("MoveY", moveY);
+        PlayerAnimator.SetLocomotion(animator, new Vector2(0f, moveY));
         animator.SetFloat("SpeedMult", 1f);
+        animator.SetFloat("LocoSpeed", 1f);
+        // Depuis le 2026-10-09, l'attente et le déplacement sont deux branches : sans Marche à 1,
+        // l'arbre jouerait l'attente et ce test passerait sans rien mesurer.
+        animator.SetFloat("Marche", 1f);
 
         Transform hips = animator.GetBoneTransform(HumanBodyBones.Hips);
         Assert.IsNotNull(hips, "Os Hips introuvable : le rig n'est pas humanoïde.");
 
         // Quelques frames pour que la transition d'état se termine avant de mesurer.
         for (int i = 0; i < 20; i++) yield return null;
+
+        // Garde anti-vacuité : c'est bien un clip de déplacement qui joue, pas l'attente.
+        foreach (var info in animator.GetCurrentAnimatorClipInfo(0))
+        {
+            if (info.weight > 0.5f)
+                StringAssert.DoesNotContain("Idle", info.clip.name, "C'est l'attente qui joue : la dérive mesurée ne voudrait rien dire.");
+        }
 
         float max = 0f;
         for (int i = 0; i < frames; i++)
