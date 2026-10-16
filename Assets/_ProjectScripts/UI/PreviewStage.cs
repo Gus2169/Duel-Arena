@@ -71,6 +71,14 @@ public class PreviewStage : MonoBehaviour
         previewCamera.fieldOfView = cameraFieldOfView;
         previewCamera.targetTexture = null;
         previewCamera.enabled = false;
+
+        // Fond transparent (2026-10-16) : le sujet se pose sur le fond de l'écran, sans cadre, comme
+        // l'arme de l'armurerie de Call of Duty. Sans HDR, URP garde la couche alpha jusqu'à la texture
+        // (son tampon HDR par défaut n'en a pas) ; rien ici ne dépasse 1, l'image ne change pas.
+        Color background = previewCamera.backgroundColor;
+        previewCamera.clearFlags = CameraClearFlags.SolidColor;
+        previewCamera.backgroundColor = new Color(background.r, background.g, background.b, 0f);
+        previewCamera.allowHDR = false;
     }
 
     private void OnDestroy() => ReleaseTexture();
@@ -95,19 +103,24 @@ public class PreviewStage : MonoBehaviour
         SetFraming(bounds.center, bounds.extents.y, HorizontalRadius(bounds), CharacterViewDirection);
     }
 
-    /// <summary>Montre l'arme dans `viewport`, de profil. `localBounds` est donné dans le repère
-    /// du pivot (l'appelant y a centré l'arme) et couvre la place de TOUS ses accessoires
-    /// possibles, pas seulement de ceux choisis : le cadrage ne bouge pas quand on en change (voir
-    /// WeaponCustomizationController).</summary>
-    public void ShowWeapon(Bounds localBounds, Image viewport)
+    /// <summary>Montre l'arme dans `viewport`, de profil (ou dans la rotation qu'on lui a donnée, sans
+    /// `resetRotation` : un autre modèle de la même arme se regarde sous le même angle). `localBounds`
+    /// est donné dans le repère du pivot (l'appelant y a centré l'arme) et couvre la place de TOUS ses
+    /// accessoires possibles, pas seulement de ceux choisis : le cadrage ne bouge pas quand on en change
+    /// (voir WeaponCustomizationController).</summary>
+    public void ShowWeapon(Bounds localBounds, Image viewport, bool resetRotation = true)
     {
         if (weaponPivot == null) return;
+        Quaternion rotation = weaponPivot.localRotation;
         Activate(weaponPivot, characterPivot, viewport);
         autoRotateSpeed = 0f;
         weaponPivot.localRotation = Quaternion.identity;
 
         SetFraming(weaponPivot.TransformPoint(localBounds.center), localBounds.extents.y,
             HorizontalRadius(localBounds), WeaponViewDirection);
+        // Le cadrage ne dépend pas de la rotation : l'arme est centrée sur le pivot, et le rayon
+        // horizontal couvre tous les angles.
+        if (!resetRotation) weaponPivot.localRotation = rotation;
     }
 
     public void Hide()

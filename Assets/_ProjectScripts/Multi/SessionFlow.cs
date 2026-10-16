@@ -27,6 +27,8 @@ using UnityEngine.SceneManagement;
 ///   l'armurerie, par le même chemin (PlayerWeaponLooks les borne et les publie).
 /// - SES ACCESSOIRES (2026-10-16) : le viseur, la poignée, le laser et le chargeur de chacune, par
 ///   le même chemin encore (PlayerWeaponAttachments les borne et les publie).
+/// - LA COULEUR DE SON ROBOT (2026-10-16) : son rang dans la palette, choisi dans Personnalisation ;
+///   PlayerPaint la donne si aucun autre joueur ne la porte, sinon la première libre.
 ///
 /// Le refus est décidé par le serveur seul (ConnectionApprovalCallback) ; le client ne fait
 /// qu'annoncer sa version et son pseudo.
@@ -44,6 +46,7 @@ public class SessionFlow : MonoBehaviour
     private static readonly Dictionary<ulong, string> approvedNames = new Dictionary<ulong, string>();
     private static readonly Dictionary<ulong, WeaponLooks> approvedLooks = new Dictionary<ulong, WeaponLooks>();
     private static readonly Dictionary<ulong, WeaponAttachments> approvedAttachments = new Dictionary<ulong, WeaponAttachments>();
+    private static readonly Dictionary<ulong, int> approvedPaints = new Dictionary<ulong, int>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics()
@@ -51,6 +54,7 @@ public class SessionFlow : MonoBehaviour
         approvedNames.Clear();
         approvedLooks.Clear();
         approvedAttachments.Clear();
+        approvedPaints.Clear();
     }
 
     /// <summary>
@@ -87,6 +91,7 @@ public class SessionFlow : MonoBehaviour
         approvedNames.Clear();
         approvedLooks.Clear();
         approvedAttachments.Clear();
+        approvedPaints.Clear();
         networkManager.NetworkConfig.ConnectionApproval = true;
         PrepareConnectionData(networkManager);
         networkManager.ConnectionApprovalCallback = ApproveConnection;
@@ -99,7 +104,7 @@ public class SessionFlow : MonoBehaviour
     {
         if (nm != null)
             nm.NetworkConfig.ConnectionData = BuildPayload(Application.version, GameSettings.PlayerName, GameSettings.WeaponLooks,
-                                                           GameSettings.WeaponAttachments);
+                                                           GameSettings.WeaponAttachments, GameSettings.PreferredColorIndex);
     }
 
     /// <summary>Le pseudo annoncé par `clientId` à son approbation, retiré de l'attente (vide s'il
@@ -130,12 +135,26 @@ public class SessionFlow : MonoBehaviour
         return attachments;
     }
 
+    /// <summary>La couleur choisie par `clientId` (son rang dans la palette), retirée de l'attente : -1
+    /// s'il n'en a pas annoncé. Pas encore bornée : PlayerPaint s'en charge, lui qui connaît la palette et
+    /// les couleurs déjà portées.</summary>
+    public static int TakeApprovedPaint(ulong clientId)
+    {
+        if (!approvedPaints.TryGetValue(clientId, out int paint)) return -1;
+        approvedPaints.Remove(clientId);
+        return paint;
+    }
+
     /// <summary>La demande de connexion : la version, le pseudo, puis l'apparence des armes et leurs
-    /// accessoires (2026-10-16) en hexadécimal, séparés par des sauts de ligne (que le pseudo, nettoyé,
-    /// ne peut pas contenir). Fonction pure, testée.</summary>
-    public static byte[] BuildPayload(string version, string name, WeaponLooks looks, WeaponAttachments attachments)
+    /// accessoires (2026-10-16) en hexadécimal, et le rang de la couleur choisie (-1 : aucune), séparés par
+    /// des sauts de ligne (que le pseudo, nettoyé, ne peut pas contenir). Fonction pure, testée.</summary>
+    public static byte[] BuildPayload(string version, string name, WeaponLooks looks, WeaponAttachments attachments, int paint)
         => Encoding.UTF8.GetBytes((version ?? "") + "\n" + PlayerMatchState.SanitizeName(name) + "\n" + looks.Packed.ToString("X8")
-                                  + "\n" + attachments.Packed.ToString("X8"));
+                                  + "\n" + attachments.Packed.ToString("X8")
+                                  + "\n" + paint.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    public static byte[] BuildPayload(string version, string name, WeaponLooks looks, WeaponAttachments attachments)
+        => BuildPayload(version, name, looks, attachments, -1);
 
     public static byte[] BuildPayload(string version, string name, WeaponLooks looks)
         => BuildPayload(version, name, looks, WeaponAttachments.None);
@@ -144,15 +163,16 @@ public class SessionFlow : MonoBehaviour
 
     /// <summary>Lit une demande de connexion. Faux si elle est absente ou trop longue : elle ne vient
     /// alors que d'un client modifié. Une ancienne build n'envoie que sa version, ou sa version et son
-    /// pseudo : ce qui manque ne vaut rien (pas de pseudo, les armes par défaut), comme une
-    /// apparence illisible. Fonction pure, testée.</summary>
+    /// pseudo : ce qui manque ne vaut rien (pas de pseudo, les armes par défaut, aucune couleur
+    /// choisie), comme une valeur illisible. Fonction pure, testée.</summary>
     public static bool ParsePayload(byte[] payload, out string version, out string name, out WeaponLooks looks,
-                                    out WeaponAttachments attachments)
+                                    out WeaponAttachments attachments, out int paint)
     {
         version = "";
         name = "";
         looks = WeaponLooks.Default;
         attachments = WeaponAttachments.None;
+        paint = -1;
         if (payload == null || payload.Length == 0 || payload.Length > MaxPayloadBytes) return false;
         string[] lines = Encoding.UTF8.GetString(payload).Split('\n');
         version = lines[0];
@@ -163,8 +183,15 @@ public class SessionFlow : MonoBehaviour
         if (lines.Length > 3 && uint.TryParse(lines[3], System.Globalization.NumberStyles.AllowHexSpecifier,
                                                System.Globalization.CultureInfo.InvariantCulture, out uint chosen))
             attachments = new WeaponAttachments(chosen);
+        if (lines.Length > 4 && int.TryParse(lines[4], System.Globalization.NumberStyles.AllowLeadingSign,
+                                              System.Globalization.CultureInfo.InvariantCulture, out int color))
+            paint = color;
         return true;
     }
+
+    public static bool ParsePayload(byte[] payload, out string version, out string name, out WeaponLooks looks,
+                                    out WeaponAttachments attachments)
+        => ParsePayload(payload, out version, out name, out looks, out attachments, out _);
 
     public static bool ParsePayload(byte[] payload, out string version, out string name, out WeaponLooks looks)
         => ParsePayload(payload, out version, out name, out looks, out _);
@@ -201,7 +228,7 @@ public class SessionFlow : MonoBehaviour
     {
         string reason;
         if (!ParsePayload(request.Payload, out string clientVersion, out string clientName, out WeaponLooks clientLooks,
-                          out WeaponAttachments clientAttachments))
+                          out WeaponAttachments clientAttachments, out int clientPaint))
         {
             response.Approved = false;
             reason = "Demande de connexion invalide.";
@@ -218,6 +245,7 @@ public class SessionFlow : MonoBehaviour
             approvedNames[request.ClientNetworkId] = clientName;
             approvedLooks[request.ClientNetworkId] = clientLooks;
             approvedAttachments[request.ClientNetworkId] = clientAttachments;
+            approvedPaints[request.ClientNetworkId] = clientPaint;
         }
         else Debug.Log($"[Session] Connexion refusée : {reason}");
 

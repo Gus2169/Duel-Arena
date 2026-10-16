@@ -137,6 +137,34 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(WeaponAttachments.None, asked.Sanitized(null), "Sans panoplie, rien.");
     }
 
+    /// <summary>La partie ARMES de Personnalisation résume chaque arme (2026-10-16) : elle ne montre que
+    /// ce que le serveur garderait, avec la désignation de chaque accessoire (le laser de poing sous un
+    /// pistolet). Un viseur demandé sur le sniper n'y figure pas : en partie, il n'y serait pas.</summary>
+    [Test]
+    public void LeResumeDePersonnalisation_NeMontreQueCeQueLArmePorte()
+    {
+        IReadOnlyList<WeaponData> loadout = Loadout();
+        AttachmentCatalog catalog = Catalog();
+        string Code(GameObject prefab) => prefab.GetComponent<WeaponAttachment>().Code;
+        var asked = WeaponAttachments.None
+            .With(Rifle, HoloA, GripKind.Vertical, true, true)
+            .With(Sniper, RedDotA, GripKind.None, false, false)
+            .With(Pistol, ReflexA, GripKind.Vertical, true, false);
+        WeaponLooks looks = WeaponLooks.Default.WithFinish(Rifle, WeaponFinish.Rouillee);
+
+        WeaponCustomizationController.Summarize(loadout[Rifle], Rifle, looks, asked, out string model, out string details);
+        StringAssert.StartsWith(loadout[Rifle].ModelPrefabFor(0).GetComponent<WeaponModel>().Designation, model, "Le modèle choisi d'abord.");
+        Assert.AreEqual($"Rouillée · {Code(catalog.SightPrefab(HoloA))} · {Code(catalog.verticalGrip)} · {Code(catalog.laser)} · "
+                        + $"chargeur {AttachmentCatalog.MagazineSize(loadout[Rifle], true, catalog)}", details);
+
+        WeaponCustomizationController.Summarize(loadout[Sniper], Sniper, looks, asked, out _, out details);
+        Assert.AreEqual("D'origine · sans accessoire", details, "Le sniper garde sa lunette : le point rouge demandé n'y est pas.");
+
+        WeaponCustomizationController.Summarize(loadout[Pistol], Pistol, looks, asked, out _, out details);
+        Assert.AreEqual($"D'origine · {Code(catalog.SightPrefab(ReflexA))} · {Code(catalog.pistolLaser)}", details,
+                        "Un pistolet : le réflex et le laser de poing, pas de poignée.");
+    }
+
     [Test]
     public void LaDemandeDeConnexion_PorteLesAccessoires()
     {
@@ -210,31 +238,32 @@ public class WeaponAttachmentsTests
             "Une cartouche se glisse aussi vite : le tube en prend seulement plus.");
     }
 
+    /// <summary>Depuis le tir à la hanche façon Rainbow Six (2026-10-16), le laser ne touche plus au
+    /// recul : il resserre la dispersion à la hanche (HipFireSpreadTests).</summary>
     [Test]
-    public void LaPoigneeVerticale_RetientLeReculVertical_EtLeLaserLeReculALaHanche()
+    public void LaPoigneeVerticale_RetientLeReculVertical_EtLeLaserResserreLaHanche()
     {
         AttachmentCatalog catalog = Catalog();
         var grip = WeaponAttachments.None.WithGrip(Rifle, GripKind.Vertical);
-        AttachmentCatalog.RecoilFactors(catalog, grip, Rifle, true, out float vertical, out float horizontal);
+        AttachmentCatalog.RecoilFactors(catalog, grip, Rifle, out float vertical, out float horizontal);
         Assert.AreEqual(catalog.verticalGripRecoil, vertical, 1e-6f, "La poignée verticale retient le recul vertical...");
         Assert.AreEqual(1f, horizontal, 1e-6f, "... et rien d'autre.");
         Assert.Less(catalog.verticalGripRecoil, 1f);
+        Assert.AreEqual(1f, AttachmentCatalog.HipSpreadFactor(catalog, grip, Rifle), 1e-6f, "Elle ne resserre pas le cône.");
 
         var laser = WeaponAttachments.None.WithLaser(Rifle, true);
-        AttachmentCatalog.RecoilFactors(catalog, laser, Rifle, false, out vertical, out horizontal);
-        Assert.AreEqual(catalog.laserHipRecoil, vertical, 1e-6f, "À la hanche, le laser retient tout le recul.");
-        Assert.AreEqual(catalog.laserHipRecoil, horizontal, 1e-6f);
-        AttachmentCatalog.RecoilFactors(catalog, laser, Rifle, true, out vertical, out horizontal);
-        Assert.AreEqual(1f, vertical, 1e-6f, "En visée, le laser n'aide plus.");
+        AttachmentCatalog.RecoilFactors(catalog, laser, Rifle, out vertical, out horizontal);
+        Assert.AreEqual(1f, vertical, 1e-6f, "Le laser ne retient pas le recul...");
         Assert.AreEqual(1f, horizontal, 1e-6f);
+        Assert.AreEqual(catalog.laserHipSpread, AttachmentCatalog.HipSpreadFactor(catalog, laser, Rifle), 1e-6f, "... il resserre la hanche.");
+        Assert.Less(catalog.laserHipSpread, 1f);
+        Assert.AreEqual(1f, AttachmentCatalog.HipSpreadFactor(catalog, laser, Sniper), 1e-6f, "Le laser d'une arme ne resserre pas une autre.");
 
-        AttachmentCatalog.RecoilFactors(catalog, grip.WithLaser(Rifle, true), Rifle, false, out vertical, out horizontal);
-        Assert.AreEqual(catalog.verticalGripRecoil * catalog.laserHipRecoil, vertical, 1e-6f, "Les deux s'ajoutent.");
-
-        AttachmentCatalog.RecoilFactors(catalog, grip, Sniper, true, out vertical, out _);
+        AttachmentCatalog.RecoilFactors(catalog, grip, Sniper, out vertical, out _);
         Assert.AreEqual(1f, vertical, 1e-6f, "La poignée d'une arme ne retient pas le recul d'une autre.");
-        AttachmentCatalog.RecoilFactors(null, grip, Rifle, true, out vertical, out _);
+        AttachmentCatalog.RecoilFactors(null, grip, Rifle, out vertical, out _);
         Assert.AreEqual(1f, vertical, 1e-6f, "Sans catalogue, aucun effet.");
+        Assert.AreEqual(1f, AttachmentCatalog.HipSpreadFactor(null, laser, Rifle), 1e-6f);
     }
 
     [Test]

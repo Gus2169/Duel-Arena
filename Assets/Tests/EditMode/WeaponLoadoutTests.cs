@@ -189,10 +189,11 @@ public class WeaponLoadoutTests
     // Dégâts : zones et distance (façon Call of Duty)
     // ------------------------------------------------------------------
 
-    /// <summary>Le gant à décharge du taser (2026-10-11), modèle généré par IA de 1,4 million de
-    /// triangles, allégé à l'import. Porté sur l'avant-bras gauche, la main qui frappe.</summary>
+    /// <summary>Le gant à décharge du taser : le GD-1 (2026-10-16), construit dans Blender dans la DA du projet
+    /// (Tools/Blender/gant_choc.py), à la place du modèle généré par IA de 28 404 triangles. Porté sur
+    /// l'avant-bras gauche, la main qui frappe.</summary>
     [Test]
-    public void LeGant_EstSurLAvantBrasGauche_LegerEtTexture()
+    public void LeGant_EstSurLAvantBrasGauche_LegerEtDansLaDA()
     {
         var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
         Transform glove = null, hand = null;
@@ -209,14 +210,20 @@ public class WeaponLoadoutTests
         Transform fist = glove.Find("Poing");
         Assert.IsNotNull(fist, "Le gant n'a pas de repère « Poing ».");
         Assert.Greater(fist.localPosition.z, 0.12f, "Le poing est devant les jointures (12,8 cm du poignet).");
+        Assert.Less(fist.localPosition.z, 0.25f, "Le poing est au bout de la main, pas au-delà.");
+        Assert.IsNotNull(fist.GetComponentInChildren<TaserSparkFX>(true), "Les arcs du coup partent du poing (ElectricArcTests).");
 
-        var filter = glove.GetComponentInChildren<MeshFilter>(true);
-        Assert.IsNotNull(filter, "Le gant n'a pas de maillage.");
-        int triangles = filter.sharedMesh.triangles.Length / 3;
-        Assert.Less(triangles, 40000, $"Le gant pèse {triangles} triangles : à alléger (le fichier source en a 1,4 million).");
-        var material = glove.GetComponentInChildren<MeshRenderer>(true).sharedMaterial;
-        Assert.IsNotNull(material.GetTexture("_BaseMap"), "Le gant a perdu sa texture de couleur.");
-        Assert.IsNotNull(material.GetTexture("_BumpMap"), "Le gant a perdu sa normale.");
+        int triangles = 0;
+        MeshRenderer[] pieces = glove.GetComponentsInChildren<MeshRenderer>(true);
+        foreach (MeshRenderer piece in pieces) triangles += piece.GetComponent<MeshFilter>().sharedMesh.triangles.Length / 3;
+        Assert.Greater(triangles, 500, "Le gant n'a plus de modèle.");
+        Assert.Less(triangles, 5000, $"Le gant pèse {triangles} triangles : le budget d'une arme du projet (l'ancien en avait 28 404).");
+        foreach (MeshRenderer piece in pieces)
+            foreach (Material m in piece.sharedMaterials)
+                Assert.AreEqual(WeaponImporter.ShaderName, m.shader.name, $"{piece.name} : le gant s'use comme les armes (ArmeUsee).");
+        var finishes = glove.GetComponent<WeaponFinishes>();
+        Assert.IsNotNull(finishes, "Le gant n'a pas ses finitions.");
+        Assert.AreEqual(pieces.Length, finishes.PieceCount, "Chaque pièce du gant a ses six finitions.");
     }
 
     [Test]

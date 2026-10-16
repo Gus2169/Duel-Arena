@@ -31,6 +31,14 @@ MonoBehaviour:
   minDamageMultiplier: 0.75
   pelletPattern: []
   aimPatternScale: 1
+  hipSpread: 1.1
+  hipSpreadMoving: 2.2
+  hipSpreadPerShot: 0.35
+  hipSpreadMaxBloom: 1.2
+  hipSpreadRecovery: 5
+  aimCurve: 2
+  killKnockback: 0
+  killKnockbackLift: 0
   raiseTime: 0.4
   moveSpeedMultiplier: 1
   aimTime: 0.1

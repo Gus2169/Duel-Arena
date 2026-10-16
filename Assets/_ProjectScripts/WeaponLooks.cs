@@ -98,6 +98,30 @@ public struct WeaponLooks : IEquatable<WeaponLooks>
         _ => finish.ToString(),
     };
 
+    /// <summary>L'abrégé d'une finition, dans la case de sa tuile à l'armurerie.</summary>
+    public static string FinishCode(WeaponFinish finish) => finish switch
+    {
+        WeaponFinish.Origine => "ORI",
+        WeaponFinish.Repeinte => "REP",
+        WeaponFinish.Rouillee => "ROU",
+        WeaponFinish.Depareillee => "DÉP",
+        WeaponFinish.Polie => "POL",
+        WeaponFinish.Encrassee => "ENC",
+        _ => "?",
+    };
+
+    /// <summary>Ce que l'armurerie dit d'une finition (Bible § 12).</summary>
+    public static string FinishDescription(WeaponFinish finish) => finish switch
+    {
+        WeaponFinish.Origine => "L'usure de tous les jours.",
+        WeaponFinish.Repeinte => "Repeinte au pinceau, couche après couche, sans décaper.",
+        WeaponFinish.Rouillee => "Sortie de ses caisses sans être décapée : cloques, creux et coulures.",
+        WeaponFinish.Depareillee => "Des pièces prises sur d'autres armes.",
+        WeaponFinish.Polie => "La peinture partie là où on la tient, le métal poli.",
+        WeaponFinish.Encrassee => "Jamais nettoyée : huile, poussière et suie.",
+        _ => "",
+    };
+
     public bool Equals(WeaponLooks other) => packed == other.packed;
     public override bool Equals(object obj) => obj is WeaponLooks other && Equals(other);
     public override int GetHashCode() => (int)packed;

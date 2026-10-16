@@ -38,6 +38,12 @@ public class MainMenuController : MonoBehaviour
     [Tooltip("Le salon des parties en ligne (sur le même GameObject si vide).")]
     [SerializeField] private LobbyController lobby;
 
+    [Tooltip("Personnalisation : le robot et les armes (sur le même GameObject si vide).")]
+    [SerializeField] private ArmoryController armory;
+
+    [Tooltip("L'armurerie (sur le même GameObject si vide).")]
+    [SerializeField] private WeaponCustomizationController weaponCustomization;
+
     private static readonly string[] ScreenNames = { "screenTitle", "screenPlay", "screenLobby", "screenArmory", "screenOptions", "screenWeaponCustomize" };
 
     private VisualElement root;
@@ -62,6 +68,8 @@ public class MainMenuController : MonoBehaviour
     {
         if (document == null) document = GetComponent<UIDocument>();
         if (lobby == null) lobby = GetComponent<LobbyController>();
+        if (armory == null) armory = GetComponent<ArmoryController>();
+        if (weaponCustomization == null) weaponCustomization = GetComponent<WeaponCustomizationController>();
         root = document.rootVisualElement;
 
         WireTitleScreen();
@@ -118,7 +126,7 @@ public class MainMenuController : MonoBehaviour
 
     /// <summary>Affiche l'écran demandé, masque les autres. Pas d'animation : un menu de duel n'a
     /// pas besoin de fioritures, et ça reste trivial à maintenir si un écran s'ajoute. Public : la
-    /// fenêtre d'armurerie avancée (WeaponCustomizationController) revient à Personnalisation par
+    /// l'armurerie (WeaponCustomizationController) revient à Personnalisation par
     /// ce même chemin, et le salon (LobbyController) s'ouvre et se referme par lui.</summary>
     public void ShowScreenByName(string screenName)
     {
@@ -129,7 +137,7 @@ public class MainMenuController : MonoBehaviour
         }
 
         // La caméra d'aperçu du personnage ne tourne que pendant qu'on la regarde — coupée dès
-        // qu'on quitte Personnalisation, y compris en passant par l'armurerie avancée (qui prend
+        // qu'on quitte Personnalisation, y compris en passant par l'armurerie (qui prend
         // elle-même la main sur le même PreviewStage, voir WeaponCustomizationController).
         if (characterPreview != null)
         {
@@ -137,7 +145,33 @@ public class MainMenuController : MonoBehaviour
             else if (screenName != "screenWeaponCustomize") characterPreview.Hide();
         }
 
+        if (screenName == "screenArmory" && armory != null) armory.Refresh();
         if (screenName == "screenPlay") OnPlayScreenShown();
+    }
+
+    private bool IsShown(string screenName)
+    {
+        VisualElement screen = root.Q<VisualElement>(screenName);
+        return screen != null && !screen.ClassListContains("hidden");
+    }
+
+    /// <summary>
+    /// Échap revient d'un écran de Personnalisation : de l'armurerie à Personnalisation, de
+    /// Personnalisation à l'écran titre. Tenu ici seul : chaque écran qui la lirait de son côté ferait
+    /// revenir de deux écrans d'un coup (le second voit l'appui dans la même image).
+    /// </summary>
+    private void Update()
+    {
+        UnityEngine.InputSystem.Keyboard keyboard = UnityEngine.InputSystem.Keyboard.current;
+        if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame) GoBack();
+    }
+
+    /// <summary>Le retour d'Échap : d'un seul écran, depuis l'armurerie ou Personnalisation.</summary>
+    private void GoBack()
+    {
+        if (root == null) return;
+        if (IsShown("screenWeaponCustomize") && weaponCustomization != null) weaponCustomization.Close();
+        else if (IsShown("screenArmory")) ShowScreenByName("screenTitle");
     }
 
     private static void QuitGame()

@@ -128,9 +128,8 @@ public class SpectatorController : NetworkBehaviour
     private ArenaItemKind handKind;
     private int handVariant = -1;
 
-    // L'étourdissement, vu sur le corps.
-    private ParticleSystem stunSparks;
-    private float nextSparkAt;
+    // L'étourdissement, vu sur le corps : des arcs autour de la tête (ElectricArc).
+    private ArcLines stunArcs;
     private float stunVisual;
 
     /// <summary>Levé à chaque coup de poing VU depuis cette machine (durée du geste) : chez le joueur à
@@ -662,35 +661,54 @@ public class SpectatorController : NetworkBehaviour
         handVariant = -1;
     }
 
-    /// <summary>Un robot étourdi grésille : des étincelles autour de la tête, et il titube sur place (la
+    /// <summary>Un robot étourdi grésille : des arcs autour de la tête, et il titube sur place (la
     /// couche Etourdi de l'Animator, que PlayerAnimator règle sur StunVisualWeight).</summary>
     private void UpdateStunVisual()
     {
         bool stunned = IsSpectatorRole && IsStunnedNow;
         stunVisual = Mathf.MoveTowards(stunVisual, stunned ? 1f : 0f, Time.deltaTime / 0.2f);
+        // Le joueur étourdi ne voit pas les siens : sa tête est sa caméra (il a le voile de SpectatorHud).
+        DrawStunArcs(IsOwner ? 0f : stunVisual);
         if (!stunned) return;
-        if (stunSparks == null) stunSparks = BuildStunSparks();
-        if (stunSparks != null && Time.time >= nextSparkAt)
-        {
-            nextSparkAt = Time.time + 0.22f;
-            stunSparks.Play();
-        }
         if (IsOwner && cameraLook != null) cameraLook.Wobble(stunVisual);
     }
 
-    /// <summary>Les étincelles du gant du taser, copiées sur la tête : la même décharge, vue de l'autre côté.</summary>
-    private ParticleSystem BuildStunSparks()
+    /// <summary>La même décharge que le gant du taser, vue de l'autre côté (2026-10-16) : trois petits arcs
+    /// sautent autour de la tête, du matériau des arcs du gant, et changent de forme quinze fois par
+    /// seconde. `strength` : la part de l'étourdissement montrée (0 les cache).</summary>
+    private void DrawStunArcs(float strength)
     {
-        if (modelAnimator == null) return null;
-        Transform glove = HeldWeapons.TaserGlove(modelAnimator);
-        ParticleSystem source = glove != null ? glove.GetComponentInChildren<ParticleSystem>(true) : null;
+        if (strength <= 0.01f || modelAnimator == null)
+        {
+            if (stunArcs != null) stunArcs.HideAll();
+            return;
+        }
         Transform head = modelAnimator.GetBoneTransform(HumanBodyBones.Head);
-        if (source == null || head == null) return null;
-        ParticleSystem sparks = Instantiate(source, head, false);
-        sparks.name = "EtincellesEtourdi";
-        sparks.transform.localPosition = new Vector3(0f, 0.15f, 0f);
-        sparks.gameObject.SetActive(true);
-        return sparks;
+        if (head == null) return;
+        if (stunArcs == null)
+        {
+            Transform glove = HeldWeapons.TaserGlove(modelAnimator);
+            TaserSparkFX source = glove != null ? glove.GetComponentInChildren<TaserSparkFX>(true) : null;
+            if (source == null || source.ArcMaterial == null) return;
+            stunArcs = new ArcLines(transform, "Arcs d'étourdissement", source.ArcMaterial, 0, new[] { 3, 3, 3 }, null);
+        }
+
+        Vector3 center = head.position + Vector3.up * 0.1f;
+        uint seed = ElectricArc.Hash((uint)NetworkObjectId * 0x9e3779b9U ^ (uint)Mathf.FloorToInt(Time.time / 0.065f));
+        Camera viewer = Camera.main;
+        float width = Mathf.Max(0.008f, viewer != null ? Vector3.Distance(viewer.transform.position, center) * 0.0025f : 0f);
+        for (int i = 0; i < stunArcs.Count; i++)
+        {
+            uint s = ElectricArc.Hash(seed + (uint)(i + 1) * 0x632be5abU);
+            Vector3 from = ElectricArc.OnSphere(ref s);
+            Vector3 to = ElectricArc.Tilt(from, 60f + 50f * ElectricArc.Next01(ref s), ref s);
+            Vector3 a = center + from * 0.13f, b = center + to * 0.13f;
+            // L'arc passe au-dessus du crâne, pas à travers.
+            Vector3 bow = ((from + to) * 0.5f).normalized * 0.05f;
+            ElectricArc.Build(a, b, 3, 0.3f, bow, ref s, stunArcs.Points(i));
+            float force = strength * (0.55f + 0.45f * ElectricArc.Next01(ref s));
+            stunArcs.Show(i, width, force, force);
+        }
     }
 
 #if UNITY_EDITOR || UNITY_INCLUDE_TESTS

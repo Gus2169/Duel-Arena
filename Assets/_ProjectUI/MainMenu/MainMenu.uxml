@@ -112,52 +112,161 @@
             <ui:Button name="lobbyLeaveButton" class="back-button" text="Quitter le salon" />
         </ui:VisualElement>
 
-        <!-- ================= Personnalisation ================= -->
-        <ui:VisualElement name="screenArmory" class="screen screen--wide hidden">
-            <ui:VisualElement class="panel">
-                <ui:Label class="panel-title" text="Personnalisation" />
-
-                <ui:VisualElement class="armory-layout">
-                    <ui:VisualElement class="viewport-column">
-                        <ui:Image name="characterPreviewImage" class="preview-viewport" />
-                        <ui:Label class="preview-hint" text="Glisse pour faire tourner" />
-                    </ui:VisualElement>
-
-                    <ui:VisualElement class="armory-controls-column">
-                        <ui:Label class="section-label" text="COULEUR SOUHAITÉE" />
-                        <ui:VisualElement name="colorSwatchRow" class="wrap-row" />
-                        <ui:Label class="hint-text" text="Dans le prototype, le serveur attribue encore seul la couleur de chaque robot (la première libre de la palette). Ton choix sera pris en compte une fois la personnalisation branchée au serveur." />
-
-                        <ui:Label class="section-label" text="ARME DE DÉPART" />
-                        <ui:VisualElement name="weaponCardRow" class="wrap-row" />
-                        <ui:Label class="hint-text" text="L'arme choisie ici est celle que tu as en main à l'arrivée. En partie, chaque joueur choisit son arme avant chaque manche, pendant la préparation (clic ou touches 1 à 4) ; une fois la manche lancée, on la garde." />
-
-                        <ui:Button name="openWeaponCustomizeButton" class="menu-button" text="Personnaliser les armes →" />
+        <!-- ================= Personnalisation (refaite le 2026-10-16 : deux parties, le robot et les armes) =================
+             Même disposition plein écran que l'armurerie. À gauche le ROBOT (sans arme, en attente, qui tourne) et sa
+             couleur ; à droite les ARMES, résumées, qui ouvrent l'armurerie. Les pastilles et les lignes des armes sont
+             créées par ArmoryController. -->
+        <ui:VisualElement name="screenArmory" class="gunsmith hidden">
+            <ui:VisualElement class="gunsmith-topbar">
+                <ui:VisualElement class="gunsmith-brand">
+                    <ui:Label class="gunsmith-logo" text="DUEL ARENA" />
+                    <ui:Label class="gunsmith-screen-title" text="PERSONNALISATION" />
+                </ui:VisualElement>
+                <ui:VisualElement class="custom-topbar-spacer" />
+                <ui:VisualElement class="gunsmith-player-card">
+                    <ui:VisualElement name="customPlayerColor" class="gunsmith-player-color" />
+                    <ui:VisualElement class="gunsmith-player-text">
+                        <ui:Label name="customPlayerName" class="gunsmith-player-name" text="" />
                     </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>
-            <ui:Button name="armoryBackButton" class="back-button" text="Retour" />
+
+            <ui:VisualElement class="custom-body">
+                <!-- Le robot -->
+                <ui:VisualElement class="custom-half">
+                    <ui:VisualElement class="custom-half-header">
+                        <ui:Label class="custom-half-title" text="ROBOT" />
+                        <ui:Label class="custom-half-subtitle" text="Ton châssis, tel que les autres joueurs le voient." />
+                    </ui:VisualElement>
+                    <ui:Image name="characterPreviewImage" class="custom-robot-view" />
+                    <ui:Label class="custom-section" text="COULEUR" />
+                    <ui:VisualElement name="colorSwatchRow" class="custom-swatch-row" />
+                    <ui:Label name="colorRuleLabel" class="custom-hint" text="" />
+                </ui:VisualElement>
+
+                <!-- Les armes -->
+                <ui:VisualElement class="custom-half custom-half--last">
+                    <ui:VisualElement class="custom-half-header">
+                        <ui:Label class="custom-half-title" text="ARMES" />
+                        <ui:Label class="custom-half-subtitle" text="Le modèle, la finition et les accessoires de chaque arme." />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="weaponSummaryList" class="custom-weapon-list" />
+                    <ui:Button name="openWeaponCustomizeButton" class="menu-button menu-button--primary custom-open-armory" text="Ouvrir l'armurerie" />
+                    <ui:Label class="custom-hint" text="L'arme elle-même se choisit avant chaque manche, pendant la préparation (clic ou touches 1 à 4)." />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+            <ui:VisualElement class="gunsmith-footer">
+                <ui:Button name="armoryBackButton" class="back-button key-hint">
+                    <ui:Label class="key-cap" text="ÉCHAP" />
+                    <ui:Label class="key-action" text="Retour" />
+                </ui:Button>
+                <ui:VisualElement class="key-hint key-hint--static">
+                    <ui:Label class="key-cap" text="GLISSER" />
+                    <ui:Label class="key-action" text="Tourner le robot" />
+                </ui:VisualElement>
+            </ui:VisualElement>
         </ui:VisualElement>
 
-        <!-- ================= Armurerie avancée (accessoires) ================= -->
-        <ui:VisualElement name="screenWeaponCustomize" class="screen screen--wide hidden">
-            <ui:VisualElement class="panel">
-                <ui:Label class="panel-title" text="Armurerie avancée" />
+        <!-- ================= Armurerie (refaite le 2026-10-16 sur la disposition de Call of Duty) =================
+             Écran plein : en haut les classes et la carte du joueur ; à gauche la carte de l'arme, ses
+             tuiles et la bande des choix ; à droite l'arme en grand, sa fiche et le mot de l'IA ; en bas
+             les touches. Les tuiles, les choix et les barres sont créés par WeaponCustomizationController. -->
+        <ui:VisualElement name="screenWeaponCustomize" class="gunsmith hidden">
+            <ui:VisualElement class="gunsmith-topbar">
+                <ui:VisualElement class="gunsmith-brand">
+                    <ui:Label class="gunsmith-logo" text="DUEL ARENA" />
+                    <ui:Label class="gunsmith-screen-title" text="ARMURERIE" />
+                </ui:VisualElement>
+                <ui:VisualElement name="gunsmithTabs" class="gunsmith-tabs" />
+                <ui:VisualElement class="gunsmith-player-card">
+                    <ui:VisualElement name="gunsmithPlayerColor" class="gunsmith-player-color" />
+                    <ui:VisualElement class="gunsmith-player-text">
+                        <ui:Label name="gunsmithPlayerName" class="gunsmith-player-name" text="" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
 
-                <ui:VisualElement name="weaponSwitchRow" class="wrap-row weapon-switch-row" />
+            <ui:VisualElement class="gunsmith-body">
+                <ui:VisualElement class="gunsmith-left">
+                    <ui:VisualElement class="gunsmith-header-card">
+                        <ui:VisualElement class="gunsmith-slot-badge">
+                            <ui:Label name="gunsmithSlotKey" class="gunsmith-slot-key" text="1" />
+                            <ui:Label class="gunsmith-slot-caption" text="TOUCHE" />
+                        </ui:VisualElement>
+                        <ui:VisualElement class="gunsmith-header-text">
+                            <ui:Label name="gunsmithClassLabel" class="gunsmith-class" text="" />
+                            <ui:VisualElement class="gunsmith-model-row">
+                                <ui:Label name="gunsmithModelLabel" class="gunsmith-model" text="" />
+                                <ui:Label name="gunsmithFamilyTag" class="gunsmith-family-tag" text="" />
+                            </ui:VisualElement>
+                            <ui:Label name="gunsmithDescription" class="gunsmith-description" text="" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
 
-                <ui:VisualElement class="viewport-column viewport-column--centered">
-                    <ui:Image name="weaponPreviewImage" class="preview-viewport preview-viewport--wide" />
-                    <ui:Label name="weaponCustomizeName" class="weapon-customize-name" text="" />
-                    <ui:Label class="preview-hint" text="Glisse pour faire tourner" />
+                    <ui:Label class="gunsmith-section" text="ACCESSOIRES" />
+                    <ui:VisualElement name="gunsmithAttachmentGrid" class="gunsmith-grid" />
+                    <ui:Label class="gunsmith-section" text="APPARENCE" />
+                    <ui:VisualElement name="gunsmithLookGrid" class="gunsmith-grid" />
+
+                    <ui:VisualElement class="gunsmith-strip-header">
+                        <ui:Label name="gunsmithStripTitle" class="gunsmith-section gunsmith-strip-title" text="" />
+                        <ui:Label name="gunsmithStripCount" class="gunsmith-strip-count" text="" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="gunsmith-strip">
+                        <ui:Button name="gunsmithStripPrev" class="gunsmith-arrow" text="‹" />
+                        <ui:ScrollView name="gunsmithStripScroll" class="gunsmith-strip-scroll" mode="Horizontal" horizontal-scroller-visibility="Hidden" vertical-scroller-visibility="Hidden" />
+                        <ui:Button name="gunsmithStripNext" class="gunsmith-arrow" text="›" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement class="gunsmith-left-spacer" />
+                    <ui:Label class="gunsmith-left-hint" text="Tout est ouvert à tous. Les accessoires changent l'arme (recul, épaulement, chargeur) ; le modèle et la finition ne changent que son apparence, vue par tous les joueurs. Les dégâts sont ceux de la classe." />
                 </ui:VisualElement>
 
-                <ui:VisualElement name="categoryTabRow" class="tab-row" />
-                <ui:VisualElement name="weaponOptionRow" class="wrap-row" />
-
-                <ui:Label class="hint-text" text="Le modèle et la finition se voient en match, par tous les joueurs, et ne changent rien à l'arme. Les accessoires, eux, la changent (recul, épaulement, chargeur) ; tous sont ouverts à tous. Aucun ne touche aux dégâts : c'est la classe de l'arme qui les fait." />
+                <ui:VisualElement class="gunsmith-right">
+                    <ui:Image name="gunsmithPreview" class="gunsmith-preview" />
+                    <ui:VisualElement class="gunsmith-bottom-right">
+                        <ui:Label class="gunsmith-drag-hint" text="Glisse sur l'arme pour la faire tourner" />
+                        <ui:VisualElement class="gunsmith-stats-column">
+                            <ui:VisualElement class="gunsmith-stats">
+                                <ui:VisualElement class="gunsmith-stats-header">
+                                    <ui:Label class="gunsmith-section gunsmith-stats-title" text="CARACTÉRISTIQUES" />
+                                    <ui:Label name="gunsmithStatsLegend" class="gunsmith-stats-legend" text="" />
+                                </ui:VisualElement>
+                                <ui:VisualElement name="gunsmithStatRows" />
+                                <ui:VisualElement name="gunsmithInfoGrid" class="gunsmith-info-grid" />
+                            </ui:VisualElement>
+                            <ui:VisualElement class="gunsmith-ai">
+                                <ui:Label name="gunsmithAiHeader" class="gunsmith-ai-header" text="" />
+                                <ui:Label name="gunsmithAiText" class="gunsmith-ai-text" text="" />
+                            </ui:VisualElement>
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                </ui:VisualElement>
             </ui:VisualElement>
-            <ui:Button name="weaponCustomizeBackButton" class="back-button" text="Retour" />
+
+            <ui:VisualElement class="gunsmith-footer">
+                <ui:Button name="gunsmithBackButton" class="back-button key-hint">
+                    <ui:Label class="key-cap" text="ÉCHAP" />
+                    <ui:Label class="key-action" text="Retour" />
+                </ui:Button>
+                <ui:VisualElement class="key-hint key-hint--static">
+                    <ui:Label class="key-cap" text="F" />
+                    <ui:Label class="key-action" text="Équiper (ou clic)" />
+                </ui:VisualElement>
+                <ui:VisualElement class="key-hint key-hint--static">
+                    <ui:Label class="key-cap" text="← →" />
+                    <ui:Label class="key-action" text="Prévisualiser" />
+                </ui:VisualElement>
+                <ui:VisualElement class="key-hint key-hint--static">
+                    <ui:Label class="key-cap" text="↑ ↓" />
+                    <ui:Label class="key-action" text="Tuile" />
+                </ui:VisualElement>
+                <ui:VisualElement class="key-hint key-hint--static">
+                    <ui:Label class="key-cap" text="1 – 4" />
+                    <ui:Label class="key-action" text="Arme" />
+                </ui:VisualElement>
+            </ui:VisualElement>
         </ui:VisualElement>
 
         <!-- ================= Options (panneau partagé avec le menu d'Échap) ================= -->

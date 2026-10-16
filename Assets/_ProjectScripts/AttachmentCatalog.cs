@@ -31,8 +31,8 @@ public class AttachmentCatalog : ScriptableObject
     [Tooltip("Le recul vertical avec la poignée verticale (0,8 : 20 % de moins).")]
     [Range(0.2f, 1f)] public float verticalGripRecoil = 0.8f;
 
-    [Tooltip("Le recul à la hanche avec le laser tactique : il aide le tir au juger.")]
-    [Range(0.2f, 1f)] public float laserHipRecoil = 0.7f;
+    [Tooltip("La dispersion à la hanche avec le laser tactique : son cône et la gerbe d'un pompe (0,75 : 25 % de moins, comme dans Rainbow Six jusqu'en Y9S1). Il aide le tir au juger.")]
+    [Range(0.2f, 1f)] public float laserHipSpread = 0.75f;
 
     [Tooltip("Le temps d'épaulement avec la poignée inclinée (0,8 : on vise 20 % plus vite).")]
     [Range(0.2f, 1f)] public float angledGripAimTime = 0.8f;
@@ -103,19 +103,19 @@ public class AttachmentCatalog : ScriptableObject
     }
 
     /// <summary>Ce que les accessoires de la place `slot` font au recul : la poignée verticale retient
-    /// le recul vertical ; le laser, à la hanche, retient tout le recul.</summary>
-    public static void RecoilFactors(AttachmentCatalog catalog, WeaponAttachments attachments, int slot, bool aiming,
+    /// le recul vertical, à la hanche comme épaulé.</summary>
+    public static void RecoilFactors(AttachmentCatalog catalog, WeaponAttachments attachments, int slot,
                                      out float vertical, out float horizontal)
     {
         vertical = horizontal = 1f;
         if (catalog == null) return;
         if (attachments.Grip(slot) == GripKind.Vertical) vertical *= catalog.verticalGripRecoil;
-        if (attachments.Laser(slot) && !aiming)
-        {
-            vertical *= catalog.laserHipRecoil;
-            horizontal *= catalog.laserHipRecoil;
-        }
     }
+
+    /// <summary>Ce que les accessoires de la place `slot` font à la dispersion à la hanche (le cône de
+    /// HipFireSpread, la gerbe d'un pompe) : le laser la resserre. 1 sans laser.</summary>
+    public static float HipSpreadFactor(AttachmentCatalog catalog, WeaponAttachments attachments, int slot)
+        => catalog != null && attachments.Laser(slot) ? catalog.laserHipSpread : 1f;
 
     /// <summary>Le temps d'épaulement d'une arme, avec ou sans la poignée inclinée.</summary>
     public static float AimTime(WeaponData data, GripKind grip, AttachmentCatalog catalog)

@@ -38,7 +38,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 - **Le skill prime sur tout.**
 - **Personne ne commence avec un avantage.** Ni en début de partie, ni en début de manche. Seule exception : un mode ou un réglage de partie qui l'annonce explicitement.
 - **Pas de pay-to-win.** Ce qui s'achète ou se débloque est cosmétique.
-- **Pas de RNG dans la précision.** Deux joueurs qui tirent la même rafale dans les mêmes conditions subissent exactement le même recul. Le recul est une courbe apprenable, jamais une dispersion aléatoire. Les armes à gerbe (fusil à pompe) tirent selon un **motif fixe**, identique à chaque tir : large et lisible au jugé, mais jamais aléatoire (tranché le 2026-10-02).
+- **Pas de RNG dans la précision, sauf à la hanche.** Deux joueurs qui tirent la même rafale dans les mêmes conditions subissent exactement le même recul. Le recul est une courbe apprenable, jamais une dispersion aléatoire. **Épaulée, la balle part exactement dans l'axe.** Les armes à gerbe (fusil à pompe) tirent selon un **motif fixe**, identique à chaque tir : large et lisible au jugé, mais jamais aléatoire (tranché le 2026-10-02). **Seule exception, le tir à la hanche** (tranché par l'utilisateur le 2026-10-16, comme dans *Rainbow Six* : le tir au jugé était trop facile) : la balle part **au hasard dans un cône**, qu'on voit au réticule et qu'on maîtrise (§ 6). Épauler reste le seul moyen d'être précis.
 - **En classé, aucun avantage de latence structurel.** Le classé arrivera **après la sortie**, sur serveur dédié. D'ici là, toutes les parties tournent en mode hôte, qui donne un léger avantage à celui qui héberge : accepté entre amis.
 - **Le son est une information de gameplay**, au même titre que le visuel. Jamais un habillage.
 - **En classé, le duel est pur** : pas de spectateurs, pas d'interventions. Ailleurs, les spectateurs peuvent peser sur le duel (voir § 9), mais toujours par un **geste physique imparfait** : courir, ramasser, viser, lancer. Jamais par un simple bouton qui donnerait un avantage à coup sûr.
@@ -111,7 +111,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Changer d'arme** : touches 1 à 4, **seulement pendant la préparation** (§ 5) ou en attendant un adversaire, plus jamais pendant la manche (tranché le 2026-10-12). Seule exception : ramasser une arme lancée par un spectateur (§ 9, 2026-10-13). L'arme met un temps à sortir (0,4 s au raygun, 0,8 s au sniper), pendant lequel on ne tire pas. Changer annule le rechargement en cours ; chaque arme garde son chargeur.
 
-**Le choix de l'arme** (tranché le 2026-10-12) : **chaque joueur choisit librement la sienne avant chaque manche**, pendant la préparation (§ 5), et la garde toute la manche. L'arme choisie à l'armurerie du menu est celle qu'on a en main en arrivant.
+**Le choix de l'arme** (tranché le 2026-10-12) : **chaque joueur choisit librement la sienne avant chaque manche**, pendant la préparation (§ 5), et la garde toute la manche. On arrive en partie avec la première arme de la panoplie : le menu ne choisit plus d'arme de départ (retiré le 2026-10-16, demandé par l'utilisateur).
 
 **L'identité « insolite »** : des armes qui jouent sur le décalage entre leur apparence et leur effet. Exemples cités : un énorme pistolet bionique démesuré qui tire un minuscule rayon paralysant (ralentit beaucoup, blesse peu), ou à l'inverse un petit pistolet qui tire un énorme trou noir.
 
@@ -131,7 +131,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Les accessoires de l'armurerie** (liste de l'utilisateur du 2026-10-16, appelée à évoluer), façon création de classe de *Call of Duty* et de *Rainbow Six* : **ils changent l'arme qui les porte** (tranché par l'utilisateur le 2026-10-16 ; ils étaient cosmétiques depuis le 2026-10-12). **Tous sont ouverts à tous dès le départ**, comme les viseurs : un choix de configuration, jamais un avantage débloqué (§ 14). Ils se choisissent arme par arme, dans l'armurerie, et se voient sur l'arme tenue, par tous les joueurs et les spectateurs. Valeurs provisoires, à juger en jouant :
 - **Viseurs** : les dix viseurs sans grossissement de *Rainbow Six* (points rouges A, B et C ; holographiques A, B, C et D ; réflex A, B et C), ou la mire de l'arme. Ils ne changent que l'image de visée. *Propositions de Claude, appliquées en attendant l'avis de l'utilisateur :* le sniper garde sa lunette ; les pistolets ne prennent que les trois réflex, les seuls qui tiennent sur une glissière.
-- **Laser tactique** : toujours allumé, son faisceau et son point se voient de partout, il **trahit sa position**. En échange, il **aide le tir au juger** : un recul réduit à la hanche (×0,7), et au sniper, qui n'a pas de réticule à la hanche, un point qui montre où part la balle. Le système de tir sera peut-être refait façon *Rainbow Six* (§ 17) ; le laser y gardera ce rôle.
+- **Laser tactique** : toujours allumé, son faisceau et son point se voient de partout, il **trahit sa position**. En échange, il **aide le tir au juger** : il resserre la dispersion à la hanche (×0,75, le cône comme la gerbe du pompe, comme dans *Rainbow Six* jusqu'en 2024), et son point marque le centre du cône, utile au sniper, qui n'a pas de réticule à la hanche (2026-10-16 ; avant, il réduisait le recul à la hanche).
 - **Poignées**, une seule sous le garde-main, pas sur les pistolets : la **verticale** retient le recul (20 % de recul vertical en moins), l'**inclinée** fait viser plus vite (épaulement ×0,8), comme dans *Rainbow Six*.
 - **Chargeur grande capacité** : la moitié de balles en plus (45 au fusil d'assaut, 8 au sniper, 9 au pompe, 18 au raygun). *Proposition de Claude, appliquée en attendant l'avis de l'utilisateur :* en contrepartie, un rechargement plus long de 15 % (le pompe, qui charge cartouche par cartouche, a seulement plus de cartouches à glisser).
 
@@ -139,7 +139,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Les finitions de l'armurerie** (adoptées le 2026-10-15) : chaque arme se choisit aussi dans une **finition d'usure**, qui raconte depuis combien de temps elle sert et comment on l'a réparée : *d'origine*, *repeinte* (couche après couche, l'apprêt rouge au bord des éclats), *rouillée*, *dépareillée* (des pièces prises sur d'autres armes), *polie par les mains* (la peinture partie là où on la tient), *encrassée* (huile et poussière). Comme les accessoires, elles sont **purement cosmétiques** : aucun effet de jeu, ni sur la silhouette, les hitbox ou le son (§ 8). Le choix se fait arme par arme, dans l'armurerie. **Elles se voient en partie**, sur l'arme tenue, par tous les joueurs et les spectateurs, comme la peinture du robot. Les six existent pour les trois familles d'armes (le stock, la série 30, les armes laser). Comment on les obtient : § 14.
 
-**Tir à la hanche** : possible, et c'est là que les armes à gerbe brillent. Leur gerbe suit un motif fixe (§ 3) : un tir au jugé au fusil à pompe couvre un grand angle, de façon lisible, et deux tirs identiques donnent toujours le même résultat ; en visée, elle se resserre. **Le sniper tire juste à la hanche, mais sans réticule** (tranché le 2026-10-11) : aucun hasard, il faut viser au jugé.
+**Tir à la hanche, façon *Rainbow Six*** (tranché par l'utilisateur le 2026-10-16) : la balle part **au hasard dans un cône**, que les branches du réticule montrent. Il est petit à l'arrêt, **s'ouvre en se déplaçant** (jusqu'au double à l'élan d'un sprint) et **au fil d'une rafale**, se resserre accroupi et allongé, et **se referme pendant qu'on épaule**, à la vitesse de la classe d'arme : la précision arrive tôt au pistolet et au pompe, à mi-course au fusil de précision, à la fin au fusil d'assaut (comme dans *Rainbow Six*). Épaulée, la balle part dans l'axe. C'est là que les armes à gerbe brillent : le pompe n'a pas de cône, sa gerbe à motif fixe (§ 3) couvre un grand angle de façon lisible ; en visée, elle se resserre. **Le sniper a le plus large cône** et pas de réticule à la hanche (tranché le 2026-10-16 ; il tirait juste à la hanche depuis le 2026-10-11) : il faut épauler.
 
 **Dégâts selon la distance** : constants par défaut, à définir arme par arme. Au 2026-10-11 : le pompe perd ses dégâts de 8 à 20 m (jusqu'à ×0,3), le raygun de 15 à 35 m (jusqu'à ×0,75) ; le fusil d'assaut et le sniper n'en perdent pas.
 
@@ -155,7 +155,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Recevoir une balle** : des **parasites et des interférences** à l'écran (un robot ne saigne pas), un son d'impact, et un **très léger** sursaut de caméra. Rien d'exagéré : le sursaut punit déjà le joueur touché en premier.
 
-**La mort** : le châssis vole en pièces (ragdoll, pas de gore), un son signature, et un **replay instantané exagéré au ralenti**, dans l'esprit de la killcam de *Sniper Elite* ou des finish de *Mortal Kombat*. *Première étape le 2026-10-12 : le robot tombe en ragdoll, poussé par le coup qui l'a tué (plus fort au sniper et au pompe), et les tirs du gagnant font encore bouger l'épave ; le joueur mort la regarde de l'extérieur. Calmée le même jour (« violent » au pompe et au taser, retour de l'utilisateur) : l'épave recule d'un pas et tombe, elle ne vole pas ; tué en courant, le robot roule un peu, sans glisser au loin. Les pièces qui volent, le son et le replay restent à faire.*
+**La mort** : le châssis vole en pièces (ragdoll, pas de gore), un son signature, et un **replay instantané exagéré au ralenti**, dans l'esprit de la killcam de *Sniper Elite* ou des finish de *Mortal Kombat*. *Première étape le 2026-10-12 : le robot tombe en ragdoll, poussé par le coup qui l'a tué (plus fort au sniper et au pompe), et les tirs du gagnant font encore bouger l'épave ; le joueur mort la regarde de l'extérieur. Calmée le même jour (« violent » au pompe et au taser, retour de l'utilisateur) : l'épave recule d'un pas et tombe, elle ne vole pas ; tué en courant, le robot roule un peu, sans glisser au loin. Les pièces qui volent, le son et le replay restent à faire. Le 2026-10-16, l'utilisateur veut « un réel effet de puissance » : **le pompe à bout portant et le taser projettent l'épave** dans le sens du coup, un peu soulevée (de 2,5 à 3,5 m en arrière ; le pompe de loin, moins) ; les autres armes la poussent toujours d'un pas.*
 
 ## 7. Mouvement
 
@@ -296,7 +296,7 @@ Le **classique** est le cœur, et le seul du premier prototype. Les autres sont 
 
 **La lisibilité des joueurs** (tranché le 2026-10-04) : un décor **sombre et terne**, presque sans jaune, et des robots de **couleur vive**. **Chaque robot a sa propre couleur**, pour que les spectateurs reconnaissent vite chaque duelliste, même après l'avoir perdu de vue. C'est la peinture qui l'identifie. Les réparations (plaques rapportées) sont de couleur libre.
 
-**La personnalisation viendra après le prototype.** Quand elle arrivera, les peintures seront **limitées à des couleurs vives**, pour que personne ne puisse se camoufler dans le décor (tranché le 2026-10-04). Dans le prototype, c'est le jeu qui donne une couleur différente à chaque joueur.
+**Les peintures sont limitées à des couleurs vives**, pour que personne ne puisse se camoufler dans le décor (tranché le 2026-10-04). **Chaque joueur choisit la sienne** dans le menu Personnalisation, parmi les couleurs de la palette (demandé par l'utilisateur le 2026-10-16) : le serveur la lui donne si aucun autre joueur présent ne la porte, sinon la première couleur libre. Deux robots n'ont donc jamais la même couleur. Le reste de la personnalisation du robot viendra après le prototype.
 
 Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touches d'exagération, animations réactives (peu d'anticipation, gameplay d'abord), impacts et feedbacks exagérés.
 
@@ -360,7 +360,7 @@ Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touch
 *Les points en suspens relevés ensuite ont été tranchés le même jour : peintures limitées à des couleurs vives (§ 13), lobbys privés seulement à la sortie (§ 4), quatre places pour le prototype (§ 16), monnaie gagnée en jouant (§ 14), voix de l'IA rare et discrète pendant la manche (§ 8).*
 
 **À garder en tête pour la personnalisation** (après le prototype) :
-- **Deux duellistes de la même couleur.** Limiter les peintures aux couleurs vives empêche le camouflage, mais pas que deux joueurs choisissent le même rouge, alors que chaque duelliste doit garder sa propre couleur (§ 13).
+- ~~**Deux duellistes de la même couleur.**~~ Réglé le 2026-10-16 avec le choix de la couleur (§ 13) : le serveur ne donne jamais une couleur déjà portée.
 - **Les réparations de couleur libre** : suivent-elles la même limite que les peintures ? Un robot couvert de plaques grises se camouflerait autant qu'un robot peint en gris.
 
 *Ce que lancent les spectateurs (relevé le 2026-10-05) a été tranché le 2026-10-13 : ce sont des armes (§ 9), distinctes des power-ups d'arène, à emplacements fixes (§ 10).*
@@ -368,7 +368,7 @@ Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touch
 **Toujours ouvert** :
 - Les multiplicateurs des headshots (posés arme par arme le 2026-10-11, façon *Call of Duty*), et le TTK qui en découle : à juger en jouant.
 - Les power-ups d'arène (§ 10) : lesquels, et leurs effets. Et les armes qu'on n'obtiendra que des spectateurs (§ 9) : lesquelles.
-- Le système de tir (2026-10-16) : l'utilisateur pense le refaire façon *Rainbow Six*, plus tard. Le laser tactique (§ 6) y retrouvera son effet, la précision à la hanche ; d'ici là, il réduit le recul à la hanche.
+- Le tir à la hanche façon *Rainbow Six* (§ 6, 2026-10-16) : la taille des cônes, l'ouverture en rafale et en mouvement, à juger en jouant.
 - Les finitions d'arme (§ 6 et 14, 2026-10-15) : les défis qui débloquent chacune, arme par arme ; et si un accessoire prend la finition de son arme ou garde la sienne (en attendant, celle de son arme : 2026-10-16).
 - L'ordre de priorité entre les modes, au-delà du classique.
 - Ce qui relève du lore et reste ouvert est listé dans la bible (§ 18 de la bible) : la créature de l'événement légendaire, le nom de l'IA, le style de rendu final.

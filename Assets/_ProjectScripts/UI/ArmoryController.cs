@@ -3,22 +3,22 @@ using UnityEngine;
 using UnityEngine.UIElements;
 
 /// <summary>
-/// Écran « Personnalisation » du menu principal : couleur souhaitée + arme de départ. Posé sur
-/// le même GameObject que l'UIDocument (voir MainMenuController).
+/// L'écran « Personnalisation » du menu principal (`screenArmory`), refait le 2026-10-16 sur demande de
+/// l'utilisateur en deux parties bien distinctes, sur la même disposition plein écran que l'armurerie :
 ///
-/// Volontairement minimal (demandé tel quel : « pas grand chose à faire dedans mais au moins on
-/// l'aura pour la suite ») :
-/// - la couleur n'est qu'une PRÉFÉRENCE stockée en local (GameSettings.PreferredColorIndex).
-///   PlayerPaint reste seul maître de la couleur réellement attribuée (voir CLAUDE.md, § « La
-///   couleur de chaque joueur est attribuée par le serveur ») : câbler ce choix jusqu'au serveur
-///   est un chantier à part (RPC, validation, conflits entre deux clients qui veulent la même
-///   couleur), explicitement reporté à l'arrivée de la vraie personnalisation.
-/// - l'arme de départ, elle, est réellement appliquée : WeaponController relit
-///   GameSettings.PreferredWeaponSlot à l'apparition et déclenche, une seule fois, le même
-///   changement d'arme authentifié que les touches 1 à 4.
+/// - ROBOT, à gauche : le robot qui tourne (CharacterPreviewController : sans arme, en attente à mains
+///   nues) et sa couleur. Le choix part dans la demande de connexion (GameSettings.PreferredColorIndex,
+///   SessionFlow) ; en partie, le serveur la donne si aucun autre joueur ne la porte, sinon la première
+///   libre (PlayerPaint). La palette est celle de PlayerPaint, lue sur le préfab joueur, jamais
+///   recopiée : une copie divergerait en silence le jour où la palette change.
+/// - ARMES, à droite : les quatre armes de la panoplie, chacune avec son modèle, sa finition et ses
+///   accessoires ; un clic ouvre l'armurerie sur elle (WeaponCustomizationController).
 ///
-/// La palette est celle de PlayerPaint, lue sur le préfab joueur (via CharacterPreviewController),
-/// jamais recopiée : une copie divergerait en silence le jour où la palette change.
+/// Il n'y a plus d'arme de départ (retirée le 2026-10-16, demandé par l'utilisateur) : on arrive en
+/// partie avec la première arme, et chacun choisit la sienne avant chaque manche, pendant la
+/// préparation.
+///
+/// Posé sur le même GameObject que l'UIDocument (voir MainMenuController).
 /// </summary>
 public class ArmoryController : MonoBehaviour
 {
@@ -28,7 +28,7 @@ public class ArmoryController : MonoBehaviour
     [Tooltip("Le robot tournant de cet écran : reçoit la couleur en temps réel à chaque clic de swatch.")]
     [SerializeField] private CharacterPreviewController characterPreview;
 
-    [Tooltip("La fenêtre d'armurerie avancée (poignée, viseur, laser, chargeur), ouverte sur l'arme équipée.")]
+    [Tooltip("L'armurerie (modèle, finition et accessoires de chaque arme), ouverte sur l'arme cliquée.")]
     [SerializeField] private WeaponCustomizationController weaponCustomization;
 
     [SerializeField] private MainMenuController mainMenu;
@@ -36,9 +36,12 @@ public class ArmoryController : MonoBehaviour
     [SerializeField] private UIDocument document;
 
     private VisualElement colorRow;
-    private VisualElement weaponRow;
-    private readonly System.Collections.Generic.List<VisualElement> colorSwatches = new();
-    private readonly System.Collections.Generic.List<Button> weaponCards = new();
+    private Label colorRuleLabel;
+    private VisualElement weaponList;
+    private Label playerName;
+    private VisualElement playerColor;
+    private readonly List<VisualElement> colorSwatches = new();
+    private bool wired;
 
     private void OnEnable()
     {
@@ -46,81 +49,137 @@ public class ArmoryController : MonoBehaviour
         VisualElement root = document.rootVisualElement;
 
         colorRow = root.Q<VisualElement>("colorSwatchRow");
-        weaponRow = root.Q<VisualElement>("weaponCardRow");
+        colorRuleLabel = root.Q<Label>("colorRuleLabel");
+        weaponList = root.Q<VisualElement>("weaponSummaryList");
+        playerName = root.Q<Label>("customPlayerName");
+        playerColor = root.Q<VisualElement>("customPlayerColor");
+
+        GameSettings.WeaponLooksChanged += BuildWeaponList;
+        GameSettings.WeaponAttachmentsChanged += BuildWeaponList;
 
         BuildColorSwatches();
-        BuildWeaponCards();
+        BuildWeaponList();
+        RefreshPlayerCard();
 
-        Button customizeButton = root.Q<Button>("openWeaponCustomizeButton");
-        if (customizeButton != null)
-        {
-            customizeButton.clicked += () =>
-            {
-                int slot = Mathf.Max(0, GameSettings.PreferredWeaponSlot);
-                mainMenu.ShowScreenByName("screenWeaponCustomize");
-                weaponCustomization.Open(slot);
-            };
-        }
+        if (wired) return;
+        wired = true;
+        root.Q<Button>("openWeaponCustomizeButton").clicked += () => OpenArmory(0);
     }
+
+    private void OnDisable()
+    {
+        GameSettings.WeaponLooksChanged -= BuildWeaponList;
+        GameSettings.WeaponAttachmentsChanged -= BuildWeaponList;
+    }
+
+    /// <summary>Appelé par MainMenuController quand l'écran s'affiche : le pseudo a pu changer depuis
+    /// l'écran Jouer, et les armes depuis l'armurerie.</summary>
+    public void Refresh()
+    {
+        RefreshPlayerCard();
+        BuildWeaponList();
+    }
+
+    private void OpenArmory(int slot)
+    {
+        mainMenu.ShowScreenByName("screenWeaponCustomize");
+        weaponCustomization.Open(slot);
+    }
+
+    // ------------------------------------------------------------------
+    // ROBOT : la couleur
+    // ------------------------------------------------------------------
+
+    private IReadOnlyList<Color32> Palette => characterPreview != null ? characterPreview.Palette : System.Array.Empty<Color32>();
 
     private void BuildColorSwatches()
     {
         colorRow.Clear();
         colorSwatches.Clear();
 
-        IReadOnlyList<Color32> palette = characterPreview != null ? characterPreview.Palette : System.Array.Empty<Color32>();
+        IReadOnlyList<Color32> palette = Palette;
         int preferred = GameSettings.PreferredColorIndex;
-        int initial = preferred >= 0 && preferred < palette.Count ? preferred : 0;
-        if (characterPreview != null && palette.Count > 0) characterPreview.SetPaint(palette[initial]);
-
         for (int i = 0; i < palette.Count; i++)
         {
             int index = i;
             var swatch = new VisualElement();
             swatch.AddToClassList("color-swatch");
             swatch.style.backgroundColor = new StyleColor(palette[i]);
-            swatch.EnableInClassList("color-swatch--active", index == preferred);
-
-            swatch.RegisterCallback<ClickEvent>(_ =>
-            {
-                GameSettings.PreferredColorIndex = index;
-                foreach (VisualElement s in colorSwatches) s.RemoveFromClassList("color-swatch--active");
-                swatch.AddToClassList("color-swatch--active");
-                if (characterPreview != null) characterPreview.SetPaint(palette[index]);
-            });
-
+            swatch.RegisterCallback<ClickEvent>(_ => SelectColor(index));
             colorSwatches.Add(swatch);
             colorRow.Add(swatch);
         }
+        ShowColor(preferred);
     }
 
-    private void BuildWeaponCards()
+    private void SelectColor(int index)
     {
-        weaponRow.Clear();
-        weaponCards.Clear();
+        GameSettings.PreferredColorIndex = index;
+        ShowColor(index);
+    }
 
-        int preferred = GameSettings.PreferredWeaponSlot;
+    /// <summary>Le robot, la pastille choisie et la carte du joueur dans la couleur `index` (-1 : aucun
+    /// choix, le robot montre la première couleur, celle du premier joueur arrivé).</summary>
+    private void ShowColor(int index)
+    {
+        IReadOnlyList<Color32> palette = Palette;
+        bool chosen = index >= 0 && index < palette.Count;
+        for (int i = 0; i < colorSwatches.Count; i++) colorSwatches[i].EnableInClassList("color-swatch--active", i == index);
+
+        if (palette.Count > 0)
+        {
+            Color32 shown = palette[chosen ? index : 0];
+            if (characterPreview != null) characterPreview.SetPaint(shown);
+            playerColor.style.backgroundColor = new StyleColor(shown);
+        }
+        colorRuleLabel.text = chosen
+            ? "En partie, ton robot porte cette couleur si personne ne l'a déjà ; sinon la première couleur libre de la palette."
+            : "Aucune couleur choisie : en partie, ton robot prend la première couleur libre de la palette.";
+    }
+
+    private void RefreshPlayerCard()
+    {
+        string name = GameSettings.PlayerName;
+        playerName.text = string.IsNullOrEmpty(name) ? "Sans pseudo" : name;
+        ShowColor(GameSettings.PreferredColorIndex);
+    }
+
+    // ------------------------------------------------------------------
+    // ARMES : le résumé de chacune, qui ouvre l'armurerie
+    // ------------------------------------------------------------------
+
+    private void BuildWeaponList()
+    {
+        if (weaponList == null) return;
+        weaponList.Clear();
+        WeaponLooks looks = GameSettings.WeaponLooks;
+        WeaponAttachments attachments = GameSettings.WeaponAttachments;
+
         for (int i = 0; i < loadoutPreview.Length; i++)
         {
             int slot = i;
             WeaponData data = loadoutPreview[i];
-            string label = data != null ? data.weaponName : $"Arme {i + 1}";
+            WeaponCustomizationController.Summarize(data, slot, looks, attachments, out string model, out string details);
 
-            var card = new Button { text = label };
-            card.AddToClassList("weapon-card");
-            card.EnableInClassList("weapon-card--active", slot == preferred);
-
-            card.clicked += () =>
-            {
-                GameSettings.PreferredWeaponSlot = slot;
-                foreach (Button c in weaponCards) c.RemoveFromClassList("weapon-card--active");
-                card.AddToClassList("weapon-card--active");
-                // le robot de l'aperçu prend l'arme de départ en main
-                if (characterPreview != null) characterPreview.RefreshWeapon();
-            };
-
-            weaponCards.Add(card);
-            weaponRow.Add(card);
+            var row = new Button { focusable = false };
+            row.AddToClassList("custom-weapon-row");
+            row.Add(NewLabel((slot + 1).ToString(), "custom-weapon-key"));
+            var text = new VisualElement { pickingMode = PickingMode.Ignore };
+            text.AddToClassList("custom-weapon-text");
+            text.Add(NewLabel(data != null ? data.weaponName.ToUpperInvariant() : $"ARME {slot + 1}", "custom-weapon-class"));
+            text.Add(NewLabel(model, "custom-weapon-model"));
+            text.Add(NewLabel(details, "custom-weapon-details"));
+            row.Add(text);
+            row.Add(NewLabel("›", "custom-weapon-arrow"));
+            row.clicked += () => OpenArmory(slot);
+            weaponList.Add(row);
         }
+    }
+
+    private static Label NewLabel(string text, string ussClass)
+    {
+        var label = new Label(text) { pickingMode = PickingMode.Ignore };
+        label.AddToClassList(ussClass);
+        return label;
     }
 }

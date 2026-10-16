@@ -349,6 +349,8 @@ MonoBehaviour:
   document: {fileID: 0}
   characterPreview: {fileID: 819321429}
   lobby: {fileID: 819321433}
+  armory: {fileID: 0}
+  weaponCustomization: {fileID: 0}
 --- !u!114 &819321427
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -397,6 +399,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: DuelArena.Runtime::CharacterPreviewController
   playerPrefab: {fileID: 4948709451476686498, guid: 153a04d1ca870fd41bf53540dbe6af6c, type: 3}
+  idleClip: {fileID: -203655887218126122, guid: 01c4752e9476ac644abf10709960f57a, type: 3}
   stage: {fileID: 1162473221}
   document: {fileID: 0}
 --- !u!114 &819321430
@@ -419,6 +422,8 @@ MonoBehaviour:
   stage: {fileID: 1162473221}
   document: {fileID: 0}
   mainMenu: {fileID: 819321426}
+  characterPreview: {fileID: 0}
+  aiTypingSpeed: 140
 --- !u!114 &819321431
 MonoBehaviour:
   m_ObjectHideFlags: 0

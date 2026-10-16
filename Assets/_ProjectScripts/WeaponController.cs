@@ -137,6 +137,13 @@ public class WeaponController : NetworkBehaviour
     private float verticalRecoilAccumulated;
     private float horizontalRecoilAccumulated;
 
+    // Le tir à la hanche (HipFireSpread, 2026-10-16) : ce que la rafale a ouvert du cône, et l'horloge
+    // des inputs du dernier tir, chez le tireur et sur le serveur. Les deux se suivent sans se recaler :
+    // un tir refusé par le serveur les écarte un instant, la rafale se referme en moins d'une seconde.
+    private float localBloom, serverBloom;
+    private double localBloomClock = double.NegativeInfinity, serverBloomClock = double.NegativeInfinity;
+
+
     // ------------------------------------------------------------------
     // Chargeur et arme en main (2026-10-08, panoplie le 2026-10-11)
     //
@@ -167,6 +174,10 @@ public class WeaponController : NetworkBehaviour
         /// pas avant.</summary>
         public double readyAt;
         public ushort actionsProcessed;
+        /// <summary>Les balles tirées par ce joueur (2026-10-16) : le numéro de la suivante fait le
+        /// hasard de son tir à la hanche (HipFireSpread), le même chez le tireur, qui le prédit, et sur
+        /// le serveur. Un client ne l'avance qu'en tirant vraiment.</summary>
+        public ushort shotsFired;
         /// <summary>Place de l'arme en main (0 à 3).</summary>
         public byte equipped;
         public byte ammo0, ammo1, ammo2, ammo3;
@@ -467,12 +478,6 @@ public class WeaponController : NetworkBehaviour
         heardMagazine = localMagazine;
     }
 
-    /// <summary>Arme choisie à l'armurerie du menu principal (GameSettings.PreferredWeaponSlot),
-    /// à appliquer une seule fois dès que possible — consommée par HandleSwitchInput, qui passe
-    /// par le MÊME changement d'arme authentifié que les touches 1 à 4 (aucune confiance nouvelle
-    /// demandée au serveur). -1 = rien en attente.</summary>
-    private int pendingStartupSlot = -1;
-
     public override void OnNetworkSpawn()
     {
         if (IsServer) ServerRefillMagazine();
@@ -481,12 +486,6 @@ public class WeaponController : NetworkBehaviour
         heardMagazine = localMagazine;
         actionsSent = localMagazine.actionsProcessed;
         networkMagazine.OnValueChanged += HandleMagazineChanged;
-
-        if (IsOwner)
-        {
-            int preferred = GameSettings.PreferredWeaponSlot;
-            if (preferred > 0 && preferred < MaxSlots) pendingStartupSlot = preferred;
-        }
     }
 
     public override void OnNetworkDespawn()
@@ -719,9 +718,7 @@ public class WeaponController : NetworkBehaviour
     {
         int wanted = input.WeaponSlotPressedThisFrame;
         if (wanted < 0 && requestedSlot >= 0) wanted = requestedSlot;
-        if (wanted < 0 && pendingStartupSlot >= 0) wanted = pendingStartupSlot;
         requestedSlot = -1;
-        pendingStartupSlot = -1; // un seul essai, qu'il réussisse ou non (place déjà équipée, etc.)
 #if UNITY_EDITOR
         if (AutopilotWeaponSlot >= 0 && AutopilotWeaponSlot != localMagazine.equipped) wanted = AutopilotWeaponSlot;
         if (AutopilotWeaponCycle && SlotCount > 0)
@@ -831,14 +828,20 @@ public class WeaponController : NetworkBehaviour
         // La gerbe se resserre en visée : celle du dernier input envoyé, que le serveur relira.
         bool aiming = locomotion != null && locomotion.IsAiming;
 
+        // Le tir à la hanche (2026-10-16) : la balle part au hasard dans le cône, que le serveur
+        // recalculera sur son propre état du même input (ServerFire). Seul l'axe du regard lui est
+        // envoyé.
+        float hipScale = AttachmentCatalog.HipSpreadFactor(data.attachmentCatalog, Attachments, firedSlot);
+        Vector3 shot = PelletDirection(direction, LocalHipFireOffset(data, firedSlot, hipScale));
+
         // Raycast LOCAL : ne sert qu'au feedback visuel instantané du tireur (tracer/impact), pas
         // aux dégâts ni à ce qui est envoyé au serveur — voir ServerFire. Il utilise la MÊME
-        // résolution que le serveur (ResolveShot, PelletDirection) pour que ce que le tireur voit
-        // corresponde à ce que le serveur décide, aux différences de latence près.
+        // résolution que le serveur (ResolveShot, PelletDirection, HipFireSpread) pour que ce que le
+        // tireur voit corresponde à ce que le serveur décide, aux différences de latence près.
         var impacts = new ShotImpactSounds(data);
         for (int i = 0; i < data.PelletCount; i++)
         {
-            Vector3 pellet = PelletDirection(direction, data.PelletOffset(i, aiming));
+            Vector3 pellet = PelletDirection(shot, data.PelletOffset(i, aiming, hipScale));
             bool hitSomething = ResolveShot(data, origin, pellet, out Vector3 end, out Vector3 localNormal, out Collider bodyHit, out _);
             bool onBody = bodyHit != null;
             // Une épave sur le chemin encaisse le tir et l'arrête (cosmétique, voir RobotCorpse).
@@ -883,7 +886,7 @@ public class WeaponController : NetworkBehaviour
             var damage = new Dictionary<Health, float>();
             for (int i = 0; i < data.PelletCount; i++)
             {
-                Vector3 pellet = PelletDirection(direction, data.PelletOffset(i, aiming));
+                Vector3 pellet = PelletDirection(shot, data.PelletOffset(i, aiming, hipScale));
                 ResolveShot(data, origin, pellet, out _, out _, out Collider body, out float distance);
                 AddDamage(damage, data, body, distance);
             }
@@ -951,6 +954,69 @@ public class WeaponController : NetworkBehaviour
     private void PlayFireSound(WeaponData data)
     {
         if (weaponAudio != null) weaponAudio.PlayShot(data);
+    }
+
+    // ------------------------------------------------------------------
+    // Le tir à la hanche façon Rainbow Six (2026-10-16, HipFireSpread)
+    // ------------------------------------------------------------------
+
+    /// <summary>Le cône (degrés) d'un tir de la place `slot` : à `speed` m/s, dans la posture `stance`,
+    /// après `aimHeldTime` s d'épaulement, la rafale ayant ouvert `bloom` degrés. Le même calcul chez le
+    /// tireur et sur le serveur, chacun sur son état.</summary>
+    private float HipCone(WeaponData data, int slot, float speed, PlayerLocomotion.Stance stance, float aimHeldTime, float bloom, float hipScale)
+        => HipFireSpread.Cone(data, speed, stance, HipFireSpread.AimProgress(aimHeldTime, AimTimeOf(slot)), bloom, hipScale);
+
+    /// <summary>La graine de la balle numéro `shot` de ce joueur.</summary>
+    private uint ShotSeed(int shot) => HipFireSpread.Seed(IsNetworked ? OwnerClientId : 0ul, shot);
+
+    /// <summary>Chez le tireur, au tir : l'écart (degrés) de la balle dans le cône, la rafale avancée
+    /// d'une balle. Appelé après TryConsumeRound : le numéro de la balle est celui que le serveur
+    /// comptera.</summary>
+    private Vector2 LocalHipFireOffset(WeaponData data, int slot, float hipScale)
+    {
+        double clock = locomotion != null ? locomotion.InputClock : Time.timeAsDouble;
+        float bloom = HipFireSpread.BloomAt(localBloom, localBloomClock, clock, data.hipSpreadRecovery);
+        localBloom = HipFireSpread.BloomAfterShot(data, bloom);
+        localBloomClock = clock;
+        if (locomotion == null) return HipFireSpread.Offset(HipFireSpread.Cone(data, 0f, PlayerLocomotion.Stance.Standing, 0f, bloom, hipScale), ShotSeed(localMagazine.shotsFired));
+        float cone = HipCone(data, slot, locomotion.HorizontalSpeed, locomotion.CurrentStance, locomotion.AimHeldTime, bloom, hipScale);
+        return HipFireSpread.Offset(cone, ShotSeed(localMagazine.shotsFired));
+    }
+
+
+    /// <summary>Serveur, au tir jugé : l'écart (degrés) de la balle dans le cône, calculé sur l'état que
+    /// le serveur connaît de l'input de référence (vitesse, posture, épaulement, rafale), jamais sur ce
+    /// que le client prétend. `shot` : le numéro de la balle (MagazineState.shotsFired).</summary>
+    private Vector2 ServerHipFireOffset(WeaponData data, int slot, int inputSequence, int shot, float hipScale)
+    {
+        float speed = 0f, aimHeld = 0f;
+        PlayerLocomotion.Stance stance = PlayerLocomotion.Stance.Standing;
+        double clock = Time.timeAsDouble;
+        if (locomotion != null)
+        {
+            locomotion.ServerHipFireState(inputSequence, out speed, out stance);
+            aimHeld = locomotion.ServerAimHeldTimeAt(inputSequence);
+            clock = locomotion.ServerInputClockAt(inputSequence);
+        }
+        float bloom = HipFireSpread.BloomAt(serverBloom, serverBloomClock, clock, data.hipSpreadRecovery);
+        serverBloom = HipFireSpread.BloomAfterShot(data, bloom);
+        serverBloomClock = clock;
+        return HipFireSpread.Offset(HipCone(data, slot, speed, stance, aimHeld, bloom, hipScale), ShotSeed(shot));
+    }
+
+    /// <summary>Chez le tireur : le cône (degrés) où partirait sa prochaine balle, que le réticule
+    /// montre à la hanche (CrosshairUI). 0 sans arme ou pour une arme à plombs.</summary>
+    public float HipSpreadDegrees
+    {
+        get
+        {
+            WeaponData data = LocalData;
+            if (data == null || locomotion == null) return 0f;
+            int slot = DataSlot(localMagazine.equipped);
+            float bloom = HipFireSpread.BloomAt(localBloom, localBloomClock, locomotion.InputClock, data.hipSpreadRecovery);
+            return HipCone(data, slot, locomotion.HorizontalSpeed, locomotion.CurrentStance, locomotion.AimHeldTime, bloom,
+                           AttachmentCatalog.HipSpreadFactor(data.attachmentCatalog, Attachments, slot));
+        }
     }
 
     /// <summary>
@@ -1307,6 +1373,11 @@ public class WeaponController : NetworkBehaviour
         // ce que le client prétend.
         bool aiming = locomotion != null && locomotion.ServerInputFlags(action.inputSequence, out _, out bool aimHeld) && aimHeld;
 
+        // Le tir à la hanche (2026-10-16) : le cône est celui de l'état du serveur à l'input de
+        // référence, le hasard celui de la balle que le serveur vient de compter.
+        float hipScale = AttachmentCatalog.HipSpreadFactor(data.attachmentCatalog, Attachments, firedSlot);
+        Vector3 shot = PelletDirection(direction, ServerHipFireOffset(data, firedSlot, action.inputSequence, magazine.shotsFired, hipScale));
+
         // Le tireur ne doit pas se tirer dessus : son propre hitbox entoure sa caméra, et en lean
         // celle-ci peut carrément en sortir, ce qui mettrait son propre collider en travers du
         // rayon. On le retire de la requête le temps du tir. Le try/finally garantit qu'il revient
@@ -1380,7 +1451,7 @@ public class WeaponController : NetworkBehaviour
             var zones = new System.Text.StringBuilder();
             for (int i = 0; i < count; i++)
             {
-                Vector3 pellet = PelletDirection(direction, data.PelletOffset(i, aiming));
+                Vector3 pellet = PelletDirection(shot, data.PelletOffset(i, aiming, hipScale));
                 bool hitSomething = ResolveShot(data, origin, pellet, out ends[i], out normals[i], out Collider bodyHit, out float distance);
                 if (hitSomething && i < 31) hitMask |= 1 << i;
                 if (bodyHit != null && i < 31) bodyMask |= 1 << i;
@@ -1416,12 +1487,12 @@ public class WeaponController : NetworkBehaviour
                 Debug.Log($"[Serveur] {data.weaponName} : {pair.Key.transform.root.name} touché ({zones.ToString().TrimEnd()}) pour {pair.Value:F0} dégâts (vie restante : {pair.Key.Current}).");
 
                 // Le coup qui tue : l'épave part dans le sens du tir, d'autant plus fort que le tir
-                // était lourd (PlayerDeath, cosmétique).
+                // était lourd ; le pompe la projette (KillImpulse ; PlayerDeath, cosmétique).
                 if (before > 0f && pair.Key.IsDead) killed = true;
                 if (before > 0f && pair.Key.IsDead && pair.Key.TryGetComponent(out PlayerDeath death))
                 {
                     Vector3 point = firstHitPoint.TryGetValue(pair.Key, out Vector3 p) ? p : pair.Key.transform.position + Vector3.up;
-                    death.ServerNotifyKilled(point, direction * DeathImpulse(pair.Value));
+                    death.ServerNotifyKilled(point, KillImpulse(data, shot, pair.Value));
                 }
             }
 
@@ -1460,7 +1531,7 @@ public class WeaponController : NetworkBehaviour
             // mêmes colliders et restent comparables.
             if (rewoundPlayers.Count > 0)
             {
-                ResolveShot(data, origin, PelletDirection(direction, data.PelletOffset(0, aiming)), out _, out _, out Collider bodyHitLive, out _);
+                ResolveShot(data, origin, PelletDirection(shot, data.PelletOffset(0, aiming, hipScale)), out _, out _, out Collider bodyHitLive, out _);
                 bool hitWithoutRewind = bodyHitLive != null;
 
                 if (diagHitWithRewind && !hitWithoutRewind) diagRewindGained++;
@@ -1864,6 +1935,7 @@ public class WeaponController : NetworkBehaviour
         }
         if (magazine.ammo == 0) return false;
         magazine.ammo--;
+        unchecked { magazine.shotsFired++; }
         return true;
     }
 
@@ -2090,12 +2162,32 @@ public class WeaponController : NetworkBehaviour
     /// au pompe, retour de l'utilisateur) : l'épave recule d'un pas, elle ne s'envole pas.</summary>
     public static float DeathImpulse(float damage) => Mathf.Clamp(damage * 0.35f, 14f, 45f);
 
+    /// <summary>La part d'un coup puissant que garde un tir qui n'a pas tout mis au but (le pompe de
+    /// loin, quelques plombs) : il projette moins, jamais moins que cette part.</summary>
+    public const float MinKnockbackShare = 0.4f;
+
+    /// <summary>
+    /// L'impulsion (N·s) du coup qui tue, dans `direction` (celle du tir), pour `damage` dégâts. Une arme
+    /// puissante (WeaponData.killKnockback : le pompe, demandé par l'utilisateur le 2026-10-16 pour « un
+    /// réel effet de puissance ») projette l'épave d'un bloc, à plat dans le sens du tir et un peu
+    /// soulevée, d'autant plus que le tir a mis de dégâts au but ; les autres la poussent selon les
+    /// dégâts (DeathImpulse). Fonction pure, testée.
+    /// </summary>
+    public static Vector3 KillImpulse(WeaponData data, Vector3 direction, float damage)
+    {
+        if (data == null || data.killKnockback <= 0f) return direction.normalized * DeathImpulse(damage);
+        float full = data.damagePerHit * data.PelletCount;
+        float share = full > 0f && float.IsFinite(damage) ? Mathf.Clamp01(damage / full) : 1f;
+        float power = Mathf.Lerp(MinKnockbackShare, 1f, share);
+        return RobotCorpse.KnockbackImpulse(direction, data.killKnockback * power, data.killKnockbackLift * power);
+    }
+
     private void ApplyRecoilKick(WeaponData data)
     {
         float recoilMultiplier = GetRecoilMultiplier();
-        // les accessoires (GDD § 6) : la poignée verticale retient le recul vertical, le laser tout le
-        // recul quand on tire sans viser
-        AttachmentCatalog.RecoilFactors(data.attachmentCatalog, Attachments, DataSlot(localMagazine.equipped), locomotion.IsAiming,
+        // les accessoires (GDD § 6) : la poignée verticale retient le recul vertical (le laser, lui,
+        // resserre le cône à la hanche : HipFireSpread)
+        AttachmentCatalog.RecoilFactors(data.attachmentCatalog, Attachments, DataSlot(localMagazine.equipped),
                                         out float verticalFactor, out float horizontalFactor);
         float verticalKick = data.verticalRecoilPattern.Evaluate(shotIndexInBurst) * data.recoilPerShotDegrees * recoilMultiplier
                              * verticalFactor;

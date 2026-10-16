@@ -3,22 +3,19 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// Réglages du joueur, persistés en PlayerPrefs : sensibilité souris, graphismes, remappage des
-/// touches, et les deux préférences de l'armurerie (couleur souhaitée, arme de départ).
+/// touches, et ce que le joueur choisit dans Personnalisation (la couleur de son robot, l'apparence
+/// et les accessoires de ses armes).
 ///
-/// Catégorie C stricte, au même titre que le lean ou le head bob : rien ici n'est lu par la
-/// simulation, le hitbox ou le serveur. La sensibilité ne touche qu'à la lecture de la souris
-/// (PlayerCameraLook) ; l'arme de départ ne fait que déclencher, côté PROPRIÉTAIRE et une seule
-/// fois au spawn, le même changement d'arme authentifié que les touches 1 à 4
-/// (WeaponController.HandleSwitchInput) — le serveur valide exactement comme pour un appui clavier,
-/// aucune confiance nouvelle n'est demandée. La couleur souhaitée n'est PAS encore branchée au
-/// serveur (PlayerPaint choisit seul, voir CLAUDE.md « Personnalisation ») : elle n'est stockée
-/// que pour le jour où elle le sera.
+/// Catégorie C, au même titre que le lean ou le head bob : rien ici n'est lu par la simulation ni le
+/// hitbox. La sensibilité ne touche qu'à la lecture de la souris (PlayerCameraLook). Les choix de
+/// Personnalisation partent dans la demande de connexion (SessionFlow), et c'est le serveur qui les
+/// borne et les applique : la couleur, il la donne si aucun autre joueur ne la porte (PlayerPaint).
 /// </summary>
 public static class GameSettings
 {
     private const string SensitivityKey = "DuelArena.Sensitivity";
-    private const string PreferredWeaponKey = "DuelArena.PreferredWeapon";
-    private const string PreferredColorKey = "DuelArena.PreferredColorIndex";
+    /// <summary>La clé de la couleur choisie dans PlayerPrefs (publique pour les tests).</summary>
+    public const string PreferredColorKey = "DuelArena.PreferredColorIndex";
     private const string FullscreenKey = "DuelArena.Fullscreen";
     private const string ResolutionIndexKey = "DuelArena.ResolutionIndex";
     private const string VSyncKey = "DuelArena.VSync";
@@ -215,20 +212,32 @@ public static class GameSettings
     // La sensibilité de CETTE instance du jeu, lue une fois (NaN = pas encore lue).
     private static float sensitivity = float.NaN;
 
-    /// <summary>Place de la panoplie choisie à l'armurerie (0 à 3). -1 = aucune préférence : on
-    /// garde la première arme, comme avant que l'armurerie existe.</summary>
-    public static int PreferredWeaponSlot
-    {
-        get => PlayerPrefs.GetInt(PreferredWeaponKey, -1);
-        set { PlayerPrefs.SetInt(PreferredWeaponKey, value); PlayerPrefs.Save(); }
-    }
-
-    /// <summary>Index souhaité dans la palette de PlayerPaint, -1 = aucune préférence.</summary>
+    /// <summary>
+    /// La couleur choisie pour le robot dans Personnalisation : son rang dans la palette de PlayerPaint,
+    /// -1 = aucun choix (le serveur donne alors la première couleur libre). Annoncée à l'hôte en se
+    /// connectant (SessionFlow) ; le serveur la donne si aucun autre joueur ne la porte (2026-10-16,
+    /// demandé par l'utilisateur).
+    ///
+    /// Lue une fois par lancement, puis gardée en mémoire, comme le pseudo : deux instances du jeu sur
+    /// un même PC partagent la clé du registre, et chacune doit garder sa couleur.
+    /// </summary>
     public static int PreferredColorIndex
     {
-        get => PlayerPrefs.GetInt(PreferredColorKey, -1);
-        set { PlayerPrefs.SetInt(PreferredColorKey, value); PlayerPrefs.Save(); }
+        get
+        {
+            if (!preferredColor.HasValue) preferredColor = PlayerPrefs.GetInt(PreferredColorKey, -1);
+            return preferredColor.Value;
+        }
+        set
+        {
+            preferredColor = value;
+            PlayerPrefs.SetInt(PreferredColorKey, value);
+            PlayerPrefs.Save();
+        }
     }
+
+    // La couleur choisie par CETTE instance, lue une fois (vide = pas encore lue).
+    private static int? preferredColor;
 
     public static bool Fullscreen
     {

@@ -2,9 +2,10 @@ using UnityEngine;
 
 /// <summary>
 /// Le laser tactique (2026-10-16, GDD § 6) : un point rouge là où le joueur vise, et, chez les autres,
-/// le faisceau qui y mène depuis l'émetteur de son laser. Il aide le tir au juger (le recul à la hanche
-/// est retenu : AttachmentCatalog.laserHipRecoil) et trahit qui le porte : le faisceau se voit de
-/// loin, le point sur le mur aussi. Un vrai choix, comme le voulait l'utilisateur.
+/// le faisceau qui y mène depuis l'émetteur de son laser. Il aide le tir au juger (le cône de la hanche
+/// et la gerbe d'un pompe se resserrent : AttachmentCatalog.laserHipSpread ; le point marque le centre
+/// du cône) et trahit qui le porte : le faisceau se voit de loin, le point sur le mur aussi. Un vrai
+/// choix, comme le voulait l'utilisateur.
 ///
 /// Le point est au bout du regard : chez le joueur, le rayon même du tir (la caméra) ; chez les
 /// autres, l'œil et le regard affichés de sa pose (PlayerLocomotion.DisplayEyePosition,

@@ -48,7 +48,7 @@ public class TaserController : NetworkBehaviour
     [Tooltip("Le poing qui part, à l'appui (un au hasard). Vide = silencieux.")]
     [SerializeField] private AudioClip[] swingSounds = new AudioClip[0];
     [SerializeField, Range(0f, 1f)] private float swingVolume = 0.3f;
-    [Tooltip("La décharge, au CONTACT (contactDelay après l'appui), avec les étincelles du gant (un au hasard). Vide = silencieux.")]
+    [Tooltip("La décharge, au CONTACT (contactDelay après l'appui), avec les arcs du gant (un au hasard). Vide = silencieux.")]
     [SerializeField] private AudioClip[] zapSounds = new AudioClip[0];
     [SerializeField, Range(0f, 1f)] private float zapVolume = 1f;
     [SerializeField] private AudioSource audioSource;
@@ -72,14 +72,17 @@ public class TaserController : NetworkBehaviour
     private Health ownHealth;
     private PlayerMatchState matchState; // statistiques du match
 
-    /// <summary>Ce que pousse un coup de taser mortel sur l'épave (N·s, ressenti). Ramené de 30 à 20
-    /// le 2026-10-12, et presque à plat (il soulevait l'épave par la tête) : « violent », retour de
-    /// l'utilisateur. Le robot foudroyé s'effondre en reculant.</summary>
-    private const float StrikeDeathImpulse = 20f;
+    /// <summary>Le coup de taser mortel projette l'épave (2026-10-16, demandé par l'utilisateur : « un
+    /// réel effet de puissance ») : l'épave entière part à cette vitesse (m/s), à plat dans le sens du
+    /// coup, un peu soulevée. Ressenti, à juger en jouant. Avant, une simple poussée de 20 N·s (le
+    /// 2026-10-12, le ragdoll paraissait « violent » : c'était la vitesse héritée d'une image de
+    /// rattrapage, bornée depuis, RobotCorpse.MaxInheritedSpeed).</summary>
+    public const float StrikeKnockback = 4.5f;
+    public const float StrikeKnockbackLift = 1.2f;
 
     /// <summary>L'impulsion (N·s) d'un coup de taser mortel donné dans `strikeDirection`.</summary>
     public static Vector3 DeathImpulse(Vector3 strikeDirection)
-        => (strikeDirection.normalized + Vector3.up * 0.1f).normalized * StrikeDeathImpulse;
+        => RobotCorpse.KnockbackImpulse(strikeDirection, StrikeKnockback, StrikeKnockbackLift);
 
     private float localStrikeEndsAt = -1f;
 
@@ -94,6 +97,7 @@ public class TaserController : NetworkBehaviour
     private int serverStrikeFirstInput = int.MaxValue; // premier input produit après l'appui
 
     private readonly Collider[] overlapBuffer = new Collider[16];
+    private readonly Collider[] previewBuffer = new Collider[16];
 
     public float StrikeDuration => strikeDuration;
     public float ContactDelay => contactDelay;
@@ -104,6 +108,11 @@ public class TaserController : NetworkBehaviour
     /// <summary>Levé à chaque coup VU depuis cette machine : chez le joueur à l'appui, chez les
     /// autres à la diffusion du serveur. Purement cosmétique (animation).</summary>
     public event Action OnStrike;
+
+    /// <summary>L'instant (Time.time) du dernier coup vu ici, levé avec OnStrike. Les arcs du gant le
+    /// sondent (TaserSparkFX) : la copie du gant de la vue subjective ne s'active qu'une fois le geste
+    /// commencé, et un abonnement à OnStrike ratait le coup. Cosmétique.</summary>
+    public float LastStrikeSeenAt { get; private set; } = float.NegativeInfinity;
 
     private bool IsNetworked => NetworkObject != null && IsSpawned;
 
@@ -154,6 +163,7 @@ public class TaserController : NetworkBehaviour
     {
         localStrikeEndsAt = Time.time + strikeDuration;
         if (weapon != null) weapon.CancelLocalReload();
+        LastStrikeSeenAt = Time.time;
         OnStrike?.Invoke();
         PlayStrikeSound();
 
@@ -222,6 +232,7 @@ public class TaserController : NetworkBehaviour
     private void StrikeClientRpc()
     {
         if (IsOwner) return; // déjà joué à l'appui
+        LastStrikeSeenAt = Time.time;
         OnStrike?.Invoke();
         PlayStrikeSound();
     }
@@ -309,10 +320,12 @@ public class TaserController : NetworkBehaviour
     /// Un volume balayé plutôt qu'un rayon : au corps à corps, viser au centimètre n'a pas de sens.
     /// Un chevauchement plutôt qu'un balayage (SphereCast) : un SphereCast ignore les colliders dans
     /// lesquels il commence, donc un adversaire collé à soi serait intouchable. Le plus proche
-    /// l'emporte, et la ligne entre l'œil et le point touché ne doit traverser aucun mur.
+    /// l'emporte, et la ligne entre l'œil et le point touché ne doit traverser aucun mur. Les zones sous
+    /// `ignoreRoot` ne comptent pas (l'aperçu des arcs, qui ne peut pas éteindre celles du joueur).
     /// </summary>
     public static Collider QueryStrike(Vector3 origin, Vector3 direction, float range, float radius,
-                                       LayerMask hitboxMask, LayerMask worldMask, Collider[] buffer)
+                                       LayerMask hitboxMask, LayerMask worldMask, Collider[] buffer,
+                                       Transform ignoreRoot = null)
     {
         direction = direction.normalized;
         int count = Physics.OverlapCapsuleNonAlloc(origin, origin + direction * range, radius, buffer,
@@ -323,6 +336,7 @@ public class TaserController : NetworkBehaviour
         {
             Collider c = buffer[i];
             if (c == null || !c.enabled) continue;
+            if (ignoreRoot != null && c.transform.IsChildOf(ignoreRoot)) continue;
 
             Vector3 point = c.ClosestPoint(origin);
             Vector3 toPoint = point - origin;
@@ -338,8 +352,43 @@ public class TaserController : NetworkBehaviour
         return best;
     }
 
+    /// <summary>
+    /// Là où la décharge irait, vue d'ici et maintenant : le corps que le coup toucherait (QueryStrike,
+    /// sans rewind, le joueur lui-même exclu), sinon le décor à portée. Les arcs du gant y vont
+    /// (TaserSparkFX). Purement visuel : seul le serveur juge le coup.
+    /// </summary>
+    public bool TryPreviewContact(Vector3 origin, Vector3 direction, out Vector3 point, out bool body)
+    {
+        point = default;
+        body = false;
+        if (direction.sqrMagnitude < 1e-6f) return false;
+        direction.Normalize();
+        Collider hit = QueryStrike(origin, direction, range, radius, hitboxMask, worldMask, previewBuffer, transform.root);
+        if (hit != null)
+        {
+            point = hit.ClosestPoint(origin);
+            body = true;
+            return true;
+        }
+        if (Physics.Raycast(origin, direction, out RaycastHit wall, range, worldMask, QueryTriggerInteraction.Ignore))
+        {
+            point = wall.point;
+            return true;
+        }
+        return false;
+    }
+
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+    /// <summary>Surface de test : un coup vu ici maintenant, comme à la diffusion du serveur.</summary>
+    public void TestSeeStrike()
+    {
+        LastStrikeSeenAt = Time.time;
+        OnStrike?.Invoke();
+    }
+#endif
+
     /// <summary>Le geste s'entend en deux temps : le poing qui part à l'appui, la décharge au contact,
-    /// en même temps que les étincelles (TaserSparkFX), que le coup touche ou non.</summary>
+    /// en même temps que les arcs du gant (TaserSparkFX), que le coup touche ou non.</summary>
     private void PlayStrikeSound()
     {
         PlayOneOf(swingSounds, swingVolume);

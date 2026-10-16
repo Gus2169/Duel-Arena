@@ -39,12 +39,34 @@ public class RobotCorpse : MonoBehaviour
     /// 12 m/s. Un robot tué en courant roule encore un peu, sans glisser au loin.</summary>
     public const float MaxInheritedSpeed = 2f;
 
+    // Les masses (kg) des pièces, celles de l'assistant Ragdoll d'Unity.
+    private const float PelvisMass = 12f, TorsoMass = 14f, HeadMass = 5f, ArmMass = 2.5f, ForearmMass = 1.8f, ThighMass = 7f, CalfMass = 4f;
+
+    /// <summary>La masse d'une épave entière (kg) : un coup puissant se règle en vitesse, convertie par
+    /// elle en impulsion avant de voyager (KnockbackImpulse).</summary>
+    public const float RobotMass = PelvisMass + TorsoMass + HeadMass + 2f * (ArmMass + ForearmMass) + 2f * (ThighMass + CalfMass);
+
+    /// <summary>
+    /// L'impulsion (N·s) d'un coup PUISSANT (le pompe, le taser, 2026-10-16 : « un réel effet de
+    /// puissance ») : de quoi lancer l'épave entière à `speed` m/s, à plat dans le sens de `direction`,
+    /// et la soulever à `lift` m/s. Un tir plongeant ne l'enfonce pas dans le sol. Fonction pure, testée.
+    /// </summary>
+    public static Vector3 KnockbackImpulse(Vector3 direction, float speed, float lift)
+    {
+        Vector3 flat = new Vector3(direction.x, 0f, direction.z);
+        flat = flat.sqrMagnitude > 1e-6f ? flat.normalized : Vector3.zero;
+        return (flat * Mathf.Max(0f, speed) + Vector3.up * Mathf.Max(0f, lift)) * RobotMass;
+    }
+
     private static readonly RaycastHit[] HitBuffer = new RaycastHit[16];
 
     /// <summary>Centre de l'épave (le bassin), suivi par la vue du joueur mort.</summary>
     public Vector3 Center => pelvis != null ? pelvis.worldCenterOfMass : transform.position;
 
     public IReadOnlyList<Rigidbody> Bodies => bodies;
+
+    /// <summary>La masse de ses pièces (kg) : RobotMass pour un robot entier.</summary>
+    public float TotalMass => totalMass;
 
     /// <summary>
     /// Crée l'épave du modèle animé par `liveAnimator`, dans sa pose de l'image, lancée à
@@ -235,7 +257,7 @@ public class RobotCorpse : MonoBehaviour
         if (hips == null || spine == null || head == null)
         {
             // Modèle incomplet : un seul bloc, plutôt qu'un robot figé debout.
-            pelvis = AddBody(copyRoot, 60f);
+            pelvis = AddBody(copyRoot, RobotMass);
             AddBox(copyRoot, copyRoot.position + Vector3.up * 0.9f, new Vector3(0.45f, 1.8f, 0.3f), copyRoot);
             FinishBodies(velocity);
             return;
@@ -251,18 +273,18 @@ public class RobotCorpse : MonoBehaviour
         Vector3 neckPoint = neck != null ? neck.position : head.position;
 
         // Bassin et buste : des blocs, comme l'assistant Ragdoll.
-        pelvis = AddBody(hips, 12f);
+        pelvis = AddBody(hips, PelvisMass);
         float hipWidth = leftThigh != null && rightThigh != null ? Vector3.Distance(leftThigh.position, rightThigh.position) + 0.16f : 0.34f;
         float pelvisHeight = Mathf.Max(0.18f, Vector3.Distance(hips.position, spine.position) * 1.6f);
         AddBox(hips, hips.position + up * (pelvisHeight * 0.25f), new Vector3(hipWidth, pelvisHeight, 0.24f), copyRoot);
 
-        Rigidbody torso = AddBody(spine, 14f);
+        Rigidbody torso = AddBody(spine, TorsoMass);
         float shoulderWidth = leftArm != null && rightArm != null ? Vector3.Distance(leftArm.position, rightArm.position) * 0.9f : 0.36f;
         AddBox(spine, (spine.position + neckPoint) * 0.5f,
                new Vector3(shoulderWidth, Vector3.Distance(spine.position, neckPoint), 0.26f), copyRoot);
         AddJoint(torso, pelvis, right, forward, -20f, 20f, 10f);
 
-        Rigidbody headBody = AddBody(head, 5f);
+        Rigidbody headBody = AddBody(head, HeadMass);
         AddSphere(head, head.position + up * 0.09f, 0.115f);
         AddJoint(headBody, torso, right, forward, -40f, 25f, 25f);
 
@@ -280,11 +302,11 @@ public class RobotCorpse : MonoBehaviour
     private void AddArm(Transform upper, Transform lower, Transform hand, Rigidbody torso, Vector3 twistAxis, Vector3 forward)
     {
         if (upper == null || lower == null) return;
-        Rigidbody arm = AddBody(upper, 2.5f);
+        Rigidbody arm = AddBody(upper, ArmMass);
         AddCapsule(upper, lower.position, 0.055f);
         AddJoint(arm, torso, twistAxis, forward, -70f, 10f, 50f);
 
-        Rigidbody forearm = AddBody(lower, 1.8f);
+        Rigidbody forearm = AddBody(lower, ForearmMass);
         Vector3 end = hand != null ? hand.position + (hand.position - lower.position).normalized * 0.08f : lower.position + (lower.position - upper.position);
         AddCapsule(lower, end, 0.045f);
         AddJoint(forearm, arm, forward, twistAxis, -90f, 0f, 0f);
@@ -293,11 +315,11 @@ public class RobotCorpse : MonoBehaviour
     private void AddLeg(Transform thigh, Transform calf, Transform foot, Transform toes, Vector3 right, Vector3 forward, Transform characterRoot)
     {
         if (thigh == null || calf == null) return;
-        Rigidbody thighBody = AddBody(thigh, 7f);
+        Rigidbody thighBody = AddBody(thigh, ThighMass);
         AddCapsule(thigh, calf.position, 0.085f);
         AddJoint(thighBody, pelvis, right, forward, -20f, 70f, 30f);
 
-        Rigidbody calfBody = AddBody(calf, 4f);
+        Rigidbody calfBody = AddBody(calf, CalfMass);
         AddCapsule(calf, foot != null ? foot.position : calf.position + (calf.position - thigh.position), 0.07f);
         AddJoint(calfBody, thighBody, right, forward, -80f, 0f, 0f);
 

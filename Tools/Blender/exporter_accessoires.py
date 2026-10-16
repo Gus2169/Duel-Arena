@@ -63,7 +63,8 @@ def ateliers_de(script):
 def exporter(a, args):
     debut = time.time()
     a.classe = None                  # ce que lisent les fonctions de l'export des armes
-    a.bouche = (9.0, 9.0)
+    if not hasattr(a, "bouche"):     # la suie : loin, sauf sur ce qui a une « bouche » (les électrodes du gant)
+        a.bouche = (9.0, 9.0)
     scene = a.scene
     objets = [o for o in ex.descendants(a.racine) if o not in a.controle]
     vitres = [o for o in objets if o in a.vitres]

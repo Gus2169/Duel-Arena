@@ -128,12 +128,6 @@
     align-items: center;
 }
 
-.wrap-row {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: stretch;
-}
-
 .section-label {
     font-size: 13px;
     color: rgb(150, 158, 168);
@@ -233,79 +227,7 @@
     color: rgb(150, 158, 168);
 }
 
-/* -------------------- Personnalisation -------------------- */
-
-.armory-layout {
-    flex-direction: row;
-    width: 100%;
-}
-
-.armory-controls-column {
-    flex-grow: 1;
-    flex-basis: 0;
-    margin-left: 24px;
-}
-
-.viewport-column {
-    width: 320px;
-    align-items: center;
-}
-
-.viewport-column--centered {
-    width: 100%;
-    margin-bottom: 12px;
-}
-
-.preview-viewport {
-    width: 320px;
-    height: 380px;
-    background-color: rgba(0, 0, 0, 0.35);
-    border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-}
-
-.preview-viewport--wide {
-    width: 100%;
-    height: 360px;
-}
-
-.preview-hint {
-    margin-top: 8px;
-    font-size: 11px;
-    color: rgb(130, 138, 148);
-    letter-spacing: 1px;
-}
-
-.weapon-switch-row {
-    margin-bottom: 14px;
-}
-
-.weapon-switch-button {
-    height: 34px;
-    padding: 0 14px;
-    margin-right: 8px;
-    margin-bottom: 8px;
-    background-color: rgba(255, 255, 255, 0.05);
-    border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.12);
-    border-radius: 6px;
-    color: rgb(215, 219, 224);
-    font-size: 13px;
-}
-
-.weapon-switch-button--active {
-    border-color: rgb(255, 106, 19);
-    background-color: rgba(255, 106, 19, 0.16);
-    color: rgb(255, 255, 255);
-}
-
-.weapon-customize-name {
-    margin-top: 10px;
-    font-size: 18px;
-    -unity-font-style: bold;
-    color: rgb(240, 242, 245);
-}
+/* -------------------- Personnalisation : les pastilles de couleur -------------------- */
 
 .color-swatch {
     width: 46px;
@@ -319,35 +241,6 @@
 
 .color-swatch--active {
     border-color: rgb(255, 255, 255);
-}
-
-.weapon-card {
-    width: 180px;
-    min-height: 70px;   /* un accessoire dit son effet sur une deuxième ligne (2026-10-16) */
-    padding-top: 6px;
-    padding-bottom: 6px;
-    margin-right: 12px;
-    margin-bottom: 12px;
-    background-color: rgba(255, 255, 255, 0.05);
-    border-width: 2px;
-    border-color: rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    -unity-text-align: middle-center;
-    font-size: 15px;
-    color: rgb(230, 233, 237);
-    white-space: normal;
-}
-
-.weapon-card--active {
-    border-color: rgb(255, 106, 19);
-    background-color: rgba(255, 106, 19, 0.14);
-}
-
-.hint-text {
-    margin-top: 16px;
-    font-size: 12px;
-    color: rgb(140, 148, 158);
-    white-space: normal;
 }
 
 /* -------------------- Pseudo (écran Jouer) -------------------- */
@@ -745,4 +638,981 @@
 
 .lobby-start {
     margin-top: 0;
+}
+
+/* ==================== Armurerie (refaite le 2026-10-16, disposition de Call of Duty) ====================
+   Écran plein (position absolue : il ignore le centrage de .root). Les tuiles, les choix, les barres et
+   les onglets sont créés par WeaponCustomizationController. Les boutons redéfinissent :hover et
+   :active, que le thème par défaut colore sinon. */
+
+.gunsmith {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    flex-direction: column;
+    padding: 24px 44px 20px 44px;
+    background-color: rgba(8, 10, 13, 0.55);
+}
+
+/* -------- Barre du haut : le titre, les classes, la carte du joueur -------- */
+
+.gunsmith-topbar {
+    flex-direction: row;
+    align-items: stretch;
+    height: 64px;
+    flex-shrink: 0;
+    border-bottom-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.gunsmith-brand {
+    width: 250px;
+    flex-shrink: 0;
+    justify-content: center;
+}
+
+.gunsmith-logo {
+    font-size: 22px;
+    color: rgb(255, 106, 19);
+    -unity-font-style: bold;
+    letter-spacing: 4px;
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-screen-title {
+    font-size: 12px;
+    color: rgb(150, 158, 168);
+    letter-spacing: 5px;
+    padding: 0;
+    margin: 2px 0 0 0;
+}
+
+.gunsmith-tabs {
+    flex-direction: row;
+    flex-grow: 1;
+    align-items: stretch;
+}
+
+.gunsmith-tab {
+    flex-direction: row;
+    align-items: center;
+    margin: 0 4px 0 0;
+    padding: 0 20px;
+    background-color: transparent;
+    border-width: 0;
+    border-bottom-width: 3px;
+    border-color: transparent;
+    border-radius: 0;
+}
+
+.gunsmith-tab:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.gunsmith-tab:hover:active {
+    background-color: rgba(255, 255, 255, 0.09);
+}
+
+.gunsmith-tab--active {
+    border-bottom-color: rgb(255, 106, 19);
+}
+
+.gunsmith-tab-key {
+    width: 24px;
+    height: 24px;
+    margin: 0 10px 0 0;
+    padding: 0;
+    border-width: 1px;
+    border-radius: 4px;
+    border-color: rgba(255, 255, 255, 0.22);
+    font-size: 12px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    color: rgb(160, 168, 178);
+}
+
+.gunsmith-tab-name {
+    font-size: 15px;
+    letter-spacing: 2px;
+    -unity-font-style: bold;
+    color: rgb(160, 168, 178);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-tab--active .gunsmith-tab-key {
+    border-color: rgb(255, 106, 19);
+    color: rgb(255, 106, 19);
+}
+
+.gunsmith-tab--active .gunsmith-tab-name {
+    color: rgb(255, 255, 255);
+}
+
+.gunsmith-player-card {
+    flex-direction: row;
+    align-items: center;
+    align-self: center;
+    width: 320px;
+    height: 52px;
+    flex-shrink: 0;
+    padding: 0 14px;
+    background-color: rgba(22, 27, 34, 0.92);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+}
+
+.gunsmith-player-color {
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    margin-right: 12px;
+    border-radius: 15px;
+    border-width: 2px;
+    border-color: rgba(255, 255, 255, 0.85);
+}
+
+.gunsmith-player-text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow: hidden;
+}
+
+.gunsmith-player-name {
+    font-size: 16px;
+    -unity-font-style: bold;
+    color: rgb(240, 242, 245);
+    padding: 0;
+    margin: 0;
+}
+
+/* -------- Corps : la colonne de gauche, l'arme et sa fiche à droite -------- */
+
+.gunsmith-body {
+    flex-direction: row;
+    flex-grow: 1;
+    margin-top: 20px;
+}
+
+.gunsmith-left {
+    width: 620px;
+    flex-shrink: 0;
+}
+
+.gunsmith-right {
+    flex-grow: 1;
+    flex-shrink: 1;
+    margin-left: 36px;
+}
+
+/* La carte de l'arme */
+
+/* Hauteur fixe : la description d'un modèle survolé tient sur une ou deux lignes, et la colonne ne
+   doit pas sauter pendant l'aperçu. */
+.gunsmith-header-card {
+    height: 132px;
+    flex-shrink: 0;
+    overflow: hidden;
+    flex-direction: row;
+    align-items: center;
+    padding: 18px 20px;
+    background-color: rgba(22, 27, 34, 0.92);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-left-width: 3px;
+    border-left-color: rgb(255, 106, 19);
+    border-radius: 8px;
+}
+
+.gunsmith-slot-badge {
+    width: 76px;
+    height: 76px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    margin-right: 18px;
+    background-color: rgba(0, 0, 0, 0.35);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+}
+
+.gunsmith-slot-key {
+    font-size: 36px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    color: rgb(240, 242, 245);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-slot-caption {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: rgb(130, 138, 148);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-header-text {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.gunsmith-class {
+    font-size: 13px;
+    letter-spacing: 3px;
+    -unity-font-style: bold;
+    color: rgb(255, 106, 19);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-model-row {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 2px;
+}
+
+.gunsmith-model {
+    font-size: 34px;
+    -unity-font-style: bold;
+    color: rgb(245, 246, 248);
+    padding: 0;
+    margin: 0 12px 0 0;
+}
+
+.gunsmith-family-tag {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: rgb(205, 210, 216);
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    padding: 3px 8px;
+    margin: 0;
+}
+
+.gunsmith-description {
+    font-size: 13px;
+    color: rgb(165, 172, 181);
+    white-space: normal;
+    padding: 0;
+    margin: 6px 0 0 0;
+}
+
+/* Les sections et les tuiles */
+
+.gunsmith-section {
+    font-size: 12px;
+    letter-spacing: 3px;
+    -unity-font-style: bold;
+    color: rgb(150, 158, 168);
+    padding: 0;
+    margin: 22px 0 10px 0;
+}
+
+.gunsmith-grid-row {
+    flex-direction: row;
+    margin-bottom: 12px;
+}
+
+.gunsmith-tile {
+    flex-grow: 1;
+    flex-basis: 0;
+    flex-direction: row;
+    align-items: center;
+    height: 100px;
+    margin: 0;
+    padding: 0 16px;
+    background-color: rgba(22, 27, 34, 0.92);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    -unity-text-align: upper-left;
+    transition-duration: 0.1s;
+}
+
+.gunsmith-tile--left {
+    margin-right: 12px;
+}
+
+.gunsmith-tile:hover {
+    background-color: rgba(34, 41, 51, 0.96);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.gunsmith-tile:hover:active {
+    background-color: rgba(44, 52, 64, 0.96);
+}
+
+.gunsmith-tile--selected {
+    background-color: rgba(48, 32, 22, 0.96);
+    border-color: rgb(255, 106, 19);
+}
+
+.gunsmith-tile--selected:hover {
+    background-color: rgba(60, 38, 24, 0.96);
+    border-color: rgb(255, 106, 19);
+}
+
+.gunsmith-tile:disabled {
+    opacity: 0.38;
+}
+
+.gunsmith-badge {
+    width: 68px;
+    height: 68px;
+    flex-shrink: 0;
+    margin: 0 16px 0 0;
+    padding: 0 2px;
+    background-color: rgba(0, 0, 0, 0.35);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    font-size: 14px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    color: rgb(225, 229, 234);
+    white-space: normal;
+}
+
+.gunsmith-tile-text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow: hidden;
+}
+
+.gunsmith-tile-caption {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: rgb(150, 158, 168);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-tile-value {
+    font-size: 18px;
+    -unity-font-style: bold;
+    color: rgb(240, 242, 245);
+    padding: 0;
+    margin: 2px 0 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gunsmith-tile-effect {
+    font-size: 13px;
+    color: rgb(255, 140, 70);
+    padding: 0;
+    margin: 2px 0 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* La bande des choix de la tuile ouverte */
+
+.gunsmith-strip-header {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin: 22px 0 10px 0;
+}
+
+.gunsmith-strip-title {
+    margin: 0;
+    color: rgb(240, 242, 245);
+}
+
+.gunsmith-strip-count {
+    font-size: 12px;
+    color: rgb(130, 138, 148);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-strip {
+    flex-direction: row;
+    align-items: stretch;
+    height: 164px;
+}
+
+.gunsmith-arrow {
+    width: 34px;
+    margin: 0;
+    padding: 0 0 4px 0;
+    font-size: 30px;
+    -unity-text-align: middle-center;
+    color: rgb(215, 219, 224);
+    background-color: rgba(22, 27, 34, 0.92);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+}
+
+.gunsmith-arrow:hover {
+    background-color: rgba(255, 106, 19, 0.18);
+    border-color: rgba(255, 106, 19, 0.6);
+}
+
+.gunsmith-arrow:hover:active {
+    background-color: rgba(255, 106, 19, 0.3);
+}
+
+.gunsmith-arrow:disabled {
+    opacity: 0.25;
+}
+
+.gunsmith-strip-scroll {
+    flex-grow: 1;
+    flex-shrink: 1;
+    margin: 0 8px;
+}
+
+.gunsmith-strip-scroll .unity-scroll-view__content-container {
+    flex-direction: row;
+    height: 100%;
+}
+
+.gunsmith-choice {
+    width: 172px;
+    height: 100%;
+    flex-shrink: 0;
+    flex-direction: column;
+    align-items: stretch;
+    margin: 0 8px 0 0;
+    padding: 10px;
+    background-color: rgba(22, 27, 34, 0.92);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    -unity-text-align: upper-left;
+    transition-duration: 0.1s;
+}
+
+.gunsmith-choice:hover {
+    background-color: rgba(34, 41, 51, 0.96);
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+.gunsmith-choice:hover:active {
+    background-color: rgba(44, 52, 64, 0.96);
+}
+
+.gunsmith-choice--previewed {
+    background-color: rgba(34, 41, 51, 0.96);
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+.gunsmith-choice--equipped {
+    background-color: rgba(48, 32, 22, 0.96);
+    border-color: rgb(255, 106, 19);
+}
+
+.gunsmith-choice--equipped:hover {
+    background-color: rgba(60, 38, 24, 0.96);
+    border-color: rgb(255, 106, 19);
+}
+
+.gunsmith-choice-code {
+    height: 64px;
+    flex-shrink: 0;
+    background-color: rgba(0, 0, 0, 0.35);
+    border-radius: 6px;
+    font-size: 20px;
+    letter-spacing: 1px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    color: rgb(200, 205, 212);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-choice-title {
+    font-size: 15px;
+    -unity-font-style: bold;
+    color: rgb(240, 242, 245);
+    white-space: normal;
+    padding: 0;
+    margin: 10px 0 0 0;
+}
+
+.gunsmith-choice-text {
+    flex-shrink: 1;
+    overflow: hidden;
+}
+
+.gunsmith-choice-effect {
+    font-size: 12px;
+    color: rgb(165, 172, 181);
+    white-space: normal;
+    padding: 0;
+    margin: 3px 0 0 0;
+}
+
+.gunsmith-choice-tag {
+    display: none;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    -unity-font-style: bold;
+    color: rgb(20, 14, 8);
+    background-color: rgb(255, 106, 19);
+    border-radius: 3px;
+    padding: 2px 5px;
+    margin: 0;
+}
+
+.gunsmith-choice--equipped .gunsmith-choice-tag {
+    display: flex;
+}
+
+/* À droite : l'arme en grand, sa fiche, l'IA */
+
+.gunsmith-preview {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 200px;
+}
+
+.gunsmith-bottom-right {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+.gunsmith-drag-hint {
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: rgb(110, 118, 128);
+    padding: 0;
+    margin: 0 0 4px 0;
+}
+
+.gunsmith-stats-column {
+    width: 580px;
+    flex-shrink: 0;
+}
+
+.gunsmith-stats {
+    padding: 14px 18px 12px 18px;
+    background-color: rgba(22, 27, 34, 0.92);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+}
+
+.gunsmith-stats-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.gunsmith-stats-title {
+    margin: 0;
+}
+
+.gunsmith-stats-legend {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgb(130, 138, 148);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-stat-row {
+    flex-direction: row;
+    align-items: center;
+    height: 24px;
+}
+
+.gunsmith-stat-label {
+    width: 170px;
+    font-size: 13px;
+    color: rgb(205, 210, 216);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-stat-track {
+    flex-grow: 1;
+    height: 6px;
+    margin: 0 14px;
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.gunsmith-stat-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background-color: rgb(225, 229, 234);
+}
+
+.gunsmith-stat-delta {
+    display: none;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+}
+
+.gunsmith-stat-delta--gain {
+    display: flex;
+    background-color: rgb(120, 220, 140);
+}
+
+.gunsmith-stat-delta--loss {
+    display: flex;
+    background-color: rgb(235, 110, 110);
+}
+
+.gunsmith-stat-value {
+    width: 150px;
+    font-size: 13px;
+    -unity-text-align: middle-right;
+    color: rgb(240, 242, 245);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-stat-value--gain {
+    color: rgb(120, 220, 140);
+}
+
+.gunsmith-stat-value--loss {
+    color: rgb(235, 110, 110);
+}
+
+.gunsmith-info-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.gunsmith-info {
+    width: 50%;
+    margin-bottom: 6px;
+}
+
+.gunsmith-info-caption {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgb(130, 138, 148);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-info-value {
+    font-size: 14px;
+    color: rgb(235, 238, 242);
+    padding: 0;
+    margin: 1px 0 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Le rechargement qui change pendant un aperçu (deux classes : plus précis que .gunsmith-info-value). */
+.gunsmith-info .gunsmith-stat-value--gain {
+    color: rgb(120, 220, 140);
+}
+
+.gunsmith-info .gunsmith-stat-value--loss {
+    color: rgb(235, 110, 110);
+}
+
+/* Hauteur fixe : un message qui s'écrit ne doit pas faire bouger l'aperçu (WeaponCustomizationController.Say). */
+.gunsmith-ai {
+    height: 96px;
+    margin-top: 10px;
+    padding: 10px 14px;
+    overflow: hidden;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.06);
+    border-left-width: 3px;
+    border-left-color: rgb(255, 106, 19);
+    border-radius: 6px;
+}
+
+.gunsmith-ai-header {
+    font-size: 11px;
+    letter-spacing: 2px;
+    -unity-font-style: bold;
+    color: rgb(255, 106, 19);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-ai-text {
+    font-size: 14px;
+    color: rgb(215, 219, 224);
+    white-space: normal;
+    padding: 0;
+    margin: 4px 0 0 0;
+}
+
+/* -------- Barre du bas : les touches -------- */
+
+.gunsmith-footer {
+    flex-direction: row;
+    align-items: center;
+    height: 40px;
+    flex-shrink: 0;
+    margin-top: 14px;
+}
+
+.key-hint {
+    flex-direction: row;
+    align-items: center;
+    margin: 0 24px 0 0;
+}
+
+/* Le retour garde la classe back-button (son de retour, UiSounds) : on efface son cadre. */
+.gunsmith-footer .key-hint {
+    width: auto;
+    height: 32px;
+    margin: 0 24px 0 0;
+    padding: 0 4px 0 0;
+    align-self: center;
+    background-color: transparent;
+    border-width: 0;
+    border-radius: 4px;
+}
+
+.gunsmith-footer .key-hint:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.key-cap {
+    min-width: 30px;
+    height: 26px;
+    margin: 0 8px 0 0;
+    padding: 0 8px;
+    background-color: rgba(255, 255, 255, 0.06);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    font-size: 12px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    color: rgb(235, 238, 242);
+}
+
+.key-action {
+    font-size: 13px;
+    color: rgb(170, 177, 186);
+    padding: 0;
+    margin: 0;
+}
+
+.gunsmith-footer .key-hint:hover .key-cap {
+    border-color: rgb(255, 106, 19);
+}
+
+/* Le pied de la colonne de gauche : ce que changent les choix (l'ancienne armurerie le disait aussi). */
+.gunsmith-left-spacer {
+    flex-grow: 1;
+}
+
+.gunsmith-left-hint {
+    font-size: 12px;
+    color: rgb(130, 138, 148);
+    white-space: normal;
+    padding: 0;
+    margin: 0;
+}
+
+/* ==================== Personnalisation (refaite le 2026-10-16) : le ROBOT et les ARMES ====================
+   Même écran plein que l'armurerie (barre du haut, carte du joueur, touches : classes gunsmith-*), en deux
+   parties bien distinctes. */
+
+.custom-topbar-spacer {
+    flex-grow: 1;
+}
+
+.custom-body {
+    flex-direction: row;
+    flex-grow: 1;
+    margin-top: 20px;
+}
+
+.custom-half {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-right: 24px;
+    padding: 20px 24px;
+    background-color: rgba(22, 27, 34, 0.92);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+}
+
+.custom-half--last {
+    margin-right: 0;
+}
+
+.custom-half-header {
+    flex-direction: row;
+    align-items: flex-end;
+    flex-shrink: 0;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.custom-half-title {
+    font-size: 30px;
+    letter-spacing: 6px;
+    -unity-font-style: bold;
+    color: rgb(245, 246, 248);
+    padding: 0;
+    margin: 0 18px 0 0;
+}
+
+.custom-half-subtitle {
+    font-size: 14px;
+    color: rgb(150, 158, 168);
+    padding: 0 0 5px 0;
+    margin: 0;
+}
+
+/* Le robot se pose sur le fond du panneau (PreviewStage : fond transparent). */
+.custom-robot-view {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 260px;
+}
+
+.custom-section {
+    font-size: 12px;
+    letter-spacing: 3px;
+    -unity-font-style: bold;
+    color: rgb(150, 158, 168);
+    padding: 0;
+    margin: 14px 0 10px 0;
+}
+
+.custom-swatch-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
+
+.custom-hint {
+    font-size: 12px;
+    color: rgb(130, 138, 148);
+    white-space: normal;
+    padding: 0;
+    margin: 6px 0 0 0;
+}
+
+.custom-weapon-list {
+    flex-grow: 1;
+}
+
+.custom-weapon-row {
+    flex-direction: row;
+    align-items: center;
+    height: 104px;
+    flex-shrink: 0;
+    margin: 0 0 12px 0;
+    padding: 0 18px;
+    background-color: rgba(30, 36, 45, 0.95);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    -unity-text-align: upper-left;
+    transition-duration: 0.1s;
+}
+
+.custom-weapon-row:hover {
+    background-color: rgba(40, 48, 60, 0.96);
+    border-color: rgba(255, 106, 19, 0.6);
+}
+
+.custom-weapon-row:hover:active {
+    background-color: rgba(52, 40, 32, 0.96);
+}
+
+.custom-weapon-key {
+    width: 52px;
+    height: 52px;
+    flex-shrink: 0;
+    margin: 0 18px 0 0;
+    padding: 0;
+    background-color: rgba(0, 0, 0, 0.35);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    font-size: 24px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    color: rgb(240, 242, 245);
+}
+
+.custom-weapon-text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow: hidden;
+}
+
+.custom-weapon-class {
+    font-size: 12px;
+    letter-spacing: 3px;
+    -unity-font-style: bold;
+    color: rgb(255, 106, 19);
+    padding: 0;
+    margin: 0;
+}
+
+.custom-weapon-model {
+    font-size: 22px;
+    -unity-font-style: bold;
+    color: rgb(245, 246, 248);
+    padding: 0;
+    margin: 2px 0 0 0;
+}
+
+.custom-weapon-details {
+    font-size: 13px;
+    color: rgb(165, 172, 181);
+    padding: 0;
+    margin: 3px 0 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.custom-weapon-arrow {
+    font-size: 34px;
+    color: rgb(150, 158, 168);
+    padding: 0 0 4px 0;
+    margin: 0 0 0 12px;
+}
+
+.custom-weapon-row:hover .custom-weapon-arrow {
+    color: rgb(255, 106, 19);
+}
+
+.custom-open-armory {
+    width: auto;
+    align-self: stretch;
+    flex-shrink: 0;
+    margin: 4px 0 0 0;
 }

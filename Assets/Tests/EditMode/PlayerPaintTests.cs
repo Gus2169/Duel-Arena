@@ -3,11 +3,13 @@ using NUnit.Framework;
 using UnityEngine;
 
 /// <summary>
-/// La peinture des robots (2026-10-08) : une couleur vive par joueur, choisie par le serveur.
+/// La peinture des robots (2026-10-08) : une couleur vive par joueur, donnée par le serveur ; celle
+/// que le joueur a choisie dans Personnalisation si personne ne la porte (2026-10-16).
 ///
-/// Deux joueurs de la même couleur, ou un robot peint d'une teinte terne qui se fond dans le décor,
-/// ne lèvent aucune erreur : ils rendent juste le duel illisible pour les spectateurs, ce que le
-/// GDD (§ 13) interdit. Ces tests gardent le choix du serveur et la palette RÉELLE du prefab.
+/// Deux joueurs de la même couleur, un choix qui se perd en route, ou un robot peint d'une teinte
+/// terne qui se fond dans le décor, ne lèvent aucune erreur : ils rendent juste le duel illisible pour
+/// les spectateurs, ce que le GDD (§ 13) interdit. Ces tests gardent le choix du serveur et la palette
+/// RÉELLE du prefab.
 /// </summary>
 public class PlayerPaintTests
 {
@@ -66,6 +68,75 @@ public class PlayerPaintTests
     public void PaletteVide_PasDePeinture()
     {
         Assert.AreEqual(0, PlayerPaint.PickPaint(new Color32[0], null).a);
+    }
+
+    // ------------------------------------------------------------------ La couleur choisie (2026-10-16)
+
+    [Test]
+    public void LaCouleurChoisie_EstDonnee_SiPersonneNeLaPorte()
+    {
+        Assert.AreEqual(Vert, PlayerPaint.PickPaint(Palette, new Color32[0], 2), "Premier arrivé : il a la sienne, pas la première de la palette.");
+        Assert.AreEqual(Vert, PlayerPaint.PickPaint(Palette, new[] { Orange }, 2), "Un autre porte l'orange : le vert reste libre.");
+        Assert.AreEqual(Orange, PlayerPaint.PickPaint(Palette, new[] { Bleu }, 0));
+    }
+
+    [Test]
+    public void LaCouleurChoisie_DejaPortee_LaPremiereLibreEstDonnee()
+    {
+        // GDD § 13 : chaque robot garde sa propre couleur. Deux joueurs veulent le vert : le second
+        // arrivé prend la première couleur libre.
+        Assert.AreEqual(Orange, PlayerPaint.PickPaint(Palette, new[] { Vert }, 2));
+        Assert.AreEqual(Bleu, PlayerPaint.PickPaint(Palette, new[] { Vert, Orange }, 2));
+    }
+
+    [Test]
+    public void UnRangHorsDeLaPalette_NeVautRien()
+    {
+        // Aucun choix, ou un client modifié qui annonce un rang qui n'existe pas : la première libre.
+        Assert.AreEqual(Bleu, PlayerPaint.PickPaint(Palette, new[] { Orange }, -1));
+        Assert.AreEqual(Bleu, PlayerPaint.PickPaint(Palette, new[] { Orange }, Palette.Length));
+        Assert.AreEqual(Bleu, PlayerPaint.PickPaint(Palette, new[] { Orange }, int.MinValue));
+    }
+
+    [Test]
+    public void LaCouleurChoisie_VoyageDansLaDemandeDeConnexion()
+    {
+        byte[] payload = SessionFlow.BuildPayload("0.1.4", "Héloïse", WeaponLooks.Default, WeaponAttachments.None, 6);
+        Assert.IsTrue(SessionFlow.ParsePayload(payload, out _, out string name, out _, out _, out int paint));
+        Assert.AreEqual(6, paint);
+        Assert.AreEqual("Héloïse", name, "Garde : le reste de la demande est lu comme avant.");
+
+        // Une build d'avant le choix de la couleur n'envoie que quatre lignes : aucun choix.
+        Assert.IsTrue(SessionFlow.ParsePayload(SessionFlow.BuildPayload("0.1.4", "Untel", WeaponLooks.Default, WeaponAttachments.None),
+                                               out _, out _, out _, out _, out paint));
+        Assert.AreEqual(-1, paint);
+        Assert.IsTrue(SessionFlow.ParsePayload(System.Text.Encoding.UTF8.GetBytes("0.1.4\nUntel\n00000000\n00000000\nbleu"),
+                                               out _, out _, out _, out _, out paint));
+        Assert.AreEqual(-1, paint, "Illisible : aucun choix.");
+    }
+
+    /// <summary>Deux instances du jeu sur un même PC partagent leurs PlayerPrefs : chacune garde la
+    /// couleur choisie dans son propre menu, comme son pseudo.</summary>
+    [Test]
+    public void LaCouleur_ResteCelleDeCetteInstance_QuandUneAutreEnregistreLaSienne()
+    {
+        int saved = PlayerPrefs.GetInt(GameSettings.PreferredColorKey, -1);
+        int mine = GameSettings.PreferredColorIndex;
+        try
+        {
+            GameSettings.PreferredColorIndex = 4;
+            Assert.AreEqual(4, PlayerPrefs.GetInt(GameSettings.PreferredColorKey), "Garde : la couleur est retenue pour le prochain lancement.");
+
+            // L'autre instance choisit la sienne, dans la même clé du registre.
+            PlayerPrefs.SetInt(GameSettings.PreferredColorKey, 1);
+            Assert.AreEqual(4, GameSettings.PreferredColorIndex, "Cette instance annonce toujours la couleur de son menu.");
+        }
+        finally
+        {
+            GameSettings.PreferredColorIndex = mine;
+            PlayerPrefs.SetInt(GameSettings.PreferredColorKey, saved);
+            PlayerPrefs.Save();
+        }
     }
 
     [Test]

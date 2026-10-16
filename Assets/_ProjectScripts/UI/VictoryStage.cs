@@ -131,11 +131,10 @@ public class VictoryStage : MonoBehaviour
         seed = celebrationSeed;
         time = 0f;
 
-        model = InstantiateAppearance(assetModel.gameObject, spot);
+        // Sans arme : ni le fusil, ni le gant du taser, qui remplace la main gauche (elle réapparaît).
+        model = RobotAppearance.Copy(assetModel.gameObject, transform, "RobotVictoire");
+        model.transform.SetPositionAndRotation(spot.position, Quaternion.Euler(0f, spot.eulerAngles.y, 0f));
         modelAnimator = model.GetComponent<Animator>();
-        // Sans arme : ni le fusil (retiré avec InstantiateAppearance), ni le gant du taser, qui
-        // remplace la main gauche (elle réapparaît).
-        HeldWeapons.WearTaserGlove(modelAnimator, false);
         Paint(playerPrefab, assetModel, paint);
 
         if (modelAnimator != null)
@@ -202,45 +201,6 @@ public class VictoryStage : MonoBehaviour
     // ------------------------------------------------------------------
     // Le robot
     // ------------------------------------------------------------------
-
-    /// <summary>Une copie de l'apparence du modèle, debout sur `at` : ni scripts (ils se réveilleraient
-    /// sinon), ni arme, ni caméra, lumière, son ou collider. Copiée sous un parent inactif, comme
-    /// l'épave (RobotCorpse).</summary>
-    private GameObject InstantiateAppearance(GameObject asset, Transform at)
-    {
-        var holder = new GameObject("RobotVictoireEnPreparation");
-        holder.SetActive(false);
-        GameObject copy = Instantiate(asset, holder.transform, false);
-        copy.name = "RobotVictoire";
-
-        // L'arme d'abord (repérée par son script), puis tout ce qui n'est pas de l'apparence.
-        foreach (WeaponModel weapon in copy.GetComponentsInChildren<WeaponModel>(true)) DestroyImmediate(weapon.gameObject);
-        MonoBehaviour[] scripts = copy.GetComponentsInChildren<MonoBehaviour>(true);
-        for (int i = scripts.Length - 1; i >= 0; i--) DestroyImmediate(scripts[i]);
-        foreach (Camera c in copy.GetComponentsInChildren<Camera>(true)) DestroyImmediate(c);
-        foreach (Light l in copy.GetComponentsInChildren<Light>(true)) DestroyImmediate(l);
-        foreach (AudioSource s in copy.GetComponentsInChildren<AudioSource>(true)) DestroyImmediate(s);
-        foreach (Collider c in copy.GetComponentsInChildren<Collider>(true)) DestroyImmediate(c);
-        foreach (ParticleSystem p in copy.GetComponentsInChildren<ParticleSystem>(true)) p.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-
-        int layer = PreviewLayer.Index;
-        foreach (Transform t in copy.GetComponentsInChildren<Transform>(true))
-        {
-            if (layer >= 0) t.gameObject.layer = layer;
-        }
-        foreach (Renderer r in copy.GetComponentsInChildren<Renderer>(true))
-        {
-            r.shadowCastingMode = ShadowCastingMode.On;
-            r.forceRenderingOff = false;
-            if (r is SkinnedMeshRenderer skinned) skinned.updateWhenOffscreen = true;
-        }
-
-        copy.transform.SetParent(transform, false);
-        copy.transform.SetPositionAndRotation(at.position, Quaternion.Euler(0f, at.eulerAngles.y, 0f));
-        copy.transform.localScale = Vector3.one;
-        Discard(holder);
-        return copy;
-    }
 
     /// <summary>La peinture du gagnant, sur les mêmes pièces que PlayerPaint (lues sur l'asset).</summary>
     private void Paint(GameObject playerPrefab, Transform assetModel, Color32 paint)

@@ -71,6 +71,25 @@ public class WeaponData : ScriptableObject
     [Tooltip("Resserrement de la gerbe en visée (1 = même gerbe).")]
     [Range(0.1f, 1f)] public float aimPatternScale = 1f;
 
+    [Header("Tir à la hanche (façon Rainbow Six, 2026-10-16 : HipFireSpread)")]
+    [Tooltip("Demi-angle (degrés) du cône où part la balle à la hanche, debout à l'arrêt. Épaulée, elle part dans l'axe. 0 pour une arme à plombs : sa gerbe est sa dispersion.")]
+    [Min(0f)] public float hipSpread = 0f;
+    [Tooltip("Le même cône à l'allure de marche (5 m/s). Il continue de s'ouvrir au-delà, jusqu'au double de l'écart à 10 m/s (l'élan d'un sprint).")]
+    [Min(0f)] public float hipSpreadMoving = 0f;
+    [Tooltip("Ce qu'ouvre chaque balle d'une rafale (degrés), jusqu'à hipSpreadMaxBloom.")]
+    [Min(0f)] public float hipSpreadPerShot = 0f;
+    [Min(0f)] public float hipSpreadMaxBloom = 0f;
+    [Tooltip("Vitesse (degrés/s) à laquelle la rafale se referme sans tirer.")]
+    [Min(0f)] public float hipSpreadRecovery = 4f;
+    [Tooltip("Comment la précision arrive pendant qu'on épaule (Rainbow Six, Y9S1) : à la fin pour un fusil d'assaut, en ligne droite pour un fusil de précision, tôt pour un pistolet ou un pompe.")]
+    public HipFireSpread.AimCurve aimCurve = HipFireSpread.AimCurve.Slow;
+
+    [Header("Coup mortel puissant (2026-10-16)")]
+    [Tooltip("Vitesse (m/s) dont le coup mortel projette l'épave dans le sens du tir, quand tout le tir a touché (le pompe à bout portant). Moins de plombs au but, moins fort (40 % au moins). 0 : la simple poussée selon les dégâts (WeaponController.DeathImpulse).")]
+    [Min(0f)] public float killKnockback = 0f;
+    [Tooltip("Ce qui la soulève (m/s vers le haut), dans la même proportion.")]
+    [Min(0f)] public float killKnockbackLift = 0f;
+
     [Header("En main (2026-10-11)")]
     [Tooltip("Temps (s) pour sortir cette arme quand on la prend (touches 1 à 4). On ne tire pas avant. Changer d'arme annule un rechargement, comme dans Call of Duty.")]
     public float raiseTime = 0.6f;
@@ -80,7 +99,7 @@ public class WeaponData : ScriptableObject
     public float aimTime = 0.125f;
     [Tooltip("Lunette plein écran façon Call of Duty : grossissement de la vue en visée. 1 = pas de lunette (viseur ou mire de l'arme).")]
     [Min(1f)] public float scopeMagnification = 1f;
-    [Tooltip("Le réticule du HUD s'affiche-t-il à la hanche ? Non pour le sniper, comme dans CoD : la balle part quand même au centre (aucun hasard, GDD § 3), mais il faut le deviner.")]
+    [Tooltip("Le réticule du HUD s'affiche-t-il à la hanche ? Non pour le sniper, comme dans CoD : il faut deviner le centre de son cône (hipSpread).")]
     public bool hipCrosshair = true;
     [Tooltip("Couleur du traçant (le rayon du raygun se voit de loin).")]
     public Color tracerColor = new Color(1f, 0.85f, 0.4f, 1f);
@@ -150,12 +169,12 @@ public class WeaponData : ScriptableObject
     /// <summary>Nombre de projectiles d'un tir : les plombs du motif, ou une balle.</summary>
     public int PelletCount => pelletPattern != null && pelletPattern.Length > 0 ? pelletPattern.Length : 1;
 
-    /// <summary>Écart (degrés) du projectile `index`, gerbe resserrée en visée. Une balle seule
-    /// part dans l'axe.</summary>
-    public Vector2 PelletOffset(int index, bool aiming)
+    /// <summary>Écart (degrés) du projectile `index`, gerbe resserrée en visée, ou de `hipScale` à la
+    /// hanche (le laser tactique). Une balle seule part dans l'axe.</summary>
+    public Vector2 PelletOffset(int index, bool aiming, float hipScale = 1f)
     {
         if (pelletPattern == null || pelletPattern.Length == 0) return Vector2.zero;
-        return pelletPattern[index] * (aiming ? aimPatternScale : 1f);
+        return pelletPattern[index] * (aiming ? aimPatternScale : hipScale);
     }
 
     /// <summary>

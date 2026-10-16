@@ -57,6 +57,7 @@ Lire les PNG rendus (outil Read) pour juger le modèle : on ne voit le résultat
 - `variantes_usure.py` : les planches des variantes d'usure (le FA-07 et le FA-30 dans chaque variante, de profil et en gros plan), rendues dans le dossier donné ;
 - `exporter_armes.py` : l'export vers Unity (voir « L'export vers Unity ») ; `--armes a.py,b.py` pour n'en refaire que quelques-unes ;
 - les accessoires (voir « Les accessoires ») : `commun_accessoires.py` (atelier, embases de rail, vitres, réticules de contrôle, montage sur une arme pour les rendus), `viseurs.py` (les dix viseurs de Rainbow Six), `laser_tactique.py` (LT-1 et LT-P), `poignees.py` (PV-1, PI-1), `chargeurs.py` (un grand chargeur par modèle d'arme), et leur export `exporter_accessoires.py` ;
+- `gant_choc.py` : le gant à décharge GD-1, l'arme de corps à corps (voir « Le gant à décharge »), exporté par le même `exporter_accessoires.py` (`--scripts gant_choc.py --sortie Assets/_ProjectArena/Weapon/Gant --resolution 1024`) ;
 - `FusilAssaut_v1_viseur_numerique.blend` : la première version du fusil, avec son viseur numérique, gardée pour en faire un accessoire.
 - `archives/` : les versions remplacées d'un modèle (`fusil_assaut_FA07_v2.py`, `serie30_precision_FP30_v1.py`), gardées pour mémoire ; `construire_armes` ne les lit pas, et pour en relancer une, la recopier à côté des autres.
 
@@ -106,6 +107,16 @@ Les règles et les effets sont dans le GDD (§ 6), les choix d'apparence dans la
 ```
 
 Une dizaine de secondes par accessoire, cinq minutes pour les vingt-cinq (`--scripts viseurs.py`, `--seuls CG-FA07` pour en refaire quelques-uns). Même dépôt que les armes (`<CODE>_Modele.fbx`, `_Occlusion.png` en 512, `_Finitions.json`, plus la rubrique, la vitre et les données de l'accessoire), puis **Duel Arena > Armes > Importer les accessoires de Blender** (ou l'import des armes, qui le fait aussi) : préfabs, vitres, catalogue `Accessoires.asset`.
+
+## Le gant à décharge (2026-10-16)
+
+`gant_choc.py` construit le GD-1 dans le **repère de l'avant-bras gauche du robot** (le préfab `GantChoc`, posé au poignet sur l'os de l'avant-bras) : `P(av, h, x)` avec av vers les doigts, h vers le dos de la main, x vers l'auriculaire (le pouce à -x, +X dans Unity). Origine au poignet ; le repère `Poing` au bout des électrodes, là où partent les étincelles. La main du robot est repliée quand il le porte : le poing du gant est la main.
+
+- La manchette suit l'avant-bras du Y Bot (8 cm de large au poignet, 11,6 cm près du coude ; jointures à 12,8 cm du poignet) avec 6 à 14 mm de jeu, par stations (`STATIONS`, interpolées par `station(av)`). Contrôle dans Unity : aucun sommet de l'avant-bras, pose de référence, hors de la manchette.
+- Ses flancs s'évasent vers le coude : un décalque posé sur un plan vertical s'y enfonce par un bout (vu sur « GD-1 »). Le donner dans l'axe du flanc (`axe_x` entre deux stations).
+- Les arcs du jeu (TaserSparkFX) partent des pièces « Electrodes » (le centre de la face avant de chacune) et « Condensateurs » (le haut de leurs ailettes) : l'importeur les relève sur le modèle (GloveImporter). Garder ces deux pièces sous ces noms.
+- La suie des arcs vient de la « bouche » de l'atelier, posée au bout des électrodes (`a.bouche`, que l'export garde) : seules les pièces au matériau `Bouche` noircissent (la plaque des électrodes, leurs pointes).
+- Le studio est celui des armes (`ca.studio`) : celui des accessoires, réglé pour 5 cm, surexpose un objet de 40 cm.
 
 ## La direction artistique (bible § 5, 10, 12, 14, 17)
 

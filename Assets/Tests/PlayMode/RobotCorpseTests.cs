@@ -147,48 +147,112 @@ public class RobotCorpseTests
         Debug.Log($"[EPAVE] {label} : {result}");
     }
 
+    private static WeaponData Weapon(string asset)
+    {
+        WeaponData data = UnityEditor.AssetDatabase.LoadAssetAtPath<WeaponData>($"Assets/_ProjectArena/Weapon/{asset}.asset");
+        Assert.IsNotNull(data, $"L'arme {asset} de la panoplie.");
+        return data;
+    }
+
     /// <summary>
-    /// Le coup mortel pousse l'épave, il ne la projette pas (retour de l'utilisateur, 2026-10-12 :
-    /// au pompe et au taser, le ragdoll était « violent »). Mesuré contre la même épave tombée sans
-    /// coup : le coup ajoute un peu d'élan, jamais un vol plané, une vrille ou une pièce qui fouette.
-    /// Les pires cas : en pleine tête (la pièce la plus légère après les bras), au pompe à bout
-    /// portant (tous les plombs) et au taser.
+    /// Le coup mortel d'une arme ordinaire pousse l'épave, il ne la projette pas (retour de
+    /// l'utilisateur, 2026-10-12 : le ragdoll était « violent »). Mesuré contre la même épave tombée
+    /// sans coup : le coup ajoute un peu d'élan, jamais un vol plané, une vrille ou une pièce qui
+    /// fouette. Le pire cas : le sniper en pleine tête (la pièce la plus légère après les bras). Le
+    /// pompe et le taser, eux, projettent (UnCoupPuissant_ProjetteLEpave_DUnBloc).
     /// </summary>
     [UnityTest]
     public IEnumerator LeCoupMortel_PousseLEpave_SansLaProjeter()
     {
+        WeaponData sniper = Weapon("Arme_Sniper");
+        Assert.AreEqual(0f, sniper.killKnockback, "Garde : le sniper n'est pas une arme qui projette.");
+        float sniperHead = sniper.damagePerHit * sniper.headMultiplier;
+        // Le sniper est la plus forte des armes ordinaires (DeathImpulse plafonne à ses dégâts) : ce qui
+        // vaut pour lui vaut pour le fusil d'assaut et le raygun, qui poussent moins.
+        Assert.AreEqual(WeaponController.DeathImpulse(1000f), WeaponController.KillImpulse(sniper, Vector3.back, sniperHead).magnitude, 1e-3f,
+            "Garde : le sniper en pleine tête pousse autant qu'une arme ordinaire le peut.");
+
         var alone = new Fall();
         yield return MeasureFall("chute seule", null, alone);
-        var shotgun = new Fall();
-        yield return MeasureFall("pompe à bout portant, en pleine tête",
-            (c, face) => c.ApplyImpulse(face, Vector3.back * WeaponController.DeathImpulse(8 * 18f)), shotgun);
-        var taser = new Fall();
-        yield return MeasureFall("taser au visage",
-            (c, face) => c.ApplyImpulse(face, TaserController.DeathImpulse(Vector3.back)), taser);
+        var head = new Fall();
+        yield return MeasureFall("sniper en pleine tête",
+            (c, face) => c.ApplyImpulse(face, WeaponController.KillImpulse(sniper, Vector3.back, sniperHead)), head);
         // Chez l'hôte, le robot d'un client avance par à-coups : sa vitesse sur une image de
         // rattrapage pouvait atteindre 12 m/s (la borne d'alors), et l'épave en héritait.
         var running = new Fall();
-        yield return MeasureFall("pompe en pleine course (12 m/s hérités)",
-            (c, face) => c.ApplyImpulse(face, Vector3.back * WeaponController.DeathImpulse(8 * 18f)), running,
+        yield return MeasureFall("sniper en pleine course (12 m/s hérités)",
+            (c, face) => c.ApplyImpulse(face, WeaponController.KillImpulse(sniper, Vector3.back, sniperHead)), running,
             velocity: Vector3.back * 12f);
 
         Assert.Greater(alone.peakSpeed, 2f, "Garde : sans coup, l'épave tombe bien (sa chute fait de la vitesse).");
-        Assert.Greater(shotgun.push, alone.push + 0.3f, $"Garde : le pompe repousse vraiment l'épave ({shotgun}).");
-        Assert.Greater(taser.push, alone.push + 0.1f, $"Garde : le taser aussi ({taser}).");
+        Assert.Greater(head.push, alone.push + 0.3f, $"Garde : le sniper repousse vraiment l'épave ({head}).");
 
-        foreach ((string name, Fall fall) in new[] { ("pompe", shotgun), ("taser", taser) })
-        {
-            Assert.Less(fall.peakSpeed, alone.peakSpeed + 1.5f, $"{name} : aucune pièce ne part plus vite qu'en tombant seule, ou presque ({fall}).");
-            Assert.Less(fall.lift, 0.1f, $"{name} : l'épave n'est pas soulevée ({fall}).");
-            Assert.Less(fall.backward - alone.backward, 1f, $"{name} : elle recule d'un pas, sans glisser au loin ({fall}).");
-            Assert.Less(fall.highestAtEnd, 0.6f, $"{name} : elle finit couchée ({fall}).");
-        }
+        Assert.Less(head.peakSpeed, alone.peakSpeed + 1.5f, $"Aucune pièce ne part plus vite qu'en tombant seule, ou presque ({head}).");
+        Assert.Less(head.lift, 0.1f, $"L'épave n'est pas soulevée ({head}).");
+        Assert.Less(head.backward - alone.backward, 1f, $"Elle recule d'un pas, sans glisser au loin ({head}).");
+        Assert.Less(head.highestAtEnd, 0.6f, $"Elle finit couchée ({head}).");
 
         // Tué en pleine course, le robot roule encore un peu : jamais à la vitesse d'un sprint.
         Assert.Less(running.peakSpeed, 10f, $"Course : aucune pièce ne file à la vitesse héritée d'une image de rattrapage ({running}).");
         Assert.Less(running.lift, 0.1f, $"Course : l'épave n'est pas soulevée ({running}).");
         Assert.Less(running.backward - alone.backward, 2.5f, $"Course : elle roule un peu, sans glisser au loin ({running}).");
         Assert.Less(running.highestAtEnd, 0.6f, $"Course : elle finit couchée ({running}).");
+    }
+
+    /// <summary>
+    /// Le pompe à bout portant et le taser projettent l'épave en arrière, dans le sens du coup
+    /// (demandé par l'utilisateur le 2026-10-16 : « un réel effet de puissance »). Elle décolle un peu
+    /// et part de plus d'un mètre, d'un bloc : aucune pièce ne fouette, elle ne se disloque pas, ne
+    /// traverse pas l'arène et finit couchée. Le pompe de loin, quelques plombs au but, projette moins.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator UnCoupPuissant_ProjetteLEpave_DUnBloc()
+    {
+        WeaponData shotgun = Weapon("Arme_Pompe");
+        Assert.Greater(shotgun.killKnockback, 0f, "Garde : le pompe est une arme qui projette.");
+        float pointBlank = shotgun.damagePerHit * shotgun.PelletCount;
+
+        var alone = new Fall();
+        yield return MeasureFall("chute seule", null, alone);
+        Assert.AreEqual(RobotCorpse.RobotMass, corpse.TotalMass, 0.01f,
+            "Un coup puissant se règle en vitesse, convertie par la masse d'une épave : c'est bien la sienne.");
+        var shotgunFall = new Fall();
+        yield return MeasureFall("pompe à bout portant, en pleine tête",
+            (c, face) => c.ApplyImpulse(face, WeaponController.KillImpulse(shotgun, Vector3.back, pointBlank)), shotgunFall);
+        float spreadShotgun = LastSpread();
+        var taser = new Fall();
+        yield return MeasureFall("taser au visage",
+            (c, face) => c.ApplyImpulse(face, TaserController.DeathImpulse(Vector3.back)), taser);
+        float spreadTaser = LastSpread();
+        var far = new Fall();
+        yield return MeasureFall("pompe de loin, trois plombs à mi-dégâts",
+            (c, face) => c.ApplyImpulse(face, WeaponController.KillImpulse(shotgun, Vector3.back, 3 * shotgun.damagePerHit * 0.5f)), far);
+
+        foreach ((string name, Fall fall, float spread, float speed) in new[]
+                 { ("pompe", shotgunFall, spreadShotgun, shotgun.killKnockback), ("taser", taser, spreadTaser, TaserController.StrikeKnockback) })
+        {
+            Assert.Greater(fall.push, 2.5f, $"{name} : l'épave part vite en arrière ({fall}).");
+            Assert.Greater(fall.backward - alone.backward, 1.2f, $"{name} : elle est projetée de plus d'un mètre ({fall}).");
+            Assert.Less(fall.backward - alone.backward, 4.5f, $"{name} : sans traverser l'arène ({fall}).");
+            Assert.Greater(fall.lift, 0.03f, $"{name} : le coup la décolle ({fall}).");
+            Assert.Less(fall.lift, 0.6f, $"{name} : sans l'envoyer en l'air ({fall}).");
+            // Poussé d'un bloc, le corps bascule en arrière autour de ses pieds retenus par le sol : sa
+            // tête va jusqu'à deux fois sa vitesse (10,3 m/s mesurés au pompe le 2026-10-16). Au-delà, une
+            // pièce fouetterait seule.
+            Assert.Less(fall.peakSpeed, 2f * speed + 1.5f, $"{name} : aucune pièce ne part plus vite que le corps qui bascule ({fall}).");
+            Assert.Less(spread, 2.4f, $"{name} : elle ne se disloque pas.");
+            Assert.Less(fall.highestAtEnd, 0.6f, $"{name} : elle finit couchée ({fall}).");
+        }
+        Assert.Less(far.push, shotgunFall.push, $"De loin, le pompe projette moins ({far} contre {shotgunFall}).");
+        Assert.Greater(far.push, alone.push + 0.5f, $"Mais il projette encore ({far}).");
+    }
+
+    /// <summary>L'étendue à plat (m) des pièces de l'épave en ce moment.</summary>
+    private float LastSpread()
+    {
+        Bounds bounds = new Bounds(corpse.Bodies[0].worldCenterOfMass, Vector3.zero);
+        foreach (Rigidbody body in corpse.Bodies) bounds.Encapsulate(body.worldCenterOfMass);
+        return Mathf.Max(bounds.size.x, bounds.size.z);
     }
 
     /// <summary>

@@ -3,17 +3,17 @@ using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// La peinture du robot : une couleur vive par joueur, choisie par le SERVEUR (2026-10-08).
+/// La peinture du robot : une couleur vive par joueur, donnée par le SERVEUR (2026-10-08).
 ///
 /// Le GDD (§ 13) et la bible veulent que chaque robot ait sa propre couleur, pour que les
 /// spectateurs reconnaissent chaque duelliste d'un coup d'œil, même après l'avoir perdu de vue.
-/// Dans le prototype, c'est le jeu qui la donne : aucun client ne choisit la sienne, même principe
-/// que pour le point de spawn. Le serveur prend dans `palette` la première couleur qu'aucun autre
-/// joueur présent ne porte, et la publie.
+/// Depuis le 2026-10-16 (demandé par l'utilisateur), le joueur la choisit dans Personnalisation, parmi
+/// les couleurs vives de `palette`, et l'annonce en se connectant (SessionFlow) : le serveur la lui
+/// donne si aucun autre joueur présent ne la porte, sinon la première couleur libre, et la publie.
+/// Deux robots n'ont donc jamais la même tant que la palette a assez de couleurs.
 ///
 /// Catégorie C réseautée : rien dans la simulation, le hitbox ou le son ne la lit (la bible exclut
-/// expressément que la peinture touche au son). Le jour où la personnalisation arrivera, c'est cette
-/// même variable qui portera le choix du joueur, validé par le serveur (couleurs vives seulement).
+/// expressément que la peinture touche au son).
 ///
 /// Seules les pièces listées dans `paintedRenderers` sont peintes : les articulations gardent leur
 /// matériau, pour rester visibles comme le veut la bible. La couleur passe par un
@@ -69,7 +69,7 @@ public class PlayerPaint : NetworkBehaviour
                 if (other == null || other == this) continue;
                 taken.Add(other.networkPaint.Value);
             }
-            networkPaint.Value = PickPaint(palette, taken);
+            networkPaint.Value = PickPaint(palette, taken, SessionFlow.TakeApprovedPaint(OwnerClientId));
         }
 
         if (!spawnedPaints.Contains(this)) spawnedPaints.Add(this);
@@ -127,26 +127,23 @@ public class PlayerPaint : NetworkBehaviour
     }
 
     /// <summary>
-    /// La couleur d'un nouveau joueur : la première de la palette qu'aucun joueur présent ne porte.
-    /// Si toutes sont prises (plus de joueurs que de couleurs), la moins portée, pour que les
-    /// doublons restent aussi rares que possible. Fonction pure, testée.
+    /// La couleur d'un nouveau joueur : celle qu'il a choisie (`preferred`, son rang dans la palette ;
+    /// -1 : aucune) si aucun joueur présent ne la porte, sinon la première de la palette qu'aucun ne
+    /// porte. Si toutes sont prises (plus de joueurs que de couleurs), la moins portée, pour que les
+    /// doublons restent aussi rares que possible. Un rang hors de la palette ne vaut rien : il ne vient
+    /// que d'un client modifié. Fonction pure, testée.
     /// </summary>
-    public static Color32 PickPaint(IReadOnlyList<Color32> palette, IReadOnlyList<Color32> taken)
+    public static Color32 PickPaint(IReadOnlyList<Color32> palette, IReadOnlyList<Color32> taken, int preferred = -1)
     {
         if (palette == null || palette.Count == 0) return new Color32(0, 0, 0, 0);
+
+        if (preferred >= 0 && preferred < palette.Count && Worn(palette[preferred], taken) == 0) return palette[preferred];
 
         int best = 0;
         int bestCount = int.MaxValue;
         for (int i = 0; i < palette.Count; i++)
         {
-            int count = 0;
-            if (taken != null)
-            {
-                foreach (Color32 c in taken)
-                {
-                    if (Same(c, palette[i])) count++;
-                }
-            }
+            int count = Worn(palette[i], taken);
             if (count < bestCount)
             {
                 best = i;
@@ -155,6 +152,18 @@ public class PlayerPaint : NetworkBehaviour
             }
         }
         return palette[best];
+    }
+
+    // Combien de joueurs portent déjà cette couleur.
+    private static int Worn(Color32 color, IReadOnlyList<Color32> taken)
+    {
+        int count = 0;
+        if (taken == null) return 0;
+        foreach (Color32 c in taken)
+        {
+            if (Same(c, color)) count++;
+        }
+        return count;
     }
 
     private static bool Same(Color32 a, Color32 b) => a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;

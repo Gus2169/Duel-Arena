@@ -57,6 +57,7 @@ public static class WeaponImporter
         }
         AssignToLoadout(imported);
         AttachmentImporter.ImportAll();   // les accessoires, montés sur ces armes (2026-10-16)
+        GloveImporter.Import();           // et le gant à décharge (2026-10-16)
         AssetDatabase.SaveAssets();
         Debug.Log($"[Armes] {imported.Count} modèles importés.");
     }

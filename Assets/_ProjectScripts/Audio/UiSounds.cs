@@ -82,8 +82,9 @@ public class UiSounds : MonoBehaviour
         if (element == null) return Kind.None;
         if (element.ClassListContains("back-button") || element.ClassListContains("menu-button--quit")) return Kind.Back;
         if (element.ClassListContains("menu-button--primary")) return Kind.Confirm;
-        if (element.ClassListContains("weapon-card") || element.ClassListContains("loadout-card")
-            || element.ClassListContains("weapon-switch-button") || element.ClassListContains("color-swatch")) return Kind.Select;
+        if (element.ClassListContains("custom-weapon-row") || element.ClassListContains("loadout-card")
+            || element.ClassListContains("color-swatch") || element.ClassListContains("gunsmith-tab")
+            || element.ClassListContains("gunsmith-tile") || element.ClassListContains("gunsmith-choice")) return Kind.Select;
         return Kind.Click;
     }
 }

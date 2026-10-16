@@ -514,6 +514,25 @@ public class PlayerLocomotion : NetworkBehaviour
         serverReceivedSequence[index] = sequence;
         serverReceivedClock[index] = serverInputClock;
         serverReceivedLastSprint[index] = serverLastSprintClock;
+        serverReceivedLastUnaimed[index] = serverLastUnaimedClock;
+    }
+
+    /// <summary>Serveur : l'horloge des inputs à la réception de l'input `sequence` (la rafale du tir à la
+    /// hanche se referme sur elle). L'input inconnu, l'horloge d'après le dernier reçu.</summary>
+    public double ServerInputClockAt(int sequence)
+    {
+        int index = sequence & (ServerInputRecordSize - 1);
+        return sequence >= 0 && serverReceivedSequence[index] == sequence ? serverReceivedClock[index] : serverInputClock;
+    }
+
+    /// <summary>Serveur : depuis combien de temps (s) le joueur épaulait à la réception de l'input
+    /// `sequence`, compté sur ses inputs (HipFireSpread : le cône se referme pendant qu'on épaule).</summary>
+    public float ServerAimHeldTimeAt(int sequence)
+    {
+        int index = sequence & (ServerInputRecordSize - 1);
+        if (sequence >= 0 && serverReceivedSequence[index] == sequence)
+            return (float)(serverReceivedClock[index] - serverReceivedLastUnaimed[index]);
+        return (float)(serverInputClock - serverLastUnaimedClock);
     }
 
     /// <summary>Serveur : le joueur a-t-il voulu sprinter dans un input simulé depuis `firstInput` ?</summary>
@@ -537,12 +556,17 @@ public class PlayerLocomotion : NetworkBehaviour
     private readonly int[] serverInputRecordSequence = InitRecordSequences();
     private readonly byte[] serverInputRecordFlags = new byte[ServerInputRecordSize];
     private const byte RecordVaulting = 1, RecordAiming = 2;
+    // La vitesse et la posture après chaque input simulé : le cône du tir à la hanche (HipFireSpread).
+    private readonly float[] serverInputRecordSpeed = new float[ServerInputRecordSize];
+    private readonly Stance[] serverInputRecordStance = new Stance[ServerInputRecordSize];
 
     // Serveur : l'horloge des inputs à la RÉCEPTION de chacun (sortie de sprint, voir
-    // ServerTimeSinceSprintAt). Même anneau, rempli à l'arrivée et non à la simulation.
+    // ServerTimeSinceSprintAt ; épaulement, voir ServerAimHeldTimeAt). Même anneau, rempli à
+    // l'arrivée et non à la simulation.
     private readonly int[] serverReceivedSequence = InitRecordSequences();
     private readonly double[] serverReceivedClock = new double[ServerInputRecordSize];
     private readonly double[] serverReceivedLastSprint = new double[ServerInputRecordSize];
+    private readonly double[] serverReceivedLastUnaimed = new double[ServerInputRecordSize];
 
     private static int[] InitRecordSequences()
     {
@@ -557,6 +581,8 @@ public class PlayerLocomotion : NetworkBehaviour
         int index = sequence & (ServerInputRecordSize - 1);
         serverInputRecordSequence[index] = sequence;
         serverInputRecordFlags[index] = (byte)((IsVaulting ? RecordVaulting : 0) | (aiming ? RecordAiming : 0));
+        serverInputRecordSpeed[index] = HorizontalSpeed;
+        serverInputRecordStance[index] = CurrentStance;
         ServerLastSimulatedInput = Mathf.Max(ServerLastSimulatedInput, sequence);
         if (weapon != null) weapon.ServerProcessArmsActions();
     }
@@ -572,6 +598,19 @@ public class PlayerLocomotion : NetworkBehaviour
         aiming = (flags & RecordAiming) != 0;
         return known;
     }
+
+    /// <summary>Serveur : la vitesse horizontale (m/s) et la posture qui suivaient la simulation de
+    /// l'input `sequence` (le cône du tir à la hanche). L'input inconnu, l'état actuel.</summary>
+    public void ServerHipFireState(int sequence, out float speed, out Stance stance)
+    {
+        int index = sequence & (ServerInputRecordSize - 1);
+        bool known = sequence >= 0 && serverInputRecordSequence[index] == sequence;
+        speed = known ? serverInputRecordSpeed[index] : HorizontalSpeed;
+        stance = known ? serverInputRecordStance[index] : CurrentStance;
+    }
+
+    /// <summary>Chez qui simule (le joueur, le serveur) : la vitesse horizontale après le dernier input.</summary>
+    public float HorizontalSpeed => new Vector2(currentVelocity.x, currentVelocity.z).magnitude;
 
     // Serveur : l'arme en main input par input (2026-10-11). Son poids pèse sur la vitesse dans
     // Move() ; le serveur ne croit pas le client, il applique les changements d'arme qu'il a reçus,
@@ -652,11 +691,21 @@ public class PlayerLocomotion : NetworkBehaviour
     private double localInputClock, localLastSprintClock = double.NegativeInfinity;
     private double serverInputClock, serverLastSprintClock = double.NegativeInfinity;
 
+    // L'épaulement (2026-10-16, le tir à la hanche façon Rainbow Six) : l'horloge du dernier input qui
+    // n'épaulait pas, comptée de même. Le cône se referme pendant qu'on épaule (HipFireSpread).
+    private double localLastUnaimedClock, serverLastUnaimedClock;
+
     /// <summary>Chez le propriétaire : temps (s) depuis le dernier input envoyé qui voulait sprinter.</summary>
     public float TimeSinceSprint => (float)(localInputClock - localLastSprintClock);
 
     /// <summary>Serveur : le même temps, sur les inputs reçus de ce joueur.</summary>
     public float ServerTimeSinceSprint => (float)(serverInputClock - serverLastSprintClock);
+
+    /// <summary>Chez le propriétaire : depuis combien de temps (s) ses inputs épaulent.</summary>
+    public float AimHeldTime => (float)(localInputClock - localLastUnaimedClock);
+
+    /// <summary>Chez le propriétaire : l'horloge de ses inputs (la rafale du tir à la hanche).</summary>
+    public double InputClock => localInputClock;
 
     /// <summary>Avance une horloge d'inputs d'un input de durée `dt` (bornée), et la marque si cet
     /// input voulait sprinter. Fonction pure, testée.</summary>
@@ -664,6 +713,13 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         clock += Mathf.Clamp(dt, 0f, MaxSingleInputDeltaTime);
         if (sprint) lastSprint = clock;
+    }
+
+    /// <summary>Retient l'horloge d'un input (déjà avancée) qui n'épaulait pas : le temps d'épaulement
+    /// se compte depuis. Fonction pure, testée.</summary>
+    public static void TrackAim(ref double lastUnaimed, double clock, bool aiming)
+    {
+        if (!aiming) lastUnaimed = clock;
     }
 
     private float verticalVelocity;
@@ -1630,6 +1686,8 @@ public class PlayerLocomotion : NetworkBehaviour
             bool sprintInput = WantsToSprint(snap.sprintHeld, snap.move, snap.aimHeld, snap.fireHeld);
             AdvanceInputClock(ref localInputClock, ref localLastSprintClock, dt, sprintInput);
             AdvanceInputClock(ref serverInputClock, ref serverLastSprintClock, dt, sprintInput);
+            TrackAim(ref localLastUnaimedClock, localInputClock, snap.aimHeld);
+            TrackAim(ref serverLastUnaimedClock, serverInputClock, snap.aimHeld);
             ServerRecordReceivedInput(sequence);
 
             ServerCheckAutoStand(snap);
@@ -1819,6 +1877,7 @@ public class PlayerLocomotion : NetworkBehaviour
         QueueInputForServer(sequence, snap, dt);
         AdvanceInputClock(ref localInputClock, ref localLastSprintClock, dt,
                           WantsToSprint(snap.sprintHeld, snap.move, snap.aimHeld, snap.fireHeld));
+        TrackAim(ref localLastUnaimedClock, localInputClock, snap.aimHeld);
 
 #if UNITY_EDITOR
         // Triche simulée : on renvoie le MÊME input plusieurs fois, avec des numéros de séquence
@@ -1906,6 +1965,7 @@ public class PlayerLocomotion : NetworkBehaviour
         // ce que le joueur avait envoyé quand il a tiré ou rechargé (voir TimeSinceSprint).
         AdvanceInputClock(ref serverInputClock, ref serverLastSprintClock, wire.deltaTime,
                           WantsToSprint(snap.sprintHeld, snap.move, snap.aimHeld, snap.fireHeld));
+        TrackAim(ref serverLastUnaimedClock, serverInputClock, snap.aimHeld);
         ServerRecordReceivedInput(sequence);
 
         // Garde-fou anti-flood (mémoire) : sans plafond, un client qui inonde le serveur d'inputs fait

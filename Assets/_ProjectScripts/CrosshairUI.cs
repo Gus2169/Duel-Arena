@@ -150,14 +150,16 @@ public class CrosshairUI : MonoBehaviour
         bool isAiming = inputReader != null && inputReader.AimHeld;
 
         // Le sniper n'a pas de réticule à la hanche, comme dans Call of Duty (tranché le
-        // 2026-10-11) : la balle part quand même au centre de l'écran, sans hasard (GDD § 3).
+        // 2026-10-11) : il faut deviner le centre de son cône (HipFireSpread).
         if (!isAiming && firstPersonView != null && !firstPersonView.HipCrosshair)
         {
             DrawAmmo(cx, cy);
             GUI.color = Color.white;
             return;
         }
-        float gap = isAiming ? adsGap : hipGap;
+        // Les branches s'écartent jusqu'au bord du cône où partira la prochaine balle, comme dans
+        // Rainbow Six (2026-10-16) : il s'ouvre en bougeant et en rafale, se referme en épaulant.
+        float gap = Mathf.Max(isAiming ? adsGap : hipGap, ConePixels(weapon != null ? weapon.HipSpreadDegrees : 0f));
         float length = isAiming ? adsLineLength : hipLineLength;
 
         GUI.color = crosshairColor;
@@ -176,6 +178,14 @@ public class CrosshairUI : MonoBehaviour
         DrawAmmo(cx, cy);
 
         GUI.color = Color.white;
+    }
+
+    /// <summary>Le rayon à l'écran (pixels) d'un cône de `degrees` degrés, vu par la caméra de visée.</summary>
+    private float ConePixels(float degrees)
+    {
+        if (!(degrees > 0f) || aimCamera == null) return 0f;
+        float halfFov = aimCamera.fieldOfView * 0.5f * Mathf.Deg2Rad;
+        return Mathf.Tan(degrees * Mathf.Deg2Rad) / Mathf.Tan(halfFov) * Screen.height * 0.5f;
     }
 
     private void DrawAmmo(float cx, float cy)

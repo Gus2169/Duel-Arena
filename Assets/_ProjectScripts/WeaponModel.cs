@@ -61,6 +61,15 @@ public class WeaponModel : MonoBehaviour
         _ => f.ToString(),
     };
 
+    /// <summary>Ce que l'armurerie dit d'une famille (Bible § 12).</summary>
+    public static string FamilyDescription(Family f) => f switch
+    {
+        Family.Stock => "Une arme du stock militaire du complexe, sobre et éprouvée.",
+        Family.Serie30 => "La dernière dotation du complexe, livrée peu avant la disparition des humains et retrouvée dans ses caisses.",
+        Family.Laser => "Un prototype du programme d'essai, à part des armes à balles.",
+        _ => "",
+    };
+
 #if UNITY_EDITOR
     /// <summary>Réglage par l'outil qui construit les préfabs d'armes (Editor seulement).</summary>
     public void EditorSetup(Transform sightPoint, Transform muzzlePoint, float eyeDistance, bool pistol = false)

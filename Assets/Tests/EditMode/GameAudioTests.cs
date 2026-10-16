@@ -248,8 +248,12 @@ public class GameAudioTests
         Assert.AreEqual(UiSounds.Kind.Back, UiSounds.KindOf(WithClass(new Button(), "back-button")));
         Assert.AreEqual(UiSounds.Kind.Back, UiSounds.KindOf(WithClass(new Button(), "menu-button--quit")), "Quitter revient en arrière.");
         Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "loadout-card")), "Une arme choisie en préparation.");
-        Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "weapon-card")));
+        Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "custom-weapon-row")), "Une arme de Personnalisation.");
         Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new VisualElement(), "color-swatch")));
+        Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "gunsmith-tab")), "Une arme de l'armurerie.");
+        Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "gunsmith-tile")), "Une tuile de l'armurerie.");
+        Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "gunsmith-choice")), "Un choix équipé.");
+        Assert.AreEqual(UiSounds.Kind.Click, UiSounds.KindOf(WithClass(new Button(), "gunsmith-arrow")), "Les flèches de la bande défilent.");
     }
 
     private static VisualElement WithClass(VisualElement element, string ussClass)
