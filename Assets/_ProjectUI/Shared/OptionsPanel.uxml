@@ -1,0 +1,58 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <!-- Le panneau des Options, partagé par le menu principal et le menu d'Échap en partie
+         (2026-10-12). OptionsController le retrouve par les noms ci-dessous, où qu'il soit. -->
+    <ui:Style src="../MainMenu/MainMenu.uss" />
+    <ui:VisualElement class="panel">
+        <ui:Label class="panel-title" text="Options" />
+
+        <ui:VisualElement class="tab-row">
+            <ui:Button name="tabGraphicsButton" class="tab-button tab-button--active" text="Graphismes" />
+            <ui:Button name="tabAudioButton" class="tab-button" text="Son" />
+            <ui:Button name="tabControlsButton" class="tab-button" text="Commandes" />
+        </ui:VisualElement>
+
+        <!-- Graphismes -->
+        <ui:VisualElement name="pageGraphics" class="options-page">
+            <ui:VisualElement class="option-row">
+                <ui:Label text="Résolution" />
+                <ui:DropdownField name="resolutionDropdown" class="option-control" />
+            </ui:VisualElement>
+            <ui:VisualElement class="option-row">
+                <ui:Label text="Plein écran" />
+                <ui:Toggle name="fullscreenToggle" class="option-control" />
+            </ui:VisualElement>
+            <ui:VisualElement class="option-row">
+                <ui:Label text="Synchronisation verticale" />
+                <ui:Toggle name="vsyncToggle" class="option-control" />
+            </ui:VisualElement>
+            <ui:VisualElement class="option-row">
+                <ui:Label text="Limite d'images / seconde" />
+                <ui:DropdownField name="frameRateDropdown" class="option-control" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Son (2026-10-13) -->
+        <ui:VisualElement name="pageAudio" class="options-page hidden">
+            <ui:VisualElement class="option-row">
+                <ui:Label text="Volume général" />
+                <ui:Slider name="masterVolumeSlider" class="option-control" low-value="0" high-value="1" />
+            </ui:VisualElement>
+            <ui:VisualElement class="option-row">
+                <ui:Label text="Musique" />
+                <ui:Slider name="musicVolumeSlider" class="option-control" low-value="0" high-value="1" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Commandes -->
+        <ui:VisualElement name="pageControls" class="options-page hidden">
+            <ui:VisualElement class="option-row">
+                <ui:Label text="Sensibilité de la souris" />
+                <ui:Slider name="sensitivitySlider" class="option-control" low-value="0.2" high-value="3" />
+            </ui:VisualElement>
+
+            <ui:Label class="section-label" text="TOUCHES" />
+            <ui:ScrollView name="bindRowScroll" class="controls-scroll" />
+            <ui:Button name="resetBindingsButton" class="reset-bindings-button" text="Réinitialiser les touches" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

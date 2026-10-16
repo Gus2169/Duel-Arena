@@ -44,10 +44,13 @@ public class TaserController : NetworkBehaviour
     [Tooltip("Géométrie qui arrête le coup (on ne frappe pas à travers un mur).")]
     [SerializeField] private LayerMask worldMask = 1;
 
-    [Header("Son")]
-    [Tooltip("Décharge du taser, entendue par tout le monde. Vide = silencieux.")]
-    [SerializeField] private AudioClip strikeSound;
-    [SerializeField, Range(0f, 1f)] private float strikeVolume = 0.9f;
+    [Header("Son (entendu par tout le monde)")]
+    [Tooltip("Le poing qui part, à l'appui (un au hasard). Vide = silencieux.")]
+    [SerializeField] private AudioClip[] swingSounds = new AudioClip[0];
+    [SerializeField, Range(0f, 1f)] private float swingVolume = 0.3f;
+    [Tooltip("La décharge, au CONTACT (contactDelay après l'appui), avec les étincelles du gant (un au hasard). Vide = silencieux.")]
+    [SerializeField] private AudioClip[] zapSounds = new AudioClip[0];
+    [SerializeField, Range(0f, 1f)] private float zapVolume = 1f;
     [SerializeField] private AudioSource audioSource;
 
     [Header("Garde-fous serveur (anti-triche)")]
@@ -67,6 +70,16 @@ public class TaserController : NetworkBehaviour
     private PlayerLocomotion locomotion;
     private WeaponController weapon;
     private Health ownHealth;
+    private PlayerMatchState matchState; // statistiques du match
+
+    /// <summary>Ce que pousse un coup de taser mortel sur l'épave (N·s, ressenti). Ramené de 30 à 20
+    /// le 2026-10-12, et presque à plat (il soulevait l'épave par la tête) : « violent », retour de
+    /// l'utilisateur. Le robot foudroyé s'effondre en reculant.</summary>
+    private const float StrikeDeathImpulse = 20f;
+
+    /// <summary>L'impulsion (N·s) d'un coup de taser mortel donné dans `strikeDirection`.</summary>
+    public static Vector3 DeathImpulse(Vector3 strikeDirection)
+        => (strikeDirection.normalized + Vector3.up * 0.1f).normalized * StrikeDeathImpulse;
 
     private float localStrikeEndsAt = -1f;
 
@@ -94,12 +107,16 @@ public class TaserController : NetworkBehaviour
 
     private bool IsNetworked => NetworkObject != null && IsSpawned;
 
+    /// <summary>Un spectateur n'a pas de taser (2026-10-13).</summary>
+    private bool IsSpectatorRole => matchState != null && matchState.IsSpectator;
+
     private void Awake()
     {
         input = GetComponentInParent<PlayerInputReader>();
         locomotion = GetComponentInParent<PlayerLocomotion>();
         weapon = GetComponent<WeaponController>();
         ownHealth = GetComponentInParent<Health>();
+        matchState = GetComponentInParent<PlayerMatchState>();
     }
 
     private void Update()
@@ -113,6 +130,9 @@ public class TaserController : NetworkBehaviour
 
         if (NetworkObject != null && !IsOwner) return;
         if (input == null) return;
+        // Un spectateur n'a pas de gant : sa touche de corps à corps donne un coup de poing
+        // (SpectatorController, 2026-10-13).
+        if (IsSpectatorRole) return;
 
         bool wantsStrike = input.MeleePressedThisFrame;
 #if UNITY_EDITOR
@@ -124,7 +144,7 @@ public class TaserController : NetworkBehaviour
 #if UNITY_EDITOR
         if (PlayerLocomotion.DebugVaultIgnoresRules) vaulting = false; // client tricheur simulé
 #endif
-        if (wantsStrike && !IsStriking && RoundManager.FiringAllowed && (ownHealth == null || !ownHealth.IsDead) && !vaulting)
+        if (wantsStrike && !IsStriking && RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead) && !vaulting)
         {
             BeginStrike();
         }
@@ -144,7 +164,13 @@ public class TaserController : NetworkBehaviour
 #if UNITY_EDITOR
         if (AutopilotStrike && TryFindOpponentInReach(out Vector3 target)) direction = (target - origin).normalized;
 #endif
-        if (IsNetworked) StrikeServerRpc(origin, direction, locomotion.ViewServerTime);
+        if (IsNetworked)
+        {
+            // Le dernier input produit avant le coup, et les inputs pas encore partis avec lui (voir
+            // PlayerLocomotion.ServerReferenceInput).
+            locomotion.SendPendingInputs();
+            StrikeServerRpc(origin, direction, locomotion.ViewServerTime, locomotion.LastInputSequence);
+        }
     }
 
     /// <summary>
@@ -152,7 +178,7 @@ public class TaserController : NetworkBehaviour
     /// le rechargement du joueur, montre le geste aux autres, puis résout le coup au contact.
     /// </summary>
     [ServerRpc]
-    private void StrikeServerRpc(Vector3 origin, Vector3 direction, double viewServerTime)
+    private void StrikeServerRpc(Vector3 origin, Vector3 direction, double viewServerTime, int inputSequence)
     {
         // Une valeur invalide (NaN, infini) ne vient que d'un client modifié : avec NaN, le test de
         // distance de l'origine ci-dessous serait toujours faux, donc passé (2026-10-12).
@@ -163,8 +189,8 @@ public class TaserController : NetworkBehaviour
         // 15 % pour la gigue : à 0,6 s d'intervalle, elle couvre 90 ms.
         double now = Time.timeAsDouble;
         if (now - serverLastStrikeAt < strikeDuration * 0.85) return;
-        if (!RoundManager.FiringAllowed) return;
-        if (ownHealth != null && ownHealth.IsDead) return;
+        if (IsSpectatorRole) return;
+        if (!RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead)) return;
         if (direction.sqrMagnitude < 0.0001f) return;
 
         Vector3 offset = origin - transform.root.position;
@@ -176,9 +202,11 @@ public class TaserController : NetworkBehaviour
         serverLastStrikeAt = now;
 
         // Dans l'ordre des demandes du joueur : un rechargement demandé juste avant le coup est
-        // commencé, puis annulé (WeaponController.ServerProcessArmsActions).
-        if (weapon != null) weapon.ServerQueueCancelReload();
-        serverStrikeFirstInput = locomotion != null ? locomotion.ServerNextInput : int.MaxValue;
+        // commencé, puis annulé (WeaponController.ServerProcessArmsActions). L'input de référence est
+        // le dernier produit avant le coup, borné par le serveur (jamais avant le dernier reçu).
+        int referenceInput = locomotion != null ? locomotion.ServerReferenceInput(inputSequence) : -1;
+        if (weapon != null) weapon.ServerQueueCancelReload(referenceInput);
+        serverStrikeFirstInput = locomotion != null ? referenceInput + 1 : int.MaxValue;
         StrikeClientRpc();
 
         // L'origine est gardée RELATIVE au joueur : il continue de bouger jusqu'au contact, et son
@@ -201,8 +229,7 @@ public class TaserController : NetworkBehaviour
     private void ServerResolveStrike()
     {
         // Un attaquant tué pendant le geste ne frappe pas : c'est tout l'intérêt du délai.
-        if (ownHealth != null && ownHealth.IsDead) return;
-        if (!RoundManager.FiringAllowed) return;
+        if (!RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead)) return;
 
         // On ne frappe pas en courant (2026-10-10) : le joueur honnête cesse de sprinter dès
         // l'appui (PlayerLocomotion.GateSprint). Un client qui sprinterait pendant le geste ne
@@ -252,8 +279,16 @@ public class TaserController : NetworkBehaviour
             if (target != null && target != ownHealth && !target.IsDead)
             {
                 // Mort instantanée (GDD § 6) : quelle que soit la vie restante.
+                float before = target.Current;
                 target.ApplyDamage(float.PositiveInfinity, transform.root.gameObject);
                 Debug.Log($"[Serveur] Taser : {hit.transform.root.name} neutralisé (rewind {rewind * 1000f:F0} ms).");
+
+                // Statistiques du match (pendant la manche seulement) et épave poussée par le coup.
+                if (matchState != null && RoundManager.StatsRecording) matchState.ServerRecordDamage(before);
+                if (target.IsDead && target.TryGetComponent(out PlayerDeath death))
+                    death.ServerNotifyKilled(hit.ClosestPoint(origin), DeathImpulse(serverStrikeDirection));
+                // Le retour de touche, comme au tir (2026-10-13) : le coup qui tue.
+                if (weapon != null && before > 0f && target.IsDead) weapon.ServerConfirmHit(WeaponController.HitKind.Kill);
             }
         }
         finally
@@ -303,11 +338,22 @@ public class TaserController : NetworkBehaviour
         return best;
     }
 
+    /// <summary>Le geste s'entend en deux temps : le poing qui part à l'appui, la décharge au contact,
+    /// en même temps que les étincelles (TaserSparkFX), que le coup touche ou non.</summary>
     private void PlayStrikeSound()
     {
-        if (audioSource == null || strikeSound == null) return;
-        audioSource.pitch = 1f;
-        audioSource.PlayOneShot(strikeSound, strikeVolume);
+        PlayOneOf(swingSounds, swingVolume);
+        CancelInvoke(nameof(PlayZapSound));
+        Invoke(nameof(PlayZapSound), contactDelay);
+    }
+
+    private void PlayZapSound() => PlayOneOf(zapSounds, zapVolume);
+
+    private void PlayOneOf(AudioClip[] clips, float volume)
+    {
+        if (audioSource == null || clips == null || clips.Length == 0) return;
+        AudioClip clip = clips[UnityEngine.Random.Range(0, clips.Length)];
+        if (clip != null) audioSource.PlayOneShot(clip, volume);
     }
 
 #if UNITY_EDITOR

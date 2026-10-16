@@ -1,4 +1,5 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:Template name="OptionsPanel" src="../Shared/OptionsPanel.uxml" />
     <ui:Style src="MainMenu.uss" />
     <ui:VisualElement name="root" class="root" picking-mode="Position">
 
@@ -12,39 +13,103 @@
             <ui:Button name="quitButton" class="menu-button menu-button--quit" text="Quitter" />
         </ui:VisualElement>
 
-        <!-- ================= Jouer : mode + Host/Join ================= -->
-        <ui:VisualElement name="screenPlay" class="screen hidden">
+        <!-- ================= Jouer : créer une partie, ou la rejoindre par son code ================= -->
+        <ui:VisualElement name="screenPlay" class="screen screen--wide hidden">
             <ui:VisualElement class="panel">
-                <ui:Label class="panel-title" text="Choisir un mode" />
-                <ui:VisualElement name="modeCardRow" class="wrap-row">
-                    <ui:Button name="modeBo5" class="mode-card mode-card--active" text="Duel BO5&#10;&#10;Premier à 3 manches gagnées." />
-                    <ui:Button name="modeRanked" class="mode-card" text="Classé&#10;&#10;Arrive après la sortie." />
-                    <ui:Button name="modeCapture" class="mode-card" text="Capture&#10;&#10;Mode à venir." />
-                    <ui:Button name="modeZone" class="mode-card" text="Zone&#10;&#10;Mode à venir." />
+                <ui:VisualElement class="pseudo-row">
+                    <ui:Label class="pseudo-label" text="PSEUDO" />
+                    <ui:TextField name="pseudoField" class="text-field pseudo-field" max-length="16" />
+                    <ui:Label class="pseudo-hint" text="Vu par les autres joueurs. Vide : « Joueur 1 », « Joueur 2 »…" />
                 </ui:VisualElement>
 
-                <ui:VisualElement class="host-join-split">
-                    <ui:VisualElement class="host-join-column">
-                        <ui:Label class="section-label" text="HÉBERGER" />
-                        <ui:Label class="field-label" text="Port d'écoute" />
-                        <ui:TextField name="hostPortField" class="text-field" value="7777" max-length="5" />
-                        <ui:Button name="hostButton" class="menu-button menu-button--primary" text="Héberger" />
-                        <ui:Label name="localIpLabel" class="local-ip-label" text="" />
+                <ui:VisualElement class="play-split">
+                    <ui:VisualElement class="play-card">
+                        <ui:Label class="section-label section-label--accent" text="CRÉER UNE PARTIE" />
+                        <ui:Label class="play-card-text" text="Ouvre un salon privé et reçois un code à donner à tes amis. Le mode et les réglages se choisissent dans le salon, puis tu lances la partie." />
+                        <ui:Button name="createButton" class="menu-button menu-button--primary play-card-button" text="Créer une partie" />
                     </ui:VisualElement>
 
-                    <ui:VisualElement class="host-join-column host-join-column--last">
-                        <ui:Label class="section-label" text="REJOINDRE" />
-                        <ui:Label class="field-label" text="Adresse IP de l'hôte" />
-                        <ui:TextField name="joinIpField" class="text-field" value="127.0.0.1" />
-                        <ui:Label class="field-label" text="Port" />
-                        <ui:TextField name="joinPortField" class="text-field" value="7777" max-length="5" />
-                        <ui:Button name="joinButton" class="menu-button menu-button--primary" text="Rejoindre" />
+                    <ui:VisualElement class="play-card play-card--last">
+                        <ui:Label class="section-label section-label--accent" text="REJOINDRE UNE PARTIE" />
+                        <ui:Label class="play-card-text" text="Tape le code que l'hôte t'a donné : tu arrives dans son salon, ou directement dans l'arène si la partie est lancée." />
+                        <ui:TextField name="joinCodeField" class="text-field code-field" max-length="16" />
+                        <ui:Button name="joinCodeButton" class="menu-button menu-button--primary play-card-button" text="Rejoindre" />
                     </ui:VisualElement>
                 </ui:VisualElement>
 
                 <ui:Label name="playStatusLabel" class="status-label" text="" />
+
+                <!-- Sans les services en ligne : sur le même réseau, par l'adresse de l'hôte. Sert aussi
+                     au banc de test à deux instances (CLAUDE.md). Les réglages sont ceux de la dernière
+                     partie créée. -->
+                <ui:Foldout name="lanFoldout" class="lan-foldout" text="Réseau local, sans code" value="false">
+                    <ui:VisualElement class="host-join-split">
+                        <ui:VisualElement class="host-join-column">
+                            <ui:Label class="section-label" text="HÉBERGER SUR CE RÉSEAU" />
+                            <ui:Label class="field-label" text="Port d'écoute" />
+                            <ui:TextField name="hostPortField" class="text-field" value="7777" max-length="5" />
+                            <ui:Label name="lanRulesLabel" class="rule-hint" text="" />
+                            <ui:Button name="hostButton" class="menu-button" text="Héberger" />
+                            <ui:Label name="localIpLabel" class="local-ip-label" text="" />
+                        </ui:VisualElement>
+
+                        <ui:VisualElement class="host-join-column host-join-column--last">
+                            <ui:Label class="section-label" text="REJOINDRE UNE ADRESSE" />
+                            <ui:Label class="field-label" text="Adresse IP de l'hôte" />
+                            <ui:TextField name="joinIpField" class="text-field" value="127.0.0.1" />
+                            <ui:Label class="field-label" text="Port" />
+                            <ui:TextField name="joinPortField" class="text-field" value="7777" max-length="5" />
+                            <ui:Button name="joinButton" class="menu-button" text="Rejoindre" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                </ui:Foldout>
             </ui:VisualElement>
             <ui:Button name="playBackButton" class="back-button" text="Retour" />
+        </ui:VisualElement>
+
+        <!-- ================= Salon : le code, les joueurs, le mode et les réglages ================= -->
+        <ui:VisualElement name="screenLobby" class="screen screen--wide hidden">
+            <ui:VisualElement class="panel">
+                <ui:VisualElement class="lobby-header">
+                    <ui:VisualElement class="lobby-title-block">
+                        <ui:Label class="panel-title lobby-title" text="Salon privé" />
+                        <ui:Label name="lobbyRoleLabel" class="lobby-role" text="" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="lobby-code-block">
+                        <ui:Label class="section-label lobby-code-caption" text="CODE DE LA PARTIE" />
+                        <ui:VisualElement class="row">
+                            <ui:Label name="lobbyCodeLabel" class="lobby-code" text="······" />
+                            <ui:Button name="lobbyCopyButton" class="rule-chip lobby-copy" text="Copier" />
+                        </ui:VisualElement>
+                        <ui:Label class="rule-hint lobby-code-hint" text="Tes amis le tapent dans Jouer, Rejoindre une partie." />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:VisualElement class="lobby-split">
+                    <ui:VisualElement class="lobby-column">
+                        <ui:Label name="lobbyPlayersTitle" class="section-label lobby-section-first" text="JOUEURS" />
+                        <ui:VisualElement name="lobbyPlayerList" class="lobby-player-list" />
+                        <ui:Label class="rule-hint" text="Les deux premiers arrivés se battent ; les autres attendent leur tour sur la tribune." />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement class="lobby-column lobby-column--last">
+                        <ui:Label class="section-label lobby-section-first" text="MODE" />
+                        <ui:VisualElement name="lobbyModeRow" class="rule-row" />
+                        <ui:Label class="section-label" text="PLACES (AU-DELÀ DE 2 : SPECTATEURS)" />
+                        <ui:VisualElement name="lobbyCapacityRow" class="rule-row" />
+                        <ui:Label class="section-label" text="ORGANISATION DES DUELS" />
+                        <ui:VisualElement name="lobbyOrganizationRow" class="rule-row" />
+                        <ui:Toggle name="lobbyInterventionsToggle" class="rule-toggle" label="Les spectateurs interviennent (cailloux, matériel, bagarre)" />
+                        <ui:Label name="lobbyRulesHint" class="rule-hint" text="" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:VisualElement class="lobby-footer">
+                    <ui:Label name="lobbyStatusLabel" class="status-label lobby-status" text="" />
+                    <ui:Button name="lobbyStartButton" class="menu-button menu-button--primary lobby-start" text="Lancer la partie" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:Button name="lobbyLeaveButton" class="back-button" text="Quitter le salon" />
         </ui:VisualElement>
 
         <!-- ================= Personnalisation ================= -->
@@ -65,7 +130,7 @@
 
                         <ui:Label class="section-label" text="ARME DE DÉPART" />
                         <ui:VisualElement name="weaponCardRow" class="wrap-row" />
-                        <ui:Label class="hint-text" text="L'arme choisie ici est équipée à l'arrivée sur le terrain. Les touches 1 à 4 permettent toujours de changer d'arme librement en jeu." />
+                        <ui:Label class="hint-text" text="L'arme choisie ici est celle que tu as en main à l'arrivée. En partie, chaque joueur choisit son arme avant chaque manche, pendant la préparation (clic ou touches 1 à 4) ; une fois la manche lancée, on la garde." />
 
                         <ui:Button name="openWeaponCustomizeButton" class="menu-button" text="Personnaliser les armes →" />
                     </ui:VisualElement>
@@ -90,53 +155,14 @@
                 <ui:VisualElement name="categoryTabRow" class="tab-row" />
                 <ui:VisualElement name="weaponOptionRow" class="wrap-row" />
 
-                <ui:Label class="hint-text" text="Accessoires cosmétiques : pour l'instant visibles seulement ici, dans l'armurerie — ils ne changent pas (encore) l'arme que tu tiens en match." />
+                <ui:Label class="hint-text" text="Le modèle et la finition se voient en match, par tous les joueurs, et ne changent rien à l'arme. Les accessoires, eux, la changent (recul, épaulement, chargeur) ; tous sont ouverts à tous. Aucun ne touche aux dégâts : c'est la classe de l'arme qui les fait." />
             </ui:VisualElement>
             <ui:Button name="weaponCustomizeBackButton" class="back-button" text="Retour" />
         </ui:VisualElement>
 
-        <!-- ================= Options ================= -->
+        <!-- ================= Options (panneau partagé avec le menu d'Échap) ================= -->
         <ui:VisualElement name="screenOptions" class="screen hidden">
-            <ui:VisualElement class="panel">
-                <ui:Label class="panel-title" text="Options" />
-
-                <ui:VisualElement class="tab-row">
-                    <ui:Button name="tabGraphicsButton" class="tab-button tab-button--active" text="Graphismes" />
-                    <ui:Button name="tabControlsButton" class="tab-button" text="Commandes" />
-                </ui:VisualElement>
-
-                <!-- Graphismes -->
-                <ui:VisualElement name="pageGraphics" class="options-page">
-                    <ui:VisualElement class="option-row">
-                        <ui:Label text="Résolution" />
-                        <ui:DropdownField name="resolutionDropdown" class="option-control" />
-                    </ui:VisualElement>
-                    <ui:VisualElement class="option-row">
-                        <ui:Label text="Plein écran" />
-                        <ui:Toggle name="fullscreenToggle" class="option-control" />
-                    </ui:VisualElement>
-                    <ui:VisualElement class="option-row">
-                        <ui:Label text="Synchronisation verticale" />
-                        <ui:Toggle name="vsyncToggle" class="option-control" />
-                    </ui:VisualElement>
-                    <ui:VisualElement class="option-row">
-                        <ui:Label text="Limite d'images / seconde" />
-                        <ui:DropdownField name="frameRateDropdown" class="option-control" />
-                    </ui:VisualElement>
-                </ui:VisualElement>
-
-                <!-- Commandes -->
-                <ui:VisualElement name="pageControls" class="options-page hidden">
-                    <ui:VisualElement class="option-row">
-                        <ui:Label text="Sensibilité de la souris" />
-                        <ui:Slider name="sensitivitySlider" class="option-control" low-value="0.2" high-value="3" />
-                    </ui:VisualElement>
-
-                    <ui:Label class="section-label" text="TOUCHES" />
-                    <ui:ScrollView name="bindRowScroll" class="controls-scroll" />
-                    <ui:Button name="resetBindingsButton" class="reset-bindings-button" text="Réinitialiser les touches" />
-                </ui:VisualElement>
-            </ui:VisualElement>
+            <ui:Instance template="OptionsPanel" class="options-instance" />
             <ui:Button name="optionsBackButton" class="back-button" text="Retour" />
         </ui:VisualElement>
 

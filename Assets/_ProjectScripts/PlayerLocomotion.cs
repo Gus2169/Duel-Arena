@@ -348,6 +348,10 @@ public class PlayerLocomotion : NetworkBehaviour
     /// sinon la caméra traverserait un mur face auquel on se tient (vérifié par les tests).</summary>
     public float ControllerRadius(Stance stance) => GetStanceProfile(stance).controllerRadius;
 
+    /// <summary>Hauteur du CharacterController dans une posture : le corps d'un spectateur, que
+    /// touchent les poings et les cailloux (SpectatorRules), en est la capsule.</summary>
+    public float ControllerHeight(Stance stance) => GetStanceProfile(stance).controllerHeight;
+
     /// <summary>Décalage latéral de lean à AFFICHER pour ce joueur sur cette machine : prédit
     /// chez le propriétaire, publié par le serveur partout ailleurs. Lu par l'animation.</summary>
     public float DisplayLeanOffset => LeanOffset;
@@ -381,6 +385,35 @@ public class PlayerLocomotion : NetworkBehaviour
     /// modifié peut mentir sur la sienne, comme sur son lean : il ne change que l'endroit où les
     /// autres VOIENT pointer son fusil, jamais où partent ses balles.</summary>
     public float DisplayAimPitch => Simulates ? AimPitch : displayedPose.aimPitch;
+
+    /// <summary>L'œil de ce joueur tel que cette machine l'AFFICHE, dans le monde : la posture affichée
+    /// (transition comprise) et le lean publié, comme la tête touchable. D'où les autres voient partir
+    /// son regard : le point du laser tactique (TacticalLaser, 2026-10-16). Catégorie C.</summary>
+    public Vector3 DisplayEyePosition
+    {
+        get
+        {
+            GetDisplayedStance(out Stance from, out Stance to, out float progress);
+            Vector3 eyeFrom = EyeLocal(from);
+            Vector3 eyeTo = EyeLocal(to);
+            float lean = DisplayLeanOffset;
+            if (hitbox != null)
+            {
+                eyeFrom = hitbox.LeanedEye(from, eyeFrom, lean);
+                eyeTo = hitbox.LeanedEye(to, eyeTo, lean);
+            }
+            else
+            {
+                eyeFrom.x += lean;
+                eyeTo.x += lean;
+            }
+            return transform.TransformPoint(Vector3.Lerp(eyeFrom, eyeTo, progress));
+        }
+    }
+
+    /// <summary>La direction du regard de ce joueur telle que cette machine l'AFFICHE : son cap et son
+    /// tangage affiché (DisplayAimPitch). Catégorie C.</summary>
+    public Vector3 DisplayLookDirection => Quaternion.Euler(DisplayAimPitch, transform.eulerAngles.y, 0f) * Vector3.forward;
 
     /// <summary>Le joueur est-il en l'air, du point de vue de l'AFFICHAGE ?
     ///
@@ -429,15 +462,59 @@ public class PlayerLocomotion : NetworkBehaviour
     private bool sprintIntentLastFrame;
 
     /// <summary>Serveur : numéro du dernier input reçu de ce joueur, et du dernier input simulé où il
-    /// voulait sprinter. Les demandes de rechargement et de taser voyagent par RPC fiables, livrées
-    /// dans l'ordre d'envoi : un input de numéro supérieur à celui reçu avant une demande a été
+    /// voulait sprinter. Chaque demande (tir, rechargement, taser, changement d'arme) annonce le numéro
+    /// du dernier input produit avant elle (ServerReferenceInput) : un input de numéro supérieur a été
     /// produit APRÈS l'appui. C'est ce qui permet au serveur d'annuler un rechargement ou un coup
-    /// suivis d'un sprint, sans jamais punir le sprint qui les précédait (voir ServerNextInput).</summary>
+    /// suivis d'un sprint, sans jamais punir le sprint qui les précédait.</summary>
     public int ServerLastReceivedInput { get; private set; } = -1;
     public int ServerLastSprintInput { get; private set; } = -1;
 
-    /// <summary>Serveur : numéro du premier input postérieur à une demande qui arrive maintenant.</summary>
-    public int ServerNextInput => ServerLastReceivedInput + 1;
+    /// <summary>Chez le joueur : numéro du dernier input produit, que chaque demande annonce au
+    /// serveur (voir ServerReferenceInput).</summary>
+    public int LastInputSequence => nextInputSequence - 1;
+
+    /// <summary>Avance maximale (en inputs) d'un input de référence annoncé sur le dernier reçu.</summary>
+    public const int MaxReferenceLead = 1024;
+
+    /// <summary>
+    /// L'input de référence d'une demande : le dernier produit avant elle, celui dont l'état compte
+    /// (sortie de sprint, franchissement, visée). Fonction pure, testée.
+    ///
+    /// Depuis le 2026-10-13, les inputs voyagent en NON FIABLE (voir SubmitInputsServerRpc) et les
+    /// demandes en fiable : une demande peut donc arriver avant les inputs qui la précèdent, ou après
+    /// d'autres qui la suivent. Elle annonce donc son input de référence. C'est une suggestion bornée :
+    /// jamais AVANT le dernier input déjà reçu (un client modifié ne fait pas juger son tir sur un état
+    /// passé, d'avant son sprint ou son franchissement : le serveur reste aussi strict qu'avec la
+    /// livraison ordonnée), et jamais très loin devant (la demande attend son input au plus 0,3 s).
+    /// </summary>
+    public static int ReferenceInput(int claimed, int lastReceived)
+    {
+        if (claimed < lastReceived) return lastReceived;
+        return claimed - lastReceived > MaxReferenceLead ? lastReceived + MaxReferenceLead : claimed;
+    }
+
+    /// <summary>Serveur : l'input de référence d'une demande arrivée maintenant (ReferenceInput).</summary>
+    public int ServerReferenceInput(int claimed) => ReferenceInput(claimed, ServerLastReceivedInput);
+
+    /// <summary>Serveur : le temps (s) depuis le dernier input qui voulait sprinter, tel qu'il était à
+    /// la réception de l'input `sequence` : ce que le joueur avait envoyé quand il a tiré ou rechargé.
+    /// L'input inconnu (perdu, ou trop ancien), le temps d'après le dernier input reçu.</summary>
+    public float ServerTimeSinceSprintAt(int sequence)
+    {
+        int index = sequence & (ServerInputRecordSize - 1);
+        if (sequence >= 0 && serverReceivedSequence[index] == sequence)
+            return (float)(serverReceivedClock[index] - serverReceivedLastSprint[index]);
+        return ServerTimeSinceSprint;
+    }
+
+    /// <summary>Serveur, à la réception de l'input `sequence` : on retient l'horloge des inputs.</summary>
+    private void ServerRecordReceivedInput(int sequence)
+    {
+        int index = sequence & (ServerInputRecordSize - 1);
+        serverReceivedSequence[index] = sequence;
+        serverReceivedClock[index] = serverInputClock;
+        serverReceivedLastSprint[index] = serverLastSprintClock;
+    }
 
     /// <summary>Serveur : le joueur a-t-il voulu sprinter dans un input simulé depuis `firstInput` ?</summary>
     public bool ServerSprintedSince(int firstInput) => ServerLastSprintInput >= firstInput;
@@ -454,11 +531,18 @@ public class PlayerLocomotion : NetworkBehaviour
     public int ServerLastSimulatedInput { get; private set; } = -1;
 
     // Serveur : ce que chaque input simulé récemment a donné — franchissement après sa simulation,
-    // visée demandée. Un anneau de taille fixe, indexé par numéro d'input.
-    private const int ServerInputRecordSize = 256;
+    // visée demandée. Un anneau de taille fixe, indexé par numéro d'input. 1024 inputs : plus d'une
+    // seconde même à 800 images/s, quand une demande n'attend jamais plus de 0,3 s son input.
+    private const int ServerInputRecordSize = 1024;
     private readonly int[] serverInputRecordSequence = InitRecordSequences();
     private readonly byte[] serverInputRecordFlags = new byte[ServerInputRecordSize];
     private const byte RecordVaulting = 1, RecordAiming = 2;
+
+    // Serveur : l'horloge des inputs à la RÉCEPTION de chacun (sortie de sprint, voir
+    // ServerTimeSinceSprintAt). Même anneau, rempli à l'arrivée et non à la simulation.
+    private readonly int[] serverReceivedSequence = InitRecordSequences();
+    private readonly double[] serverReceivedClock = new double[ServerInputRecordSize];
+    private readonly double[] serverReceivedLastSprint = new double[ServerInputRecordSize];
 
     private static int[] InitRecordSequences()
     {
@@ -514,11 +598,51 @@ public class PlayerLocomotion : NetworkBehaviour
         return serverWeaponSlot;
     }
 
-    /// <summary>Le poids de l'arme `slot` : sa vitesse de déplacement relative (1 sans arme).</summary>
-    private float WeaponSpeedMultiplier(byte slot) => weapon != null ? weapon.SpeedMultiplierOf(slot) : 1f;
+    /// <summary>Le poids de l'arme `slot` : sa vitesse de déplacement relative (1 sans arme, et pour un
+    /// spectateur, qui n'en porte pas).</summary>
+    private float WeaponSpeedMultiplier(byte slot) => weapon != null && !IsSpectator ? weapon.SpeedMultiplierOf(slot) : 1f;
 
     /// <summary>Le poids de l'arme affichée en main : la vitesse de référence de l'animation le suit.</summary>
-    public float DisplayedWeaponSpeedMultiplier => weapon != null ? weapon.SpeedMultiplierOf(weapon.DisplayedSlot) : 1f;
+    public float DisplayedWeaponSpeedMultiplier => weapon != null && !IsSpectator ? weapon.SpeedMultiplierOf(weapon.DisplayedSlot) : 1f;
+
+    // ------------------------------------------------------------------
+    // Le rôle (2026-10-13) : duelliste ou spectateur de la tribune (GDD § 4 et § 9)
+    // ------------------------------------------------------------------
+
+    private PlayerMatchState matchState;      // le rôle, écrit par le serveur
+    private SpectatorController spectator;    // l'étourdissement d'un spectateur fige son déplacement
+
+    /// <summary>
+    /// Ce joueur est-il spectateur ? Variable réseau écrite par le serveur : juste partout. Un spectateur
+    /// se déplace comme un duelliste (même prédiction, même réconciliation), à mains nues : ni visée,
+    /// ni tir, ni lean, ni franchissement, ni position allongée (filtrés chez le joueur ET par le
+    /// serveur, SpectatorInputFilter). Les phases de manche ne le gèlent pas ; seul un étourdissement
+    /// l'arrête (SpectatorController).
+    /// </summary>
+    public bool IsSpectator => matchState != null && matchState.IsSpectator;
+
+    /// <summary>Ce qu'un spectateur envoie de ses commandes : ni visée, ni tir, ni lean, ni
+    /// franchissement. Appliquée chez le joueur avant le snapshot, et par le serveur à l'arrivée : un
+    /// client modifié n'y gagne rien. Fonction pure, testée.</summary>
+    public static void SpectatorInputFilter(ref bool aimHeld, ref bool fireHeld, ref bool firePressed, ref int leanState, ref bool jumpPressed)
+    {
+        aimHeld = false;
+        fireHeld = false;
+        firePressed = false;
+        leanState = 0;
+        jumpPressed = false;
+    }
+
+    private static MovementInputSnapshot FilterForSpectator(MovementInputSnapshot snap)
+    {
+        SpectatorInputFilter(ref snap.aimHeld, ref snap.fireHeld, ref snap.firePressedThisFrame, ref snap.leanState, ref snap.jumpPressed);
+        snap.weaponSlot = 0;
+        return snap;
+    }
+
+    /// <summary>Un spectateur se déplace-t-il à l'instant de simulation `simTime` ? Toujours, sauf
+    /// étourdi : il n'est gelé ni par la préparation ni par le décompte des duellistes.</summary>
+    private bool SpectatorMovementAllowed(double simTime) => spectator == null || !spectator.IsStunnedAt(simTime);
 
     // Sortie de sprint (2026-10-11) : le temps écoulé depuis le dernier input qui voulait sprinter,
     // compté sur les inputs eux-mêmes (la somme de leurs durées, bornées comme sur le serveur). Le
@@ -566,11 +690,13 @@ public class PlayerLocomotion : NetworkBehaviour
     // ------------------------------------------------------------------
     // Réseau — ce que le serveur publie (2026-10-06)
     //
-    // Deux variables seulement. La POSE d'affichage, datée sur l'horloge du serveur et publiée à
-    // chaque frame : position, rotation, lean et drapeaux d'animation (au sol, en franchissement,
-    // en visée). Et la POSTURE avec sa transition. Elles remplacent sept variables, dont trois
-    // drapeaux qui n'existaient que pour l'animation d'un spectateur — lequel n'appelle jamais
-    // Move() et n'a donc aucun autre moyen de savoir qu'un adversaire tombe, franchit ou épaule.
+    // Deux variables seulement. La POSE d'affichage, datée sur l'horloge du serveur : position,
+    // rotation, lean et drapeaux d'animation (au sol, en franchissement, en visée). La variable ne
+    // change qu'à l'apparition et aux replacements ; le reste du temps, la pose part en non fiable à
+    // chaque tick (PoseClientRpc, 2026-10-13). Et la POSTURE avec sa transition. Elles remplacent sept
+    // variables, dont trois drapeaux qui n'existaient que pour l'animation d'un spectateur — lequel
+    // n'appelle jamais Move() et n'a donc aucun autre moyen de savoir qu'un adversaire tombe, franchit
+    // ou épaule.
     //
     // La règle reste celle apprise à ses dépens : tout ce qu'un spectateur doit VOIR doit venir
     // d'une source réseautée, jamais d'un champ mis à jour par la simulation.
@@ -678,6 +804,273 @@ public class PlayerLocomotion : NetworkBehaviour
     private readonly List<PendingInput> unconfirmedInputs = new List<PendingInput>();
 
     // ------------------------------------------------------------------
+    // Les inputs en route vers le serveur : un flux NON FIABLE et redondant (2026-10-13)
+    //
+    // Jusque-là, chaque image envoyait son input par une RPC fiable et ordonnée. Mesuré à deux
+    // instances avec 2 % de paquets perdus (le quotidien d'une partie par internet) : un seul paquet
+    // perdu retenait tous les messages suivants jusqu'à son renvoi, inputs, tirs et sons compris.
+    // L'hôte voyait le robot du client figé sur 21 à 33 % de ses images, puis bondir de 50 cm. Et à
+    // une RPC par image, sans plafond d'images, ces paquets se comptaient par centaines par seconde.
+    //
+    // Désormais les inputs partent en non fiable, au plus InputSendRate fois par seconde, et chaque
+    // envoi répète ceux des InputRedundantSends envois précédents que le serveur n'a pas encore
+    // confirmés : un paquet perdu est couvert par le suivant, sans rien bloquer. Le serveur ignore ce
+    // qu'il a déjà reçu. Les demandes (tir, rechargement...) restent fiables et annoncent leur input
+    // de référence (ServerReferenceInput), puisqu'elles ne voyagent plus dans le même flux.
+    // ------------------------------------------------------------------
+
+    /// <summary>Envois d'inputs par seconde, au plus : en pratique un par image, sauf à un nombre
+    /// d'images démesuré. Mesuré à deux instances : plafonné à 120, l'hôte (104 images/s) recevait
+    /// moins souvent du neuf d'un client à 177 images/s, et voyait son robot immobile sur 25 % de ses
+    /// images au lieu de 17 % (dette n° 30). Le débit reste celui d'avant le flux non fiable.</summary>
+    public const float InputSendRate = 250f;
+
+    /// <summary>Envois précédents dont chaque envoi répète les inputs non confirmés : jusqu'à ce
+    /// nombre de paquets perdus d'affilée, rien n'est perdu.</summary>
+    public const int InputRedundantSends = 2;
+
+    /// <summary>Inputs par paquet, au plus (21 octets chacun : le paquet tient dans une trame).</summary>
+    public const int MaxInputsPerPacket = 40;
+
+    /// <summary>Un input tel qu'il voyage : le snapshot de Move() et sa durée, les booléens et le lean
+    /// rangés dans un octet. Les flottants voyagent tels quels : le serveur doit simuler exactement ce
+    /// que le joueur a prédit.</summary>
+    public struct InputWire
+    {
+        public Vector2 move;
+        public float lookX;
+        public float aimPitch;
+        public float deltaTime;
+        public byte buttons;
+    }
+
+    private const byte WireSprint = 1, WireSneak = 2, WireAim = 4, WireFireHeld = 8, WireFirePressed = 16, WireJump = 32;
+    private const int WireLeanShift = 6; // 2 bits : 0 aucun, 1 gauche, 2 droite
+
+    private static InputWire Pack(MovementInputSnapshot snap, float dt)
+    {
+        int buttons = (snap.sprintHeld ? WireSprint : 0) | (snap.sneakHeld ? WireSneak : 0) | (snap.aimHeld ? WireAim : 0)
+                      | (snap.fireHeld ? WireFireHeld : 0) | (snap.firePressedThisFrame ? WireFirePressed : 0)
+                      | (snap.jumpPressed ? WireJump : 0);
+        int lean = snap.leanState < 0 ? 1 : snap.leanState > 0 ? 2 : 0;
+        return new InputWire
+        {
+            move = snap.move,
+            lookX = snap.lookX,
+            aimPitch = snap.aimPitch,
+            deltaTime = dt,
+            buttons = (byte)(buttons | (lean << WireLeanShift)),
+        };
+    }
+
+    private static MovementInputSnapshot Unpack(InputWire wire)
+    {
+        int lean = (wire.buttons >> WireLeanShift) & 3;
+        return new MovementInputSnapshot
+        {
+            move = wire.move,
+            lookX = wire.lookX,
+            aimPitch = wire.aimPitch,
+            sprintHeld = (wire.buttons & WireSprint) != 0,
+            sneakHeld = (wire.buttons & WireSneak) != 0,
+            aimHeld = (wire.buttons & WireAim) != 0,
+            fireHeld = (wire.buttons & WireFireHeld) != 0,
+            firePressedThisFrame = (wire.buttons & WireFirePressed) != 0,
+            jumpPressed = (wire.buttons & WireJump) != 0,
+            leanState = lean == 1 ? -1 : lean == 2 ? 1 : 0, // 3 n'existe pas : un client modifié, sans lean
+        };
+    }
+
+    /// <summary>Un envoi d'inputs : des numéros consécutifs à partir de `firstSequence`. Reçu, il est
+    /// relu dans un tampon partagé (le serveur traite chaque RPC aussitôt reçue) : rien n'est alloué.</summary>
+    public struct InputPacket : INetworkSerializable
+    {
+        public int firstSequence;
+        public int count;
+        public InputWire[] inputs;
+
+        private static readonly InputWire[] received = new InputWire[MaxInputsPerPacket];
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref firstSequence);
+            byte n = (byte)count;
+            serializer.SerializeValue(ref n);
+            count = n;
+            if (serializer.IsReader)
+            {
+                inputs = received;
+                // Plus que la borne : un client modifié, le paquet est ignoré.
+                if (count > MaxInputsPerPacket) { count = 0; return; }
+            }
+            for (int i = 0; i < count; i++)
+            {
+                serializer.SerializeValue(ref inputs[i].move);
+                serializer.SerializeValue(ref inputs[i].lookX);
+                serializer.SerializeValue(ref inputs[i].aimPitch);
+                serializer.SerializeValue(ref inputs[i].deltaTime);
+                serializer.SerializeValue(ref inputs[i].buttons);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Le premier input d'un envoi : le plus ancien des envois gardés en redondance (`windowStart`),
+    /// sans jamais repartir d'un input déjà confirmé par le serveur, ni dépasser `maxCount` inputs.
+    /// Fonction pure, testée.
+    /// </summary>
+    public static int FirstInputToSend(int newest, int lastAcked, int windowStart, int maxCount)
+        => Mathf.Max(Mathf.Max(lastAcked + 1, windowStart), newest - maxCount + 1);
+
+    /// <summary>Attente maximale (s) d'un input manquant, quand de plus récents sont déjà arrivés.</summary>
+    public const double InputReorderWait = 0.05;
+
+    /// <summary>
+    /// Serveur : remet dans l'ordre les inputs d'un joueur. Un paquet non fiable peut en doubler un
+    /// autre : mesuré à deux instances avec 8 ms de gigue, à 180 envois par seconde, un paquet était
+    /// doublé par deux ou trois suivants, et le serveur sautait les inputs qu'il portait seul (2 à 6
+    /// toutes les 3 s, sans aucune perte, et des recalages). Les inputs arrivés en avance attendent
+    /// donc les manquants, au plus InputReorderWait ; passé ce délai, les manquants sont perdus pour de
+    /// bon (tous leurs envois perdus) et sautés, le recalage du joueur rattrape l'écart. Sans état
+    /// réseau, testée.
+    /// </summary>
+    public sealed class InputReorderBuffer
+    {
+        private const int Size = 1024;
+        private readonly int[] sequences = new int[Size];
+        private readonly InputWire[] wires = new InputWire[Size];
+        private int highestStored = -1;
+        private double gapSince = double.NaN;
+        private int pendingLost;
+
+        public InputReorderBuffer() => Reset(0);
+
+        /// <summary>Le prochain input attendu.</summary>
+        public int NextExpected { get; private set; }
+
+        public void Reset(int nextExpected)
+        {
+            for (int i = 0; i < Size; i++) sequences[i] = -1;
+            NextExpected = nextExpected;
+            highestStored = nextExpected - 1;
+            gapSince = double.NaN;
+        }
+
+        /// <summary>Range un input reçu ; ignoré s'il est déjà passé. Un input plus loin devant que
+        /// le tampon ne porte (après une longue coupure à un grand nombre d'images par seconde) : tout
+        /// ce qui le précède est perdu, on repart de lui.</summary>
+        public bool Store(int sequence, InputWire wire)
+        {
+            if (sequence < NextExpected) return false;
+            if (sequence - NextExpected >= Size)
+            {
+                pendingLost += sequence - NextExpected;
+                Reset(sequence);
+            }
+            int index = sequence & (Size - 1);
+            if (sequences[index] == sequence) return false; // déjà reçu (redondance)
+            sequences[index] = sequence;
+            wires[index] = wire;
+            if (sequence > highestStored) highestStored = sequence;
+            return true;
+        }
+
+        /// <summary>Le prochain input dans l'ordre, s'il est là. `lost` : les inputs sautés juste
+        /// avant lui, après une attente de plus de `maxWait` secondes.</summary>
+        public bool TryTake(double now, double maxWait, out int sequence, out InputWire wire, out int lost)
+        {
+            lost = pendingLost;
+            pendingLost = 0;
+            sequence = NextExpected;
+            wire = default;
+            int index = NextExpected & (Size - 1);
+            if (sequences[index] != NextExpected)
+            {
+                // Rien de plus récent n'attend : il ne manque rien, le joueur n'a simplement rien envoyé.
+                if (highestStored < NextExpected)
+                {
+                    gapSince = double.NaN;
+                    return false;
+                }
+                if (double.IsNaN(gapSince)) gapSince = now;
+                if (now - gapSince < maxWait) return false;
+                // Les manquants ne viendront plus : on saute jusqu'au premier arrivé.
+                while (sequences[NextExpected & (Size - 1)] != NextExpected)
+                {
+                    NextExpected++;
+                    lost++;
+                }
+                index = NextExpected & (Size - 1);
+            }
+            sequence = NextExpected;
+            wire = wires[index];
+            sequences[index] = -1;
+            NextExpected++;
+            gapSince = double.NaN;
+            return true;
+        }
+    }
+
+    private readonly InputReorderBuffer serverReorder = new InputReorderBuffer();
+
+    private struct OutgoingInput
+    {
+        public int sequence;
+        public InputWire wire;
+    }
+
+    // Chez le joueur : les inputs envoyés ou à envoyer, pas encore confirmés, par numéro croissant.
+    private readonly List<OutgoingInput> outgoingInputs = new List<OutgoingInput>();
+    private readonly InputWire[] packetBuffer = new InputWire[MaxInputsPerPacket];
+    private readonly int[] sendWindowStarts = new int[InputRedundantSends + 1];
+    private int sendCount;
+    private int lastSentInput = -1;
+    private int lastAckedInput = -1;
+    private float inputSendTimer;
+
+    /// <summary>Chez le joueur : dernière correction appliquée. Elles voyagent en non fiable : une plus
+    /// ancienne qui arrive après est périmée.</summary>
+    private int lastCorrectionSequence = -1;
+
+    private void QueueInputForServer(int sequence, MovementInputSnapshot snap, float dt)
+    {
+        outgoingInputs.Add(new OutgoingInput { sequence = sequence, wire = Pack(snap, dt) });
+        // Borne de mémoire : un serveur qui ne confirme plus rien (coupure) n'en fait pas grossir la liste.
+        if (outgoingInputs.Count > 4 * MaxInputsPerPacket) outgoingInputs.RemoveRange(0, outgoingInputs.Count - 4 * MaxInputsPerPacket);
+    }
+
+    /// <summary>Chez le joueur : envoie au serveur les inputs pas encore partis, avec les précédents
+    /// gardés en redondance. Appelé au rythme d'InputSendRate, et juste avant chaque demande, qui
+    /// voyage ainsi avec l'input dont elle dépend.</summary>
+    public void SendPendingInputs()
+    {
+        if (!IsSpawned || !IsOwner || IsServer || outgoingInputs.Count == 0) return;
+        int newest = outgoingInputs[outgoingInputs.Count - 1].sequence;
+        if (newest <= lastSentInput) return;
+
+        sendWindowStarts[sendCount % sendWindowStarts.Length] = lastSentInput + 1;
+        int windowStart = sendWindowStarts[Mathf.Max(0, sendCount - InputRedundantSends) % sendWindowStarts.Length];
+        sendCount++;
+        int first = FirstInputToSend(newest, lastAckedInput, windowStart, MaxInputsPerPacket);
+
+        // Ce qui précède le premier input envoyé ne repartira plus.
+        int stale = 0;
+        while (stale < outgoingInputs.Count && outgoingInputs[stale].sequence < first) stale++;
+        if (stale > 0) outgoingInputs.RemoveRange(0, stale);
+
+        int count = 0;
+        for (int i = 0; i < outgoingInputs.Count && count < MaxInputsPerPacket; i++) packetBuffer[count++] = outgoingInputs[i].wire;
+        SubmitInputsServerRpc(new InputPacket { firstSequence = outgoingInputs[0].sequence, count = count, inputs = packetBuffer });
+        lastSentInput = newest;
+        NetStats.InputPacketsSent++;
+        NetStats.InputsSent += count;
+#if UNITY_EDITOR
+        diagPacketsSent++;
+        diagInputsSent += count;
+#endif
+    }
+
+    // ------------------------------------------------------------------
     // Compensation de latence (rewind) — voir WeaponController.FireServerRpc
     // ------------------------------------------------------------------
 
@@ -727,6 +1120,16 @@ public class PlayerLocomotion : NetworkBehaviour
     private readonly List<DisplayPose> remoteSnapshots = new List<DisplayPose>();
     private DisplayPose displayedPose;
     private byte lastTeleportId;
+    private double lastReceivedPoseTime = double.NegativeInfinity;
+
+    // Serveur : la pose de cette image, et le dernier tick réseau où elle est partie.
+    private int lastPoseTick = -1;
+
+    // Serveur : la correction à envoyer au propriétaire (voir ApplyBufferedServerInputs).
+    private bool serverCorrectionPending;
+    private int serverCorrectionSequence = -1;
+    private float serverCorrectionSentAt = float.NegativeInfinity;
+    private ClientRpcParams ownerRpcParams;
 
     private void Awake()
     {
@@ -736,15 +1139,70 @@ public class PlayerLocomotion : NetworkBehaviour
         weapon = GetComponentInChildren<WeaponController>();
         taser = GetComponentInChildren<TaserController>();
         firstPersonView = GetComponent<FirstPersonView>();
+        health = GetComponent<Health>();
+        matchState = GetComponent<PlayerMatchState>();
+        spectator = GetComponent<SpectatorController>();
+        aliveLayer = gameObject.layer;
         ApplyStanceImmediate(Stance.Standing);
 
         // Voir commentaire équivalent de l'ancienne version : évite que le joueur ne se bloque
-        // lui-même sur ses propres tests de chevauchement (CheckCapsule pour CanStandUp).
+        // lui-même sur ses propres tests de chevauchement (CheckCapsule pour CanStandUp). Les épaves
+        // (layer Corpse) n'en font pas partie non plus : elles ne tombent pas pareil sur deux
+        // machines, et Move() doit rester déterministe (pas de franchissement d'une épave, pas de
+        // lean qui s'y cogne).
         obstacleMask &= ~(1 << gameObject.layer);
+        if (CorpseLayer.Index >= 0) obstacleMask &= ~CorpseLayer.Mask;
+    }
+
+    // ------------------------------------------------------------------
+    // La mort, côté simulation (2026-10-12)
+    // ------------------------------------------------------------------
+
+    private Health health;
+    private int aliveLayer;
+    private bool lifeStateDead;
+    private bool hitboxShown = true;
+
+    /// <summary>Ce joueur est-il en vie ? La vie est une variable réseau : juste partout.</summary>
+    public bool IsAlive => health == null || !health.IsDead;
+
+    /// <summary>
+    /// Un robot mort n'est plus qu'une épave (PlayerDeath, cosmétique). Ce qui en reste dans la
+    /// simulation s'efface aussi, sur toutes les machines : sa capsule de mouvement passe sur le layer
+    /// Corpse, qui ne touche que le décor (le survivant, qui garde la main en fin de manche, traverse
+    /// la place où il est tombé au lieu de buter sur un mur invisible), et sa surface touchable
+    /// s'éteint (les tirs du survivant vont au sol ou à l'épave, pas dans le vide où il se tenait).
+    /// Rendu en vie au début de la manche suivante.
+    ///
+    /// Un spectateur n'a pas de surface touchable non plus (2026-10-13) : il est hors du duel, « à mains
+    /// nues, sans arme ni hitbox de duel » (CLAUDE.md). Les poings et les cailloux le touchent par sa
+    /// capsule calculée (SpectatorRules), jamais par ces zones.
+    /// </summary>
+    private void ApplyLifeState()
+    {
+        bool dead = !IsAlive;
+        if (dead != lifeStateDead)
+        {
+            lifeStateDead = dead;
+            int corpseLayer = CorpseLayer.Index;
+            if (corpseLayer >= 0) gameObject.layer = dead ? corpseLayer : aliveLayer;
+        }
+
+        bool queryable = !dead && !IsSpectator;
+        if (queryable == hitboxShown) return;
+        hitboxShown = queryable;
+        if (hitbox != null) hitbox.SetQueryable(queryable);
     }
 
     public override void OnNetworkSpawn()
     {
+        // Les corrections ne vont qu'au propriétaire : la cible est fixée une fois pour toutes.
+        ownerRpcParams = new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } } };
+        lastCorrectionSequence = -1;
+        lastAckedInput = -1;
+        lastSentInput = -1;
+        outgoingInputs.Clear();
+
         if (IsServer)
         {
             // Place le joueur sur un point de spawn AVANT de publier sa position : sans ça, tout
@@ -755,7 +1213,7 @@ public class PlayerLocomotion : NetworkBehaviour
             // vaut encore default = (0,0,0) à cet instant, et la branche cliente ci-dessous
             // téléportait tout le monde à l'origine du monde. Invisible tant que la scène de test
             // spawne près de l'origine, et fatal dès qu'il y a de vrais points de spawn opposés.
-            ServerPublishPose();
+            ServerPublishPoseReliably();
         }
         else
         {
@@ -767,6 +1225,7 @@ public class PlayerLocomotion : NetworkBehaviour
             controller.enabled = true;
             displayedPose = pose;
             lastTeleportId = pose.teleportId;
+            lastReceivedPoseTime = pose.time;
             remoteSnapshots.Clear();
             remoteSnapshots.Add(pose);
         }
@@ -856,6 +1315,15 @@ public class PlayerLocomotion : NetworkBehaviour
     private float diagMaxError;
     private float diagNextReportAt;
 
+    // Le flux d'inputs (2026-10-13) : paquets envoyés et inputs qu'ils portaient (redondance comprise)
+    // chez le joueur ; inputs perdus pour de bon (tous leurs envois perdus) et paquets qui
+    // n'apportaient rien de neuf, sur le serveur.
+    private int diagPacketsSent;
+    private int diagInputsSent;
+    private static int diagServerInputsLost;
+    private static int diagServerPacketsUseless;
+    private int diagCorrectionsStale;
+
     private void DiagRecordCorrection(bool resynced, float positionError)
     {
         diagCorrections++;
@@ -879,12 +1347,30 @@ public class PlayerLocomotion : NetworkBehaviour
                   $"erreur_moy={avgError * 100f:F1}cm erreur_max={diagMaxError * 100f:F1}cm " +
                   $"vaults={diagVaultsTotal} kicks={diagLandingKicksTotal} " +
                   $"rtt={smoothedRtt * 1000f:F0}ms " +
-                  $"file_serveur={serverInputQueue.Count}");
+                  $"paquets_inputs={diagPacketsSent / 3f:F0}/s inputs_par_paquet={(diagPacketsSent > 0 ? (float)diagInputsSent / diagPacketsSent : 0f):F1} " +
+                  $"corrections_perimees={diagCorrectionsStale}");
 
         diagCorrections = 0;
         diagResyncs = 0;
         diagErrorSum = 0f;
         diagMaxError = 0f;
+        diagPacketsSent = 0;
+        diagInputsSent = 0;
+        diagCorrectionsStale = 0;
+    }
+
+    private static float diagServerNextReportAt;
+
+    /// <summary>[DIAG-INPUTS], sur le serveur : ce que le flux non fiable a perdu pour de bon. Doit
+    /// rester à 0 hors pertes en rafale (plus de InputRedundantSends paquets d'affilée).</summary>
+    private void DiagServerReportIfDue()
+    {
+        if (!IsServer || IsOwner) return;
+        if (Time.time < diagServerNextReportAt && diagServerNextReportAt - Time.time <= 3f) return;
+        diagServerNextReportAt = Time.time + 3f;
+        Debug.Log($"[DIAG-INPUTS] inputs_perdus={diagServerInputsLost} paquets_sans_neuf={diagServerPacketsUseless} file={serverInputQueue.Count}");
+        diagServerInputsLost = 0;
+        diagServerPacketsUseless = 0;
     }
 #endif
 
@@ -906,10 +1392,17 @@ public class PlayerLocomotion : NetworkBehaviour
             stance = networkStance.Value,
         });
 
-        double cutoff = now - hitboxHistoryDuration;
-        // RemoveAll plutôt qu'une file : l'historique est court (~60 entrées) et on a besoin d'un
-        // accès indexé pour interpoler entre deux poses.
-        serverHitboxHistory.RemoveAll(p => p.time < cutoff);
+        // Une liste plutôt qu'une file : on a besoin d'un accès indexé pour interpoler entre deux poses.
+        // Rangée par date : les poses périmées sont en tête (une lambda à chaque image allouait).
+        RemoveOlderThan(serverHitboxHistory, now - hitboxHistoryDuration);
+    }
+
+    /// <summary>Retire de la tête d'un historique rangé par date les poses antérieures à `cutoff`.</summary>
+    private static void RemoveOlderThan(List<HitboxPose> history, double cutoff)
+    {
+        int stale = 0;
+        while (stale < history.Count && history[stale].time < cutoff) stale++;
+        if (stale > 0) history.RemoveRange(0, stale);
     }
 
     /// <summary>
@@ -959,6 +1452,21 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private bool TrySampleHistory(double targetTime, out HitboxPose result)
         => SampleHitboxHistory(serverHitboxHistory, targetTime, out result);
+
+    /// <summary>Serveur : la pose de ce joueur à un instant passé (position, orientation, posture), tirée
+    /// de l'historique du rewind. Le coup de poing d'un spectateur s'en sert pour frapper un autre
+    /// spectateur là où il le voyait, comme le taser (SpectatorController).</summary>
+    public bool ServerTrySamplePose(double targetTime, out HitboxPose pose)
+    {
+        pose = default;
+        return IsServer && TrySampleHistory(targetTime, out pose);
+    }
+
+    /// <summary>L'instant (horloge du serveur) auquel CETTE machine affiche les autres joueurs : celui
+    /// de leur dernière interpolation, 0 s'il n'y en a pas (sur le serveur, qui les montre au présent).
+    /// Les objets lancés par les spectateurs s'affichent au même instant (ArenaItem) : on voit un
+    /// caillou arriver sur un robot au moment où l'on voit ce robot.</summary>
+    public static double RemoteViewTime => shownViewTime;
 
     /// <summary>
     /// Interpole la pose historique à l'instant demandé. Renvoie false si l'historique est vide ;
@@ -1016,20 +1524,31 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        PlayerSpawnPoints points = PlayerSpawnPoints.Instance;
-        if (points == null) return;
-
         // Positions des autres joueurs DÉJÀ présents, pour ne pas faire apparaître le nouveau venu
         // dans les pieds de son adversaire. Le serveur spawne les joueurs séquentiellement, donc le
-        // second voit bien le premier.
+        // second voit bien le premier. Seuls comptent ceux du même rôle (2026-10-13) : un duelliste
+        // apparaît dans l'arène, loin de l'autre duelliste ; un spectateur sur la tribune, loin des
+        // autres spectateurs.
+        bool spectating = IsSpectator;
         var occupied = new List<Vector3>();
         foreach (PlayerLocomotion other in spawnedPlayers)
         {
-            if (other == null || other == this) continue;
+            if (other == null || other == this || other.IsSpectator != spectating) continue;
             occupied.Add(other.transform.position);
         }
 
-        if (!points.TryGetSpawnPointFarthestFrom(occupied, out Vector3 spawnPosition, out float spawnYaw)) return;
+        Vector3 spawnPosition;
+        float spawnYaw;
+        if (spectating)
+        {
+            Tribune tribune = Tribune.Instance;
+            if (tribune == null || !tribune.TryGetSpectatorSpawn(occupied, out spawnPosition, out spawnYaw)) return;
+        }
+        else
+        {
+            PlayerSpawnPoints points = PlayerSpawnPoints.Instance;
+            if (points == null || !points.TryGetSpawnPointFarthestFrom(occupied, out spawnPosition, out spawnYaw)) return;
+        }
 
         // Le CharacterController doit être désactivé pour un repositionnement direct, sinon il
         // écrase la nouvelle position au Move() suivant (même raison que dans la réconciliation).
@@ -1054,18 +1573,16 @@ public class PlayerLocomotion : NetworkBehaviour
         leanVelocity = 0f;
         leanState = 0;
         serverLastLeanState = 0; // sinon le premier input de la manche jouerait un faux LeanEnd
+        serverVaultLandingPending = false; // ni une réception au point d'apparition
 
         // Le LEAN demande en plus une RPC vers le propriétaire, contrairement à tout le reste.
         // Son ÉTAT (-1/0/+1) est une bascule qui vit sur le client : remettre le décalage à zéro
         // côté serveur ne suffirait pas, le propriétaire se repencherait dès la frame suivante
         // puisque sa touche est toujours considérée comme enclenchée.
-        ResetLeanClientRpc(new ClientRpcParams
-        {
-            Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
-        });
+        ResetLeanClientRpc(ownerRpcParams);
 
         serverTeleportId++;
-        ServerPublishPose();
+        ServerPublishPoseReliably();
     }
 
     /// <summary>Annule le lean chez le propriétaire — état, décalage et effet caméra. Envoyée par
@@ -1089,6 +1606,8 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private void Update()
     {
+        ApplyLifeState();
+
         // L'état de lean (-1/0/+1) est lu AVANT le dispatch : il fait maintenant partie du
         // snapshot d'input envoyé au serveur, puisque le hitbox doit suivre le lean. Le reste du
         // lean (décalage caméra, anti-clipping) reste cosmétique et local, plus bas.
@@ -1111,14 +1630,18 @@ public class PlayerLocomotion : NetworkBehaviour
             bool sprintInput = WantsToSprint(snap.sprintHeld, snap.move, snap.aimHeld, snap.fireHeld);
             AdvanceInputClock(ref localInputClock, ref localLastSprintClock, dt, sprintInput);
             AdvanceInputClock(ref serverInputClock, ref serverLastSprintClock, dt, sprintInput);
+            ServerRecordReceivedInput(sequence);
 
             ServerCheckAutoStand(snap);
+            bool wasVaulting = IsVaulting;
+            float fallSpeed = -verticalVelocity;
             Move(snap, dt, ServerClock);
             CancelReloadIfVaulting();
             if (sprintInput) ServerLastSprintInput = sequence;
             if (IsVaulting) ServerLastVaultInput = sequence;
             ServerRecordSimulatedInput(sequence, snap.aimHeld);
             ServerTrackLeanSound(snap.leanState);
+            ServerTrackVaultSound(wasVaulting, wasGrounded, fallSpeed);
 
             if (controller.isGrounded && !wasGrounded) TriggerLandingKick(Mathf.Abs(verticalVelocity));
             ServerAdvanceFootsteps(dt);
@@ -1161,11 +1684,11 @@ public class PlayerLocomotion : NetworkBehaviour
             ApplyCameraPivotPosition();
         }
 
-        // Publication serveur, à CHAQUE frame et même sans input traité : sinon l'historique du
-        // rewind aurait des trous pendant les micro-coupures réseau, précisément quand il sert le
-        // plus, et la pose des spectateurs resterait figée (un adversaire garderait son animation
-        // de chute après avoir atterri). Placée APRÈS le bloc du propriétaire, pour que le Host
-        // publie le lean de cette frame et non celui de la précédente.
+        // Publication serveur, même sans input traité : l'historique du rewind à CHAQUE frame, sinon
+        // il aurait des trous pendant les micro-coupures réseau, précisément quand il sert le plus ;
+        // la pose des spectateurs à chaque tick, sinon elle resterait figée (un adversaire garderait
+        // son animation de chute après avoir atterri). Placée APRÈS le bloc du propriétaire, pour que
+        // le Host publie le lean de cette frame et non celui de la précédente.
         if (IsServer && IsSpawned)
         {
             ServerPublishPose();
@@ -1184,6 +1707,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
 #if UNITY_EDITOR
         DiagReportIfDue();
+        DiagServerReportIfDue();
 #endif
     }
 
@@ -1201,12 +1725,17 @@ public class PlayerLocomotion : NetworkBehaviour
         // Le sprint s'efface devant le rechargement et le taser, et se mettre à courir annule un
         // rechargement (GateSprint). Décidé ici, chez le propriétaire, et envoyé tel quel : Move()
         // reste une fonction du seul snapshot. Le serveur vérifie de son côté (ServerSprintedSince).
-        bool intent = WantsToSprint(input.SprintHeld, input.MoveInput, input.AimHeld, input.FireHeld);
+        // Un spectateur n'a ni arme ni taser : son clic gauche frappe ou lance (SpectatorController), et
+        // c'est le coup, l'élan d'un lancer ou l'étourdissement qui arrêtent son sprint.
+        bool spectating = IsSpectator;
+        bool intent = spectating
+            ? WantsToSprint(input.SprintHeld, input.MoveInput, false, false)
+            : WantsToSprint(input.SprintHeld, input.MoveInput, input.AimHeld, input.FireHeld);
         // Un rechargement en attente (sortie de sprint, franchissement) arrête le sprint comme un
         // rechargement en cours : il partira dès que l'arme sera remontée.
-        bool sprintAllowed = GateSprint(intent, ref sprintIntentLastFrame,
-                                        weapon != null && (weapon.IsReloading || weapon.ReloadPending),
-                                        taser != null && taser.IsStriking, out bool cancelReload);
+        bool reloading = !spectating && weapon != null && (weapon.IsReloading || weapon.ReloadPending);
+        bool striking = spectating ? spectator != null && spectator.LocalBlocksSprint : taser != null && taser.IsStriking;
+        bool sprintAllowed = GateSprint(intent, ref sprintIntentLastFrame, reloading, striking, out bool cancelReload);
 #if UNITY_EDITOR
         if (DebugSprintIgnoresRules)
         {
@@ -1217,7 +1746,19 @@ public class PlayerLocomotion : NetworkBehaviour
 #endif
         if (cancelReload) weapon.CancelLocalReload();
 
-        return new MovementInputSnapshot
+        // Un robot mort n'envoie plus que l'écoulement du temps : sa souris fait tourner la caméra
+        // qui regarde son épave (PlayerDeath), pas son corps.
+        if (!IsAlive)
+        {
+            return new MovementInputSnapshot
+            {
+                aimPitch = cameraLook != null ? cameraLook.Pitch : 0f,
+                leanState = leanState,
+                weaponSlot = weapon != null ? weapon.LocalSlot : (byte)0,
+            };
+        }
+
+        var snapshot = new MovementInputSnapshot
         {
             move = input.MoveInput,
             // La sensibilité du menu Options vaut pour les deux axes : PlayerCameraLook l'applique au
@@ -1237,6 +1778,7 @@ public class PlayerLocomotion : NetworkBehaviour
             jumpPressed = input.JumpPressedThisFrame && (taser == null || !taser.IsStriking),
             weaponSlot = weapon != null ? weapon.LocalSlot : (byte)0,
         };
+        return spectating ? FilterForSpectator(snapshot) : snapshot;
     }
 
     // ------------------------------------------------------------------
@@ -1274,7 +1816,7 @@ public class PlayerLocomotion : NetworkBehaviour
             simTime = simTime,
         });
 
-        SubmitInputServerRpc(sequence, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.aimPitch, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, snap.jumpPressed, dt);
+        QueueInputForServer(sequence, snap, dt);
         AdvanceInputClock(ref localInputClock, ref localLastSprintClock, dt,
                           WantsToSprint(snap.sprintHeld, snap.move, snap.aimHeld, snap.fireHeld));
 
@@ -1290,59 +1832,100 @@ public class PlayerLocomotion : NetworkBehaviour
         // confirme une de ces séquences, ce qui est exactement l'effet observable recherché.
         if (debugFloodServerInputs)
         {
-            for (int i = 1; i < debugFloodMultiplier; i++)
-            {
-                SubmitInputServerRpc(nextInputSequence++, snap.move, snap.lookX, snap.sprintHeld, snap.sneakHeld, snap.aimHeld, snap.aimPitch, snap.fireHeld, snap.firePressedThisFrame, snap.leanState, snap.jumpPressed, dt);
-            }
+            for (int i = 1; i < debugFloodMultiplier; i++) QueueInputForServer(nextInputSequence++, snap, dt);
         }
 #endif
+
+        // Au plus InputSendRate envois par seconde, quel que soit le nombre d'images : le temps
+        // restant est reporté, pour garder la cadence moyenne.
+        float interval = 1f / InputSendRate;
+        inputSendTimer += Time.unscaledDeltaTime;
+        if (inputSendTimer >= interval)
+        {
+            inputSendTimer = Mathf.Min(inputSendTimer - interval, interval);
+            SendPendingInputs();
+        }
     }
 
-    [ServerRpc]
-    private void SubmitInputServerRpc(int sequence, Vector2 move, float lookX, bool sprintHeld, bool sneakHeld, bool aimHeld, float aimPitch, bool fireHeld, bool firePressedThisFrame, int leanState, bool jumpPressed, float deltaTime)
+    /// <summary>
+    /// Les inputs du joueur, en NON FIABLE (2026-10-13) : un paquet perdu ne retient plus rien, le
+    /// suivant le couvre (voir « Les inputs en route vers le serveur »). Le serveur ne garde que ce
+    /// qu'il n'a pas encore reçu, dans l'ordre des numéros.
+    /// </summary>
+    [ServerRpc(Delivery = RpcDelivery.Unreliable)]
+    private void SubmitInputsServerRpc(InputPacket packet)
     {
+        // Des numéros qui déborderaient ne viennent que d'un client modifié.
+        if (packet.count <= 0 || packet.firstSequence < 0 || packet.firstSequence > int.MaxValue - MaxInputsPerPacket) return;
+
+        bool anyNew = false;
+        for (int i = 0; i < packet.count; i++) anyNew |= serverReorder.Store(packet.firstSequence + i, packet.inputs[i]);
+        NetStats.InputPacketsReceived++;
+        if (!anyNew) NetStats.UselessPackets++;
+#if UNITY_EDITOR
+        if (!anyNew) diagServerPacketsUseless++;
+#endif
+        ServerDrainReceivedInputs();
+    }
+
+    /// <summary>Serveur : passe à la simulation les inputs reçus dans l'ordre (InputReorderBuffer).
+    /// Appelé à chaque paquet, et à chaque image pour qu'un input manquant finisse par être sauté.</summary>
+    private void ServerDrainReceivedInputs()
+    {
+        double now = Time.unscaledTimeAsDouble;
+        while (true)
+        {
+            bool taken = serverReorder.TryTake(now, InputReorderWait, out int sequence, out InputWire wire, out int lost);
+            NetStats.InputsLost += lost;
+#if UNITY_EDITOR
+            diagServerInputsLost += lost;
+#endif
+            if (!taken) return;
+            ServerReceiveInput(sequence, wire);
+        }
+    }
+
+    /// <summary>Serveur : un input reçu pour la première fois, dans l'ordre des numéros.</summary>
+    private void ServerReceiveInput(int sequence, InputWire wire)
+    {
+        MovementInputSnapshot snap = Unpack(wire);
         // Un input invalide ne vient que d'un client modifié : il est ignoré, comme s'il n'avait
-        // jamais été envoyé (voir IsValidInput). Le lean est ramené à ses trois états : au-delà, le
-        // buste se couchait presque à l'horizontale, emportant la surface touchable avec lui.
-        if (!IsValidInput(move, lookX, deltaTime)) return;
-        leanState = Mathf.Clamp(leanState, -1, 1);
+        // jamais été envoyé (voir IsValidInput). Le lean est ramené à ses trois états à la lecture
+        // (Unpack) : au-delà, le buste se couchait presque à l'horizontale, emportant la surface
+        // touchable avec lui.
+        if (!IsValidInput(snap.move, snap.lookX, wire.deltaTime)) return;
+        // Un spectateur n'a ni visée, ni tir, ni lean, ni franchissement : le serveur l'impose, quoi que
+        // le client envoie (2026-10-13). Le joueur honnête a déjà filtré de même (ReadLocalInput).
+        if (IsSpectator) snap = FilterForSpectator(snap);
+        snap.aimPitch = SanitizeAimPitch(snap.aimPitch);
 
-        // Garde-fou anti-flood (mémoire) : les ServerRpc sont livrées en Reliable, donc TOUT ce
-        // qu'un client envoie finit par arriver. Sans plafond, un client qui spamme cette RPC fait
-        // grossir la queue indéfiniment — la mémoire du serveur monte, et le retard de simulation
-        // de CE joueur s'allonge sans jamais se résorber (chaque Update() serveur n'en consomme
-        // qu'une fraction, voir le budget dans ApplyBufferedServerInputs). On jette donc les inputs
-        // excédentaires plutôt que de les accumuler : un client légitime n'atteint jamais ce
-        // plafond (MaxQueuedInputs ≈ 2 s de jeu à 60 FPS), et un client qui le dépasse se pénalise
-        // lui-même par une réconciliation plus brutale — ce qui est exactement le comportement voulu.
         // Compté AVANT le plafond : même jeté, cet input a été produit avant toute demande qui
-        // arrivera après lui (voir ServerNextInput).
+        // annoncera un input plus récent (voir ServerReferenceInput).
         ServerLastReceivedInput = Mathf.Max(ServerLastReceivedInput, sequence);
-        // L'horloge de la sortie de sprint avance à la RÉCEPTION, dans l'ordre d'envoi : c'est ce
-        // que le joueur avait envoyé quand il a tiré ou rechargé (voir TimeSinceSprint).
-        AdvanceInputClock(ref serverInputClock, ref serverLastSprintClock, deltaTime,
-                          WantsToSprint(sprintHeld, move, aimHeld, fireHeld));
+        // L'horloge de la sortie de sprint avance à la RÉCEPTION, dans l'ordre des numéros : c'est
+        // ce que le joueur avait envoyé quand il a tiré ou rechargé (voir TimeSinceSprint).
+        AdvanceInputClock(ref serverInputClock, ref serverLastSprintClock, wire.deltaTime,
+                          WantsToSprint(snap.sprintHeld, snap.move, snap.aimHeld, snap.fireHeld));
+        ServerRecordReceivedInput(sequence);
 
-        if (serverInputQueue.Count >= MaxQueuedInputs) return;
+        // Garde-fou anti-flood (mémoire) : sans plafond, un client qui inonde le serveur d'inputs fait
+        // grossir la file indéfiniment, et le retard de simulation de CE joueur s'allonge sans jamais
+        // se résorber (chaque Update() serveur n'en consomme qu'une part, voir le budget dans
+        // ApplyBufferedServerInputs). Les inputs excédentaires sont jetés : un client légitime
+        // n'atteint jamais ces bornes (une seconde de jeu en attente, à n'importe quel nombre
+        // d'images), et celui qui les dépasse se pénalise lui-même par un recalage plus brutal.
+        float dt = Mathf.Clamp(wire.deltaTime, 0f, MaxSingleInputDeltaTime);
+        if (serverInputQueue.Count >= MaxQueuedInputs || serverQueuedInputTime + dt > MaxQueuedInputTime) return;
 
+        serverQueuedInputTime += dt;
         serverInputQueue.Enqueue(new PendingInput
         {
             sequence = sequence,
-            snapshot = new MovementInputSnapshot
-            {
-                move = move,
-                lookX = lookX,
-                sprintHeld = sprintHeld,
-                sneakHeld = sneakHeld,
-                aimHeld = aimHeld,
-                aimPitch = SanitizeAimPitch(aimPitch),
-                fireHeld = fireHeld,
-                firePressedThisFrame = firePressedThisFrame,
-                leanState = leanState,
-                jumpPressed = jumpPressed,
-            },
-            deltaTime = deltaTime,
+            snapshot = snap,
+            deltaTime = wire.deltaTime,
         });
+        NetStats.InputsReceived++;
+        if (serverInputQueue.Count > NetStats.QueueMax) NetStats.QueueMax = serverInputQueue.Count;
     }
 
     // ------------------------------------------------------------------
@@ -1350,7 +1933,7 @@ public class PlayerLocomotion : NetworkBehaviour
     // ------------------------------------------------------------------
 
     // Garde-fous anti-triche sur les inputs reçus du client (voir ApplyBufferedServerInputs) :
-    // rien ne garantit que le deltaTime envoyé par SubmitInputServerRpc reflète le temps
+    // rien ne garantit que le deltaTime envoyé par SubmitInputsServerRpc reflète le temps
     // RÉELLEMENT écoulé côté client — un client modifié pourrait en envoyer un artificiellement
     // grand pour parcourir une distance disproportionnée en un seul Move(), ou en spammer des
     // milliers avec un deltaTime individuellement plausible pour obtenir le même résultat par
@@ -1371,7 +1954,18 @@ public class PlayerLocomotion : NetworkBehaviour
     // framerate, seulement un client qui prétend avoir vécu plus de temps qu'il n'en est passé.
     private const float InputTimeBudgetRefillFactor = 1.1f;  // 10% de marge pour la gigue réseau/frame.
     private const float MaxInputTimeBudget = 0.25f;          // réserve max : permet un vrai rattrapage après un à-coup réseau, sans plus.
-    private const int MaxQueuedInputs = 120;                 // ≈ 2 s de jeu à 60 FPS — voir SubmitInputServerRpc.
+
+    // Bornes de la file d'attente (voir ServerReceiveInput). Exprimées aussi en TEMPS de jeu depuis le
+    // 2026-10-13 : 120 inputs ne faisaient que 0,24 s à 500 images/s, et un client honnête au
+    // nombre d'images non plafonné perdait des inputs (donc se recalait) après un simple à-coup.
+    private const int MaxQueuedInputs = 512;
+    private const float MaxQueuedInputTime = 1f;
+    private float serverQueuedInputTime;
+
+    /// <summary>Intervalle minimal (s) entre deux corrections envoyées au propriétaire : un hôte à
+    /// plusieurs centaines d'images par seconde ne les multiplie pas. Une correction retardée de
+    /// quelques millisecondes ne se voit pas : elle ne fait que confirmer.</summary>
+    private const float MinCorrectionInterval = 1f / 120f;
 
     /// <summary>
     /// Un input reçu d'un client est-il recevable ? Toutes ses valeurs finies et une durée positive.
@@ -1389,6 +1983,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private void ApplyBufferedServerInputs()
     {
+        ServerDrainReceivedInputs();
         int lastProcessedSequence = -1;
 
         serverInputTimeBudget = Mathf.Min(
@@ -1407,14 +2002,19 @@ public class PlayerLocomotion : NetworkBehaviour
 
             serverInputQueue.Dequeue();
             serverInputTimeBudget -= dt;
+            serverQueuedInputTime = serverInputQueue.Count > 0 ? Mathf.Max(0f, serverQueuedInputTime - dt) : 0f;
 
             ServerCheckAutoStand(next.snapshot);
             // L'arme en main est celle que le serveur sait, jamais celle que le client annonce : son
             // poids pèse sur la vitesse (2026-10-11).
             next.snapshot.weaponSlot = ServerWeaponSlotFor(next.sequence);
+            bool wasVaulting = IsVaulting;
+            bool wasGrounded = controller.isGrounded;
+            float fallSpeed = -verticalVelocity;
             // L'horloge du serveur, jamais un instant fourni par le client : il pourrait sinon
             // sauter la fin d'une transition (se relever d'un coup) en annonçant un instant futur.
             Move(next.snapshot, dt, ServerClock);
+            ServerTrackVaultSound(wasVaulting, wasGrounded, fallSpeed);
             if (WantsToSprint(next.snapshot.sprintHeld, next.snapshot.move, next.snapshot.aimHeld, next.snapshot.fireHeld))
                 ServerLastSprintInput = next.sequence;
             if (IsVaulting) ServerLastVaultInput = next.sequence;
@@ -1428,27 +2028,45 @@ public class PlayerLocomotion : NetworkBehaviour
         // Le reste éventuel de la queue (flood ou vrai gros rattrapage) attend le prochain
         // Update() serveur plutôt que d'être traité d'un coup — voir commentaire ci-dessus.
 
+        // La correction confirme le dernier input simulé, au plus toutes les MinCorrectionInterval : un
+        // hôte à plusieurs centaines d'images par seconde n'en envoie pas une par image. Elle porte
+        // l'état ACTUEL : rien d'autre que Move() ne le change entre deux, hormis un replacement en
+        // début de manche, que le joueur doit justement recevoir.
         if (lastProcessedSequence >= 0)
         {
-            SendCorrectionToOwner(lastProcessedSequence, transform.position, verticalVelocity, transform.eulerAngles.y, currentVelocity, IsVaulting, vaultTimer, vaultStart, vaultEnd, vaultPeakY);
+            serverCorrectionSequence = lastProcessedSequence;
+            serverCorrectionPending = true;
+        }
+        if (serverCorrectionPending && Time.unscaledTime - serverCorrectionSentAt >= MinCorrectionInterval)
+        {
+            serverCorrectionPending = false;
+            serverCorrectionSentAt = Time.unscaledTime;
+            ReceiveCorrectionClientRpc(serverCorrectionSequence, transform.position, verticalVelocity, transform.eulerAngles.y, currentVelocity,
+                                       IsVaulting, vaultTimer, vaultStart, vaultEnd, vaultPeakY, ownerRpcParams);
         }
 
         // La pose et l'historique sont publiés par Update(), à chaque frame, inputs ou non.
     }
 
-    private void SendCorrectionToOwner(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, bool confirmedVaulting, float confirmedVaultTimer, Vector3 confirmedVaultStart, Vector3 confirmedVaultEnd, float confirmedVaultPeakY)
-    {
-        var targetParams = new ClientRpcParams
-        {
-            Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
-        };
-        ReceiveCorrectionClientRpc(confirmedSequence, confirmedPosition, confirmedVerticalVelocity, confirmedYaw, confirmedHorizontalVelocity, confirmedVaulting, confirmedVaultTimer, confirmedVaultStart, confirmedVaultEnd, confirmedVaultPeakY, targetParams);
-    }
-
-    [ClientRpc]
+    /// <summary>
+    /// La correction du serveur : l'état qui suit l'input `confirmedSequence`. En NON FIABLE depuis le
+    /// 2026-10-13 : la suivante remplace celle qui se perd, et une correction qui arrive après une
+    /// plus récente est périmée (elle ferait rejouer des inputs déjà confirmés), donc ignorée.
+    /// </summary>
+    [ClientRpc(Delivery = RpcDelivery.Unreliable)]
     private void ReceiveCorrectionClientRpc(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, bool confirmedVaulting, float confirmedVaultTimer, Vector3 confirmedVaultStart, Vector3 confirmedVaultEnd, float confirmedVaultPeakY, ClientRpcParams clientRpcParams = default)
     {
         if (!IsOwner) return;
+        if (confirmedSequence <= lastCorrectionSequence)
+        {
+            NetStats.StaleCorrections++;
+#if UNITY_EDITOR
+            diagCorrectionsStale++;
+#endif
+            return;
+        }
+        lastCorrectionSequence = confirmedSequence;
+        lastAckedInput = Mathf.Max(lastAckedInput, confirmedSequence);
 
         // Le serveur envoie une correction à CHAQUE frame où il a traité des inputs, c'est-à-dire
         // en permanence. Sans le seuil ci-dessous, chaque correction déclenchait un recalage + le
@@ -1461,7 +2079,11 @@ public class PlayerLocomotion : NetworkBehaviour
         // faut comparer ce que le serveur confirme avec ce que le client avait prédit POUR LA MÊME
         // SÉQUENCE — d'où predictedPosition/predictedYaw stockés dans PendingInput. Comparer avec
         // la position actuelle du client n'aurait aucun sens : elle est en avance de tout le RTT.
-        int predictionIndex = unconfirmedInputs.FindIndex(p => p.sequence == confirmedSequence);
+        // Les inputs non confirmés sont rangés par numéro croissant : ceux que la correction confirme
+        // sont en tête (une boucle plutôt qu'une lambda, qui allouait à chaque correction).
+        int confirmedCount = 0;
+        while (confirmedCount < unconfirmedInputs.Count && unconfirmedInputs[confirmedCount].sequence <= confirmedSequence) confirmedCount++;
+        int predictionIndex = confirmedCount > 0 && unconfirmedInputs[confirmedCount - 1].sequence == confirmedSequence ? confirmedCount - 1 : -1;
         bool predictionWasCorrect = false;
 
         if (predictionIndex >= 0)
@@ -1486,6 +2108,11 @@ public class PlayerLocomotion : NetworkBehaviour
             // réseau théorique, mais l'âge réel de ce que le tireur voit à l'écran.
             float measuredRtt = Time.time - predicted.sentAt;
             smoothedRtt = smoothedRtt <= 0f ? measuredRtt : Mathf.Lerp(smoothedRtt, measuredRtt, 0.1f);
+            NetStats.Corrections++;
+            if (!predictionWasCorrect) NetStats.Resyncs++;
+            if (positionError > NetStats.ErrorMax) NetStats.ErrorMax = positionError;
+            NetStats.RttSum += measuredRtt;
+            NetStats.RttSamples++;
 
 #if UNITY_EDITOR
             DiagRecordCorrection(!predictionWasCorrect, positionError);
@@ -1495,7 +2122,7 @@ public class PlayerLocomotion : NetworkBehaviour
         // serverInputQueue), on ne peut rien conclure : on retombe sur le recalage systématique,
         // qui reste le comportement SÛR. Mieux vaut un à-coup qu'une désynchronisation silencieuse.
 
-        unconfirmedInputs.RemoveAll(p => p.sequence <= confirmedSequence);
+        if (confirmedCount > 0) unconfirmedInputs.RemoveRange(0, confirmedCount);
 
         if (predictionWasCorrect)
         {
@@ -1554,41 +2181,69 @@ public class PlayerLocomotion : NetworkBehaviour
     // Cas 4 — spectateur : interpolation par historique avec délai volontaire
     // ------------------------------------------------------------------
 
-    private void HandleNetworkPoseChanged(DisplayPose previous, DisplayPose current)
+    /// <summary>La variable de pose ne change qu'à l'apparition et aux replacements (fiable) ; elle
+    /// rejoint le flux des poses non fiables (PoseClientRpc).</summary>
+    private void HandleNetworkPoseChanged(DisplayPose previous, DisplayPose current) => ReceivePose(current);
+
+    /// <summary>Écart (s) entre deux poses reçues au-delà duquel on n'interpole plus de l'une à
+    /// l'autre : la seconde est montrée telle quelle. Une pose ancienne (celle d'apparition, reçue en
+    /// rejoignant une partie en cours) glissait sinon vers la première pose à jour.</summary>
+    public const double MaxPoseGap = 0.5;
+
+    private void ReceivePose(DisplayPose pose)
     {
         if (IsOwner || IsServer) return;
-
-        // Une téléportation (nouvelle manche) vide l'historique : interpoler entre l'ancienne
-        // position et le point de spawn ferait traverser la carte au personnage.
-        if (current.teleportId != lastTeleportId)
-        {
-            remoteSnapshots.Clear();
-            lastTeleportId = current.teleportId;
-        }
-
-        // Les poses arrivent dans l'ordre (livraison fiable et ordonnée), mais rien ne coûte de
-        // s'en garder : une pose plus ancienne que la dernière casserait la recherche par intervalle.
-        if (remoteSnapshots.Count > 0 && current.time <= remoteSnapshots[remoteSnapshots.Count - 1].time) return;
-
-        remoteSnapshots.Add(current);
-        double cutoff = current.time - 1.0;
-        remoteSnapshots.RemoveAll(snapshot => snapshot.time < cutoff);
+        NetStats.PosesReceived++;
+        AddRemotePose(remoteSnapshots, ref lastReceivedPoseTime, ref lastTeleportId, pose, MaxPoseGap);
     }
 
     /// <summary>
-    /// Publie la pose d'affichage, datée sur l'horloge du serveur. Appelée à CHAQUE frame serveur.
-    /// La date change à chaque frame, donc la variable part à chaque tick réseau (30 par seconde,
-    /// environ 1 Ko/s par joueur) : c'est voulu, un spectateur a besoin de poses régulières même
-    /// quand le joueur est immobile, sinon il interpolerait un départ sur plusieurs secondes.
+    /// Range une pose reçue dans l'historique d'interpolation d'un spectateur. Fonction pure, testée.
+    ///
+    /// Les poses voyagent en NON FIABLE depuis le 2026-10-13 : elles peuvent se perdre (l'interpolation
+    /// enjambe le trou, 100 ms de réserve) ou arriver dans le désordre. Une pose plus ancienne que la
+    /// plus récente reçue est donc ignorée, AVANT tout le reste : une pose d'avant un replacement qui
+    /// arriverait après lui viderait sinon l'historique pour y remettre l'ancienne position. Un
+    /// replacement (nouvelle manche) ou un trou de plus de `maxGap` vide l'historique : interpoler entre
+    /// l'ancienne position et la nouvelle ferait traverser la carte au personnage. On garde une seconde.
     /// </summary>
-    private void ServerPublishPose()
+    public static bool AddRemotePose(List<DisplayPose> history, ref double lastTime, ref byte lastTeleport, DisplayPose pose, double maxGap)
+    {
+        if (pose.time <= lastTime) return false;
+        bool teleported = pose.teleportId != lastTeleport;
+        bool gap = history.Count > 0 && pose.time - history[history.Count - 1].time > maxGap;
+        if (teleported || gap) history.Clear();
+        lastTeleport = pose.teleportId;
+        lastTime = pose.time;
+        history.Add(pose);
+
+        double cutoff = pose.time - 1.0;
+        int stale = 0;
+        while (stale < history.Count - 1 && history[stale].time < cutoff) stale++;
+        if (stale > 0) history.RemoveRange(0, stale);
+        return true;
+    }
+
+    /// <summary>
+    /// Les poses d'affichage, en NON FIABLE, une par tick réseau (30 par seconde, environ 1 Ko/s par
+    /// joueur), même quand le joueur est immobile : un spectateur a besoin de poses régulières, sinon il
+    /// interpolerait un départ sur plusieurs secondes. Elles passaient par une variable réseau, donc en
+    /// fiable : un paquet perdu figeait les autres joueurs jusqu'à son renvoi (mesuré le 2026-10-13 à
+    /// 2 % de pertes : 19 à 68 images « affamées » toutes les 3 s chez le client). Une pose perdue n'est
+    /// plus qu'un trou que l'interpolation enjambe.
+    /// </summary>
+    [ClientRpc(Delivery = RpcDelivery.Unreliable)]
+    private void PoseClientRpc(DisplayPose pose) => ReceivePose(pose);
+
+    /// <summary>La pose d'affichage de cette image, datée sur l'horloge du serveur.</summary>
+    private DisplayPose ServerCurrentPose()
     {
         DisplayFlags flags = 0;
         if (controller.enabled && controller.isGrounded) flags |= DisplayFlags.Grounded;
         if (IsVaulting) flags |= DisplayFlags.Vaulting;
         if (IsAiming) flags |= DisplayFlags.Aiming;
 
-        networkPose.Value = new DisplayPose
+        return new DisplayPose
         {
             time = ServerClock,
             position = transform.position,
@@ -1599,6 +2254,20 @@ public class PlayerLocomotion : NetworkBehaviour
             teleportId = serverTeleportId,
         };
     }
+
+    /// <summary>Serveur, à chaque image : la pose part au premier passage de chaque tick réseau.</summary>
+    private void ServerPublishPose()
+    {
+        int tick = NetworkManager.ServerTime.Tick;
+        if (tick == lastPoseTick) return;
+        lastPoseTick = tick;
+        PoseClientRpc(ServerCurrentPose());
+    }
+
+    /// <summary>Serveur : la pose par la variable réseau, FIABLE, à l'apparition et à chaque
+    /// replacement. Un joueur qui arrive la reçoit avec le robot, et aucun spectateur ne manque un
+    /// replacement.</summary>
+    private void ServerPublishPoseReliably() => networkPose.Value = ServerCurrentPose();
 
     private void UpdateRemoteInterpolation()
     {
@@ -1719,8 +2388,11 @@ public class PlayerLocomotion : NetworkBehaviour
                                                   TransitionDuration(stanceState.previous, stance));
 
         // Un vault ne démarre que pendant une manche, et jamais en pleine transition de posture :
-        // on ne franchit pas un obstacle à moitié relevé.
-        if (snap.jumpPressed && RoundManager.MovementAllowed && stanceProgress >= 1f
+        // on ne franchit pas un obstacle à moitié relevé. (Un spectateur ne franchit jamais : son
+        // saut est filtré, SpectatorInputFilter.)
+        bool spectating = IsSpectator;
+        bool movementAllowed = spectating ? SpectatorMovementAllowed(simTime) : RoundManager.MovementAllowedFor(IsAlive);
+        if (snap.jumpPressed && !spectating && movementAllowed && stanceProgress >= 1f
             && TryFindVaultTarget(out Vector3 vaultLanding, out float vaultTop, false))
         {
             BeginVault(vaultLanding, vaultTop);
@@ -1728,14 +2400,19 @@ public class PlayerLocomotion : NetworkBehaviour
             return;
         }
 
-        // Hors manche (décompte de départ, mort, fin de match), le déplacement est gelé pour que
-        // les deux joueurs repartent exactement en même temps. On ne coupe QUE le déplacement :
-        // regarder autour de soi et se pré-positionner visuellement reste permis.
+        // Pendant la préparation et le décompte, le déplacement est gelé pour que les deux joueurs
+        // repartent exactement en même temps ; un robot mort ne bouge plus. On ne coupe QUE le
+        // déplacement : regarder autour de soi et se pré-positionner visuellement reste permis. En
+        // fin de manche, le survivant garde la main (RoundManager.PlayAllowed).
         //
         // Appliqué ici, dans la fonction déterministe, donc identiquement côté client et serveur :
         // un client modifié qui ignorerait le gel se ferait recaler, puisque le serveur applique le
         // même test sur sa propre simulation.
-        Vector2 moveInput = RoundManager.MovementAllowed ? snap.move : Vector2.zero;
+        //
+        // Un spectateur, lui, n'est gelé par aucune phase : seul un étourdissement l'arrête, lu à
+        // l'instant de simulation de l'input (comme une transition de posture) sur l'état publié par
+        // le serveur. Le joueur l'apprend avec un peu de retard : le recalage rattrape l'écart.
+        Vector2 moveInput = movementAllowed ? snap.move : Vector2.zero;
 
         // Allongé, on ne se déplace pas de côté (2026-10-10) : aucune animation ne le montre, et le
         // corps glissait en pose d'attente. Aucune glissade n'est tolérée. À rouvrir avec un clip
@@ -1837,7 +2514,9 @@ public class PlayerLocomotion : NetworkBehaviour
             RequestStanceChangeServerRpc(desired);
         }
 
-        if (input.PronePressedThisFrame)
+        // Un spectateur marche, court et s'accroupit, mais ne s'allonge pas (2026-10-13, demande de
+        // l'utilisateur) : le serveur refuse de même (RequestStanceChangeServerRpc).
+        if (input.PronePressedThisFrame && !IsSpectator)
         {
             Stance desired = networkStance.Value.current == Stance.Prone ? Stance.Standing : Stance.Prone;
             RequestStanceChangeServerRpc(desired);
@@ -1853,6 +2532,7 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         // Une posture hors de l'énumération ne vient que d'un client modifié (2026-10-12).
         if (desired < Stance.Standing || desired > Stance.Prone) return;
+        if (desired == Stance.Prone && IsSpectator) return;
         ServerRequestStance(desired);
     }
 
@@ -2292,6 +2972,52 @@ public class PlayerLocomotion : NetworkBehaviour
         BroadcastPlayerSoundClientRpc(sound.Value, ComputeNoiseLevel());
     }
 
+    /// <summary>Vitesse de chute (m/s) à partir de laquelle une réception s'entend : une marche
+    /// descendue n'est pas une chute (2026-10-13).</summary>
+    public const float LandingSoundFallSpeed = 3f;
+
+    // Un franchissement fini : sa réception attend le premier contact avec le sol (serveur seul).
+    private bool serverVaultLandingPending;
+
+    /// <summary>Franchir un obstacle et retomber s'entendent (2026-10-13, catégorie B, comme les pas) :
+    /// le serveur le voit dans sa propre simulation, rien n'est demandé au client.</summary>
+    private void ServerTrackVaultSound(bool wasVaulting, bool wasGrounded, float fallSpeed)
+    {
+        PlayerSoundEvent? sound = GetVaultSound(wasVaulting, IsVaulting, wasGrounded, controller.isGrounded, fallSpeed,
+                                                ref serverVaultLandingPending);
+        if (sound.HasValue) BroadcastPlayerSoundClientRpc(sound.Value, ComputeNoiseLevel());
+    }
+
+    /// <summary>
+    /// Le son d'un franchissement qui commence, ou d'une réception : au premier contact avec le sol après
+    /// un franchissement (une seule fois), ou après une vraie chute. À la fin de l'arc, le contrôleur,
+    /// coupé pendant le franchissement, n'a pas encore remis à jour son « au sol » : la réception attend
+    /// le contact (`landingPending`). Au banc (2026-10-13), elle s'entendait deux fois, à la fin de l'arc
+    /// puis au contact 0,14 s plus tard. Fonction pure, testée.
+    /// </summary>
+    public static PlayerSoundEvent? GetVaultSound(bool wasVaulting, bool isVaulting, bool wasGrounded, bool isGrounded,
+                                                  float fallSpeed, ref bool landingPending)
+    {
+        if (isVaulting)
+        {
+            if (wasVaulting) return null;
+            landingPending = false;
+            return PlayerSoundEvent.Vault;
+        }
+        if (wasVaulting)
+        {
+            landingPending = true;
+            return null;
+        }
+        if (!isGrounded) return null;
+        if (landingPending)
+        {
+            landingPending = false;
+            return PlayerSoundEvent.Land;
+        }
+        return !wasGrounded && fallSpeed >= LandingSoundFallSpeed ? PlayerSoundEvent.Land : (PlayerSoundEvent?)null;
+    }
+
     /// <summary>Son d'une transition de lean (-1 gauche / 0 / +1 droite). Passer directement d'un
     /// côté à l'autre est un nouveau lean, donc il s'entend aussi.</summary>
     public static PlayerSoundEvent? GetLeanSound(int from, int to)
@@ -2316,7 +3042,8 @@ public class PlayerLocomotion : NetworkBehaviour
     /// </summary>
     private void UpdateLeanState()
     {
-        if (IsSprinting)
+        // Un spectateur ne se penche pas (2026-10-13) : le lean est un geste du duel.
+        if (IsSprinting || IsSpectator)
         {
             leanState = 0;
             return;
@@ -2553,6 +3280,22 @@ public class PlayerLocomotion : NetworkBehaviour
         // Le point d'arrivée horizontal, au-delà de l'obstacle.
         Vector3 horizontalLanding = topHit.point + forward * vaultLandingProbeDistance;
 
+        // La capsule ENTIÈRE doit arriver derrière l'obstacle. À 0,25 m derrière une barricade de
+        // 0,50 m de profondeur, une capsule de 0,35 m de rayon mordait encore 10 cm sur son arête, et
+        // le CharacterController l'en sortait au pas suivant en « montant la marche » (stepOffset,
+        // 0,30 m) : un bond de 30 cm, une chute, et une seconde réception qu'on entendait (mesuré au
+        // banc le 2026-10-13). On cherche la face arrière, par un rayon tiré de l'autre côté vers
+        // l'obstacle juste sous son sommet, et l'arrivée est repoussée d'un rayon de capsule (plus la
+        // peau) au-delà. Géométrie statique : le même calcul chez le client qui prédit et le serveur.
+        float backClearance = controller.radius + controller.skinWidth;
+        float backProbeReach = vaultLandingProbeDistance + backClearance + 0.5f;
+        Vector3 backProbeOrigin = topHit.point + forward * backProbeReach + Vector3.down * 0.05f;
+        if (Physics.Raycast(backProbeOrigin, -forward, out RaycastHit backHit, backProbeReach, obstacleMask, QueryTriggerInteraction.Ignore))
+        {
+            float needed = Vector3.Dot(backHit.point - topHit.point, forward) + backClearance;
+            if (needed > vaultLandingProbeDistance) horizontalLanding = topHit.point + forward * needed;
+        }
+
         // SONDE DE SOL. Sans elle, on atterrissait à l'ALTITUDE DU SOMMET de l'obstacle : le
         // joueur restait perché dessus dès que sa capsule débordait encore un peu au-dessus.
         // Avec une barricade de 0,50 m de profondeur et un rayon de capsule de 0,35 m, arriver
@@ -2762,6 +3505,27 @@ public class PlayerLocomotion : NetworkBehaviour
         // La scène physique doit voir la nouvelle position AVANT le prochain Move(), sinon le
         // premier sweep part de l'ancienne (autoSyncTransforms vaut false dans ce projet).
         Physics.SyncTransforms();
+    }
+
+    /// <summary>Un input tel qu'il voyage (Pack), pour vérifier qu'il arrive tel qu'il est parti.</summary>
+    public static InputWire TestPack(Vector2 move, float lookX, float aimPitch, float dt, bool sprint, bool sneak, bool aim,
+                                     bool fireHeld, bool firePressed, bool jump, int lean)
+        => Pack(new MovementInputSnapshot
+        {
+            move = move, lookX = lookX, aimPitch = aimPitch, sprintHeld = sprint, sneakHeld = sneak, aimHeld = aim,
+            fireHeld = fireHeld, firePressedThisFrame = firePressed, jumpPressed = jump, leanState = lean,
+        }, dt);
+
+    /// <summary>Ce que le serveur relit d'un input reçu (Unpack) : les booléens dans l'ordre sprint,
+    /// sneak, visée, gâchette tenue, gâchette pressée, saut.</summary>
+    public static bool[] TestUnpack(InputWire wire, out Vector2 move, out float lookX, out float aimPitch, out int lean)
+    {
+        MovementInputSnapshot s = Unpack(wire);
+        move = s.move;
+        lookX = s.lookX;
+        aimPitch = s.aimPitch;
+        lean = s.leanState;
+        return new[] { s.sprintHeld, s.sneakHeld, s.aimHeld, s.fireHeld, s.firePressedThisFrame, s.jumpPressed };
     }
 
     /// <summary>Impose une posture, transition comprise, sans passer par le serveur.</summary>

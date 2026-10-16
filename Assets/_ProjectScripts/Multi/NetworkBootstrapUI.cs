@@ -41,7 +41,8 @@ public class NetworkBootstrapUI : MonoBehaviour
     public static void SetCloneTestBench(bool autoClient, bool autopilot, bool autofire, bool autotaser = false,
                                          bool autosneak = false, bool autoaim = false,
                                          bool autodrill = false, bool cheatsprint = false, bool autoswitch = false,
-                                         bool autovault = false, bool cheatvault = false)
+                                         bool autovault = false, bool cheatvault = false, bool autoready = false,
+                                         bool autospectator = false)
     {
         string path = CloneTestBenchFile;
         System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
@@ -58,6 +59,8 @@ public class NetworkBootstrapUI : MonoBehaviour
             "autoswitch=" + (autoswitch ? 1 : 0),
             "autovault=" + (autovault ? 1 : 0),
             "cheatvault=" + (cheatvault ? 1 : 0),
+            "autoready=" + (autoready ? 1 : 0),
+            "autospectator=" + (autospectator ? 1 : 0),
         });
     }
 
@@ -95,6 +98,11 @@ public class NetworkBootstrapUI : MonoBehaviour
         // Le franchissement en tirant (2026-10-11), honnête ou tricheur.
         PlayerInputReader.AutopilotVaultDrill = ReadCloneTestFlag(lines, "autovault");
         PlayerLocomotion.DebugVaultIgnoresRules = ReadCloneTestFlag(lines, "cheatvault");
+        // La préparation (2026-10-12) : le clone valide son arme seul.
+        PlayerMatchState.AutopilotReady = ReadCloneTestFlag(lines, "autoready");
+        // La tribune (2026-10-13) : spectateur, le clone frappe le bloc devant lui, ramasse et lance tout
+        // sur le duelliste. L'hôte le met spectateur avec RoundManager.DebugSoloDuel.
+        SpectatorController.AutopilotSpectator = ReadCloneTestFlag(lines, "autospectator");
 
         NetworkManager nm = NetworkManager.Singleton;
         if (ReadCloneTestFlag(lines, "autoClient") && nm != null && !nm.IsClient && !nm.IsServer)

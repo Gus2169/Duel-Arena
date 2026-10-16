@@ -62,3 +62,7 @@ crashlytics-build.properties
 
 # Fichier de solution généré par l'IDE (2026-10-12)
 *.slnx
+
+# Bytecode Python des outils (Tools/)
+__pycache__/
+*.py[cod]

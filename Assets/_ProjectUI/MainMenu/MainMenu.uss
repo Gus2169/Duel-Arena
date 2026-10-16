@@ -323,7 +323,9 @@
 
 .weapon-card {
     width: 180px;
-    height: 70px;
+    min-height: 70px;   /* un accessoire dit son effet sur une deuxième ligne (2026-10-16) */
+    padding-top: 6px;
+    padding-bottom: 6px;
     margin-right: 12px;
     margin-bottom: 12px;
     background-color: rgba(255, 255, 255, 0.05);
@@ -348,7 +350,44 @@
     white-space: normal;
 }
 
+/* -------------------- Pseudo (écran Jouer) -------------------- */
+
+.pseudo-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
+    border-bottom-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.pseudo-label {
+    font-size: 13px;
+    color: rgb(255, 106, 19);
+    letter-spacing: 2px;
+    -unity-font-style: bold;
+    width: 90px;
+}
+
+.pseudo-field {
+    width: 260px;
+    margin-bottom: 0;
+}
+
+.pseudo-hint {
+    margin-left: 14px;
+    font-size: 12px;
+    color: rgb(140, 148, 158);
+    flex-shrink: 1;
+    white-space: normal;
+}
+
 /* -------------------- Options -------------------- */
+
+/* Le panneau partagé (OptionsPanel.uxml) prend toute la largeur de son écran. */
+.options-instance {
+    width: 100%;
+}
 
 .tab-row {
     flex-direction: row;
@@ -448,4 +487,262 @@
 .reset-bindings-button:hover {
     background-color: rgba(220, 80, 80, 0.15);
     border-color: rgba(220, 80, 80, 0.7);
+}
+
+/* -------------------- Réglages de la partie (hôte, 2026-10-13) -------------------- */
+
+.rule-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.rule-chip {
+    min-width: 40px;
+    height: 30px;
+    margin-right: 6px;
+    margin-bottom: 4px;
+    padding-left: 10px;
+    padding-right: 10px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    color: rgb(210, 215, 222);
+    font-size: 14px;
+}
+
+.rule-chip:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.rule-chip--active {
+    border-color: rgb(255, 106, 19);
+    background-color: rgba(255, 106, 19, 0.18);
+    color: rgb(255, 255, 255);
+    -unity-font-style: bold;
+}
+
+.rule-toggle {
+    margin-top: 8px;
+    margin-bottom: 6px;
+    color: rgb(210, 215, 222);
+    font-size: 13px;
+}
+
+.rule-hint {
+    font-size: 12px;
+    color: rgb(150, 158, 168);
+    white-space: normal;
+    margin-bottom: 6px;
+}
+
+.rule-chip:disabled {
+    opacity: 0.4;
+}
+
+/* -------------------- Jouer : créer ou rejoindre (2026-10-13) -------------------- */
+
+.play-split {
+    flex-direction: row;
+}
+
+.play-card {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-right: 16px;
+    padding: 20px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    justify-content: space-between;
+}
+
+.play-card--last {
+    margin-right: 0;
+}
+
+.section-label--accent {
+    margin-top: 0;
+    color: rgb(255, 106, 19);
+    -unity-font-style: bold;
+    letter-spacing: 2px;
+}
+
+.play-card-text {
+    font-size: 14px;
+    color: rgb(190, 196, 204);
+    white-space: normal;
+    margin-bottom: 12px;
+    flex-grow: 1;
+}
+
+.play-card-button {
+    width: auto;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.code-field {
+    height: 52px;
+    margin-left: 0;
+    margin-right: 0;
+    margin-bottom: 0;
+}
+
+.code-field .unity-base-text-field__input {
+    font-size: 26px;
+    -unity-font-style: bold;
+    letter-spacing: 6px;
+    -unity-text-align: middle-center;
+    color: rgb(24, 26, 30);
+}
+
+.lan-foldout {
+    margin-top: 18px;
+}
+
+.lan-foldout .unity-foldout__text {
+    font-size: 13px;
+    color: rgb(150, 158, 168);
+    letter-spacing: 1px;
+}
+
+.lan-foldout > .unity-foldout__content {
+    margin-left: 0;
+}
+
+/* -------------------- Salon (2026-10-13) -------------------- */
+
+.lobby-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+
+.lobby-title {
+    margin-bottom: 4px;
+}
+
+.lobby-role {
+    font-size: 13px;
+    color: rgb(150, 158, 168);
+}
+
+.lobby-code-block {
+    align-items: flex-end;
+}
+
+.lobby-code-caption {
+    margin-top: 0;
+    margin-bottom: 2px;
+}
+
+.lobby-code {
+    font-size: 44px;
+    -unity-font-style: bold;
+    color: rgb(255, 106, 19);
+    letter-spacing: 8px;
+    margin-right: 12px;
+}
+
+.lobby-copy {
+    height: 34px;
+}
+
+.lobby-code-hint {
+    margin-bottom: 0;
+}
+
+.lobby-split {
+    flex-direction: row;
+    margin-top: 12px;
+}
+
+.lobby-column {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-right: 16px;
+    padding: 16px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+}
+
+.lobby-column--last {
+    margin-right: 0;
+}
+
+.lobby-section-first {
+    margin-top: 0;
+}
+
+.lobby-player-list {
+    margin-bottom: 8px;
+}
+
+.lobby-player {
+    flex-direction: row;
+    align-items: center;
+    height: 40px;
+    padding-left: 12px;
+    padding-right: 12px;
+    margin-bottom: 6px;
+    background-color: rgba(255, 255, 255, 0.06);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+}
+
+.lobby-player--empty {
+    background-color: transparent;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.lobby-player-name {
+    flex-grow: 1;
+    font-size: 16px;
+    color: rgb(235, 238, 242);
+}
+
+.lobby-player--empty .lobby-player-name {
+    font-size: 14px;
+    color: rgb(120, 128, 138);
+    -unity-font-style: italic;
+}
+
+.lobby-tag {
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 2px 8px;
+    margin-left: 6px;
+    border-radius: 4px;
+    background-color: rgba(255, 255, 255, 0.08);
+    color: rgb(200, 205, 212);
+}
+
+.lobby-tag--host {
+    background-color: rgba(255, 106, 19, 0.2);
+    color: rgb(255, 140, 70);
+}
+
+.lobby-footer {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 18px;
+}
+
+.lobby-status {
+    flex-shrink: 1;
+    flex-grow: 1;
+    margin-top: 0;
+    margin-right: 16px;
+}
+
+.lobby-start {
+    margin-top: 0;
 }

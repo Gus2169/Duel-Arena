@@ -4,22 +4,24 @@ using UnityEngine.UIElements;
 
 /// <summary>
 /// L'armurerie avancée (2026-10-12) : une fenêtre dédiée, ouverte depuis Personnalisation, avec
-/// une arme de profil qu'on fait tourner à la souris et quatre rubriques d'accessoires façon Call
-/// of Duty Cold War (poignée, viseur, laser, chargeur étendu), appliqués à l'arme en temps réel.
-/// Posé sur le GameObject `MainMenuUI`, à côté des autres contrôleurs d'écran.
+/// une arme de profil qu'on fait tourner à la souris et des rubriques façon Call of Duty, appliquées
+/// à l'arme en temps réel. Posé sur le GameObject `MainMenuUI`, à côté des autres contrôleurs d'écran.
 ///
-/// 🚨 PUREMENT COSMÉTIQUE ET LIMITÉ AU MENU : les accessoires choisis ici ne changent RIEN à
-/// l'arme réellement tenue en jeu (ni pour le propriétaire, ni pour les autres joueurs) — les
-/// brancher demanderait de réseauter le choix et de toucher WeaponController/HeldWeapons/
-/// FirstPersonView, un chantier à part, délibérément hors scope (voir GameSettings.SetAttachment).
+/// Les deux premières rubriques (2026-10-15, GDD § 6) choisissent ce qui se voit en match, par tous
+/// les joueurs : le MODÈLE de l'arme (le stock, la série 30 ou la version laser, WeaponData.ModelPrefabFor)
+/// et sa FINITION (d'origine, repeinte, rouillée, dépareillée, polie par les mains, encrassée :
+/// WeaponFinishes). Le choix est gardé dans GameSettings.WeaponLooks et part avec la demande de
+/// connexion (SessionFlow) ; le serveur le borne et le publie (PlayerWeaponLooks). Purement
+/// cosmétique : la classe de l'arme seule fait les dégâts.
 ///
-/// La géométrie des accessoires est générée (PreviewAttachmentFactory, des primitives, pas des
-/// modèles 3D). Elle s'accroche à des POINTS D'ACCROCHE posés dans le préfab de chaque arme,
-/// enfants de `Accessoires` : `Poignee`, `Viseur`, `Laser`, `Chargeur` (voir SocketNames). Leur
-/// position place l'accessoire, leur rotation l'oriente (un chargeur pend le long de -Y, un laser
-/// tire le long de +Z), leur échelle le dimensionne (le chargeur d'un pistolet est plus court).
-/// Une arme sans point pour une rubrique n'a pas cette rubrique : elle s'affiche grisée (le raygun
-/// n'a pas de poignée avant). Les points se règlent à la main dans le préfab, sans code.
+/// Les suivantes (2026-10-16, GDD § 6) sont les accessoires, qui CHANGENT l'arme : les dix viseurs de
+/// Rainbow Six, la poignée verticale (recul) ou inclinée (épaulement), le laser tactique (le tir au
+/// juger, mais il se voit), le chargeur grande capacité. Tous ouverts à tous ; une arme ne propose que
+/// ce qu'elle prend (WeaponAttachments.Accepts : pas de viseur sur le sniper, que les réflex sur un
+/// pistolet, pas de poignée sur un pistolet), les autres rubriques sont grisées. Gardés dans
+/// GameSettings.WeaponAttachments, ils partent avec la demande de connexion ; le serveur les borne et
+/// les publie (PlayerWeaponAttachments). L'aperçu les monte comme l'arme tenue en jeu (AttachmentMount),
+/// et chaque choix dit son effet, lu dans le catalogue (AttachmentCatalog).
 /// </summary>
 public class WeaponCustomizationController : MonoBehaviour
 {
@@ -30,23 +32,13 @@ public class WeaponCustomizationController : MonoBehaviour
     [SerializeField] private UIDocument document;
     [SerializeField] private MainMenuController mainMenu;
 
-    /// <summary>Le groupe des points d'accroche dans le préfab d'une arme.</summary>
-    public const string SocketGroupName = "Accessoires";
-
-    /// <summary>Nom du point d'accroche de chaque rubrique, indexé par AttachmentCategory.</summary>
-    public static readonly string[] SocketNames = { "Poignee", "Viseur", "Laser", "Chargeur" };
-
-    private static readonly string[] CategoryLabels = { "Poignée", "Viseur", "Laser", "Chargeur étendu" };
-
-    // Index 0 = « aucun accessoire » dans chaque rubrique : jamais de géométrie construite pour
-    // lui, juste un nom affiché dans la liste des choix.
-    private static readonly string[][] VariantLabels =
-    {
-        new[] { "Aucune", "Poignée courte", "Poignée verticale" },
-        new[] { "Aucun", "Point rouge", "Holographique" },
-        new[] { "Aucun", "Laser tactique" },
-        new[] { "Standard", "Chargeur étendu" },
-    };
+    // Les rubriques : le modèle, la finition, puis les accessoires dans l'ordre de Rainbow Six.
+    private const int TabModel = 0;
+    private const int TabFinish = 1;
+    private const int FirstAttachmentTab = 2;
+    private static readonly string[] LookLabels = { "Modèle", "Finition" };
+    private static readonly AttachmentCategory[] TabCategories =
+        { AttachmentCategory.Sight, AttachmentCategory.Grip, AttachmentCategory.Laser, AttachmentCategory.Magazine };
 
     private VisualElement root;
     private Image viewport;
@@ -56,16 +48,12 @@ public class WeaponCustomizationController : MonoBehaviour
     private VisualElement optionRow;
 
     private Button[] weaponSwitchButtons = System.Array.Empty<Button>();
-    private Button[] categoryTabButtons = System.Array.Empty<Button>();
+    private Button[] tabButtons = System.Array.Empty<Button>();
 
     private int currentWeaponSlot;
-    private AttachmentCategory currentCategory = AttachmentCategory.Grip;
+    private int currentTab = TabModel;
     private GameObject currentWeaponInstance;
     private Bounds currentWeaponBounds;
-
-    // Une entrée par rubrique DISPONIBLE sur l'arme affichée : le tableau a la même taille que
-    // VariantLabels[catégorie], l'indice 0 reste toujours null (pas de géométrie pour « aucun »).
-    private readonly Dictionary<AttachmentCategory, GameObject[]> attachmentInstances = new();
 
     private bool wired;
 
@@ -85,14 +73,14 @@ public class WeaponCustomizationController : MonoBehaviour
         wired = true;
 
         BuildWeaponSwitcher();
-        BuildCategoryTabs();
+        BuildTabs();
         root.Q<Button>("weaponCustomizeBackButton").clicked += Close;
     }
 
     /// <summary>Ouvre la fenêtre sur l'arme demandée (appelé par ArmoryController).</summary>
     public void Open(int weaponSlot)
     {
-        currentCategory = AttachmentCategory.Grip;
+        currentTab = TabModel;
         SwitchWeapon(Mathf.Clamp(weaponSlot, 0, loadout.Length - 1));
     }
 
@@ -128,15 +116,10 @@ public class WeaponCustomizationController : MonoBehaviour
         BuildWeaponInstance(slot);
         RefreshWeaponSwitchHighlight();
 
-        // La rubrique ouverte reste la même d'une arme à l'autre, sauf si la nouvelle ne l'a pas.
-        if (!attachmentInstances.ContainsKey(currentCategory))
-        {
-            foreach (AttachmentCategory category in System.Enum.GetValues(typeof(AttachmentCategory)))
-            {
-                if (attachmentInstances.ContainsKey(category)) { currentCategory = category; break; }
-            }
-        }
-        RefreshCategoryTabs();
+        // La rubrique ouverte reste la même d'une arme à l'autre, sauf un accessoire que la nouvelle
+        // ne prend pas : on revient au modèle.
+        if (!TabAvailable(currentTab)) currentTab = TabModel;
+        RefreshTabs();
         RefreshOptionRow();
         stage.ShowWeapon(currentWeaponBounds, viewport);
     }
@@ -153,20 +136,24 @@ public class WeaponCustomizationController : MonoBehaviour
     // L'arme et ses accessoires
     // ------------------------------------------------------------------
 
+    private WeaponData CurrentData => currentWeaponSlot >= 0 && currentWeaponSlot < loadout.Length ? loadout[currentWeaponSlot] : null;
+
     private void BuildWeaponInstance(int slot)
     {
         if (currentWeaponInstance != null) Destroy(currentWeaponInstance);
         currentWeaponInstance = null;
-        attachmentInstances.Clear();
         currentWeaponBounds = new Bounds(Vector3.zero, Vector3.one * 0.3f);
 
         WeaponData data = slot >= 0 && slot < loadout.Length ? loadout[slot] : null;
-        weaponNameLabel.text = data != null ? data.weaponName : $"Arme {slot + 1}";
-        if (data == null || data.modelPrefab == null || stage.WeaponPivot == null) return;
+        WeaponLooks looks = GameSettings.WeaponLooks;
+        GameObject prefab = data != null ? data.ModelPrefabFor(looks.Model(slot)) : null;
+        weaponNameLabel.text = WeaponTitle(data, prefab, slot);
+        if (prefab == null || stage.WeaponPivot == null) return;
 
-        currentWeaponInstance = Instantiate(data.modelPrefab, stage.WeaponPivot);
+        currentWeaponInstance = Instantiate(prefab, stage.WeaponPivot);
         currentWeaponInstance.transform.localRotation = Quaternion.identity;
         CharacterPreviewController.SetLayerRecursively(currentWeaponInstance, PreviewLayer.Index);
+        if (currentWeaponInstance.TryGetComponent(out WeaponFinishes finishes)) finishes.Apply(looks.Finish(slot));
 
         // Centrée sur le pivot, l'arme tourne autour de son milieu, pas de sa poignée pistolet
         // (l'origine du préfab).
@@ -174,59 +161,61 @@ public class WeaponCustomizationController : MonoBehaviour
         Bounds bounds = LocalBounds(weapon.GetComponentsInChildren<Renderer>(), weapon);
         weapon.localPosition = -bounds.center;
 
-        // Le cadrage couvre l'arme ET la place de tous ses accessoires possibles : il ne bouge pas
-        // quand on en change, et un chargeur étendu ne sort pas du cadre.
-        var accessoryRenderers = new List<Renderer>();
-        BuildAttachments(accessoryRenderers);
-        bounds.Encapsulate(LocalBounds(accessoryRenderers, weapon));
+        // Le cadrage couvre l'arme ET la place de tous les accessoires qu'elle prend : il ne bouge
+        // pas quand on en change, et un chargeur grande capacité ne sort pas du cadre.
+        EncapsulateAttachments(ref bounds, weapon, data);
         currentWeaponBounds = new Bounds(bounds.center + weapon.localPosition, bounds.size);
 
-        ApplySavedSelections(slot);
+        MountAttachments();
     }
 
-    private void BuildAttachments(List<Renderer> accessoryRenderers)
+    /// <summary>Monte sur l'aperçu les accessoires choisis, dans la finition de l'arme, comme en jeu.</summary>
+    private void MountAttachments()
     {
-        Transform group = currentWeaponInstance.transform.Find(SocketGroupName);
-        if (group == null) return;
+        if (currentWeaponInstance == null) return;
+        AttachmentMount.Apply(currentWeaponInstance.transform, CurrentData, GameSettings.WeaponAttachments, currentWeaponSlot,
+                              GameSettings.WeaponLooks.Finish(currentWeaponSlot));
+    }
 
-        foreach (AttachmentCategory category in System.Enum.GetValues(typeof(AttachmentCategory)))
+    /// <summary>« Fusil d'assaut — FA-07 (stock) » : la classe de l'arme, puis le modèle choisi.</summary>
+    private static string WeaponTitle(WeaponData data, GameObject prefab, int slot)
+    {
+        string name = data != null ? data.weaponName : $"Arme {slot + 1}";
+        WeaponModel model = prefab != null ? prefab.GetComponent<WeaponModel>() : null;
+        if (model == null || string.IsNullOrEmpty(model.Designation)) return name;
+        return $"{name} — {model.Designation} ({WeaponModel.FamilyLabel(model.ModelFamily)})";
+    }
+
+    /// <summary>Ajoute aux bornes de l'arme (dans son repère) celles de chaque accessoire qu'elle prend,
+    /// posé sur son point d'accroche : lues sur les préfabs, sans les créer.</summary>
+    private static void EncapsulateAttachments(ref Bounds bounds, Transform weapon, WeaponData data)
+    {
+        WeaponModel model = weapon.GetComponent<WeaponModel>();
+        AttachmentCatalog catalog = data != null ? data.attachmentCatalog : null;
+        foreach (AttachmentCategory category in TabCategories)
         {
-            Transform socket = group.Find(SocketNames[(int)category]);
+            Transform socket = AttachmentMount.Socket(weapon, category);
             if (socket == null) continue;
-
-            string[] labels = VariantLabels[(int)category];
-            var options = new GameObject[labels.Length];
-            for (int i = 1; i < labels.Length; i++)
+            for (int variant = 1; variant < WeaponAttachments.VariantCount(category); variant++)
             {
-                GameObject go = PreviewAttachmentFactory.Build(category, i, socket);
-                CharacterPreviewController.SetLayerRecursively(go, PreviewLayer.Index);
-                foreach (Renderer r in go.GetComponentsInChildren<Renderer>())
+                if (!WeaponAttachments.Accepts(data, category, variant)) continue;
+                GameObject prefab = AttachmentMount.PrefabFor(catalog, model, category, variant);
+                if (prefab == null) continue;
+                Matrix4x4 toWeapon = weapon.worldToLocalMatrix * socket.localToWorldMatrix;
+                foreach (MeshFilter filter in prefab.GetComponentsInChildren<MeshFilter>(true))
                 {
-                    if (r.name != PreviewAttachmentFactory.BeamName) accessoryRenderers.Add(r);
+                    if (filter.sharedMesh == null) continue;
+                    Matrix4x4 m = toWeapon * prefab.transform.worldToLocalMatrix * filter.transform.localToWorldMatrix;
+                    Bounds local = filter.sharedMesh.bounds;
+                    for (int corner = 0; corner < 8; corner++)
+                        bounds.Encapsulate(m.MultiplyPoint3x4(Corner(local, corner)));
                 }
-                go.SetActive(false);
-                options[i] = go;
             }
-            attachmentInstances[category] = options;
         }
     }
 
-    private void ApplySavedSelections(int slot)
-    {
-        foreach (var pair in attachmentInstances)
-        {
-            ActivateVariant(pair.Value, GameSettings.GetAttachment(slot, (int)pair.Key));
-        }
-    }
-
-    private static void ActivateVariant(GameObject[] options, int variant)
-    {
-        if (options == null) return;
-        for (int i = 1; i < options.Length; i++)
-        {
-            if (options[i] != null) options[i].SetActive(i == variant);
-        }
-    }
+    private static Vector3 Corner(Bounds b, int corner) => b.center + Vector3.Scale(b.extents, new Vector3(
+        (corner & 1) == 0 ? -1f : 1f, (corner & 2) == 0 ? -1f : 1f, (corner & 4) == 0 ? -1f : 1f));
 
     /// <summary>Bornes de `renderers` dans le repère de `space` (l'arme), quelle que soit la
     /// rotation actuelle du plateau : les bornes du monde (Renderer.bounds) d'une arme tournée
@@ -243,9 +232,7 @@ public class WeaponCustomizationController : MonoBehaviour
             Matrix4x4 toRoot = space.worldToLocalMatrix * r.localToWorldMatrix;
             for (int corner = 0; corner < 8; corner++)
             {
-                Vector3 c = local.center + Vector3.Scale(local.extents, new Vector3(
-                    (corner & 1) == 0 ? -1f : 1f, (corner & 2) == 0 ? -1f : 1f, (corner & 4) == 0 ? -1f : 1f));
-                Vector3 p = toRoot.MultiplyPoint3x4(c);
+                Vector3 p = toRoot.MultiplyPoint3x4(Corner(local, corner));
                 if (!any) { result = new Bounds(p, Vector3.zero); any = true; }
                 else result.Encapsulate(p);
             }
@@ -257,63 +244,153 @@ public class WeaponCustomizationController : MonoBehaviour
     // Rubriques et choix
     // ------------------------------------------------------------------
 
-    private void BuildCategoryTabs()
+    private static string CategoryLabel(AttachmentCategory category) => category switch
+    {
+        AttachmentCategory.Sight => "Viseur",
+        AttachmentCategory.Grip => "Poignée",
+        AttachmentCategory.Laser => "Laser",
+        _ => "Chargeur",
+    };
+
+    private void BuildTabs()
     {
         categoryTabRow.Clear();
-        categoryTabButtons = new Button[CategoryLabels.Length];
-        for (int i = 0; i < CategoryLabels.Length; i++)
+        tabButtons = new Button[FirstAttachmentTab + TabCategories.Length];
+        for (int i = 0; i < tabButtons.Length; i++)
         {
-            int cat = i;
-            var button = new Button { text = CategoryLabels[i] };
+            int tab = i;
+            var button = new Button { text = i < FirstAttachmentTab ? LookLabels[i] : CategoryLabel(TabCategories[i - FirstAttachmentTab]) };
             button.AddToClassList("tab-button");
             button.clicked += () =>
             {
-                currentCategory = (AttachmentCategory)cat;
-                RefreshCategoryTabs();
+                currentTab = tab;
+                RefreshTabs();
                 RefreshOptionRow();
             };
             categoryTabRow.Add(button);
-            categoryTabButtons[i] = button;
+            tabButtons[i] = button;
         }
     }
 
-    private void RefreshCategoryTabs()
+    private bool TabAvailable(int tab)
     {
-        for (int i = 0; i < categoryTabButtons.Length; i++)
+        if (tab == TabModel) return CurrentData != null && CurrentData.ModelCount > 1;
+        if (tab == TabFinish) return currentWeaponInstance != null && currentWeaponInstance.GetComponent<WeaponFinishes>() != null;
+        return WeaponAttachments.AcceptsAny(CurrentData, TabCategories[tab - FirstAttachmentTab]);
+    }
+
+    private void RefreshTabs()
+    {
+        for (int i = 0; i < tabButtons.Length; i++)
         {
-            bool available = attachmentInstances.ContainsKey((AttachmentCategory)i);
-            categoryTabButtons[i].SetEnabled(available);
-            categoryTabButtons[i].tooltip = available ? string.Empty : "Pas disponible sur cette arme";
-            categoryTabButtons[i].EnableInClassList("tab-button--active", available && i == (int)currentCategory);
+            bool available = TabAvailable(i);
+            tabButtons[i].SetEnabled(available);
+            tabButtons[i].tooltip = available ? string.Empty : "Pas sur cette arme";
+            tabButtons[i].EnableInClassList("tab-button--active", available && i == currentTab);
         }
     }
 
     private void RefreshOptionRow()
     {
         optionRow.Clear();
-        if (!attachmentInstances.ContainsKey(currentCategory)) return;
+        if (!TabAvailable(currentTab)) return;
 
-        string[] labels = VariantLabels[(int)currentCategory];
-        int selected = GameSettings.GetAttachment(currentWeaponSlot, (int)currentCategory);
-
-        for (int i = 0; i < labels.Length; i++)
+        WeaponLooks looks = GameSettings.WeaponLooks;
+        if (currentTab == TabModel)
         {
+            WeaponData data = CurrentData;
+            for (int i = 0; i < data.ModelCount; i++)
+            {
+                int model = i;
+                WeaponModel weaponModel = data.ModelPrefabFor(i) != null ? data.ModelPrefabFor(i).GetComponent<WeaponModel>() : null;
+                string label = weaponModel != null && !string.IsNullOrEmpty(weaponModel.Designation)
+                    ? $"{weaponModel.Designation} · {WeaponModel.FamilyLabel(weaponModel.ModelFamily)}" : $"Modèle {i + 1}";
+                AddCard(label, looks.Model(currentWeaponSlot) == i, () => SelectModel(model));
+            }
+            return;
+        }
+        if (currentTab == TabFinish)
+        {
+            for (int i = 0; i < WeaponLooks.FinishCount; i++)
+            {
+                var finish = (WeaponFinish)i;
+                AddCard(WeaponLooks.FinishLabel(finish), looks.Finish(currentWeaponSlot) == finish, () => SelectFinish(finish));
+            }
+            return;
+        }
+
+        AttachmentCategory category = TabCategories[currentTab - FirstAttachmentTab];
+        int selected = GameSettings.WeaponAttachments.Variant(currentWeaponSlot, category);
+        for (int i = 0; i < WeaponAttachments.VariantCount(category); i++)
+        {
+            if (!WeaponAttachments.Accepts(CurrentData, category, i)) continue;
             int variant = i;
-            var card = new Button { text = labels[i] };
-            card.AddToClassList("weapon-card");
-            card.EnableInClassList("weapon-card--active", variant == selected);
-            card.clicked += () => SelectVariant(variant);
-            optionRow.Add(card);
+            AddCard(VariantLabel(CurrentData, category, variant), variant == selected, () => SelectVariant(category, variant));
         }
     }
 
-    private void SelectVariant(int variant)
+    /// <summary>Le nom d'un choix et ce qu'il fait, lu dans le catalogue (les valeurs se règlent là).</summary>
+    public static string VariantLabel(WeaponData data, AttachmentCategory category, int variant)
     {
-        GameSettings.SetAttachment(currentWeaponSlot, (int)currentCategory, variant);
-        if (attachmentInstances.TryGetValue(currentCategory, out GameObject[] options))
+        AttachmentCatalog catalog = data != null ? data.attachmentCatalog : null;
+        switch (category)
         {
-            ActivateVariant(options, variant);
+            case AttachmentCategory.Sight:
+                if (variant == 0) return "Mire de l'arme";
+                return catalog != null ? catalog.SightTitle(variant) : $"Viseur {variant}";
+            case AttachmentCategory.Grip:
+                if (variant == (int)GripKind.Vertical)
+                    return $"Poignée verticale\n<size=12>recul vertical −{Less(catalog != null ? catalog.verticalGripRecoil : 1f)}</size>";
+                if (variant == (int)GripKind.Angled)
+                    return $"Poignée inclinée\n<size=12>épaulement −{Less(catalog != null ? catalog.angledGripAimTime : 1f)}</size>";
+                return "Aucune";
+            case AttachmentCategory.Laser:
+                if (variant == 0) return "Aucun";
+                return $"Laser tactique\n<size=12>recul à la hanche −{Less(catalog != null ? catalog.laserHipRecoil : 1f)}, mais il se voit</size>";
+            default:
+                int standard = data != null ? data.magazineSize : 0;
+                if (variant == 0) return $"Chargeur d'origine\n<size=12>{standard} {RoundsLabel(data)}</size>";
+                int extended = AttachmentCatalog.MagazineSize(data, true, catalog);
+                bool longer = data != null && !data.reloadPerRound && catalog != null && catalog.extendedMagazineReload > 1f;
+                string reload = longer ? $", rechargement +{More(catalog.extendedMagazineReload)}" : "";
+                return $"Grande capacité\n<size=12>{extended} {RoundsLabel(data)}{reload}</size>";
         }
+    }
+
+    // Ce qu'un facteur retire (« 20 % » pour 0,8) ou ajoute (« 15 % » pour 1,15).
+    private static string Less(float factor) => $"{Mathf.RoundToInt((1f - factor) * 100f)} %";
+    private static string More(float factor) => $"{Mathf.RoundToInt((factor - 1f) * 100f)} %";
+
+    private static string RoundsLabel(WeaponData data) => data != null && data.reloadPerRound ? "cartouches" : "coups";
+
+    private void AddCard(string label, bool active, System.Action onClick)
+    {
+        var card = new Button { text = label, enableRichText = true };
+        card.AddToClassList("weapon-card");
+        card.EnableInClassList("weapon-card--active", active);
+        card.clicked += onClick;
+        optionRow.Add(card);
+    }
+
+    private void SelectModel(int model)
+    {
+        GameSettings.WeaponLooks = GameSettings.WeaponLooks.WithModel(currentWeaponSlot, model);
+        // un autre modèle : d'autres pièces, d'autres points d'accroche, un autre cadrage
+        SwitchWeapon(currentWeaponSlot);
+    }
+
+    private void SelectFinish(WeaponFinish finish)
+    {
+        GameSettings.WeaponLooks = GameSettings.WeaponLooks.WithFinish(currentWeaponSlot, finish);
+        if (currentWeaponInstance != null && currentWeaponInstance.TryGetComponent(out WeaponFinishes finishes)) finishes.Apply(finish);
+        MountAttachments();   // les accessoires prennent la finition de l'arme
+        RefreshOptionRow();
+    }
+
+    private void SelectVariant(AttachmentCategory category, int variant)
+    {
+        GameSettings.WeaponAttachments = GameSettings.WeaponAttachments.WithVariant(currentWeaponSlot, category, variant);
+        MountAttachments();
         RefreshOptionRow();
     }
 }

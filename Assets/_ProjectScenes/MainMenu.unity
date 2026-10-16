@@ -131,6 +131,7 @@ GameObject:
   - component: {fileID: 127950201}
   - component: {fileID: 127950200}
   - component: {fileID: 127950203}
+  - component: {fileID: 127950204}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -256,6 +257,19 @@ MonoBehaviour:
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
   m_Version: 2
+--- !u!114 &127950204
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 127950199}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c424e664b54d33a44ad59e4acf2194b6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::ArenaFallbackCamera
+  keepCamera: 1
 --- !u!1 &819321423
 GameObject:
   m_ObjectHideFlags: 0
@@ -271,6 +285,9 @@ GameObject:
   - component: {fileID: 819321428}
   - component: {fileID: 819321429}
   - component: {fileID: 819321430}
+  - component: {fileID: 819321432}
+  - component: {fileID: 819321431}
+  - component: {fileID: 819321433}
   m_Layer: 0
   m_Name: MainMenuUI
   m_TagString: Untagged
@@ -331,6 +348,7 @@ MonoBehaviour:
   gameplaySceneName: MultiTestScene
   document: {fileID: 0}
   characterPreview: {fileID: 819321429}
+  lobby: {fileID: 819321433}
 --- !u!114 &819321427
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -401,6 +419,49 @@ MonoBehaviour:
   stage: {fileID: 1162473221}
   document: {fileID: 0}
   mainMenu: {fileID: 819321426}
+--- !u!114 &819321431
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 819321423}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4a567d55ff0791842a11ffb82fdb203d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::UiSounds
+  sounds: {fileID: 11400000, guid: 32a2e0f11f6ff4f43a15437da980471c, type: 2}
+--- !u!114 &819321432
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 819321423}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 581d43581fc0d0d4e848040953b90983, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::MusicPlayer
+  sounds: {fileID: 11400000, guid: 32a2e0f11f6ff4f43a15437da980471c, type: 2}
+  playMenuMusicOnStart: 1
+  fadeTime: 1.2
+--- !u!114 &819321433
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 819321423}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dcc89d4b139364b4a99bbe1960bda578, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::LobbyController
+  document: {fileID: 819321425}
+  mainMenu: {fileID: 819321426}
+  gameplaySceneName: MultiTestScene
 --- !u!1 &1115163074
 GameObject:
   m_ObjectHideFlags: 0
@@ -753,6 +814,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1212415491}
   - component: {fileID: 1212415490}
+  - component: {fileID: 1212415492}
   m_Layer: 9
   m_Name: PreviewCamera
   m_TagString: Untagged
@@ -826,6 +888,50 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1162473222}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1212415492
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1212415489}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
+  m_RenderShadows: 1
+  m_RequiresDepthTextureOption: 2
+  m_RequiresOpaqueTextureOption: 2
+  m_CameraType: 0
+  m_Cameras: []
+  m_RendererIndex: -1
+  m_VolumeLayerMask:
+    serializedVersion: 2
+    m_Bits: 1
+  m_VolumeTrigger: {fileID: 0}
+  m_VolumeFrameworkUpdateModeOption: 2
+  m_RenderPostProcessing: 0
+  m_Antialiasing: 0
+  m_AntialiasingQuality: 2
+  m_StopNaN: 0
+  m_Dithering: 0
+  m_ClearDepth: 1
+  m_AllowXRRendering: 1
+  m_AllowHDROutput: 1
+  m_UseScreenCoordOverride: 0
+  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
+  m_RequiresDepthTexture: 0
+  m_RequiresColorTexture: 0
+  m_TaaSettings:
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
+  m_Version: 2
 --- !u!1 &1264315552
 GameObject:
   m_ObjectHideFlags: 0
@@ -871,7 +977,6 @@ GameObject:
   - component: {fileID: 2093603943}
   - component: {fileID: 2093603945}
   - component: {fileID: 2093603947}
-  - component: {fileID: 2093603946}
   m_Layer: 0
   m_Name: NetworkManager
   m_TagString: Untagged
@@ -1004,18 +1109,6 @@ MonoBehaviour:
     RefIds:
     - rid: -2
       type: {class: , ns: , asm: }
---- !u!114 &2093603946
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2093603940}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6ff6a1bcfc14ed948ab6669344365059, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: DuelArena.Runtime::PauseMenu
 --- !u!114 &2093603947
 MonoBehaviour:
   m_ObjectHideFlags: 0

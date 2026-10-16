@@ -137,6 +137,16 @@
                     "priority": 0
                 },
                 {
+                    "name": "Interact",
+                    "type": "Button",
+                    "id": "1d223d2c-94c3-460b-8810-929799c9524f",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false,
+                    "priority": 0
+                },
+                {
                     "name": "Weapon1",
                     "type": "Button",
                     "id": "95ac448b-27d8-4a2b-9dc1-f3cb6695f0a4",
@@ -362,6 +372,17 @@
                     "processors": "",
                     "groups": "",
                     "action": "Melee",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "80ad6b49-c237-4a3a-86e0-3142ecfcae2a",
+                    "path": "<Keyboard>/f",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Interact",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },

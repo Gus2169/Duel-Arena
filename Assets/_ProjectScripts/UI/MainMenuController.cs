@@ -7,22 +7,23 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
 
 /// <summary>
-/// Écran titre + navigation + écran « Jouer » (choix du mode, Héberger/Rejoindre) du menu
-/// principal. Posé sur le même GameObject que l'UIDocument, dans la scène MainMenu — qui
-/// remplace les boutons Host/Server/Client de NetworkBootstrapUI (voir CLAUDE.md « Le menu
-/// principal »).
+/// Écran titre + navigation + écran « Jouer » du menu principal. Posé sur le même GameObject que
+/// l'UIDocument, dans la scène MainMenu (voir CLAUDE.md « Le menu principal et la session »).
 ///
-/// Les écrans Personnalisation et Options sont gérés par des composants séparés
-/// (ArmoryController, OptionsController) sur le même GameObject : celui-ci ne fait QUE la
-/// navigation entre écrans (via la classe USS "hidden") et la logique propre à l'écran Jouer.
+/// L'écran Jouer (refait le 2026-10-13, demandé par l'utilisateur) : le pseudo, puis CRÉER une partie (un
+/// salon privé et son code) ou la REJOINDRE en tapant son code. Le salon lui-même, avec le mode et les
+/// réglages de la partie, est LobbyController ; la partie en ligne, OnlineSession. Le réseau local par
+/// adresse IP reste, replié en bas de l'écran : pour jouer sans internet, et pour le banc de test à deux
+/// instances (son clone se connecte à 127.0.0.1:7777).
 ///
-/// Le NetworkManager vit sur un GameObject séparé de cette scène (persistant, voir
-/// NetworkBootstrapUI) : Héberger démarre le host puis charge IMMÉDIATEMENT la scène de jeu en
-/// mode Single — c'est le patron standard de Netcode pour une scène de bootstrap/menu (le
-/// NetworkManager survit au changement de scène, lui, parce qu'il s'auto-applique
-/// DontDestroyOnLoad tant qu'il est à la racine). Rejoindre se contente de démarrer le client :
-/// la synchronisation de scène est automatique (EnableSceneManagement est actif sur le
-/// NetworkManager), aucun appel à LoadScene n'est nécessaire côté client.
+/// Les écrans Personnalisation et Options sont gérés par des composants séparés (ArmoryController,
+/// OptionsController) sur le même GameObject : celui-ci ne fait que la navigation entre écrans (via la
+/// classe USS "hidden") et l'écran Jouer.
+///
+/// Réseau local : Héberger démarre le host puis charge IMMÉDIATEMENT la scène de jeu en mode Single — le
+/// patron standard de Netcode pour une scène de menu (le NetworkManager survit au changement de scène,
+/// parce qu'il s'applique DontDestroyOnLoad tant qu'il est à la racine). Rejoindre démarre le client : la
+/// synchronisation de scène est automatique (EnableSceneManagement).
 /// </summary>
 public class MainMenuController : MonoBehaviour
 {
@@ -34,14 +35,16 @@ public class MainMenuController : MonoBehaviour
     [Tooltip("Pour couper la caméra d'aperçu 3D quand on quitte l'écran Personnalisation (voir ShowScreenByName).")]
     [SerializeField] private CharacterPreviewController characterPreview;
 
-    private static readonly string[] ScreenNames = { "screenTitle", "screenPlay", "screenArmory", "screenOptions", "screenWeaponCustomize" };
+    [Tooltip("Le salon des parties en ligne (sur le même GameObject si vide).")]
+    [SerializeField] private LobbyController lobby;
+
+    private static readonly string[] ScreenNames = { "screenTitle", "screenPlay", "screenLobby", "screenArmory", "screenOptions", "screenWeaponCustomize" };
 
     private VisualElement root;
-    private VisualElement screenTitle;
-    private VisualElement screenPlay;
 
-    private Button[] modeCards;
-    private int activeModeCardIndex;
+    private TextField joinCodeField;
+    private Button createButton;
+    private Button joinCodeButton;
 
     private TextField hostPortField;
     private TextField joinIpField;
@@ -49,17 +52,17 @@ public class MainMenuController : MonoBehaviour
     private Button hostButton;
     private Button joinButton;
     private Label localIpLabel;
+    private Label lanRulesLabel;
     private Label playStatusLabel;
 
     private bool joinAttemptInProgress;
+    private bool onlineBusy;
 
     private void OnEnable()
     {
         if (document == null) document = GetComponent<UIDocument>();
+        if (lobby == null) lobby = GetComponent<LobbyController>();
         root = document.rootVisualElement;
-
-        screenTitle = root.Q<VisualElement>("screenTitle");
-        screenPlay = root.Q<VisualElement>("screenPlay");
 
         WireTitleScreen();
         WirePlayScreen();
@@ -116,7 +119,7 @@ public class MainMenuController : MonoBehaviour
     /// <summary>Affiche l'écran demandé, masque les autres. Pas d'animation : un menu de duel n'a
     /// pas besoin de fioritures, et ça reste trivial à maintenir si un écran s'ajoute. Public : la
     /// fenêtre d'armurerie avancée (WeaponCustomizationController) revient à Personnalisation par
-    /// ce même chemin, pas par un retour au titre.</summary>
+    /// ce même chemin, et le salon (LobbyController) s'ouvre et se referme par lui.</summary>
     public void ShowScreenByName(string screenName)
     {
         foreach (string name in ScreenNames)
@@ -133,6 +136,8 @@ public class MainMenuController : MonoBehaviour
             if (screenName == "screenArmory") characterPreview.Show();
             else if (screenName != "screenWeaponCustomize") characterPreview.Hide();
         }
+
+        if (screenName == "screenPlay") OnPlayScreenShown();
     }
 
     private static void QuitGame()
@@ -145,29 +150,36 @@ public class MainMenuController : MonoBehaviour
     }
 
     // ------------------------------------------------------------------
-    // Écran Jouer : mode + Héberger/Rejoindre
+    // Écran Jouer
     // ------------------------------------------------------------------
 
     private void WirePlayScreen()
     {
-        modeCards = new[]
+        // Le pseudo (2026-10-12), retenu d'une partie à l'autre, annoncé au salon et à l'hôte.
+        TextField pseudoField = root.Q<TextField>("pseudoField");
+        if (pseudoField != null)
         {
-            root.Q<Button>("modeBo5"),
-            root.Q<Button>("modeRanked"),
-            root.Q<Button>("modeCapture"),
-            root.Q<Button>("modeZone"),
-        };
-
-        // Un seul mode existe pour l'instant (le BO5 de RoundManager) : les trois autres sont
-        // visibles pour montrer où le jeu va, mais désactivés — pas des boutons morts qu'on
-        // découvre en cliquant, un état lisible d'un coup d'œil (voir la classe .mode-card:disabled).
-        for (int i = 1; i < modeCards.Length; i++)
-        {
-            modeCards[i].SetEnabled(false);
+            pseudoField.value = GameSettings.PlayerName;
+            pseudoField.RegisterValueChangedCallback(evt => GameSettings.PlayerName = evt.newValue);
         }
-        activeModeCardIndex = 0;
-        modeCards[0].AddToClassList("mode-card--active");
-        modeCards[0].clicked += () => SelectModeCard(0);
+
+        createButton = root.Q<Button>("createButton");
+        joinCodeButton = root.Q<Button>("joinCodeButton");
+        joinCodeField = root.Q<TextField>("joinCodeField");
+        createButton.clicked += () => lobby.Create();
+        joinCodeButton.clicked += () => lobby.Join(joinCodeField.value);
+
+        // Le code s'écrit comme le service l'attend (majuscules, lettres et chiffres), et Entrée rejoint.
+        joinCodeField.RegisterValueChangedCallback(evt =>
+        {
+            string normalized = OnlineSession.NormalizeCode(evt.newValue);
+            if (normalized != evt.newValue) joinCodeField.SetValueWithoutNotify(normalized);
+        });
+        joinCodeField.RegisterCallback<KeyDownEvent>(evt =>
+        {
+            if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.KeypadEnter) return;
+            lobby.Join(joinCodeField.value);
+        }, TrickleDown.TrickleDown);
 
         hostPortField = root.Q<TextField>("hostPortField");
         joinIpField = root.Q<TextField>("joinIpField");
@@ -175,24 +187,48 @@ public class MainMenuController : MonoBehaviour
         hostButton = root.Q<Button>("hostButton");
         joinButton = root.Q<Button>("joinButton");
         localIpLabel = root.Q<Label>("localIpLabel");
+        lanRulesLabel = root.Q<Label>("lanRulesLabel");
         playStatusLabel = root.Q<Label>("playStatusLabel");
 
         hostButton.clicked += OnHostClicked;
         joinButton.clicked += OnJoinClicked;
     }
 
-    /// <summary>Un seul mode est sélectionnable aujourd'hui, mais la sélection reste générique :
-    /// le jour où un second mode existe, il suffit de le réactiver au-dessus.</summary>
-    private void SelectModeCard(int index)
+    private void OnPlayScreenShown()
     {
-        if (index == activeModeCardIndex) return;
-        modeCards[activeModeCardIndex].RemoveFromClassList("mode-card--active");
-        activeModeCardIndex = index;
-        modeCards[activeModeCardIndex].AddToClassList("mode-card--active");
+        if (lanRulesLabel != null) lanRulesLabel.text = "Réglages : ceux de ta dernière partie créée. " + LobbyController.DescribeRules(GameSettings.HostRules);
+
+        // Les services en ligne se préparent pendant que le joueur lit l'écran : créer ou rejoindre
+        // part ensuite sans attendre la connexion. Un échec (pas d'internet) se dira au clic.
+        _ = WarmUpOnlineAsync();
     }
+
+    private static async System.Threading.Tasks.Task WarmUpOnlineAsync()
+    {
+        try { await OnlineSession.EnsureSignedInAsync(); }
+        catch (System.Exception e) { Debug.Log($"[En ligne] Services injoignables pour l'instant : {e.Message}"); }
+    }
+
+    /// <summary>Le message sous les cartes de l'écran Jouer (le salon y renvoie ses erreurs).</summary>
+    public void ShowPlayStatus(string message, bool isError) => SetStatus(message, isError);
+
+    /// <summary>Une demande au service en ligne est en cours : pas de seconde demande en même temps.</summary>
+    public void SetOnlineBusy(bool busy)
+    {
+        onlineBusy = busy;
+        createButton?.SetEnabled(!busy);
+        joinCodeButton?.SetEnabled(!busy);
+        hostButton?.SetEnabled(!busy && !joinAttemptInProgress);
+        joinButton?.SetEnabled(!busy);
+    }
+
+    // ------------------------------------------------------------------
+    // Réseau local (sans code)
+    // ------------------------------------------------------------------
 
     private void OnHostClicked()
     {
+        if (onlineBusy) return;
         NetworkManager nm = NetworkManager.Singleton;
         if (nm == null) { SetStatus("NetworkManager introuvable dans la scène.", true); return; }
         if (nm.IsClient || nm.IsServer) { SetStatus("Déjà connecté.", true); return; }
@@ -202,9 +238,11 @@ public class MainMenuController : MonoBehaviour
         if (transport == null) { SetStatus("UnityTransport introuvable.", true); return; }
 
         // Écoute sur toutes les interfaces (0.0.0.0) pour accepter un client du même réseau local,
-        // pas seulement 127.0.0.1 : c'est ce qui permet de jouer entre amis avant que Relay existe.
+        // pas seulement 127.0.0.1.
         string localIp = GetLocalIPv4();
         transport.SetConnectionData(localIp, port, "0.0.0.0");
+        SessionFlow.PrepareConnectionData(nm); // le pseudo a pu changer depuis le lancement
+        SessionFlow.ActiveRules = GameSettings.HostRules; // places, duels, spectateurs : figés pour la partie
 
         if (!nm.StartHost())
         {
@@ -225,6 +263,7 @@ public class MainMenuController : MonoBehaviour
 
     private void OnJoinClicked()
     {
+        if (onlineBusy) return;
         NetworkManager nm = NetworkManager.Singleton;
         if (nm == null) { SetStatus("NetworkManager introuvable dans la scène.", true); return; }
 
@@ -244,6 +283,7 @@ public class MainMenuController : MonoBehaviour
         UnityTransport transport = nm.GetComponent<UnityTransport>();
         if (transport == null) { SetStatus("UnityTransport introuvable.", true); return; }
         transport.SetConnectionData(ip, port);
+        SessionFlow.PrepareConnectionData(nm);
 
         if (!nm.StartClient())
         {
@@ -253,6 +293,7 @@ public class MainMenuController : MonoBehaviour
 
         joinAttemptInProgress = true;
         joinButton.text = "Annuler";
+        hostButton.SetEnabled(false);
         SetStatus($"Connexion à {ip}:{port}...", false);
     }
 
@@ -281,6 +322,7 @@ public class MainMenuController : MonoBehaviour
     {
         joinAttemptInProgress = false;
         joinButton.text = "Rejoindre";
+        hostButton.SetEnabled(!onlineBusy);
         SetStatus(message, isError);
     }
 

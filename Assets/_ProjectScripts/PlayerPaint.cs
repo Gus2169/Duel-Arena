@@ -95,6 +95,16 @@ public class PlayerPaint : NetworkBehaviour
         ApplyPaint(networkPaint.Value);
     }
 
+    /// <summary>Peint cette pièce de la couleur actuelle, une seule fois, sans la retenir : l'épave
+    /// d'un robot tué (RobotCorpse) ne vit que le temps d'une mort, et la couleur ne change pas
+    /// pendant un match.</summary>
+    public void PaintOnce(Renderer r)
+    {
+        if (r == null || networkPaint.Value.a == 0) return;
+        propertyBlock ??= new MaterialPropertyBlock();
+        PaintRenderer(r, networkPaint.Value);
+    }
+
     private void ApplyPaint(Color32 paint)
     {
         if (paint.a == 0 || paintedRenderers == null) return;

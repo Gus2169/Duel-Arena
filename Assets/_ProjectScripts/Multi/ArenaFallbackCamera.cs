@@ -17,6 +17,9 @@ using UnityEngine;
 /// </summary>
 public class ArenaFallbackCamera : MonoBehaviour
 {
+    [Tooltip("Garder l'image et n'éteindre que l'écoute : sur la caméra du menu (2026-10-13), dont le fond reste affiché pendant que le robot de l'hôte apparaît, avant le chargement de l'arène.")]
+    [SerializeField] private bool keepCamera;
+
     private Camera cam;
     private AudioListener listener;
     private bool disabled;
@@ -33,7 +36,7 @@ public class ArenaFallbackCamera : MonoBehaviour
         if (NetworkManager.Singleton == null) return;
         if (!NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer) return;
 
-        if (cam != null) cam.enabled = false;
+        if (cam != null && !keepCamera) cam.enabled = false;
         if (listener != null) listener.enabled = false;
         disabled = true;
     }

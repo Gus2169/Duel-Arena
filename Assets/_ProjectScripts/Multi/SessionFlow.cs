@@ -1,5 +1,7 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -8,8 +10,9 @@ using UnityEngine.SceneManagement;
 /// Les règles de la session, posées sur le GameObject du NetworkManager (scène MainMenu, qui
 /// voyage d'une scène à l'autre avec lui). Ajouté à la relecture complète du 2026-10-12 :
 ///
-/// - DEUX JOUEURS AU PLUS tant que la tribune n'existe pas. RoundManager suppose un duel : un
-///   troisième client recevait un robot armé, et deux joueurs marquaient à chaque mort.
+/// - LA CAPACITÉ de la partie, réglée par l'hôte (2026-10-13 : quatre places par défaut, deux
+///   duellistes et deux spectateurs, GDD § 4). Au-delà de deux, les joueurs attendent leur tour sur la
+///   tribune (RoundManager, DuelRoster).
 /// - LA MÊME VERSION des deux côtés (Application.version, « Version » des Player Settings) : un ami
 ///   resté sur une ancienne build est refusé avec un message clair, au lieu d'entrer dans une
 ///   partie dont le code diffère. Monter la version à chaque build envoyée.
@@ -17,15 +20,47 @@ using UnityEngine.SceneManagement;
 ///   quitte depuis le menu d'Échap (PauseMenu). Avant, le client restait dans une arène vide, sans
 ///   robot ni caméra, curseur bloqué, jusqu'à Alt+F4.
 ///
+/// - LE PSEUDO (2026-10-12) : le joueur l'annonce dans sa demande de connexion, avec sa version.
+///   Le serveur le retient à l'approbation et le donne à sa fiche quand son robot apparaît
+///   (PlayerMatchState), nettoyé et rendu unique. Aucune RPC de plus.
+/// - L'APPARENCE DE SES ARMES (2026-10-15) : le modèle et la finition de chacune, choisis à
+///   l'armurerie, par le même chemin (PlayerWeaponLooks les borne et les publie).
+/// - SES ACCESSOIRES (2026-10-16) : le viseur, la poignée, le laser et le chargeur de chacune, par
+///   le même chemin encore (PlayerWeaponAttachments les borne et les publie).
+///
 /// Le refus est décidé par le serveur seul (ConnectionApprovalCallback) ; le client ne fait
-/// qu'annoncer sa version.
+/// qu'annoncer sa version et son pseudo.
 /// </summary>
 [DisallowMultipleComponent]
 public class SessionFlow : MonoBehaviour
 {
-    /// <summary>Joueurs dans une partie, hôte compris : un duel, en attendant la tribune (GDD § 4).
-    /// À faire passer à la capacité du mode quand les spectateurs existeront.</summary>
-    public const int MaxPlayers = 2;
+    /// <summary>Taille maximale d'une demande de connexion acceptée (octets) : une version et un
+    /// pseudo en tiennent bien moins. Au-delà, elle ne vient que d'un client modifié.</summary>
+    public const int MaxPayloadBytes = 256;
+
+    // Côté serveur : le pseudo et l'apparence des armes annoncés par chaque client approuvé, en
+    // attendant que son robot apparaisse. L'hôte passe par la même approbation (Netcode l'appelle
+    // aussi pour lui).
+    private static readonly Dictionary<ulong, string> approvedNames = new Dictionary<ulong, string>();
+    private static readonly Dictionary<ulong, WeaponLooks> approvedLooks = new Dictionary<ulong, WeaponLooks>();
+    private static readonly Dictionary<ulong, WeaponAttachments> approvedAttachments = new Dictionary<ulong, WeaponAttachments>();
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics()
+    {
+        approvedNames.Clear();
+        approvedLooks.Clear();
+        approvedAttachments.Clear();
+    }
+
+    /// <summary>
+    /// Les réglages de la partie que cette machine héberge : capacité, organisation des duels,
+    /// interventions des spectateurs (2026-10-13). Choisis par l'hôte dans le salon (LobbyController), ou
+    /// ceux de sa dernière partie en réseau local (GameSettings.HostRules), fixés au lancement, publiés par
+    /// RoundManager.
+    /// La capacité n'est jamais une constante (CLAUDE.md) : quatre places pour le prototype du GDD.
+    /// </summary>
+    public static MatchRules ActiveRules { get; set; } = MatchRules.Default;
 
     /// <summary>La scène du menu, où l'on revient quand la session s'arrête (index 0 des Build
     /// Settings). Elle apporte son propre NetworkManager.</summary>
@@ -48,11 +83,94 @@ public class SessionFlow : MonoBehaviour
         }
 
         // Réglé ici, sur toutes les machines : le serveur juge chaque arrivée, et le client annonce
-        // sa version dans sa demande de connexion.
+        // sa version et son pseudo dans sa demande de connexion.
+        approvedNames.Clear();
+        approvedLooks.Clear();
+        approvedAttachments.Clear();
         networkManager.NetworkConfig.ConnectionApproval = true;
-        networkManager.NetworkConfig.ConnectionData = Encoding.UTF8.GetBytes(Application.version);
+        PrepareConnectionData(networkManager);
         networkManager.ConnectionApprovalCallback = ApproveConnection;
     }
+
+    /// <summary>La demande de connexion de cette machine : sa version, le pseudo des Options et
+    /// l'apparence de ses armes. À refaire juste avant de démarrer : ils ont pu changer depuis le
+    /// lancement.</summary>
+    public static void PrepareConnectionData(NetworkManager nm)
+    {
+        if (nm != null)
+            nm.NetworkConfig.ConnectionData = BuildPayload(Application.version, GameSettings.PlayerName, GameSettings.WeaponLooks,
+                                                           GameSettings.WeaponAttachments);
+    }
+
+    /// <summary>Le pseudo annoncé par `clientId` à son approbation, retiré de l'attente (vide s'il
+    /// n'en a pas annoncé, ou hors d'une session lancée par le menu).</summary>
+    public static string TakeApprovedName(ulong clientId)
+    {
+        if (!approvedNames.TryGetValue(clientId, out string name)) return "";
+        approvedNames.Remove(clientId);
+        return name;
+    }
+
+    /// <summary>L'apparence des armes annoncée par `clientId` à son approbation, retirée de l'attente
+    /// (les armes par défaut s'il n'en a pas annoncé). Pas encore bornée : PlayerWeaponLooks s'en charge,
+    /// lui qui connaît la panoplie.</summary>
+    public static WeaponLooks TakeApprovedLooks(ulong clientId)
+    {
+        if (!approvedLooks.TryGetValue(clientId, out WeaponLooks looks)) return WeaponLooks.Default;
+        approvedLooks.Remove(clientId);
+        return looks;
+    }
+
+    /// <summary>Les accessoires annoncés par `clientId` à son approbation, retirés de l'attente (aucun
+    /// s'il n'en a pas annoncé). Pas encore bornés : PlayerWeaponAttachments s'en charge.</summary>
+    public static WeaponAttachments TakeApprovedAttachments(ulong clientId)
+    {
+        if (!approvedAttachments.TryGetValue(clientId, out WeaponAttachments attachments)) return WeaponAttachments.None;
+        approvedAttachments.Remove(clientId);
+        return attachments;
+    }
+
+    /// <summary>La demande de connexion : la version, le pseudo, puis l'apparence des armes et leurs
+    /// accessoires (2026-10-16) en hexadécimal, séparés par des sauts de ligne (que le pseudo, nettoyé,
+    /// ne peut pas contenir). Fonction pure, testée.</summary>
+    public static byte[] BuildPayload(string version, string name, WeaponLooks looks, WeaponAttachments attachments)
+        => Encoding.UTF8.GetBytes((version ?? "") + "\n" + PlayerMatchState.SanitizeName(name) + "\n" + looks.Packed.ToString("X8")
+                                  + "\n" + attachments.Packed.ToString("X8"));
+
+    public static byte[] BuildPayload(string version, string name, WeaponLooks looks)
+        => BuildPayload(version, name, looks, WeaponAttachments.None);
+
+    public static byte[] BuildPayload(string version, string name) => BuildPayload(version, name, WeaponLooks.Default);
+
+    /// <summary>Lit une demande de connexion. Faux si elle est absente ou trop longue : elle ne vient
+    /// alors que d'un client modifié. Une ancienne build n'envoie que sa version, ou sa version et son
+    /// pseudo : ce qui manque ne vaut rien (pas de pseudo, les armes par défaut), comme une
+    /// apparence illisible. Fonction pure, testée.</summary>
+    public static bool ParsePayload(byte[] payload, out string version, out string name, out WeaponLooks looks,
+                                    out WeaponAttachments attachments)
+    {
+        version = "";
+        name = "";
+        looks = WeaponLooks.Default;
+        attachments = WeaponAttachments.None;
+        if (payload == null || payload.Length == 0 || payload.Length > MaxPayloadBytes) return false;
+        string[] lines = Encoding.UTF8.GetString(payload).Split('\n');
+        version = lines[0];
+        if (lines.Length > 1) name = PlayerMatchState.SanitizeName(lines[1]);
+        if (lines.Length > 2 && uint.TryParse(lines[2], System.Globalization.NumberStyles.AllowHexSpecifier,
+                                               System.Globalization.CultureInfo.InvariantCulture, out uint packed))
+            looks = new WeaponLooks(packed);
+        if (lines.Length > 3 && uint.TryParse(lines[3], System.Globalization.NumberStyles.AllowHexSpecifier,
+                                               System.Globalization.CultureInfo.InvariantCulture, out uint chosen))
+            attachments = new WeaponAttachments(chosen);
+        return true;
+    }
+
+    public static bool ParsePayload(byte[] payload, out string version, out string name, out WeaponLooks looks)
+        => ParsePayload(payload, out version, out name, out looks, out _);
+
+    public static bool ParsePayload(byte[] payload, out string version, out string name)
+        => ParsePayload(payload, out version, out name, out _);
 
     private void OnEnable()
     {
@@ -81,23 +199,60 @@ public class SessionFlow : MonoBehaviour
     private void ApproveConnection(NetworkManager.ConnectionApprovalRequest request,
                                    NetworkManager.ConnectionApprovalResponse response)
     {
-        string clientVersion = request.Payload != null ? Encoding.UTF8.GetString(request.Payload) : "";
-        response.Approved = ShouldApprove(networkManager.ConnectedClientsIds.Count, clientVersion,
-                                          Application.version, out string reason);
+        string reason;
+        if (!ParsePayload(request.Payload, out string clientVersion, out string clientName, out WeaponLooks clientLooks,
+                          out WeaponAttachments clientAttachments))
+        {
+            response.Approved = false;
+            reason = "Demande de connexion invalide.";
+        }
+        else
+        {
+            response.Approved = ShouldApprove(networkManager.ConnectedClientsIds.Count, ActiveRules.Sanitized().capacity,
+                                              clientVersion, Application.version, out reason);
+        }
         response.Reason = reason;
         response.CreatePlayerObject = response.Approved;
-        if (!response.Approved) Debug.Log($"[Session] Connexion refusée : {reason}");
+        if (response.Approved)
+        {
+            approvedNames[request.ClientNetworkId] = clientName;
+            approvedLooks[request.ClientNetworkId] = clientLooks;
+            approvedAttachments[request.ClientNetworkId] = clientAttachments;
+        }
+        else Debug.Log($"[Session] Connexion refusée : {reason}");
+
+        // Un joueur qui arrive pendant que l'hôte charge encore l'arène (vécu au banc à deux instances,
+        // 2026-10-13 : le client réessayait déjà quand l'hôte a démarré) naissait dans la scène du menu,
+        // et son robot disparaissait avec elle : connecté, mais sans corps. Sa demande attend que l'arène
+        // soit chargée (Netcode garde la réponse en attente tant que Pending est vrai). L'hôte lui-même
+        // est accepté à son démarrage, avant le chargement : il n'est pas concerné.
+        if (response.Approved && request.ClientNetworkId != networkManager.LocalClientId && SceneManager.GetActiveScene().name == MenuSceneName)
+        {
+            response.Pending = true;
+            pendingApprovals.Add(response);
+        }
+    }
+
+    // Les connexions acceptées qui attendent que l'hôte soit dans l'arène (voir ApproveConnection).
+    private readonly List<NetworkManager.ConnectionApprovalResponse> pendingApprovals = new List<NetworkManager.ConnectionApprovalResponse>();
+
+    private void Update()
+    {
+        if (pendingApprovals.Count == 0 || SceneManager.GetActiveScene().name == MenuSceneName) return;
+        foreach (NetworkManager.ConnectionApprovalResponse response in pendingApprovals) response.Pending = false;
+        pendingApprovals.Clear();
     }
 
     /// <summary>
-    /// Accepte-t-on un joueur de plus ? Refusé si la partie est pleine ou si sa version diffère de
-    /// celle de l'hôte, avec la raison à lui montrer. Fonction pure, testée.
+    /// Accepte-t-on un joueur de plus ? Refusé si la partie est pleine (`capacity` joueurs, hôte compris)
+    /// ou si sa version diffère de celle de l'hôte, avec la raison à lui montrer. Au-delà de deux, les
+    /// joueurs attendent leur tour sur la tribune (GDD § 4). Fonction pure, testée.
     /// </summary>
-    public static bool ShouldApprove(int connectedPlayers, string clientVersion, string hostVersion, out string reason)
+    public static bool ShouldApprove(int connectedPlayers, int capacity, string clientVersion, string hostVersion, out string reason)
     {
-        if (connectedPlayers >= MaxPlayers)
+        if (connectedPlayers >= capacity)
         {
-            reason = $"La partie est pleine : {MaxPlayers} joueurs au plus pour l'instant.";
+            reason = $"La partie est pleine : {capacity} joueurs au plus.";
             return false;
         }
         if (clientVersion != hostVersion)
@@ -116,11 +271,26 @@ public class SessionFlow : MonoBehaviour
     private void HandleClientStopped(bool wasHost)
     {
         if (SceneManager.GetActiveScene().name == MenuSceneName) return;
+        // Départ volontaire (menu d'Échap, écran de fin) : le retour est déjà en route, sans message.
+        if (returningToMenu) return;
+        ReturnToMenu(MenuMessageFor(networkManager.DisconnectReason, wasHost));
+    }
 
-        string reason = networkManager.DisconnectReason;
-        if (string.IsNullOrEmpty(reason) && !wasHost && !returningToMenu)
-            reason = "La connexion avec l'hôte a été perdue, ou il a quitté la partie.";
-        ReturnToMenu(reason);
+    /// <summary>
+    /// Ce qu'on dit au joueur ramené au menu par la fin de sa session. Netcode donne ses raisons en
+    /// anglais, parfois techniques (« [Disconnect Event]... the transport was shutdown ») : on les
+    /// traduit ; les refus de l'hôte (ShouldApprove), déjà en français, passent tels quels. Fonction
+    /// pure, testée. Corrigé le 2026-10-12 : l'hôte qui quittait de lui-même voyait la raison
+    /// technique de son propre arrêt, en rouge, et le client un message anglais.
+    /// </summary>
+    public static string MenuMessageFor(string disconnectReason, bool wasHost)
+    {
+        string reason = disconnectReason ?? "";
+        if (reason.IndexOf("host shutting down", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            return "L'hôte a quitté la partie.";
+        if (reason.Length == 0 || reason.StartsWith("[Disconnect Event]", System.StringComparison.Ordinal))
+            return wasHost ? "" : "La connexion avec l'hôte a été perdue, ou il a quitté la partie.";
+        return reason;
     }
 
     /// <summary>
@@ -138,6 +308,7 @@ public class SessionFlow : MonoBehaviour
         SessionFlow flow = nm != null ? nm.GetComponent<SessionFlow>() : null;
         if (flow == null)
         {
+            _ = OnlineSession.LeaveAsync();
             if (nm != null) Destroy(nm.gameObject);
             SceneManager.LoadSceneAsync(MenuSceneName);
             return;
@@ -156,9 +327,20 @@ public class SessionFlow : MonoBehaviour
     /// 30 s. Puis détruit ce NetworkManager et charge le menu de façon asynchrone, donc au plus tôt à
     /// l'image suivante : l'ancien est alors détruit, et celui du menu devient le singleton en
     /// s'activant.
+    ///
+    /// En ligne (2026-10-13), on quitte d'abord le salon (OnlineSession) : c'est lui qui arrête Netcode
+    /// (l'hôte le ferme, et tout le monde en sort), et son pilote doit être libéré avant que le
+    /// NetworkManager ne disparaisse. Le service peut tarder : on ne l'attend que quelques secondes.
     /// </summary>
     private IEnumerator LeaveSession()
     {
+        if (OnlineSession.InSession)
+        {
+            Task leaving = OnlineSession.LeaveAsync();
+            float leaveDeadline = Time.realtimeSinceStartup + 4f;
+            while (!leaving.IsCompleted && Time.realtimeSinceStartup < leaveDeadline) yield return null;
+        }
+
         if (networkManager.IsListening && !networkManager.ShutdownInProgress) networkManager.Shutdown();
         float deadline = Time.realtimeSinceStartup + 2f;
         while ((networkManager.IsListening || networkManager.ShutdownInProgress) && Time.realtimeSinceStartup < deadline)

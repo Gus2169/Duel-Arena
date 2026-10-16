@@ -23,6 +23,11 @@ using UnityEngine.UIElements;
 /// dépendent de PlayerLocomotion et n'ont pas leur place ici. Limite connue et acceptée : un
 /// aperçu de menu, pas une simulation.
 ///
+/// Il tient l'arme de départ choisie (2026-10-15), dans le modèle et la finition de l'armurerie
+/// (GameSettings.WeaponLooks), avec ses accessoires (GameSettings.WeaponAttachments, 2026-10-16), par
+/// le même HeldWeapons que le robot en jeu : tenue au repère « PriseArme » de sa main droite, à jour à
+/// chaque choix.
+///
 /// La couleur suit le swatch choisi dans ArmoryController EN TEMPS RÉEL, par le même mécanisme que
 /// PlayerPaint (MaterialPropertyBlock sur `_BaseColor`), appliqué aux renderers dont le CHEMIN
 /// relatif à « Model » correspond à ceux que `PlayerPaint.PaintedRenderers` liste SUR L'ASSET (lu
@@ -40,6 +45,8 @@ public class CharacterPreviewController : MonoBehaviour
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
     private Image viewport;
+    private Transform previewHand;
+    private IReadOnlyList<WeaponData> loadout;
     private MaterialPropertyBlock propertyBlock;
     private Renderer[] paintedRenderers = System.Array.Empty<Renderer>();
     private bool built;
@@ -51,6 +58,24 @@ public class CharacterPreviewController : MonoBehaviour
         if (stage == null) stage = GetComponent<PreviewStage>();
         viewport = document.rootVisualElement.Q<Image>("characterPreviewImage");
         BuildOnce();
+        GameSettings.WeaponLooksChanged += RefreshWeapon;
+        GameSettings.WeaponAttachmentsChanged += RefreshWeapon;
+    }
+
+    private void OnDisable()
+    {
+        GameSettings.WeaponLooksChanged -= RefreshWeapon;
+        GameSettings.WeaponAttachmentsChanged -= RefreshWeapon;
+    }
+
+    /// <summary>Met en main l'arme de départ, dans le modèle et la finition choisis, avec ses
+    /// accessoires (appelé à chaque choix de l'armurerie).</summary>
+    public void RefreshWeapon()
+    {
+        if (previewHand == null || loadout == null || loadout.Count == 0) return;
+        HeldWeapons.Build(previewHand, loadout, GameSettings.WeaponLooks, GameSettings.WeaponAttachments);
+        int slot = Mathf.Clamp(GameSettings.PreferredWeaponSlot, 0, loadout.Count - 1);
+        HeldWeapons.Show(previewHand, loadout, loadout[slot]);
     }
 
     /// <summary>La palette des robots, celle de PlayerPaint lue sur le préfab joueur : le menu
@@ -103,6 +128,13 @@ public class CharacterPreviewController : MonoBehaviour
         modelInstance.transform.localPosition = Vector3.zero;
         modelInstance.transform.localRotation = Quaternion.identity;
         SetLayerRecursively(modelInstance, PreviewLayer.Index);
+
+        // l'arme en main, posée sur le layer de l'aperçu (celui de la main) par HeldWeapons
+        WeaponController weapon = playerPrefab.GetComponentInChildren<WeaponController>(true);
+        loadout = weapon != null ? weapon.Loadout : null;
+        Animator previewAnimator = modelInstance.GetComponent<Animator>();
+        previewHand = previewAnimator != null ? previewAnimator.GetBoneTransform(HumanBodyBones.RightHand) : null;
+        RefreshWeapon();
 
         PlayerPaint assetPaint = playerPrefab.GetComponent<PlayerPaint>();
         if (assetPaint != null)

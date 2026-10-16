@@ -115,6 +115,8 @@ public class ArmoryController : MonoBehaviour
                 GameSettings.PreferredWeaponSlot = slot;
                 foreach (Button c in weaponCards) c.RemoveFromClassList("weapon-card--active");
                 card.AddToClassList("weapon-card--active");
+                // le robot de l'aperçu prend l'arme de départ en main
+                if (characterPreview != null) characterPreview.RefreshWeapon();
             };
 
             weaponCards.Add(card);

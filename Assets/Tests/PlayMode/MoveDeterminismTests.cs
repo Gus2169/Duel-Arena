@@ -605,6 +605,49 @@ public class MoveDeterminismTests
     }
 
     [UnityTest]
+    public IEnumerator ApresUnVaultDUnObstacleEpais_LeRobotNeBonditPas()
+    {
+        yield return null;
+
+        // Profondeur 0,50 m, les barricades de l'arène. Mesuré au banc le 2026-10-13 : l'arrivée
+        // tombait à 0,25 m de la face arrière, la capsule (0,35 m de rayon) mordait 10 cm sur l'arête,
+        // et le CharacterController l'en sortait au pas SUIVANT en montant la marche : un bond de
+        // 0,30 m, une chute, et une seconde réception qu'on entendait. Le test d'à côté relève la
+        // hauteur à l'instant de l'arrivée, avant le bond : on suit donc les pas qui suivent.
+        obstacle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        obstacle.name = "TestBarricadeEpaisse";
+        obstacle.transform.position = new Vector3(0f, 0.25f, 3f);
+        obstacle.transform.localScale = new Vector3(4f, 0.5f, 0.5f);
+        Physics.SyncTransforms();
+
+        Settle();
+
+        bool vaultTermine = false;
+        int pasApres = 0;
+        float arrivee = 0f;
+        float plusHaut = float.MinValue;
+        for (int i = 0; i < 300 && pasApres < 30; i++)
+        {
+            bool vaultaitAvant = player.IsVaulting;
+            player.TestMove(Vector2.up, 0f, false, false, false, true, 0, Dt);
+            if (vaultaitAvant && !player.IsVaulting)
+            {
+                vaultTermine = true;
+                arrivee = player.TestCaptureState().position.y;
+                continue;
+            }
+            if (!vaultTermine) continue;
+            pasApres++;
+            plusHaut = Mathf.Max(plusHaut, player.TestCaptureState().position.y);
+        }
+
+        Assert.IsTrue(vaultTermine, "Aucun vault ne s'est terminé : le test est vide.");
+        Assert.Less(plusHaut - arrivee, 0.05f,
+            "Après l'arrivée, le robot monte de " + (plusHaut - arrivee).ToString("F2") + " m : sa capsule "
+            + "chevauche l'obstacle et le contrôleur l'en sort en montant la marche.");
+    }
+
+    [UnityTest]
     public IEnumerator VaultRejoue_SuitExactementLeMemeArc()
     {
         yield return null;

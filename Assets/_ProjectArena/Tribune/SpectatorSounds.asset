@@ -1,0 +1,97 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 23adbf51f006a5f49a4ef6840e6e3602, type: 3}
+  m_Name: SpectatorSounds
+  m_EditorClassIdentifier: DuelArena.Runtime::SpectatorSounds
+  punchSwing:
+    clips:
+    - {fileID: 8300000, guid: a0cc2282aa605d94a827471e4fa259fd, type: 3}
+    - {fileID: 8300000, guid: c656d152558dc9347b46b1f05a132349, type: 3}
+    - {fileID: 8300000, guid: 6a021ddf27ee65c449c07659be126c0f, type: 3}
+    - {fileID: 8300000, guid: 04f4aaa43c42a8e44b673c8500d26182, type: 3}
+    - {fileID: 8300000, guid: dadb5984e056d1c4898c8277bf70ebcc, type: 3}
+    volume: 0.35
+    pitchRange: {x: 0.95, y: 1.05}
+  punchHit:
+    clips:
+    - {fileID: 8300000, guid: e76f7c6eb61d3f141bdb8da46eab1387, type: 3}
+    - {fileID: 8300000, guid: a9bff846047f4b643b401bac7734e034, type: 3}
+    - {fileID: 8300000, guid: 91b81d1763ec8ff4db3765de42ea3ca1, type: 3}
+    - {fileID: 8300000, guid: 0c94f87036b113f409514ee59e70b3d1, type: 3}
+    - {fileID: 8300000, guid: 26ca33b9e127d9243a9b7af9e0fc478b, type: 3}
+    volume: 0.9
+    pitchRange: {x: 0.95, y: 1.05}
+  stunned:
+    clips:
+    - {fileID: 8300000, guid: 8f368218a728fd241b7611fdfd6c76c3, type: 3}
+    - {fileID: 8300000, guid: 5fda4ad8d1adf9d45875ecb79f819480, type: 3}
+    - {fileID: 8300000, guid: 4f4acf04470d4de4b87c780a7dba60e8, type: 3}
+    volume: 0.7
+    pitchRange: {x: 0.95, y: 1.05}
+  blockHit:
+    clips:
+    - {fileID: 8300000, guid: ab7444973dc32f6479da8235e3bd1813, type: 3}
+    - {fileID: 8300000, guid: 2ac99521918aac34f93e360b0150e8e0, type: 3}
+    - {fileID: 8300000, guid: 22114323623145f4d8f11d9c46235cc6, type: 3}
+    volume: 0.6
+    pitchRange: {x: 0.95, y: 1.05}
+  blockBreak:
+    clips:
+    - {fileID: 8300000, guid: 4a5b8578662b6674a9333234d466c80b, type: 3}
+    - {fileID: 8300000, guid: 214443689ddd6fa4097379a4aa86010c, type: 3}
+    - {fileID: 8300000, guid: fb0f264c89fc8864292d2fd02561130b, type: 3}
+    volume: 0.8
+    pitchRange: {x: 0.95, y: 1.05}
+  pickUp:
+    clips:
+    - {fileID: 8300000, guid: 1600be041c8430c48947795a83a1b0b9, type: 3}
+    - {fileID: 8300000, guid: 7f4e65e5c3e320446a48fc5a190228f1, type: 3}
+    - {fileID: 8300000, guid: 53ddf485500e81f419e1bee11be3b9c2, type: 3}
+    - {fileID: 8300000, guid: 1ac2b4a6adc6f5146aaf8bfb5fefea2d, type: 3}
+    - {fileID: 8300000, guid: 377a6f3bd34969847bd6e22a5d51a31d, type: 3}
+    volume: 0.6
+    pitchRange: {x: 0.95, y: 1.05}
+  throwSwing:
+    clips:
+    - {fileID: 8300000, guid: 8d5bfe6a76fa1dc48869ae452482567e, type: 3}
+    - {fileID: 8300000, guid: 68c2773effceb974f838c2f0d88989d8, type: 3}
+    - {fileID: 8300000, guid: 8290a66b74a806845a9890912c205ee3, type: 3}
+    - {fileID: 8300000, guid: dd1655a3091d75f4fb42036f08593cf1, type: 3}
+    - {fileID: 8300000, guid: 67a6e8b365d100e4b8412304cc6765db, type: 3}
+    volume: 0.4
+    pitchRange: {x: 0.95, y: 1.05}
+  rockImpact:
+    clips:
+    - {fileID: 8300000, guid: 240ffd68e70b5344b9959a6c8b537a4c, type: 3}
+    - {fileID: 8300000, guid: 454b8aea1c7fbbf41b4d337440955436, type: 3}
+    - {fileID: 8300000, guid: 297a29171535df24e89066b0a80fda49, type: 3}
+    volume: 0.95
+    pitchRange: {x: 0.95, y: 1.05}
+  itemLand:
+    clips:
+    - {fileID: 8300000, guid: b011898d1540a2447a005cfc0c166d65, type: 3}
+    - {fileID: 8300000, guid: b5ca9438a5e2b024eb4c5b322f42601f, type: 3}
+    - {fileID: 8300000, guid: cb1ab07830478ee46aa7e75314ea7403, type: 3}
+    - {fileID: 8300000, guid: 72c515855ee65534491def7519b08a46, type: 3}
+    - {fileID: 8300000, guid: a1371d3d955d7dd43a6b32dbfe2eae74, type: 3}
+    - {fileID: 8300000, guid: 5625bccf7d108df4d9103bd7287c9b0e, type: 3}
+    - {fileID: 8300000, guid: 51b09045c7cf32e40a4903c6f1a4581b, type: 3}
+    - {fileID: 8300000, guid: 1bb1ec7c1ec2e144aa355a11c0d2b85c, type: 3}
+    volume: 0.8
+    pitchRange: {x: 0.95, y: 1.05}
+  powerUpTaken:
+    clips:
+    - {fileID: 8300000, guid: fcabd8de9c6ec014788f2048df4c0d97, type: 3}
+    - {fileID: 8300000, guid: 0300b15b1cad2c045a01e0b94636d9ac, type: 3}
+    - {fileID: 8300000, guid: f1dada7256a44b0438da622f62b1fa7b, type: 3}
+    volume: 0.8
+    pitchRange: {x: 0.95, y: 1.05}

@@ -13,7 +13,13 @@ MonoBehaviour:
   m_Name: Arme_Raygun
   m_EditorClassIdentifier: DuelArena.Runtime::WeaponData
   weaponName: Raygun
-  modelPrefab: {fileID: 3487734175870485312, guid: 54c47c45e8d0ad44dbb6bc95687ff31d, type: 3}
+  modelPrefab: {fileID: 3746240396287458209, guid: e5a13d63b05ea6644b3bf65ea869b612, type: 3}
+  otherModels:
+  - {fileID: 976176385625153909, guid: 5445effcb65019746a842194260f2846, type: 3}
+  - {fileID: 3785651697421443977, guid: bee6f7a6f239c51459d6c2b22c4d8101, type: 3}
+  acceptedAttachments: 13
+  acceptedSights: 4
+  attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 26
   shotsPerSecond: 4.5
   isAutomatic: 0
@@ -40,7 +46,14 @@ MonoBehaviour:
   magazineSize: 12
   reloadDuration: 1.6
   reloadPerRound: 0
-  reloadSound: {fileID: 8300000, guid: 0475bb2f811afeb42b69994a43a43c6b, type: 3}
+  reloadCues:
+  - clips:
+    - {fileID: 8300000, guid: 32b1f8893ce04da42aed3a176e270d3f, type: 3}
+    at: 0.3
+    volume: 0.6
+  reloadRoundSounds: []
+  reloadEndSounds: []
+  reloadEndDelay: 0.3
   reloadVolume: 0.8
   sprintToFireTime: 0.2
   verticalRecoilPattern:
@@ -149,8 +162,51 @@ MonoBehaviour:
   recoilRecoverySpeed: 8
   recoilResetDelay: 0.3
   fireSounds:
-  - {fileID: 8300000, guid: 14086e541038c2b49ae437d12a7b18c1, type: 3}
-  - {fileID: 8300000, guid: e1ba3e386daa80545aebd30b2e5b566c, type: 3}
-  - {fileID: 8300000, guid: b08fdef442fa2d845814c15c0cc021af, type: 3}
-  fireVolume: 0.9
-  firePitchRange: {x: 0.97, y: 1.03}
+  - {fileID: 8300000, guid: d123cff9fb406194ab60009d5702007b, type: 3}
+  - {fileID: 8300000, guid: 90cff44a3fc9d7548a95f4bb7f8909b0, type: 3}
+  - {fileID: 8300000, guid: d126f40cefad3d84c939a00be21682cb, type: 3}
+  - {fileID: 8300000, guid: 275f62d61b3c10a47bdde064ba24aad0, type: 3}
+  fireVolume: 0.8
+  firePitchRange: {x: 0.96, y: 1.04}
+  fireFirstSound: {fileID: 0}
+  fireTailSound: {fileID: 0}
+  fireMechanismSounds: []
+  fireMechanismDelay: 0.4
+  fireMechanismVolume: 0.8
+  impactSounds:
+    clips:
+    - {fileID: 8300000, guid: 142d993277c9fdb4da0574b81bdce45c, type: 3}
+    - {fileID: 8300000, guid: 3e47529e4d6d3af41bb8bddf91c7169b, type: 3}
+    - {fileID: 8300000, guid: cb2dc1b5acf3e044789a9c513bd768f9, type: 3}
+    volume: 0.7
+    pitchRange: {x: 0.94, y: 1.06}
+  bodyImpactSounds:
+    clips:
+    - {fileID: 8300000, guid: 142d993277c9fdb4da0574b81bdce45c, type: 3}
+    - {fileID: 8300000, guid: 3e47529e4d6d3af41bb8bddf91c7169b, type: 3}
+    - {fileID: 8300000, guid: cb2dc1b5acf3e044789a9c513bd768f9, type: 3}
+    volume: 0.8
+    pitchRange: {x: 0.94, y: 1.06}
+  flybySounds:
+    clips:
+    - {fileID: 8300000, guid: 9d0c1c9dfd28cab4291c5ed5b0a6cf0b, type: 3}
+    - {fileID: 8300000, guid: 236b3bdb6baa6694580ec50dd37ce0b2, type: 3}
+    - {fileID: 8300000, guid: 2cb92b8a8ac72d143a5d45114d20bc00, type: 3}
+    - {fileID: 8300000, guid: 858a8a5bae9111d419750dd641f4b2c4, type: 3}
+    - {fileID: 8300000, guid: 62cf0d64c66899342b8265ea2df66362, type: 3}
+    - {fileID: 8300000, guid: da3a2c5020ceb69479944910a519279a, type: 3}
+    volume: 0.7
+    pitchRange: {x: 1.0925, y: 1.2074999}
+  dryFireSounds:
+    clips:
+    - {fileID: 8300000, guid: 67c596c4dc8a45645bdd9aed477f1520, type: 3}
+    volume: 0.6
+    pitchRange: {x: 0.98, y: 1.02}
+  raiseSounds:
+    clips:
+    - {fileID: 8300000, guid: 5ad95c324fb16ef4b8809d40f0fb7cbe, type: 3}
+    - {fileID: 8300000, guid: b363cedcf2d9d644abac54a5b87abe89, type: 3}
+    - {fileID: 8300000, guid: 035f626716887fe418b27e4cdc053dd0, type: 3}
+    - {fileID: 8300000, guid: d1c3cc6a65a3701499f82d352a7ba5ef, type: 3}
+    volume: 0.5
+    pitchRange: {x: 0.97, y: 1.03}

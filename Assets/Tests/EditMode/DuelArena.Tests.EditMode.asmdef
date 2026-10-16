@@ -3,9 +3,13 @@
     "rootNamespace": "",
     "references": [
         "DuelArena.Runtime",
+        "DuelArena.Editor",
         "Unity.Netcode.Runtime",
+        "Unity.Collections",
         "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner"
+        "UnityEditor.TestRunner",
+        "Unity.Services.Core",
+        "Unity.Services.Multiplayer"
     ],
     "includePlatforms": [
         "Editor"

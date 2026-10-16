@@ -1,0 +1,155 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 63e07a92b6140ae4c922f8af9e5f9968, type: 3}
+  m_Name: GameSounds
+  m_EditorClassIdentifier: DuelArena.Runtime::GameSounds
+  hit:
+    clips:
+    - {fileID: 8300000, guid: 0c329075f2cf82e439f2079c403556fc, type: 3}
+    - {fileID: 8300000, guid: 0adb27d59123550499da03278226f497, type: 3}
+    volume: 0.55
+    pitchRange: {x: 0.98, y: 1.02}
+  headshot:
+    clips:
+    - {fileID: 8300000, guid: 4b5f6d3993dd4714b830bb16cae5c5df, type: 3}
+    volume: 0.7
+    pitchRange: {x: 1, y: 1.04}
+  kill:
+    clips:
+    - {fileID: 8300000, guid: 7834113b67c6f654b9dea98ef8c93c28, type: 3}
+    - {fileID: 8300000, guid: 7d703d03f2d8e004daebc86c6722852a, type: 3}
+    volume: 0.6
+    pitchRange: {x: 0.99, y: 1.01}
+  damage:
+    clips:
+    - {fileID: 8300000, guid: c57727f40a1a39d4da1c23eacb1a33d2, type: 3}
+    - {fileID: 8300000, guid: 0a2e334bd45af9c4ab20226f50544dc3, type: 3}
+    - {fileID: 8300000, guid: 2835c03c1027e174492902af13143c92, type: 3}
+    - {fileID: 8300000, guid: e0828df2661719b4b99d90e979dae478, type: 3}
+    volume: 0.45
+    pitchRange: {x: 0.9, y: 1}
+  damageStatic:
+    clips:
+    - {fileID: 8300000, guid: b09986845a07eea4782aaf228af02ec7, type: 3}
+    - {fileID: 8300000, guid: f628b674248abe8488834ed6b9a7ec96, type: 3}
+    - {fileID: 8300000, guid: ccf18b0e37397b24196abb3b1f8264e9, type: 3}
+    - {fileID: 8300000, guid: 32e4b1d0c7b610c44b06c1064ee4b725, type: 3}
+    - {fileID: 8300000, guid: e21d8e2722d16144695aacd7adccce58, type: 3}
+    volume: 0.45
+    pitchRange: {x: 0.95, y: 1.05}
+  deathShutdown:
+    clips:
+    - {fileID: 8300000, guid: 7569bd202b823d641b5bbf39eeaf73f7, type: 3}
+    - {fileID: 8300000, guid: a3e1d8ef2b8666b41bfc63e10d815b54, type: 3}
+    volume: 1
+    pitchRange: {x: 0.97, y: 1.03}
+  deathCrackle:
+    clips:
+    - {fileID: 8300000, guid: 8524794989b8d794982777efe0e19313, type: 3}
+    volume: 0.35
+    pitchRange: {x: 0.95, y: 1.05}
+  deathMinDistance: 6
+  corpseImpact:
+    clips:
+    - {fileID: 8300000, guid: 66c3f5ca9d23bcb4f958446fa13a26ca, type: 3}
+    - {fileID: 8300000, guid: 2e3ef1f53e8b7d047b422941fb1280bd, type: 3}
+    - {fileID: 8300000, guid: c4abe5c197b11c04084766018e64fb07, type: 3}
+    - {fileID: 8300000, guid: 2d14f2026e0c33d498156788aa4ad925, type: 3}
+    - {fileID: 8300000, guid: bf4c0e323190a0d409702c4e219926ed, type: 3}
+    - {fileID: 8300000, guid: ffd10f05b9b2135448d9b609cae334de, type: 3}
+    volume: 0.7
+    pitchRange: {x: 0.92, y: 1.08}
+  countdownBeep:
+    clips:
+    - {fileID: 8300000, guid: ce1b41e2983dff54d9d468676d48f2fd, type: 3}
+    volume: 0.35
+    pitchRange: {x: 1, y: 1}
+  roundStart:
+    clips:
+    - {fileID: 8300000, guid: 445b55bdfb4f29f4c963b246cb2f7cb5, type: 3}
+    volume: 0.6
+    pitchRange: {x: 1, y: 1}
+  roundOver:
+    clips:
+    - {fileID: 8300000, guid: f3335b4eb6a2607418626ce422635861, type: 3}
+    volume: 0.6
+    pitchRange: {x: 1, y: 1}
+  roundWon:
+    clips:
+    - {fileID: 8300000, guid: 61314d07a16112c49a69df1fc604672f, type: 3}
+    volume: 0.55
+    pitchRange: {x: 1, y: 1}
+  reconstruction:
+  - sound:
+      clips:
+      - {fileID: 8300000, guid: fd70fba433f9ef545830cf6add5dae4a, type: 3}
+      volume: 0.8
+      pitchRange: {x: 0.97, y: 1.03}
+    delay: 0
+  - sound:
+      clips:
+      - {fileID: 8300000, guid: 4c610df87166818418f8c5ce664b16f5, type: 3}
+      volume: 0.6
+      pitchRange: {x: 0.97, y: 1.03}
+    delay: 0.35
+  - sound:
+      clips:
+      - {fileID: 8300000, guid: 3ae772af4cbe1b2419cdddfd9d498520, type: 3}
+      volume: 0.6
+      pitchRange: {x: 0.98, y: 1.02}
+    delay: 0.85
+  ambienceLoop: {fileID: 8300000, guid: 71fd76f4dc898a34caa94c6006fa40ca, type: 3}
+  ambienceVolume: 0.25
+  menuMusic:
+    clip: {fileID: 8300000, guid: 261ebbbf9e96b9f479757e8a1afeef8f, type: 3}
+    volume: 0.5
+    startAt: 0
+    loop: 1
+  preparationMusic:
+    clip: {fileID: 8300000, guid: d141a621f1e798244a5fe1efe9263976, type: 3}
+    volume: 0.45
+    startAt: 30
+    loop: 1
+  victoryMusic:
+  - clip: {fileID: 8300000, guid: 4f8d1bfdbc8764341b33c8241e1d76c7, type: 3}
+    volume: 0.55
+    startAt: 15
+    loop: 0
+  - clip: {fileID: 8300000, guid: 12980c505bc2f1749a0936f877425aa0, type: 3}
+    volume: 0.55
+    startAt: 17.5
+    loop: 0
+  uiHover:
+    clips:
+    - {fileID: 8300000, guid: a8605f640c883b54588c6c7218a62cfd, type: 3}
+    volume: 0.25
+    pitchRange: {x: 0.98, y: 1.02}
+  uiClick:
+    clips:
+    - {fileID: 8300000, guid: 8a594b1110f5f804f83eb718b2684396, type: 3}
+    volume: 0.45
+    pitchRange: {x: 0.98, y: 1.02}
+  uiConfirm:
+    clips:
+    - {fileID: 8300000, guid: b6054510bc2799d4fb8411f19c6bf4c4, type: 3}
+    volume: 0.5
+    pitchRange: {x: 1, y: 1}
+  uiBack:
+    clips:
+    - {fileID: 8300000, guid: 1127fc5bec13fe24eb1398fd8112848d, type: 3}
+    volume: 0.45
+    pitchRange: {x: 1, y: 1}
+  uiSelect:
+    clips:
+    - {fileID: 8300000, guid: b1fcb1f5b9a3d5941aee340556293979, type: 3}
+    volume: 0.6
+    pitchRange: {x: 0.97, y: 1.03}

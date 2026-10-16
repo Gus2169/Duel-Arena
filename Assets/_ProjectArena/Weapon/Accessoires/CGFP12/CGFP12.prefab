@@ -1,0 +1,185 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &4824912962092860351
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5005400673840808766}
+  - component: {fileID: 5518418181081795279}
+  - component: {fileID: 9150918498888706742}
+  m_Layer: 0
+  m_Name: CGFP12
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5005400673840808766
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4824912962092860351}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 9204438142189794466}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &5518418181081795279
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4824912962092860351}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2ed06b0f0e07ee84498e104b10860b0a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::WeaponAttachment
+  code: CG-FP12
+  title: "Chargeur grande capacit\xE9 FP-12"
+  category: 3
+  sight: {fileID: 0}
+  aimEyeDistance: 0.08
+  lens: {fileID: 0}
+  beam: {fileID: 0}
+  leftHand: {fileID: 0}
+  weaponDesignation: FP-12
+  hides:
+  - Chargeur_Standard
+--- !u!114 &9150918498888706742
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4824912962092860351}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4b2929df43e3e904c96de368dd022261, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::WeaponFinishes
+  pieces:
+  - renderer: {fileID: 6025096161945910716}
+    materials:
+    - {fileID: 2100000, guid: 4d95ded6d407a8c4093ac3c791a2cf23, type: 2}
+    - {fileID: 2100000, guid: affe850b128c92842954c03730af34ea, type: 2}
+    - {fileID: 2100000, guid: d585e513d4a07434a8c321d8825dc906, type: 2}
+    - {fileID: 2100000, guid: 4d95ded6d407a8c4093ac3c791a2cf23, type: 2}
+    - {fileID: 2100000, guid: affe850b128c92842954c03730af34ea, type: 2}
+    - {fileID: 2100000, guid: 03c9f8d03b1b8de4a9d70709a183d070, type: 2}
+    - {fileID: 2100000, guid: 2dfc0c67ea943d842b2673e2e23dfa3f, type: 2}
+    - {fileID: 2100000, guid: affe850b128c92842954c03730af34ea, type: 2}
+    - {fileID: 2100000, guid: d585e513d4a07434a8c321d8825dc906, type: 2}
+    - {fileID: 2100000, guid: 4d95ded6d407a8c4093ac3c791a2cf23, type: 2}
+    - {fileID: 2100000, guid: affe850b128c92842954c03730af34ea, type: 2}
+    - {fileID: 2100000, guid: d585e513d4a07434a8c321d8825dc906, type: 2}
+    - {fileID: 2100000, guid: b8e106675c2b6bf4db793a24dfcff7f0, type: 2}
+    - {fileID: 2100000, guid: affe850b128c92842954c03730af34ea, type: 2}
+    - {fileID: 2100000, guid: 83d97da283829ae48be554c19bed3e98, type: 2}
+    - {fileID: 2100000, guid: b2a90c1da80101d48af1b59c28f929a2, type: 2}
+    - {fileID: 2100000, guid: affe850b128c92842954c03730af34ea, type: 2}
+    - {fileID: 2100000, guid: 4d42cc2af47f3834daba79958e5d6644, type: 2}
+  shown: 0
+--- !u!1 &8672816751143502676
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 9204438142189794466}
+  - component: {fileID: 451614027846941423}
+  - component: {fileID: 6025096161945910716}
+  m_Layer: 0
+  m_Name: Chargeur_Grand
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &9204438142189794466
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8672816751143502676}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 5005400673840808766}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!33 &451614027846941423
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8672816751143502676}
+  m_Mesh: {fileID: -6432286364784787465, guid: 1c5cfbbf44933fc4687845fcc06da493, type: 3}
+--- !u!23 &6025096161945910716
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8672816751143502676}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: 4d95ded6d407a8c4093ac3c791a2cf23, type: 2}
+  - {fileID: 2100000, guid: affe850b128c92842954c03730af34ea, type: 2}
+  - {fileID: 2100000, guid: d585e513d4a07434a8c321d8825dc906, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_MaskInteraction: 0
+  m_AdditionalVertexStreams: {fileID: 0}

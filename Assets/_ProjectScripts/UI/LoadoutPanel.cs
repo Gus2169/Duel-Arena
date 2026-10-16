@@ -1,0 +1,156 @@
+using System.Collections.Generic;
+using Unity.Netcode;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.UIElements;
+
+/// <summary>
+/// Le panneau de préparation (2026-10-12, demandé par l'utilisateur) : avant chaque manche, un
+/// onglet s'ouvre au centre de l'écran, chaque joueur choisit son arme (clic, ou touches 1 à 4) et
+/// valide. Le décompte part dès que les deux ont validé, au plus tard au bout de 20 s
+/// (RoundManager). Une fois la manche lancée, on garde son arme.
+///
+/// Une VUE sur l'arme du joueur : choisir passe par le même changement d'arme que les touches 1 à
+/// 4 (WeaponController.RequestWeapon : prédit, puis contrôlé par le serveur), et valider demande au
+/// serveur de marquer le joueur prêt (PlayerMatchState.RequestReady). Ce panneau ne décide rien.
+/// </summary>
+[DisallowMultipleComponent]
+public class LoadoutPanel : MonoBehaviour
+{
+    [SerializeField] private UIDocument document;
+
+    /// <summary>Le panneau est-il ouvert ? (le curseur est alors libre, voir GameHud)</summary>
+    public static bool IsShown { get; private set; }
+
+    private VisualElement panel;
+    private Label timerLabel;
+    private Label roundLabel;
+    private Label statusLabel;
+    private Button validateButton;
+    private VisualElement cardRow;
+    private readonly List<Button> cards = new List<Button>();
+    private readonly List<int> cardSlots = new List<int>(); // la place de la panoplie de chaque carte
+    private WeaponController builtFor;
+
+    private WeaponController weapon;
+    private PlayerMatchState state;
+
+    private void OnEnable()
+    {
+        if (document == null) document = GetComponent<UIDocument>();
+        VisualElement root = document.rootVisualElement;
+        panel = root.Q<VisualElement>("loadoutPanel");
+        timerLabel = root.Q<Label>("loadoutTimer");
+        roundLabel = root.Q<Label>("loadoutRound");
+        statusLabel = root.Q<Label>("loadoutStatus");
+        validateButton = root.Q<Button>("loadoutValidate");
+        cardRow = root.Q<VisualElement>("loadoutCards");
+        validateButton.clicked += Validate;
+        builtFor = null;
+    }
+
+    private void OnDisable()
+    {
+        if (validateButton != null) validateButton.clicked -= Validate;
+        IsShown = false;
+    }
+
+    private void Update()
+    {
+        RoundManager rm = RoundManager.Instance;
+        NetworkObject local = GameHud.LocalPlayerObject;
+        bool show = rm != null && rm.IsSpawned && local != null && rm.CurrentPhase == RoundManager.Phase.Preparation;
+        if (show)
+        {
+            weapon = local.GetComponentInChildren<WeaponController>();
+            state = local.GetComponent<PlayerMatchState>();
+            // Les spectateurs ne choisissent pas d'arme : la préparation ne concerne que les duellistes.
+            show = weapon != null && state != null && state.IsDuelist;
+        }
+
+        IsShown = show;
+        panel.EnableInClassList("hidden", !show);
+        if (!show) return;
+
+        if (builtFor != weapon) BuildCards();
+
+        bool canChoose = weapon.CanChooseWeapon;
+        for (int i = 0; i < cards.Count; i++)
+        {
+            cards[i].EnableInClassList("loadout-card--active", cardSlots[i] == weapon.LocalSlot);
+            cards[i].SetEnabled(canChoose);
+        }
+
+        timerLabel.text = $"{Mathf.CeilToInt(rm.PhaseTimeRemaining)} s";
+        roundLabel.text = $"MANCHE {rm.RoundNumber}  ·  LE DÉCOMPTE PART QUAND LES DEUX JOUEURS ONT VALIDÉ";
+
+        bool ready = state.ReadyOrRequested;
+        validateButton.SetEnabled(!ready);
+        validateButton.text = ready ? "Validé" : "Valider (Entrée)";
+        statusLabel.text = ready ? $"Prêt.  {OpponentStatus(local.OwnerClientId)}" : OpponentStatus(local.OwnerClientId);
+        statusLabel.EnableInClassList("loadout-status--ready", ready);
+
+        Keyboard keyboard = Keyboard.current;
+        if (!ready && !PauseMenu.IsOpen && keyboard != null
+            && (keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame))
+        {
+            Validate();
+        }
+    }
+
+    private static string OpponentStatus(ulong me)
+    {
+        foreach (PlayerMatchState other in PlayerMatchState.Spawned)
+        {
+            if (other == null || other.OwnerClientId == me || !other.IsDuelist) continue;
+            return other.Ready ? $"{other.DisplayName} est prêt." : $"{other.DisplayName} choisit son arme...";
+        }
+        return "";
+    }
+
+    private void Validate()
+    {
+        if (state != null) state.RequestReady();
+    }
+
+    private void BuildCards()
+    {
+        builtFor = weapon;
+        cardRow.Clear();
+        cards.Clear();
+        cardSlots.Clear();
+        for (int slot = 0; slot < weapon.SlotCount; slot++)
+        {
+            WeaponData data = weapon.DataOf(slot);
+            if (data == null) continue;
+            int chosen = slot;
+            var card = new Button(() => weapon.RequestWeapon(chosen));
+            card.AddToClassList("loadout-card");
+            card.Add(NewLabel($"TOUCHE {slot + 1}", "loadout-card-key"));
+            card.Add(NewLabel(data.weaponName, "loadout-card-name"));
+            card.Add(NewLabel(Summary(data, weapon.MagazineSizeOf(slot)), "loadout-card-stats"));
+            cardRow.Add(card);
+            cards.Add(card);
+            cardSlots.Add(slot);
+        }
+    }
+
+    private static Label NewLabel(string text, string className)
+    {
+        var label = new Label(text) { pickingMode = PickingMode.Ignore };
+        label.AddToClassList(className);
+        return label;
+    }
+
+    /// <summary>Ce qu'il faut savoir d'une arme pour la choisir, en une ligne : dégâts au buste,
+    /// cadence, chargeur (celui du joueur : le chargeur grande capacité compte).</summary>
+    public static string Summary(WeaponData data) => Summary(data, data.magazineSize);
+
+    public static string Summary(WeaponData data, int magazineSize)
+    {
+        string damage = data.PelletCount > 1 ? $"{data.damagePerHit:0} × {data.PelletCount} plombs" : $"{data.damagePerHit:0} dégâts";
+        string rate = $"{data.shotsPerSecond:0.#} coup{(data.shotsPerSecond >= 2f ? "s" : "")}/s";
+        string mode = data.isAutomatic ? "auto" : "coup par coup";
+        return $"{damage}\n{rate}, {mode}\n{magazineSize} au chargeur";
+    }
+}

@@ -3,11 +3,16 @@
     "rootNamespace": "",
     "references": [
         "DuelArena.Input",
+        "Unity.Collections",
         "Unity.InputSystem",
         "Unity.Netcode.Runtime",
         "Unity.Networking.Transport",
         "Unity.RenderPipelines.Core.Runtime",
-        "Unity.RenderPipelines.Universal.Runtime"
+        "Unity.RenderPipelines.Universal.Runtime",
+        "Unity.Services.Authentication",
+        "Unity.Services.Core",
+        "Unity.Services.Multiplayer",
+        "Unity.Services.QoS"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

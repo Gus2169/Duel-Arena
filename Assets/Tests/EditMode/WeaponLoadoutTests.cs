@@ -16,6 +16,7 @@ public class WeaponLoadoutTests
 {
     private const string PlayerPrefabPath = "Assets/_ProjectArena/PlayerPrefab/Player.prefab";
     private const float Health = 100f;
+    private const int RaygunSlot = 3;   // touche 4
 
     private static WeaponController PrefabWeapon()
     {
@@ -39,55 +40,147 @@ public class WeaponLoadoutTests
     // La panoplie du prefab
     // ------------------------------------------------------------------
 
+    /// <summary>Les modèles au choix d'une arme : celui par défaut, puis les deux autres.</summary>
+    private static IEnumerable<GameObject> ModelsOf(WeaponData data)
+    {
+        for (int i = 0; i < data.ModelCount; i++) yield return data.ModelPrefabFor(i);
+    }
+
     [Test]
     public void LaPanoplie_ADesModelesTenusEnMain_AvecMireEtBouche()
     {
         WeaponController weapon = PrefabWeapon();
         Assert.AreEqual(WeaponController.MaxSlots, weapon.SlotCount, "Quatre armes, une par touche (1 à 4).");
 
-        var names = new HashSet<string>();
+        var designations = new HashSet<string>();
         for (int slot = 0; slot < weapon.SlotCount; slot++)
         {
             WeaponData data = weapon.DataOf(slot);
             Assert.IsNotNull(data.modelPrefab, $"{data.weaponName} n'a pas de modèle.");
-            Assert.IsTrue(names.Add(data.modelPrefab.name), $"Deux armes portent le modèle {data.modelPrefab.name} : HeldWeapons les confondrait.");
-
-            var model = data.modelPrefab.GetComponent<WeaponModel>();
-            Assert.IsNotNull(model, $"{data.modelPrefab.name} n'a pas de WeaponModel.");
-            Assert.IsNotNull(model.Sight, $"{data.modelPrefab.name} n'a pas de mire.");
-            Assert.IsNotNull(model.Muzzle, $"{data.modelPrefab.name} n'a pas de bouche.");
-            Assert.Less(Quaternion.Angle(Quaternion.identity, model.Sight.localRotation), 0.01f, $"La mire de {data.weaponName} doit regarder dans l'axe du canon (+Z).");
-            Assert.Greater(model.Muzzle.localPosition.z, model.Sight.localPosition.z, $"La bouche de {data.weaponName} doit être devant la mire.");
-            Assert.Greater(model.Muzzle.localPosition.z, 0.1f, $"La bouche de {data.weaponName} doit être devant la poignée (origine).");
+            Assert.AreEqual(3, data.ModelCount, $"{data.weaponName} : le stock, la série 30 et la version laser (GDD § 6).");
+            var families = new HashSet<WeaponModel.Family>();
+            foreach (GameObject prefab in ModelsOf(data))
+            {
+                Assert.IsNotNull(prefab, $"{data.weaponName} : un modèle manque.");
+                var model = prefab.GetComponent<WeaponModel>();
+                Assert.IsNotNull(model, $"{prefab.name} n'a pas de WeaponModel.");
+                Assert.IsFalse(string.IsNullOrEmpty(model.Designation), $"{prefab.name} n'a pas de désignation.");
+                Assert.IsTrue(designations.Add(model.Designation), $"Deux modèles s'appellent {model.Designation} : HeldWeapons les confondrait.");
+                Assert.IsTrue(families.Add(model.ModelFamily), $"{data.weaponName} a deux modèles de la famille {model.ModelFamily}.");
+                Assert.IsNotNull(model.Sight, $"{prefab.name} n'a pas de mire.");
+                Assert.IsNotNull(model.Muzzle, $"{prefab.name} n'a pas de bouche.");
+                Assert.Less(Quaternion.Angle(Quaternion.identity, model.Sight.localRotation), 0.01f, $"La mire de {prefab.name} doit regarder dans l'axe du canon (+Z).");
+                Assert.Greater(model.Muzzle.localPosition.z, model.Sight.localPosition.z, $"La bouche de {prefab.name} doit être devant la mire.");
+                Assert.Greater(model.Muzzle.localPosition.z, 0.1f, $"La bouche de {prefab.name} doit être devant la poignée (origine).");
+                Assert.AreEqual(Vector3.one, prefab.transform.localScale, $"{prefab.name} : à l'échelle 1, la poignée au point de prise.");
+            }
+            // Le modèle par défaut, celui de qui n'a rien choisi et des armes lancées par la tribune : le
+            // stock, sauf au raygun, qui se montre en pistolet laser (choix de l'utilisateur, 2026-10-15).
+            // Les deux autres suivent l'ordre des familles.
+            WeaponModel defaultModel = data.modelPrefab.GetComponent<WeaponModel>();
+            if (slot == RaygunSlot)
+                Assert.AreEqual("FX-4", defaultModel.Designation, "Le raygun se montre d'abord en pistolet laser (GDD § 6).");
+            else
+                Assert.AreEqual(WeaponModel.Family.Stock, defaultModel.ModelFamily, $"{data.weaponName} : le modèle par défaut est celui du stock.");
+            Assert.Less((int)data.ModelPrefabFor(1).GetComponent<WeaponModel>().ModelFamily, (int)data.ModelPrefabFor(2).GetComponent<WeaponModel>().ModelFamily,
+                $"{data.weaponName} : après le modèle par défaut, les deux autres dans l'ordre des familles.");
         }
-        Assert.AreEqual(HeldWeapons.ReferenceModelName, weapon.DataOf(0).modelPrefab.name,
-            "La touche 1 est le fusil d'assaut, posé dans le prefab : il donne le décalage de la main aux autres armes.");
+
+        // Les armes se créent en main au lancement, au point de prise du préfab (HeldWeapons) : aucune
+        // n'y est posée d'avance, la vue subjective en aurait une de trop.
+        var player = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        Transform hand = null;
+        foreach (Transform t in player.GetComponentsInChildren<Transform>(true)) if (t.name == "mixamorig:RightHand") hand = t;
+        Assert.IsNotNull(hand.Find(HeldWeapons.GripAnchorName), "Le point de prise des armes manque sous la main droite.");
+        Assert.AreEqual(0, hand.GetComponentsInChildren<WeaponModel>(true).Length, "Une arme est posée dans le préfab joueur.");
+        Assert.IsNotNull(player.GetComponent<PlayerWeaponLooks>(), "Sans PlayerWeaponLooks, personne ne verrait les armes choisies.");
     }
 
-    /// <summary>L'armurerie du menu (2026-10-12) accroche ses accessoires aux points posés sous
-    /// `Accessoires` dans le préfab de chaque arme ; une arme sans point pour une rubrique ne l'a
-    /// pas. Un modèle remplacé sans ses points perdrait ses accessoires en silence (onglets grisés).</summary>
+    /// <summary>Réimporter les armes de Blender garde le modèle par défaut de chaque classe : celui que
+    /// son WeaponData désigne déjà, s'il est des siens (le FX-4 du raygun), le stock sinon ; les deux
+    /// autres suivent l'ordre des familles. Sans ça, la prochaine importation rendrait au raygun son
+    /// pistolet à balles, sans un mot.</summary>
+    [Test]
+    public void LaReimportation_GardeLeModeleParDefautDeChaqueClasse()
+    {
+        string[] paths = { "Armes/PA05/PA05.prefab", "Armes/RV30/RV30.prefab", "Armes/FX4/FX4.prefab" };
+        Assert.AreEqual((int)WeaponModel.Family.Laser, WeaponImporter.DefaultFamily("Armes/FX4/FX4.prefab", paths), "Un choix fait dans Unity survit.");
+        Assert.AreEqual((int)WeaponModel.Family.Serie30, WeaponImporter.DefaultFamily("Armes/RV30/RV30.prefab", paths));
+        Assert.AreEqual((int)WeaponModel.Family.Stock, WeaponImporter.DefaultFamily("Raygun.prefab", paths), "Un modèle qui n'est pas de la classe (l'ancien raygun) : le stock.");
+        Assert.AreEqual((int)WeaponModel.Family.Stock, WeaponImporter.DefaultFamily(null, paths), "Premier import : le stock.");
+
+        CollectionAssert.AreEqual(new[] { 0, 1, 2 }, WeaponImporter.ModelOrder(0, 3));
+        CollectionAssert.AreEqual(new[] { 1, 0, 2 }, WeaponImporter.ModelOrder(1, 3));
+        CollectionAssert.AreEqual(new[] { 2, 0, 1 }, WeaponImporter.ModelOrder(2, 3));
+        CollectionAssert.AreEqual(new[] { 0, 1, 2 }, WeaponImporter.ModelOrder(7, 3), "Une famille hors bornes : le stock.");
+    }
+
+    /// <summary>Les six finitions de chaque modèle (GDD § 6) : chaque pièce a ses matériaux dans
+    /// chacune, tous du shader de l'usure, et une finition change vraiment quelque chose.</summary>
+    [Test]
+    public void ChaqueModele_ASesSixFinitions_DuShaderDeLUsure()
+    {
+        WeaponController weapon = PrefabWeapon();
+        for (int slot = 0; slot < weapon.SlotCount; slot++)
+        {
+            foreach (GameObject prefab in ModelsOf(weapon.DataOf(slot)))
+            {
+                var finishes = prefab.GetComponent<WeaponFinishes>();
+                Assert.IsNotNull(finishes, $"{prefab.name} n'a pas de finitions.");
+                Assert.AreEqual(prefab.GetComponentsInChildren<MeshRenderer>(true).Length, finishes.PieceCount,
+                    $"{prefab.name} : une pièce n'a pas ses finitions.");
+                var distinct = new HashSet<Material>();
+                for (int i = 0; i < finishes.PieceCount; i++)
+                {
+                    Renderer r = finishes.RendererOf(i);
+                    Assert.IsNotNull(r, $"{prefab.name} : une pièce a perdu son rendu.");
+                    CollectionAssert.AreEqual(r.sharedMaterials, finishes.MaterialsOf(i, WeaponFinish.Origine),
+                        $"{prefab.name}/{r.name} : le préfab doit porter la finition d'origine.");
+                    for (int f = 0; f < WeaponLooks.FinishCount; f++)
+                    {
+                        Material[] mats = finishes.MaterialsOf(i, (WeaponFinish)f);
+                        Assert.AreEqual(r.sharedMaterials.Length, mats.Length, $"{prefab.name}/{r.name} : un matériau par sous-maillage.");
+                        foreach (Material m in mats)
+                        {
+                            Assert.IsNotNull(m, $"{prefab.name}/{r.name} : un matériau manque à la finition {(WeaponFinish)f}.");
+                            Assert.AreEqual("DuelArena/ArmeUsee", m.shader.name, $"{m.name} n'est pas du shader de l'usure.");
+                            Assert.IsNotNull(m.GetTexture("_Occlusion"), $"{m.name} a perdu l'occlusion cuite dans Blender.");
+                            distinct.Add(m);
+                        }
+                    }
+                }
+                Assert.Greater(distinct.Count, prefab.GetComponentsInChildren<MeshRenderer>(true)[0].sharedMaterials.Length,
+                    $"{prefab.name} : les finitions ne changent aucun matériau.");
+            }
+        }
+    }
+
+    /// <summary>Les accessoires (2026-10-16) se montent aux points posés sous `Accessoires` dans le
+    /// préfab de chaque arme (AttachmentMount) ; une arme sans point pour une rubrique ne l'a pas. Un
+    /// modèle remplacé sans ses points perdrait ses accessoires en silence.</summary>
     [Test]
     public void ChaqueArme_ASesPointsDAccroche_SaufLaPoigneeDuPistolet()
     {
         WeaponController weapon = PrefabWeapon();
         for (int slot = 0; slot < weapon.SlotCount; slot++)
         {
-            WeaponData data = weapon.DataOf(slot);
-            Transform group = data.modelPrefab.transform.Find(WeaponCustomizationController.SocketGroupName);
-            Assert.IsNotNull(group, $"{data.weaponName} n'a pas de groupe « {WeaponCustomizationController.SocketGroupName} ».");
-
-            bool pistol = data.modelPrefab.GetComponent<WeaponModel>().PistolHold;
-            foreach (AttachmentCategory category in System.Enum.GetValues(typeof(AttachmentCategory)))
+            foreach (GameObject prefab in ModelsOf(weapon.DataOf(slot)))
             {
-                Transform socket = group.Find(WeaponCustomizationController.SocketNames[(int)category]);
-                if (category == AttachmentCategory.Grip && pistol)
+                Transform group = prefab.transform.Find(AttachmentMount.SocketGroupName);
+                Assert.IsNotNull(group, $"{prefab.name} n'a pas de groupe « {AttachmentMount.SocketGroupName} ».");
+
+                bool pistol = prefab.GetComponent<WeaponModel>().PistolHold;
+                foreach (AttachmentCategory category in System.Enum.GetValues(typeof(AttachmentCategory)))
                 {
-                    Assert.IsNull(socket, $"{data.weaponName} est un pistolet : pas de poignée avant.");
-                    continue;
+                    Transform socket = group.Find(AttachmentMount.SocketName(category));
+                    if (category == AttachmentCategory.Grip && pistol)
+                    {
+                        Assert.IsNull(socket, $"{prefab.name} est un pistolet : pas de poignée avant.");
+                        continue;
+                    }
+                    Assert.IsNotNull(socket, $"{prefab.name} n'a pas de point d'accroche pour {category}.");
+                    Assert.AreEqual(0, socket.childCount, $"Le point {socket.name} de {prefab.name} doit rester vide : l'accessoire y est monté au lancement.");
                 }
-                Assert.IsNotNull(socket, $"{data.weaponName} n'a pas de point d'accroche pour {category}.");
-                Assert.AreEqual(0, socket.childCount, $"Le point {socket.name} de {data.weaponName} doit rester vide : l'accessoire y naît au menu.");
             }
         }
     }
@@ -168,7 +261,8 @@ public class WeaponLoadoutTests
         Assert.IsFalse(raygun.isAutomatic, "Coup par coup.");
         Assert.AreEqual(1, raygun.PelletCount, "Un rayon, pas une gerbe.");
         Assert.AreEqual(4, ShotsToKill(raygun.DamageAt(HitboxZoneType.Torso, 10f)));
-        Assert.IsTrue(raygun.modelPrefab.GetComponent<WeaponModel>().PistolHold, "Tenu à bout de bras en vue subjective.");
+        foreach (GameObject prefab in ModelsOf(raygun))
+            Assert.IsTrue(prefab.GetComponent<WeaponModel>().PistolHold, $"{prefab.name} : tenu à bout de bras en vue subjective.");
         // Le plus léger : on le sort le plus vite et on court avec.
         for (int slot = 0; slot < 3; slot++)
         {
@@ -321,5 +415,28 @@ public class WeaponLoadoutTests
         float fov = PlayerCameraLook.ZoomedFov(90f, 4f);
         Assert.AreEqual(0.25f, Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad) / Mathf.Tan(45f * Mathf.Deg2Rad), 1e-4f);
         Assert.AreEqual(90f, PlayerCameraLook.ZoomedFov(90f, 1f), 1e-4f);
+    }
+
+    /// <summary>Rapporté par l'utilisateur le 2026-10-12 : viser au sniper touche de sprint tenue,
+    /// puis lâcher la visée, laissait la vue zoomée jusqu'à ce qu'on lâche le sprint. Le champ de la
+    /// lunette ne revenait d'un coup qu'à un joueur qui ne sprinte pas.</summary>
+    [Test]
+    public void SortirDeLaLunette_DezoomeAussitot_MemeEnCourant()
+    {
+        const float Base = 90f, Sprint = 96f, Speed = 8f, Dt = 1f / 60f;
+        float scoped = PlayerCameraLook.NextFov(Base, Base, Sprint, 4f, false, Speed, Dt);
+        Assert.AreEqual(PlayerCameraLook.ZoomedFov(Base, 4f), scoped, 1e-4f, "Dans la lunette : le champ du grossissement.");
+
+        foreach (bool sprinting in new[] { false, true })
+        {
+            float next = PlayerCameraLook.NextFov(scoped, Base, Sprint, 1f, sprinting, Speed, Dt);
+            Assert.GreaterOrEqual(next, Base - 0.01f,
+                $"En sortant de la lunette ({(sprinting ? "en courant" : "à l'arrêt")}), la vue doit revenir au champ normal dès l'image suivante.");
+        }
+
+        // Le passage au champ de sprint, lui, reste progressif.
+        float sprintStart = PlayerCameraLook.NextFov(Base, Base, Sprint, 1f, true, Speed, Dt);
+        Assert.Less(sprintStart, Sprint, "Le champ de sprint s'installe en douceur.");
+        Assert.Greater(sprintStart, Base);
     }
 }

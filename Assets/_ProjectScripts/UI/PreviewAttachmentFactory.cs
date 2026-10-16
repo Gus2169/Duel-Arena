@@ -2,6 +2,9 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
+/// 🚨 Ne sert plus depuis le 2026-10-16 : l'armurerie monte les vrais accessoires (AttachmentMount).
+/// Gardé jusqu'à l'accord de l'utilisateur pour le mettre à la Corbeille (dette n° 74).
+///
 /// Géométrie PLACEHOLDER des accessoires de l'armurerie avancée — des primitives composées, pas
 /// des modèles 3D : aucun art final n'existe pour ça, et c'est un aperçu de menu, pas la véritable
 /// arme tenue en jeu (voir WeaponCustomizationController). Même esprit que les autres placeholders

@@ -19,8 +19,32 @@ public class WeaponData : ScriptableObject
     [Header("Identité")]
     public string weaponName = "Arme sans nom";
 
-    [Tooltip("Le modèle tenu en main droite (préfab : poignée à l'origine, canon vers +Z, repères « Mire » et « Bouche »). Le même sert au corps vu par les autres et aux bras de la vue subjective.")]
+    [Tooltip("Le modèle tenu en main droite (préfab : poignée à l'origine, canon vers +Z, repères « Mire » et « Bouche »). Le même sert au corps vu par les autres et aux bras de la vue subjective. C'est le modèle par défaut de la classe, celui de quiconque n'a rien choisi et des armes lancées par la tribune : le stock, sauf au raygun, qui se montre en pistolet laser (le FX-4, choix de l'utilisateur, 2026-10-15). L'importeur des armes de Blender garde ce choix.")]
     public GameObject modelPrefab;
+
+    [Tooltip("Les deux autres modèles au choix de l'armurerie (GDD § 6, 2026-10-15), dans l'ordre des familles (stock, série 30, laser). Purement cosmétiques : ni le hitbox, ni le son, ni le tir n'en dépendent ; c'est cet asset qui fait les dégâts, quel que soit le modèle.")]
+    public GameObject[] otherModels = new GameObject[0];
+
+    [Tooltip("Ce que cette arme prend à l'armurerie (GDD § 6) : le serveur fait tomber le reste (WeaponAttachments.Sanitized). Le sniper garde sa lunette, un pistolet n'a pas de poignée avant (propositions de Claude, 2026-10-16).")]
+    public AttachmentSlots acceptedAttachments = AttachmentSlots.All;
+
+    [Tooltip("Les viseurs qu'elle prend, quand elle prend un viseur : une glissière de pistolet n'a la place que d'un réflex (proposition de Claude, 2026-10-16).")]
+    public SightFamilies acceptedSights = SightFamilies.All;
+
+    [Tooltip("Le catalogue des accessoires (Accessoires.asset), le même pour toutes les armes : leurs préfabs et la valeur de leurs effets. Branché par l'importeur des armes de Blender.")]
+    public AttachmentCatalog attachmentCatalog;
+
+    /// <summary>Le nombre de modèles au choix : celui par défaut et les autres.</summary>
+    public int ModelCount => 1 + (otherModels != null ? otherModels.Length : 0);
+
+    /// <summary>Le préfab du modèle `model` (0 : celui par défaut ; un modèle absent redevient celui-ci).
+    /// La famille d'un modèle se lit sur son WeaponModel, jamais sur son indice.</summary>
+    public GameObject ModelPrefabFor(int model)
+    {
+        if (model > 0 && otherModels != null && model <= otherModels.Length && otherModels[model - 1] != null)
+            return otherModels[model - 1];
+        return modelPrefab;
+    }
 
     [Header("Dégâts & cadence")]
     [Tooltip("Dégâts d'une balle (ou d'un plomb) au BUSTE, à courte distance. Les autres zones en sont des multiples.")]
@@ -74,8 +98,14 @@ public class WeaponData : ScriptableObject
     public float reloadDuration = 2.2f;
     [Tooltip("Rechargement cartouche par cartouche (fusil à pompe, comme dans CoD et R6) : une cartouche toutes les reloadDuration secondes, jusqu'au plein. Tirer l'interrompt et tire avec ce qui est chargé.")]
     public bool reloadPerRound = false;
-    [Tooltip("Son du rechargement, entendu par tout le monde : c'est une information de jeu (l'adversaire sait qu'on ne peut plus tirer). Vide = silencieux.")]
-    public AudioClip reloadSound;
+    [Tooltip("Les étapes sonores d'un rechargement complet (chargeur retiré, inséré, armement), chacune à sa part de reloadDuration. Entendues par tout le monde : c'est une information de jeu (l'adversaire sait qu'on ne peut plus tirer). Un rechargement interrompu se tait (WeaponAudio). Vide = silencieux.")]
+    public ReloadCue[] reloadCues = new ReloadCue[0];
+    [Tooltip("Rechargement cartouche par cartouche : le bruit d'une cartouche glissée, joué à chaque cartouche entrée (une au hasard).")]
+    public AudioClip[] reloadRoundSounds = new AudioClip[0];
+    [Tooltip("Joué quand un rechargement va à son terme, reloadEndDelay après la dernière cartouche (la pompe qu'on arme). Vide = rien.")]
+    public AudioClip[] reloadEndSounds = new AudioClip[0];
+    public float reloadEndDelay = 0.3f;
+    [Tooltip("Volume des cartouches glissées et de la fin du rechargement (les étapes ont chacune le leur).")]
     [Range(0f, 1f)] public float reloadVolume = 0.8f;
 
     [Header("Sortie de sprint (2026-10-11)")]
@@ -92,10 +122,30 @@ public class WeaponData : ScriptableObject
     public float recoilResetDelay = 0.35f; // pause sans tirer avant que le pattern reparte de 0
 
     [Header("Audio")]
-    [Tooltip("Son(s) de tir propres à cette arme. Un clip est tiré au hasard à chaque coup (variation contre l'effet 'disque rayé'). Vit ici plutôt que dans un bank global : chaque arme a un son différent, WeaponController n'a rien à connaître de l'arme équipée.")]
+    [Tooltip("Son(s) de tir propres à cette arme. Un clip est tiré au hasard à chaque coup (variation contre l'effet 'disque rayé'). Vit ici plutôt que dans un bank global : chaque arme a un son différent, WeaponController n'a rien à connaître de l'arme équipée. Pour une arme automatique, des coups SECS : la réverbération vient de fireTailSound.")]
     public AudioClip[] fireSounds;
     [Range(0f, 1f)] public float fireVolume = 0.9f;
     public Vector2 firePitchRange = new Vector2(0.97f, 1.03f);
+    [Tooltip("Premier coup d'une rafale, à la place d'un fireSounds (le guide des armes automatiques du pack Gamemaster : la réverbération ne s'entend pas encore). Vide = un fireSounds comme les autres.")]
+    public AudioClip fireFirstSound;
+    [Tooltip("Queue de réverbération lancée avec CHAQUE coup et éteinte en fondu quand le suivant part (WeaponAudio) : une rafale garde sa netteté, et la queue ne s'entend qu'à la fin. Vide = les coups portent leur propre queue.")]
+    public AudioClip fireTailSound;
+    [Tooltip("Mécanique qui suit un coup : la culasse du sniper, la pompe du fusil à pompe. Une au hasard, fireMechanismDelay après le coup. Vide = rien.")]
+    public AudioClip[] fireMechanismSounds = new AudioClip[0];
+    public float fireMechanismDelay = 0.4f;
+    [Range(0f, 1f)] public float fireMechanismVolume = 0.8f;
+
+    [Header("Audio : où arrive le tir (2026-10-13)")]
+    [Tooltip("Une balle qui frappe le décor, entendue là où elle arrive : on sait où tombent les tirs.")]
+    public SoundSet impactSounds = new SoundSet();
+    [Tooltip("Une balle qui frappe un robot, entendue là où elle arrive.")]
+    public SoundSet bodyImpactSounds = new SoundSet();
+    [Tooltip("Une balle qui passe près de soi sans toucher (vide pour un rayon, qui ne siffle pas).")]
+    public SoundSet flybySounds = new SoundSet();
+    [Tooltip("La gâchette pressée chargeur vide (le tireur seul).")]
+    public SoundSet dryFireSounds = new SoundSet();
+    [Tooltip("L'arme qu'on sort : changement d'arme, arme ramassée.")]
+    public SoundSet raiseSounds = new SoundSet();
 
     /// <summary>Nombre de projectiles d'un tir : les plombs du motif, ou une balle.</summary>
     public int PelletCount => pelletPattern != null && pelletPattern.Length > 0 ? pelletPattern.Length : 1;
@@ -171,4 +221,16 @@ public class WeaponData : ScriptableObject
         for (int i = 0; i < curve.length; i++) curve.SmoothTangents(i, 0f);
         return curve;
     }
+}
+
+/// <summary>Une étape sonore d'un rechargement complet : un clip (au hasard parmi plusieurs), à sa
+/// part de la durée du rechargement. Calée sur cette durée, l'étape suit l'animation quand on règle
+/// reloadDuration.</summary>
+[System.Serializable]
+public struct ReloadCue
+{
+    public AudioClip[] clips;
+    [Tooltip("Instant de l'étape, en part de reloadDuration (0 au début, 1 à la fin).")]
+    [Range(0f, 1f)] public float at;
+    [Range(0f, 1f)] public float volume;
 }

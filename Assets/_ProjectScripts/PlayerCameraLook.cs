@@ -102,25 +102,83 @@ public class PlayerCameraLook : MonoBehaviour
         if (leanPivot == null || locomotion == null) return;
 
         leanPivot.localPosition = Quaternion.Inverse(transform.localRotation) * locomotion.LeanCameraOffset;
-        leanPivot.localRotation = Quaternion.Euler(0f, 0f, locomotion.LeanCameraTilt);
+        Vector3 jolt = CurrentJolt();
+        leanPivot.localRotation = Quaternion.Euler(jolt.x, jolt.y, locomotion.LeanCameraTilt + jolt.z);
+    }
+
+    // ------------------------------------------------------------------
+    // Secousses (2026-10-13, catégorie C) : un duelliste touché par un caillou, un spectateur étourdi.
+    // Elles tournent la caméra elle-même, donc la visée (le tir part de la caméra) : c'est voulu, un
+    // caillou « déstabilise » (GDD § 9). Jamais le corps : son lacet appartient à la simulation.
+    // ------------------------------------------------------------------
+
+    private float shakeAmplitude;
+    private float shakeDuration;
+    private float shakeStartedAt = float.NegativeInfinity;
+    private float wobbleWeight;
+    private float wobbleSetAt = float.NegativeInfinity;
+
+    /// <summary>Une secousse brève et amortie de `amplitude` degrés (signe : le côté où elle part),
+    /// pendant `duration` secondes. Sans hasard : la même cause donne la même secousse.</summary>
+    public void Shake(float amplitude, float duration)
+    {
+        shakeAmplitude = amplitude;
+        shakeDuration = Mathf.Max(0.05f, duration);
+        shakeStartedAt = Time.time;
+    }
+
+    /// <summary>Le vacillement d'un spectateur étourdi, de 0 à 1, à redonner à chaque image tant qu'il dure.</summary>
+    public void Wobble(float weight)
+    {
+        wobbleWeight = Mathf.Clamp01(weight);
+        wobbleSetAt = Time.time;
+    }
+
+    /// <summary>La rotation ajoutée par les secousses : tangage, lacet, roulis (degrés).</summary>
+    private Vector3 CurrentJolt()
+    {
+        Vector3 jolt = Vector3.zero;
+        float t = Time.time - shakeStartedAt;
+        if (t >= 0f && t < shakeDuration)
+        {
+            float decay = 1f - t / shakeDuration;
+            float wave = Mathf.Sin(t * 38f) * decay * decay;
+            jolt += new Vector3(0f, shakeAmplitude * wave, shakeAmplitude * 0.8f * wave);
+        }
+        if (Time.time - wobbleSetAt < 0.1f && wobbleWeight > 0f)
+        {
+            float time = Time.time;
+            jolt += new Vector3(Mathf.Sin(time * 3.1f) * 2.5f, Mathf.Sin(time * 2.3f) * 3f, Mathf.Sin(time * 4.2f) * 7f) * wobbleWeight;
+        }
+        return jolt;
     }
 
     private void UpdateFov()
     {
         if (targetCamera == null || locomotion == null) return;
 
-        // La lunette du sniper (2026-10-11) : la vue zoome d'un coup quand on y entre, comme dans
-        // Call of Duty, et revient d'un coup quand on en sort.
         float zoom = firstPersonView != null ? firstPersonView.ScopeZoom : 1f;
-        if (zoom > 1f)
-        {
-            targetCamera.fieldOfView = ZoomedFov(baseFov, zoom);
-            return;
-        }
-        if (targetCamera.fieldOfView < baseFov - 0.01f && !locomotion.IsSprinting) targetCamera.fieldOfView = baseFov;
+        targetCamera.fieldOfView = NextFov(targetCamera.fieldOfView, baseFov, sprintFov, zoom,
+                                           locomotion.IsSprinting, fovTransitionSpeed, Time.deltaTime);
+    }
 
-        float target = locomotion.IsSprinting ? sprintFov : baseFov;
-        targetCamera.fieldOfView = Mathf.MoveTowards(targetCamera.fieldOfView, target, fovTransitionSpeed * Time.deltaTime);
+    /// <summary>
+    /// Le champ de vision de l'image suivante. Sans état, testée.
+    ///
+    /// La lunette du sniper (2026-10-11) : la vue zoome d'un coup quand on y entre, comme dans Call
+    /// of Duty, et revient d'un coup quand on en sort, MÊME EN COURANT. Corrigé le 2026-10-12 :
+    /// le retour était réservé au joueur qui ne sprinte pas. Lâcher la visée la touche de sprint
+    /// enfoncée (la visée coupait le sprint, qui reprend aussitôt) laissait le champ remonter de
+    /// 28° à 96° à 8°/s : la vue restait zoomée près de neuf secondes, ou jusqu'à ce qu'on lâche
+    /// le sprint. Seul le passage du champ normal au champ de sprint se fait en douceur.
+    /// </summary>
+    public static float NextFov(float current, float baseFov, float sprintFov, float zoom, bool sprinting,
+                                float transitionSpeed, float deltaTime)
+    {
+        if (zoom > 1f) return ZoomedFov(baseFov, zoom);
+        if (current < baseFov - 0.01f) current = baseFov;
+        float target = sprinting ? sprintFov : baseFov;
+        return Mathf.MoveTowards(current, target, transitionSpeed * deltaTime);
     }
 
     /// <summary>Champ de vision vertical (degrés) qui grossit `zoom` fois le champ `fov` : la

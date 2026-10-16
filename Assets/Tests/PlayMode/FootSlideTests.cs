@@ -83,7 +83,8 @@ public class FootSlideTests
 
     private struct Slide { public float median, total, unplanted; public int outOfReach; }
 
-    private Slide Play(Animator animator, AnimatorRootMotionProbe probe, FootPlanter planter, Tuning t, int stance, float speed, Vector2 direction)
+    private Slide Play(Animator animator, AnimatorRootMotionProbe probe, FootPlanter planter, Tuning t, int stance, float speed, Vector2 direction,
+                       bool mainsNues = false)
     {
         animator.Rebind();
         animator.Update(0f);
@@ -115,6 +116,7 @@ public class FootSlideTests
             instance.transform.position += velocity * Dt;
             animator.SetInteger("Stance", stance);
             animator.SetFloat("StanceF", stance);
+            animator.SetFloat("MainsNues", mainsNues ? 1f : 0f);
             Vector3 v = instance.transform.InverseTransformDirection(probe.Velocity);
             PlayerAnimator.DriveGait(animator, ref state, move, reference, (PlayerLocomotion.Stance)stance,
                                      new Vector2(v.x, v.z), idle, upper, t.minLeg, t.maxLeg, Dt);
@@ -217,6 +219,48 @@ public class FootSlideTests
             }
         }
         Assert.IsEmpty(failures, "Les pieds glissent pendant l'appui :\n" + string.Join("\n", failures));
+    }
+
+    /// <summary>Le spectateur, à mains nues (2026-10-13) : la même exigence, sur son propre arbre debout.
+    /// Accroupi, ses jambes sont celles du duelliste, jugées plus haut.</summary>
+    [Test]
+    public void UnSpectateur_PendantLAppui_LesPiedsNeGlissentPas()
+    {
+        Tuning t = ReadPrefab();
+        instance = TestCharacter.InstantiateModel(out Animator animator);
+        instance.transform.rotation = Quaternion.Euler(0f, 130f, 0f);
+        var probe = instance.AddComponent<AnimatorRootMotionProbe>();
+        var planter = new FootPlanter(animator);
+
+        Vector2 F = Vector2.up, B = Vector2.down, R = Vector2.right, L = Vector2.left;
+        Vector2 FR = new Vector2(1f, 1f), FL = new Vector2(-1f, 1f), BR = new Vector2(1f, -1f), BL = new Vector2(-1f, -1f);
+        var cases = new List<(string name, float speed, Vector2[] dirs)>
+        {
+            ("spectateur sneak", t.sneak, new[] { F, B, R, L, FR, FL, BR, BL }),
+            ("spectateur marche", t.walk, new[] { F, B, R, L, FR, BL }),
+            ("spectateur sprint", t.run, new[] { F, FR, FL }),
+        };
+
+        var failures = new List<string>();
+        var infos = new List<AnimatorClipInfo>();
+        bool unarmedSeen = false;
+        foreach (var c in cases)
+        {
+            foreach (Vector2 dir in c.dirs)
+            {
+                Slide sans = Play(animator, probe, null, t, 0, c.speed, dir, mainsNues: true);
+                Slide avec = Play(animator, probe, planter, t, 0, c.speed, dir, mainsNues: true);
+                // Garde : c'est bien l'arbre à mains nues qui joue (ses clips sont dans MainsNues/).
+                animator.GetCurrentAnimatorClipInfo(0, infos);
+                foreach (AnimatorClipInfo info in infos)
+                    if (info.weight > 0.5f && UnityEditor.AssetDatabase.GetAssetPath(info.clip).Contains("/MainsNues/")) unarmedSeen = true;
+                string line = $"{c.name} {dir}: glissade médiane {sans.median * 100f:F1} % → {avec.median * 100f:F1} %, totale {sans.total * 100f:F1} % → {avec.total * 100f:F1} % (appuis non retenus {avec.unplanted * 100f:F0} %, hors de portée {avec.outOfReach})";
+                Debug.Log("[GLISSADE] " + line);
+                if (avec.median > MaxMedian || avec.total > MaxTotal) failures.Add(line);
+            }
+        }
+        Assert.IsTrue(unarmedSeen, "Garde : l'arbre à mains nues n'a jamais joué (paramètre MainsNues ?).");
+        Assert.IsEmpty(failures, "Les pieds du spectateur glissent pendant l'appui :\n" + string.Join("\n", failures));
     }
 
     /// <summary>

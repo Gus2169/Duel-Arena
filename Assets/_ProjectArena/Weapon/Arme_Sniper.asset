@@ -13,7 +13,13 @@ MonoBehaviour:
   m_Name: Arme_Sniper
   m_EditorClassIdentifier: DuelArena.Runtime::WeaponData
   weaponName: Sniper
-  modelPrefab: {fileID: 3718279557179644195, guid: 1788ac61b4ac8784bb7c6c251b102491, type: 3}
+  modelPrefab: {fileID: 2057814579988173868, guid: cfd87888a032a4143b13a715a7a5016b, type: 3}
+  otherModels:
+  - {fileID: 3395265809683361253, guid: 307ff8850836d6a4b9b7daad2dea6a76, type: 3}
+  - {fileID: 548841584845377886, guid: 7531b2aea3090224bbf22386d9b8b2d6, type: 3}
+  acceptedAttachments: 14
+  acceptedSights: 7
+  attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 100
   shotsPerSecond: 0.8
   isAutomatic: 0
@@ -40,7 +46,22 @@ MonoBehaviour:
   magazineSize: 5
   reloadDuration: 3
   reloadPerRound: 0
-  reloadSound: {fileID: 8300000, guid: 5d45f43de5fc8624a8415f4dfd27caa2, type: 3}
+  reloadCues:
+  - clips:
+    - {fileID: 8300000, guid: 7f3473808b4c9104d862403ff571512f, type: 3}
+    at: 0.05
+    volume: 0.7
+  - clips:
+    - {fileID: 8300000, guid: 4a9c432818fc41344b0f8e83d8229d9b, type: 3}
+    at: 0.42
+    volume: 0.75
+  - clips:
+    - {fileID: 8300000, guid: 90c7fa3d38aff754bbe40f5c3d894c5e, type: 3}
+    at: 0.68
+    volume: 0.7
+  reloadRoundSounds: []
+  reloadEndSounds: []
+  reloadEndDelay: 0.3
   reloadVolume: 0.8
   sprintToFireTime: 0.45
   verticalRecoilPattern:
@@ -95,7 +116,59 @@ MonoBehaviour:
   recoilRecoverySpeed: 9
   recoilResetDelay: 0.35
   fireSounds:
-  - {fileID: 8300000, guid: 022b183c71e13cc41bab0263015029a6, type: 3}
-  - {fileID: 8300000, guid: f9d2124bf9db1334db6f083995cce78a, type: 3}
+  - {fileID: 8300000, guid: b0fbb3200a480504b8f57144a518b8f2, type: 3}
+  - {fileID: 8300000, guid: f52cab8c5dde5c548a2cef5a0529adeb, type: 3}
+  - {fileID: 8300000, guid: ec740b642ef9e4f44ad1be03c183171e, type: 3}
+  - {fileID: 8300000, guid: 477f9158ffe2cc64ebadb8074af85ab7, type: 3}
   fireVolume: 1
-  firePitchRange: {x: 0.6, y: 0.64}
+  firePitchRange: {x: 0.98, y: 1.02}
+  fireFirstSound: {fileID: 0}
+  fireTailSound: {fileID: 0}
+  fireMechanismSounds:
+  - {fileID: 8300000, guid: 581701225276ec74fa1868f4c1315c2c, type: 3}
+  - {fileID: 8300000, guid: f979f1437a3582548813f3c78d4120d8, type: 3}
+  - {fileID: 8300000, guid: 6e09dedc7b53eec44b9132a9c2ecd3b9, type: 3}
+  fireMechanismDelay: 0.45
+  fireMechanismVolume: 0.7
+  impactSounds:
+    clips:
+    - {fileID: 8300000, guid: 5eca8e94be3446a4292769fd85c3cba7, type: 3}
+    - {fileID: 8300000, guid: 34bdded649405114aa28478afb1ee6c9, type: 3}
+    - {fileID: 8300000, guid: 1a178c13c8bc7fd418e3e78810707a84, type: 3}
+    - {fileID: 8300000, guid: 1e65896a140421544818831dd7c19241, type: 3}
+    - {fileID: 8300000, guid: a5e687725470781468cf274971fa499b, type: 3}
+    - {fileID: 8300000, guid: 8975d85ef48f8a44c8b3f5c1133d32b9, type: 3}
+    volume: 0.7
+    pitchRange: {x: 0.94, y: 1.06}
+  bodyImpactSounds:
+    clips:
+    - {fileID: 8300000, guid: c57727f40a1a39d4da1c23eacb1a33d2, type: 3}
+    - {fileID: 8300000, guid: 0a2e334bd45af9c4ab20226f50544dc3, type: 3}
+    - {fileID: 8300000, guid: 2835c03c1027e174492902af13143c92, type: 3}
+    - {fileID: 8300000, guid: e0828df2661719b4b99d90e979dae478, type: 3}
+    volume: 0.8
+    pitchRange: {x: 0.94, y: 1.06}
+  flybySounds:
+    clips:
+    - {fileID: 8300000, guid: 9d0c1c9dfd28cab4291c5ed5b0a6cf0b, type: 3}
+    - {fileID: 8300000, guid: 236b3bdb6baa6694580ec50dd37ce0b2, type: 3}
+    - {fileID: 8300000, guid: 2cb92b8a8ac72d143a5d45114d20bc00, type: 3}
+    - {fileID: 8300000, guid: 858a8a5bae9111d419750dd641f4b2c4, type: 3}
+    - {fileID: 8300000, guid: 62cf0d64c66899342b8265ea2df66362, type: 3}
+    - {fileID: 8300000, guid: da3a2c5020ceb69479944910a519279a, type: 3}
+    volume: 0.7
+    pitchRange: {x: 0.95, y: 1.05}
+  dryFireSounds:
+    clips:
+    - {fileID: 8300000, guid: ceab1116e6520054f8c6c62004ba0cbe, type: 3}
+    - {fileID: 8300000, guid: d53d782a98d34a740a82a3bfb6563f1c, type: 3}
+    volume: 0.6
+    pitchRange: {x: 0.98, y: 1.02}
+  raiseSounds:
+    clips:
+    - {fileID: 8300000, guid: 5ad95c324fb16ef4b8809d40f0fb7cbe, type: 3}
+    - {fileID: 8300000, guid: b363cedcf2d9d644abac54a5b87abe89, type: 3}
+    - {fileID: 8300000, guid: 035f626716887fe418b27e4cdc053dd0, type: 3}
+    - {fileID: 8300000, guid: d1c3cc6a65a3701499f82d352a7ba5ef, type: 3}
+    volume: 0.5
+    pitchRange: {x: 0.97, y: 1.03}

@@ -84,7 +84,8 @@ public class LocomotionFootTests
     /// sur des cycles de pas ENTIERS : un clip qui zigzague (la reptation se tortille d'un côté à
     /// l'autre) fausserait sinon la direction mesurée, jusqu'à 30° sur un demi-cycle. Trois
     /// secondes de mise en route, puis au moins deux cycles complets.</summary>
-    private Vector2 Play(Animator animator, AnimatorRootMotionProbe probe, Tuning t, int stance, float speed, Vector2 direction)
+    private Vector2 Play(Animator animator, AnimatorRootMotionProbe probe, Tuning t, int stance, float speed, Vector2 direction,
+                         bool mainsNues = false)
     {
         animator.Rebind();
         animator.Update(0f);
@@ -103,6 +104,7 @@ public class LocomotionFootTests
         {
             animator.SetInteger("Stance", stance);
             animator.SetFloat("StanceF", stance);
+            animator.SetFloat("MainsNues", mainsNues ? 1f : 0f);
             Vector3 v = instance.transform.InverseTransformDirection(probe.Velocity);
             PlayerAnimator.DriveGait(animator, ref state, move, reference, (PlayerLocomotion.Stance)stance,
                                      new Vector2(v.x, v.z), idle, upper, t.minLeg, t.maxLeg, Dt);
@@ -191,6 +193,56 @@ public class LocomotionFootTests
         // vaudrait zéro partout et l'échec dirait « les pieds sont immobiles », pas « la sonde est muette ».
         Assert.Greater(maxMeasured, 1f, "La sonde de racine ne rapporte rien : OnAnimatorMove n'est pas appelé.");
         Assert.IsEmpty(failures, "Les pieds glissent :\n" + string.Join("\n", failures));
+    }
+
+    /// <summary>
+    /// Un spectateur, à mains nues (clips Mixamo choisis le 2026-10-13) : debout, il joue son propre arbre
+    /// (paramètre MainsNues), aux vitesses d'un duelliste. Accroupi, ses jambes sont celles du duelliste,
+    /// déjà jugées plus haut.
+    /// </summary>
+    [Test]
+    public void UnSpectateur_AChaqueAllure_LesPiedsAvancentALaVitesseEtDansLaDirectionDuCorps()
+    {
+        Tuning t = ReadPrefab();
+        instance = TestCharacter.InstantiateModel(out Animator animator);
+        instance.transform.rotation = Quaternion.Euler(0f, 130f, 0f);
+        var probe = instance.AddComponent<AnimatorRootMotionProbe>();
+        var infos = new List<AnimatorClipInfo>();
+
+        var all = new[]
+        {
+            Vector2.up, Vector2.down, Vector2.right, Vector2.left,
+            new Vector2(1f, 1f), new Vector2(-1f, 1f), new Vector2(1f, -1f), new Vector2(-1f, -1f),
+        };
+        var sprintable = new[] { Vector2.up, new Vector2(1f, 1f), new Vector2(-1f, 1f) };
+        var cases = new List<(string name, float speed, Vector2[] dirs)>
+        {
+            ("spectateur sneak", t.sneak, all),
+            ("spectateur marche", t.walk, all),
+            ("spectateur sprint", t.run, sprintable),
+        };
+
+        var failures = new List<string>();
+        bool unarmedSeen = false;
+        foreach (var c in cases)
+        {
+            foreach (Vector2 dir in c.dirs)
+            {
+                float speed = c.speed * PlayerLocomotion.DirectionSpeedMultiplier(dir, t.strafe, t.backward);
+                Vector2 v = Play(animator, probe, t, 0, speed, dir, mainsNues: true);
+                // Garde : c'est bien l'arbre à mains nues qui joue (ses clips sont dans MainsNues/).
+                animator.GetCurrentAnimatorClipInfo(0, infos);
+                foreach (AnimatorClipInfo info in infos)
+                    if (info.weight > 0.5f && UnityEditor.AssetDatabase.GetAssetPath(info.clip).Contains("/MainsNues/")) unarmedSeen = true;
+                float ratio = v.magnitude / speed;
+                float heading = Vector2.Angle(v, dir);
+                string line = $"{c.name} {dir}: pieds {v.magnitude:F2} m/s pour {speed:F2} ({ratio * 100f:F0} %), écart de cap {heading:F0}°";
+                Debug.Log("[PIEDS] " + line);
+                if (ratio < 0.9f || ratio > 1.1f || heading > 8f) failures.Add(line);
+            }
+        }
+        Assert.IsTrue(unarmedSeen, "Garde : l'arbre à mains nues n'a jamais joué (paramètre MainsNues ?).");
+        Assert.IsEmpty(failures, "Les pieds du spectateur glissent :\n" + string.Join("\n", failures));
     }
 }
 #endif

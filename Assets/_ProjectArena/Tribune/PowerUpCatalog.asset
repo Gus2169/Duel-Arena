@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 15dcc47f2f99a1b418f687cd86e41a54, type: 3}
+  m_Name: PowerUpCatalog
+  m_EditorClassIdentifier: DuelArena.Runtime::PowerUpCatalog
+  entries:
+  - displayName: Fusil d'assaut
+    weapon: {fileID: 11400000, guid: b440da299e5267f43b00e97e946bbf53, type: 2}
+    beaconColor: {r: 1, g: 0.55, b: 0.15, a: 1}
+    dropWeight: 1
+  - displayName: Sniper
+    weapon: {fileID: 11400000, guid: 728f72f05ce172c4f8a4311040daccb1, type: 2}
+    beaconColor: {r: 0.35, g: 0.75, b: 1, a: 1}
+    dropWeight: 1
+  - displayName: "Fusil \xE0 pompe"
+    weapon: {fileID: 11400000, guid: 0f67bef9704b65747a4569234398678d, type: 2}
+    beaconColor: {r: 1, g: 0.3, b: 0.25, a: 1}
+    dropWeight: 1
+  - displayName: Raygun
+    weapon: {fileID: 11400000, guid: 72f50928e0375ed42bc4c515b8619fdf, type: 2}
+    beaconColor: {r: 0.45, g: 1, b: 0.5, a: 1}
+    dropWeight: 1

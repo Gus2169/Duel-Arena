@@ -3,8 +3,10 @@ using NUnit.Framework;
 using UnityEngine;
 
 /// <summary>
-/// Le viseur intégré du fusil (2026-10-09) : un écran numérique qui affiche, en visée, ce que filme
-/// une caméra placée à l'œil, avec la réticule au centre.
+/// Le viseur à écran numérique (2026-10-09) : un écran qui affiche, en visée, ce que filme une caméra
+/// placée à l'œil, avec la réticule au centre. Il était intégré à l'ancien fusil d'assaut
+/// (FusilAssaut.prefab), que le FA-07 de Blender a remplacé en main le 2026-10-15 ; il reviendra en
+/// accessoire. Testé sur ce préfab, que la vue subjective sait toujours allumer (FirstPersonView).
 ///
 /// Ce qui casse ici ne lève aucune erreur : un repère « Mire » déplacé, et l'œil ne regarde plus au
 /// centre de l'écran ; un matériau posé sur l'asset au lieu de la copie, et tous les joueurs verraient
@@ -13,6 +15,7 @@ using UnityEngine;
 /// </summary>
 public class WeaponSightTests
 {
+    private const string RiflePath = "Assets/_ProjectArena/Weapon/FusilAssaut.prefab";
     private GameObject instance;
     private GameObject cameraGo;
 
@@ -25,14 +28,22 @@ public class WeaponSightTests
 
     private static UnityEditor.SerializedObject SightSettings(WeaponSight sight) => new UnityEditor.SerializedObject(sight);
 
+    private WeaponSight InstantiateRifle()
+    {
+        var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(RiflePath);
+        Assert.IsNotNull(asset, "Le fusil au viseur numérique a disparu : " + RiflePath);
+        instance = Object.Instantiate(asset);
+        var sight = instance.GetComponent<WeaponSight>();
+        Assert.IsNotNull(sight, "Le fusil n'a pas de WeaponSight.");
+        return sight;
+    }
+
     [Test]
     public void EnVisee_LOeilRegardeAuCentreDeLEcranDuViseur()
     {
-        instance = TestCharacter.InstantiateModel(out Animator animator);
-        Transform mire = PlayerAnimator.FindSight(animator);
+        WeaponSight sight = InstantiateRifle();
+        Transform mire = instance.GetComponent<WeaponModel>().Sight;
         Assert.IsNotNull(mire, "Le fusil n'a pas de repère « Mire ».");
-        var sight = mire.parent.GetComponent<WeaponSight>();
-        Assert.IsNotNull(sight, "Le fusil n'a pas de WeaponSight.");
 
         // L'écran : la plus grande face du sous-maillage de l'écran tournée vers l'œil (vers -Z).
         var settings = SightSettings(sight);
@@ -51,7 +62,6 @@ public class WeaponSightTests
             pane.Encapsulate(a); pane.Encapsulate(b); pane.Encapsulate(c);
         }
         Assert.IsTrue(any, "L'écran du viseur n'a aucune face tournée vers l'œil.");
-        Debug.Log($"[VISEUR] écran {pane.size.x * 100f:F1} × {pane.size.y * 100f:F1} cm, centre {pane.center:F4}, mire {mire.localPosition:F4}");
 
         // La Mire est sur l'axe optique, au centre de l'écran : à 2 mm près, et dans l'axe du canon.
         Vector3 local = mire.localPosition;
@@ -59,7 +69,7 @@ public class WeaponSightTests
         Assert.Less(Mathf.Abs(local.y - pane.center.y), 0.002f, "La Mire n'est pas au centre de l'écran (verticalement).");
         Assert.Less(Quaternion.Angle(Quaternion.identity, mire.localRotation), 0.01f, "La Mire doit regarder dans l'axe du canon (+Z).");
 
-        // Et la vue subjective place cette Mire sur l'axe du regard, devant l'œil.
+        // Et la vue subjective place la Mire sur l'axe du regard, devant l'œil.
         var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(TestCharacter.PlayerPrefabPath);
         Vector3 aim = new UnityEditor.SerializedObject(prefab.GetComponent<FirstPersonView>()).FindProperty("aimSightPosition").vector3Value;
         Assert.AreEqual(0f, aim.x, 1e-4f, "En visée, l'écran doit être centré sur le regard.");
@@ -70,8 +80,7 @@ public class WeaponSightTests
     [Test]
     public void LEcranNumerique_NeVitQueSurLaCopie_EtSaCameraNeTourneQuEnVisee()
     {
-        instance = TestCharacter.InstantiateModel(out Animator animator);
-        var sight = PlayerAnimator.FindSight(animator).parent.GetComponent<WeaponSight>();
+        WeaponSight sight = InstantiateRifle();
         var settings = SightSettings(sight);
         var renderer = (Renderer)settings.FindProperty("screenRenderer").objectReferenceValue;
         int index = settings.FindProperty("screenMaterialIndex").intValue;
@@ -92,7 +101,7 @@ public class WeaponSightTests
         Assert.AreSame(sightCamera.targetTexture, screen.GetTexture("_Ecran"), "L'écran doit afficher ce que filme le viseur.");
 
         // L'asset du fusil n'est pas touché : les autres joueurs gardent l'écran d'origine.
-        var rifleAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/_ProjectArena/Weapon/FusilAssaut.prefab");
+        var rifleAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(RiflePath);
         Assert.AreNotEqual("DuelArena/ViseurEcran", rifleAsset.GetComponent<MeshRenderer>().sharedMaterials[index].shader.name,
             "Le matériau de l'écran numérique a été posé sur l'asset : tous les joueurs le verraient.");
 

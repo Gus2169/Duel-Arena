@@ -485,5 +485,90 @@ public class AnimatorStateTests
         yield return Settle(0.6f);
         AssertStateSurCouche(2, "Repos");
     }
+
+    /// <summary>
+    /// Le spectateur, à mains nues (clips Mixamo choisis le 2026-10-13). Debout, il joue son propre arbre
+    /// (paramètre MainsNues) : l'attente, puis la course. Ses gestes passent par leur couche : le coup de
+    /// poing du poing GAUCHE (le direct du taser), tendu au contact ; le lancer du bras DROIT, armé
+    /// derrière l'épaule au bout de l'élan, devant au lâcher ; ramasser, la main droite vers le sol.
+    /// Étourdi, il titube.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator UnSpectateur_JoueSesGestesAMainsNues()
+    {
+        yield return Setup();
+        animator.SetFloat("MainsNues", 1f);
+        animator.SetFloat("LocoSpeed", 1f);
+        animator.SetLayerWeight(1, 0f); // debout, le haut du corps du duelliste se tait (PlayerAnimator)
+        yield return Settle(0.3f);
+        Assert.AreEqual("Idle", ClipDominant(0), "Immobile, le spectateur joue l'attente à mains nues.");
+
+        animator.SetFloat("Marche", 1f);
+        animator.SetFloat("Allure", 1f);
+        animator.SetFloat("MoveY", 1f);
+        yield return Settle(0.3f);
+        Assert.AreEqual("Standard Run", ClipDominant(0), "À l'allure nominale, il court à mains nues.");
+        animator.SetFloat("Marche", 0f);
+        animator.SetFloat("Allure", 0f);
+        animator.SetFloat("MoveY", 0f);
+
+        Transform root = animator.transform;
+        Transform leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand);
+        Transform rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
+        int gestes = PlayerAnimator.SpectatorGesturesLayer;
+        animator.SetLayerWeight(gestes, 1f); // en jeu, PlayerAnimator pilote ce poids pendant le geste
+
+        // Le coup de poing : tendu au contact, 0,15 s après l'appui (les valeurs du jeu).
+        animator.SetFloat("GesteSpeed", 0.22f / 0.15f);
+        animator.SetTrigger("Poing");
+        yield return new WaitForSeconds(0.15f);
+        AssertStateSurCouche(gestes, "Poing");
+        Vector3 left = root.InverseTransformPoint(leftHand.position);
+        Vector3 right = root.InverseTransformPoint(rightHand.position);
+        Debug.Log($"[SPECTATEUR] poing : main gauche z={left.z:F2} m, main droite z={right.z:F2} m");
+        Assert.Greater(left.z, 0.5f, "Au contact, le poing gauche n'est pas tendu.");
+        Assert.Greater(left.z, right.z + 0.15f, "Au contact, c'est la main droite qui frappe.");
+        yield return Settle(0.6f);
+        AssertStateSurCouche(gestes, "Repos");
+
+        // L'élan : au bout, la main droite est armée derrière l'épaule.
+        animator.SetBool("Elan", true);
+        animator.SetFloat("ElanLancer", 1f);
+        yield return Settle(0.3f);
+        AssertStateSurCouche(gestes, "LancerElan");
+        right = root.InverseTransformPoint(rightHand.position);
+        Debug.Log($"[SPECTATEUR] élan : main droite y={right.y:F2} z={right.z:F2}");
+        Assert.Less(right.z, -0.1f, "Au bout de l'élan, la main droite n'est pas derrière le corps.");
+        Assert.Greater(right.y, 1.3f, "Au bout de l'élan, la main droite n'est pas à hauteur d'épaule.");
+
+        // Le lâcher : la main droite part devant.
+        animator.SetBool("Elan", false);
+        animator.SetTrigger("Lancer");
+        yield return new WaitForSeconds(0.2f);
+        AssertStateSurCouche(gestes, "Lancer");
+        right = root.InverseTransformPoint(rightHand.position);
+        Debug.Log($"[SPECTATEUR] lâcher : main droite z={right.z:F2}");
+        Assert.Greater(right.z, 0.3f, "Au lâcher, la main droite ne part pas devant.");
+        yield return Settle(0.8f);
+        AssertStateSurCouche(gestes, "Repos");
+
+        // Ramasser : tout le corps se baisse (couche CorpsEntier), la main droite descend vers le sol.
+        animator.SetLayerWeight(4, 1f); // en jeu, PlayerAnimator pilote ce poids le temps du geste
+        animator.SetTrigger("Ramasser");
+        float lowest = float.MaxValue;
+        float until = Time.time + 0.7f;
+        while (Time.time < until)
+        {
+            yield return null;
+            lowest = Mathf.Min(lowest, root.InverseTransformPoint(rightHand.position).y);
+        }
+        Debug.Log($"[SPECTATEUR] ramasser : main droite au plus bas à {lowest:F2} m");
+        Assert.Less(lowest, 0.6f, "Ramasser : la main droite ne descend pas vers le sol.");
+
+        // Étourdi : la couche de tout le corps, revenue à son état par défaut, titube.
+        yield return Settle(0.5f);
+        AssertStateSurCouche(4, "Etourdi");
+        Assert.AreEqual("Dizzy Idle", ClipDominant(4), "Étourdi, le spectateur titube (Dizzy Idle).");
+    }
 }
 #endif

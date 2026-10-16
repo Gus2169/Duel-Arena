@@ -73,7 +73,7 @@ Camera:
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 4294966783
   m_RenderingPath: -1
   m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 0
@@ -158,6 +158,14 @@ GameObject:
   - component: {fileID: 1947947766437247315}
   - component: {fileID: 3749609673943134197}
   - component: {fileID: 2767928306015165717}
+  - component: {fileID: 7995085467982269497}
+  - component: {fileID: 7918110308086573245}
+  - component: {fileID: 4408059371079503041}
+  - component: {fileID: 9067310134267255906}
+  - component: {fileID: 1409261084488968949}
+  - component: {fileID: 4478248444882698585}
+  - component: {fileID: 2150533149295835661}
+  - component: {fileID: 5843594468034477752}
   m_Layer: 3
   m_Name: Player
   m_TagString: Untagged
@@ -564,6 +572,8 @@ MonoBehaviour:
   reloadClipUsefulLength: 2.1
   taserClipUsefulLength: 0.72
   holdBlendTime: 0.2
+  punchClipContactTime: 0.22
+  gestureBlendTime: 0.08
   minPlaybackSpeed: 0.75
   standingPlaybackScale: 0.85
   crouchingPlaybackScale: 1
@@ -637,6 +647,146 @@ MonoBehaviour:
   strikeFistTarget: {x: -0.06, y: -0.1, z: 0.6}
   pistolHipOffset: {x: 0.1, y: -0.1, z: -0.1}
   scopeInThreshold: 0.95
+--- !u!114 &7995085467982269497
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4948709451476686498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 964e75e04bf52d243808850e0b405ee7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::PlayerMatchState
+  ShowTopMostFoldoutHeaderGroup: 1
+--- !u!114 &7918110308086573245
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4948709451476686498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8630e28e99d3c464d8e8d4f788759387, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::PlayerDeath
+  ShowTopMostFoldoutHeaderGroup: 1
+  impulseScale: 1
+  sounds: {fileID: 11400000, guid: 32a2e0f11f6ff4f43a15437da980471c, type: 2}
+  playerCamera: {fileID: 8366488429288959033}
+  cameraDistance: 3.2
+  cameraStartPitch: 28
+  cameraBlendTime: 0.7
+  orbitSensitivity: 0.12
+--- !u!114 &4408059371079503041
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4948709451476686498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c9b71ead7d39074999dba79292b40fa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::SpectatorController
+  ShowTopMostFoldoutHeaderGroup: 1
+  punchDuration: 0.45
+  punchContactDelay: 0.15
+  punchRange: 1.5
+  punchRadius: 0.3
+  punchStunDuration: 2.5
+  stunImmunity: 1.5
+  rockStunDuration: 1.5
+  pickupRange: 2.3
+  pickupAngle: 35
+  chargeTime: 0.8
+  minThrowSpeed: 9
+  maxThrowSpeed: 24
+  throwCooldown: 0.5
+  flinchPitch: 3.5
+  flinchShake: 2.5
+  flinchShakeDuration: 0.35
+  maxOriginDistance: 3
+  maxRewindSeconds: 0.3
+  pickupTolerance: 0.9
+  worldMask:
+    serializedVersion: 2
+    m_Bits: 1
+--- !u!114 &9067310134267255906
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4948709451476686498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d0c26d70bfd6ab740b9df6a6ba205957, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::SpectatorView
+  ShowTopMostFoldoutHeaderGroup: 1
+  fistTarget: {x: -0.07, y: -0.11, z: 0.55}
+  holdOffset: {x: 0.24, y: -0.21, z: 0.45}
+  holdEuler: {x: 8, y: -25, z: 4}
+  windUpOffset: {x: 0.06, y: 0.1, z: -0.2}
+  throwPushTime: 0.15
+--- !u!114 &1409261084488968949
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4948709451476686498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1bd822df3f6e92e48baa0c11731b0bf4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::PlayerFeedbackAudio
+  sounds: {fileID: 11400000, guid: 32a2e0f11f6ff4f43a15437da980471c, type: 2}
+  fullDamage: 40
+--- !u!114 &4478248444882698585
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4948709451476686498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 96555f5f7066f0d418030da0fbf59a80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::PlayerWeaponLooks
+  ShowTopMostFoldoutHeaderGroup: 1
+--- !u!114 &2150533149295835661
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4948709451476686498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 32399742e2a62ba4fb3ebee0441911fb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::PlayerWeaponAttachments
+  ShowTopMostFoldoutHeaderGroup: 1
+--- !u!114 &5843594468034477752
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4948709451476686498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fb4fb910af8cf9b41bc758c0012ed43e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::TacticalLaser
+  minimumAngularWidth: 0.0028
+  endBrightness: 0.3
 --- !u!1 &4953124100940397496
 GameObject:
   m_ObjectHideFlags: 0
@@ -722,6 +872,37 @@ Transform:
   - {fileID: 4051426829627567023}
   m_Father: {fileID: 5710468390860605592}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &6100850269249383150
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1709609928893529483}
+  m_Layer: 0
+  m_Name: PriseArme
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1709609928893529483
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6100850269249383150}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.46249884, y: 0.5464786, z: 0.50957876, w: 0.47726882}
+  m_LocalPosition: {x: 0.0035, y: 0.0645, z: 0.0298}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1331797346331486392}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &7030491950063384188
 GameObject:
   m_ObjectHideFlags: 0
@@ -734,6 +915,7 @@ GameObject:
   - component: {fileID: 3846024764576310628}
   - component: {fileID: 6143872881057716690}
   - component: {fileID: 1940571225970274755}
+  - component: {fileID: 2129605038148225811}
   m_Layer: 3
   m_Name: Weapon
   m_TagString: Untagged
@@ -792,6 +974,7 @@ MonoBehaviour:
   maxRewindSeconds: 0.3
   debugFakeShotOrigin: 0
   debugFakeShotOriginOffset: 50
+  powerUpReach: 1.8
 --- !u!82 &6143872881057716690
 AudioSource:
   m_ObjectHideFlags: 0
@@ -812,7 +995,7 @@ AudioSource:
   Spatialize: 0
   SpatializePostEffects: 0
   Priority: 128
-  DopplerLevel: 1
+  DopplerLevel: 0
   MinDistance: 1
   MaxDistance: 500
   Pan2D: 0
@@ -912,11 +1095,36 @@ MonoBehaviour:
   worldMask:
     serializedVersion: 2
     m_Bits: 1
-  strikeSound: {fileID: 8300000, guid: 04b1a574f47644c439e61a7603aa918b, type: 3}
-  strikeVolume: 0.9
+  swingSounds:
+  - {fileID: 8300000, guid: bf5825a4c74c07548848eae5cc2d4566, type: 3}
+  - {fileID: 8300000, guid: c18c7e9393d2f704a9ca4ac1771356a9, type: 3}
+  - {fileID: 8300000, guid: aa0b0003e008bd04aa0ce9e456887e3b, type: 3}
+  - {fileID: 8300000, guid: 1b89023cb85dad142ab1fe87b1722793, type: 3}
+  swingVolume: 0.3
+  zapSounds:
+  - {fileID: 8300000, guid: b95400d97f9fb2d469a17839b8c4650a, type: 3}
+  - {fileID: 8300000, guid: 387f4760da759694292755814b9b80de, type: 3}
+  - {fileID: 8300000, guid: b658ae5c73904ea45a85f37209b06b79, type: 3}
+  - {fileID: 8300000, guid: 9ba87ac892daedb498e5085b04294d87, type: 3}
+  zapVolume: 1
   audioSource: {fileID: 6143872881057716690}
   maxOriginDistanceFromPlayer: 4
   maxRewindSeconds: 0.3
+--- !u!114 &2129605038148225811
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7030491950063384188}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 95860365b68512244a44b43c50818152, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::WeaponAudio
+  template: {fileID: 6143872881057716690}
+  tailFade: 0.06
+  reloadStopFade: 0.08
 --- !u!1 &8010230197368220470
 GameObject:
   m_ObjectHideFlags: 0
@@ -1081,7 +1289,7 @@ PrefabInstance:
       addedObject: {fileID: 787663353768792299}
     - targetCorrespondingSourceObject: {fileID: 1852576806548013000, guid: 2162231c074380b40b19696ba0cdc536, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 5262328673362179446}
+      addedObject: {fileID: 1709609928893529483}
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 2162231c074380b40b19696ba0cdc536, type: 3}
 --- !u!4 &883949170903478427 stripped
@@ -1108,68 +1316,6 @@ SkinnedMeshRenderer:
 Transform:
   m_CorrespondingSourceObject: {fileID: -1812909498023395591, guid: 2162231c074380b40b19696ba0cdc536, type: 3}
   m_PrefabInstance: {fileID: 850848736984602480}
-  m_PrefabAsset: {fileID: 0}
---- !u!1001 &869043246854370877
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 1331797346331486392}
-    m_Modifications:
-    - target: {fileID: 1894665579383966096, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-      propertyPath: m_Name
-      value: FusilAssaut
-      objectReference: {fileID: 0}
-    - target: {fileID: 4974500901020369739, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0.0035
-      objectReference: {fileID: 0}
-    - target: {fileID: 4974500901020369739, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0.0645
-      objectReference: {fileID: 0}
-    - target: {fileID: 4974500901020369739, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0.0298
-      objectReference: {fileID: 0}
-    - target: {fileID: 4974500901020369739, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 0.47726882
-      objectReference: {fileID: 0}
-    - target: {fileID: 4974500901020369739, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: -0.46249884
-      objectReference: {fileID: 0}
-    - target: {fileID: 4974500901020369739, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0.5464786
-      objectReference: {fileID: 0}
-    - target: {fileID: 4974500901020369739, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0.50957876
-      objectReference: {fileID: 0}
-    - target: {fileID: 4974500901020369739, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4974500901020369739, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4974500901020369739, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: cf2fca44804ffb844a968114ac961920, type: 3}
---- !u!4 &5262328673362179446 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 4974500901020369739, guid: cf2fca44804ffb844a968114ac961920, type: 3}
-  m_PrefabInstance: {fileID: 869043246854370877}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &7822259997527632112
 PrefabInstance:

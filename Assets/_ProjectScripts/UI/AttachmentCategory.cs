@@ -1,6 +1,6 @@
-/// <summary>Les 4 rubriques de l'armurerie avancée (WeaponCustomizationController). L'ordre sert
-/// d'index dans GameSettings.GetAttachment/SetAttachment — ne pas réordonner sans migrer les
-/// préférences déjà enregistrées (elles redeviendraient 0 = aucun accessoire, sans dégât).</summary>
+/// <summary>Les 4 rubriques des accessoires (2026-10-16 : armurerie, WeaponAttachments, AttachmentMount,
+/// WeaponAttachment). Les choix se codent par rubrique dans WeaponAttachments, pas par cette valeur ;
+/// elle sert seulement d'index aux appels GameSettings.GetAttachment/SetAttachment.</summary>
 public enum AttachmentCategory
 {
     Grip = 0,

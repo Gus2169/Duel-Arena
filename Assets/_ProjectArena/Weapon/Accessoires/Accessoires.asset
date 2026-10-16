@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1d19a3c79806b224383e4718bd370043, type: 3}
+  m_Name: Accessoires
+  m_EditorClassIdentifier: DuelArena.Runtime::AttachmentCatalog
+  sights:
+  - {fileID: 6284015858169041500, guid: 07a2e69f5c3d64443876914a8eaeaeab, type: 3}
+  - {fileID: 488015725957924741, guid: a8909affccebb494ea7436f2a8f58503, type: 3}
+  - {fileID: 5802724189220415326, guid: 30fdd4f8124d60b43844b3e6e61379da, type: 3}
+  - {fileID: 2071979798186568861, guid: ca00e9fc0f8b91c4889141ae004973af, type: 3}
+  - {fileID: 5534864644949954451, guid: e2575a1c1dcef07428e7e35a347719a4, type: 3}
+  - {fileID: 3307350239843805323, guid: b8c666bb536eff142b414b4a772ee1c4, type: 3}
+  - {fileID: 8687474692808119987, guid: 6f37552a336fd2944899f1fe0a912a76, type: 3}
+  - {fileID: 778406381847033312, guid: 54215164b02535c479eac33987bf2908, type: 3}
+  - {fileID: 8500010641945023172, guid: d609bba6a66bf9f40a24790a216cfa21, type: 3}
+  - {fileID: 8476698956896701591, guid: 86cbc6d9586ac884aaea7411d0fe93f4, type: 3}
+  laser: {fileID: 648442540090018370, guid: 158692853c78b55469670e3cd1bb90c3, type: 3}
+  pistolLaser: {fileID: 4553030809213600193, guid: 3723d520a160fe34681df8140f1af5b4, type: 3}
+  verticalGrip: {fileID: 1410419786862832420, guid: 043bc176d3afa8f47894ce3d4aff9cb9, type: 3}
+  angledGrip: {fileID: 3971635280212049290, guid: 3f59241c93a7fef4a8d37f141479264d, type: 3}
+  magazines:
+  - {fileID: 2805358241833187083, guid: cff4b8fc2eaa9c54483864bebf6a7d78, type: 3}
+  - {fileID: 5808158967057443146, guid: 399d93ca2b572444d87695a5bcf5ec82, type: 3}
+  - {fileID: 6340825439475023526, guid: 7b37121d55a0c0548992e81730b9f334, type: 3}
+  - {fileID: 8115180669860487279, guid: 2183dcf55a2af6c49a439cc2ea9ee321, type: 3}
+  - {fileID: 4824912962092860351, guid: 0d0045816acaa174e9701e69cefe7c65, type: 3}
+  - {fileID: 1259151403305127689, guid: dee440ddd1cebcc4585aa95fe962a44a, type: 3}
+  - {fileID: 2703067838621736524, guid: cfec60d3b503bbb469036ee9d398adde, type: 3}
+  - {fileID: 141810561016580119, guid: 97b0c5a39ad43564b8a106e42a1925e5, type: 3}
+  - {fileID: 5863045007144622734, guid: dc7d47f0863af9c4c8b7a6f7f48f81bf, type: 3}
+  - {fileID: 8105267848123748784, guid: b69b55878695a5843afbdc82a31b9283, type: 3}
+  - {fileID: 8913023686267591418, guid: f6c7fc8484320284392a5f0ce658078e, type: 3}
+  verticalGripRecoil: 0.8
+  laserHipRecoil: 0.7
+  angledGripAimTime: 0.8
+  extendedMagazineCapacity: 1.5
+  extendedMagazineReload: 1.15
+  beamMaterial: {fileID: 2100000, guid: 001e7e70de97ee34c87b369015cbc715, type: 2}
+  dotMaterial: {fileID: 2100000, guid: 9b0b71353c3453341a30f966c89780c4, type: 2}
+  beamWidth: 0.0035
+  dotAngularSize: 0.02
+  beamRange: 150

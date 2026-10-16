@@ -58,18 +58,31 @@ public class CrosshairUI : MonoBehaviour
     private Texture2D pixel;
     private Texture2D scopeMask; // disque transparent sur fond noir, construit une fois
     private FirstPersonView firstPersonView;
+    private Health health;
+    private PlayerMatchState matchState;
     // Jamais sérialisés : voir PauseMenu (une recompilation recrée sinon des GUIStyle vides).
     [System.NonSerialized] private GUIStyle ammoStyle;
     [System.NonSerialized] private GUIStyle nameStyle;
     [System.NonSerialized] private GUIStyle hintStyle;
+
+    // Les textes affichés et ce dont ils dépendent.
+    [System.NonSerialized] private string ammoText;
+    [System.NonSerialized] private string nameText;
+    private int shownAmmo, shownMagazineSize, shownSlot;
+    private WeaponData shownWeaponData;
 
     private void Awake()
     {
         // Texture2D.whiteTexture est un pixel blanc fourni par Unity, teinté ensuite via GUI.color
         // — évite de générer/gérer une texture custom pour un simple aplat de couleur.
         pixel = Texture2D.whiteTexture;
+        // Rien ici n'utilise GUILayout : sans la passe de mise en page, OnGUI n'est plus appelé
+        // qu'une fois par image au lieu de deux.
+        useGUILayout = false;
         if (weapon == null) weapon = GetComponentInChildren<WeaponController>();
         firstPersonView = GetComponent<FirstPersonView>();
+        health = GetComponent<Health>();
+        matchState = GetComponent<PlayerMatchState>();
 
         if (aimCamera == null)
         {
@@ -85,6 +98,25 @@ public class CrosshairUI : MonoBehaviour
         // dessinait son propre réticule — superposé au centre de l'écran, donc invisible — et
         // dessinerait aussi ses munitions par-dessus les nôtres.
         if (weapon != null && weapon.IsSpawned && !weapon.IsOwner) return;
+
+        // Mort (la caméra regarde l'épave), ou un écran a la main (préparation, Échap, fin de
+        // match) : ni réticule ni munitions.
+        if (health != null && health.IsDead) return;
+        if (GameHud.HidesCrosshair) return;
+
+        // Un spectateur n'a pas d'arme (2026-10-13) : un simple point, pour viser ses lancers et ses
+        // coups. Aucune aide de plus : le geste reste imparfait (GDD § 3).
+        if (matchState != null && matchState.IsSpectator)
+        {
+            Vector3 eye = aimCamera.WorldToScreenPoint(aimCamera.transform.position + aimCamera.transform.forward * 10f);
+            float dot = Mathf.Max(3f, centerDotSize * 1.5f);
+            GUI.color = new Color(0f, 0f, 0f, 0.5f);
+            GUI.DrawTexture(new Rect(eye.x - dot * 0.5f - 1f, Screen.height - eye.y - dot * 0.5f - 1f, dot + 2f, dot + 2f), pixel);
+            GUI.color = crosshairColor;
+            GUI.DrawTexture(new Rect(eye.x - dot * 0.5f, Screen.height - eye.y - dot * 0.5f, dot, dot), pixel);
+            GUI.color = Color.white;
+            return;
+        }
 
         // Point sur l'axe de visée de la caméra, projeté en coordonnées écran par la caméra
         // elle-même : garanti cohérent avec l'origine/direction utilisées par WeaponController.Fire(),
@@ -157,12 +189,25 @@ public class CrosshairUI : MonoBehaviour
         GUI.color = Color.white;
         ammoStyle.normal.textColor = textColor;
         float margin = Screen.height * 0.04f;
-        GUI.Label(new Rect(0f, 0f, Screen.width - margin, Screen.height - margin), $"{ammo} / {weapon.MagazineSize}", ammoStyle);
+        // Les textes ne sont refaits que quand ils changent : OnGUI tourne à chaque image.
+        int size = weapon.MagazineSize;
+        if (ammoText == null || ammo != shownAmmo || size != shownMagazineSize)
+        {
+            shownAmmo = ammo;
+            shownMagazineSize = size;
+            ammoText = $"{ammo} / {size}";
+        }
+        GUI.Label(new Rect(0f, 0f, Screen.width - margin, Screen.height - margin), ammoText, ammoStyle);
         if (weapon.Data != null)
         {
+            if (nameText == null || weapon.Data != shownWeaponData || weapon.DisplayedSlot != shownSlot)
+            {
+                shownWeaponData = weapon.Data;
+                shownSlot = weapon.DisplayedSlot;
+                nameText = $"{shownSlot + 1}  {shownWeaponData.weaponName}";
+            }
             nameStyle.normal.textColor = crosshairColor;
-            GUI.Label(new Rect(0f, 0f, Screen.width - margin, Screen.height - margin - ammoStyle.fontSize * 1.3f),
-                      $"{weapon.DisplayedSlot + 1}  {weapon.Data.weaponName}", nameStyle);
+            GUI.Label(new Rect(0f, 0f, Screen.width - margin, Screen.height - margin - ammoStyle.fontSize * 1.3f), nameText, nameStyle);
         }
 
         float below = cy + hipGap + hipLineLength + 14f;

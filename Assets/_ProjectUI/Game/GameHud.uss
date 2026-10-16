@@ -1,0 +1,581 @@
+/* L'interface de la partie (2026-10-12). Les boutons, panneaux et options viennent de
+   MainMenu.uss : un seul style pour le menu et la partie. */
+
+.hud-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.hidden {
+    display: none;
+}
+
+/* -------------------- Barre de score -------------------- */
+
+.score-bar {
+    position: absolute;
+    top: 18px;
+    left: 0;
+    right: 0;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+}
+
+.score-side {
+    flex-direction: row;
+    align-items: center;
+    width: 420px;
+}
+
+.score-side--left {
+    justify-content: flex-end;
+}
+
+.score-side--right {
+    justify-content: flex-start;
+}
+
+.score-name {
+    font-size: 22px;
+    -unity-font-style: bold;
+    color: rgb(240, 242, 245);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.7);
+    margin-left: 12px;
+    margin-right: 12px;
+}
+
+.score-pips {
+    flex-direction: row;
+    align-items: center;
+}
+
+.score-pip {
+    width: 16px;
+    height: 16px;
+    margin-left: 4px;
+    margin-right: 4px;
+    border-radius: 8px;
+    border-width: 2px;
+    border-color: rgba(255, 255, 255, 0.75);
+    background-color: rgba(0, 0, 0, 0.35);
+}
+
+.score-pip--won {
+    background-color: rgb(70, 210, 110);
+    border-color: rgb(70, 210, 110);
+}
+
+.score-pip--lost {
+    background-color: rgb(230, 70, 70);
+    border-color: rgb(230, 70, 70);
+}
+
+.round-timer {
+    width: 110px;
+    margin-left: 8px;
+    margin-right: 8px;
+    font-size: 26px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    color: rgb(240, 242, 245);
+    background-color: rgba(10, 13, 17, 0.55);
+    border-radius: 6px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+/* -------------------- Vie (façon Rainbow Six) -------------------- */
+
+/* Un fond sombre : le chiffre blanc reste lisible sur le sol clair de l'arène. */
+.health-panel {
+    position: absolute;
+    left: 28px;
+    bottom: 24px;
+    width: 360px;
+    padding: 6px 12px 12px 12px;
+    background-color: rgba(10, 13, 17, 0.5);
+    border-radius: 6px;
+}
+
+.health-row {
+    flex-direction: row;
+    align-items: flex-end;
+    margin-bottom: 4px;
+}
+
+.health-value {
+    font-size: 48px;
+    -unity-font-style: bold;
+    color: rgb(240, 242, 245);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.7);
+    padding: 0;
+    margin: 0;
+}
+
+.health-unit {
+    font-size: 16px;
+    -unity-font-style: bold;
+    letter-spacing: 2px;
+    color: rgba(240, 242, 245, 0.8);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.6);
+    margin-left: 8px;
+    margin-bottom: 9px;
+    padding: 0;
+}
+
+.health-bar {
+    height: 12px;
+    background-color: rgba(10, 13, 17, 0.6);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.28);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.health-trail {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 100%;
+    background-color: rgb(230, 60, 50);
+}
+
+.health-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 100%;
+    background-color: rgb(240, 242, 245);
+}
+
+.health-panel--low .health-value {
+    color: rgb(255, 110, 90);
+}
+
+.health-panel--low .health-fill {
+    background-color: rgb(255, 110, 90);
+}
+
+/* -------------------- Messages au centre -------------------- */
+
+.center-message {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 22%;
+    align-items: center;
+}
+
+.center-big {
+    font-size: 96px;
+    -unity-font-style: bold;
+    color: rgb(255, 255, 255);
+    -unity-text-align: middle-center;
+    -unity-text-outline-width: 2px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.75);
+}
+
+.center-big--sentence {
+    font-size: 54px;
+}
+
+.center-small {
+    margin-top: 8px;
+    font-size: 30px;
+    -unity-font-style: bold;
+    color: rgb(230, 233, 237);
+    -unity-text-align: middle-center;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.75);
+}
+
+/* -------------------- Préparation -------------------- */
+
+.loadout-panel {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 900px;
+    translate: -50% -50%;
+    background-color: rgba(18, 22, 28, 0.94);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 26px;
+}
+
+.loadout-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.loadout-title {
+    font-size: 30px;
+    -unity-font-style: bold;
+    color: rgb(240, 242, 245);
+}
+
+.loadout-timer {
+    font-size: 30px;
+    -unity-font-style: bold;
+    color: rgb(255, 106, 19);
+}
+
+.loadout-round {
+    font-size: 14px;
+    color: rgb(150, 158, 168);
+    letter-spacing: 1px;
+    margin-bottom: 16px;
+}
+
+.loadout-cards {
+    flex-direction: row;
+    justify-content: space-between;
+}
+
+.loadout-card {
+    width: 200px;
+    height: 150px;
+    margin: 0;
+    padding: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-width: 2px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    transition-duration: 0.1s;
+}
+
+.loadout-card:hover {
+    border-color: rgba(255, 106, 19, 0.6);
+}
+
+.loadout-card--active {
+    border-color: rgb(255, 106, 19);
+    background-color: rgba(255, 106, 19, 0.16);
+}
+
+.loadout-card:disabled {
+    opacity: 0.55;
+}
+
+.loadout-card Label {
+    -unity-text-align: upper-left;
+}
+
+.loadout-card-key {
+    font-size: 13px;
+    color: rgb(255, 106, 19);
+    -unity-font-style: bold;
+}
+
+.loadout-card-name {
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: rgb(240, 242, 245);
+    margin-top: 6px;
+    white-space: normal;
+}
+
+.loadout-card-stats {
+    font-size: 13px;
+    color: rgb(170, 177, 186);
+    margin-top: 8px;
+    white-space: normal;
+}
+
+.loadout-footer {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 18px;
+}
+
+.loadout-status {
+    font-size: 15px;
+    color: rgb(200, 205, 212);
+    flex-shrink: 1;
+    white-space: normal;
+}
+
+.loadout-status--ready {
+    color: rgb(120, 220, 140);
+}
+
+.loadout-validate {
+    width: 260px;
+    margin-top: 0;
+}
+
+/* -------------------- Fondu au noir -------------------- */
+
+.fade {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgb(0, 0, 0);
+    opacity: 0;
+}
+
+/* -------------------- Écran de fin -------------------- */
+
+.end-screen {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    flex-direction: row;
+    align-items: center;
+    padding: 48px;
+}
+
+/* Vide : le robot du gagnant y célèbre, dans l'arène, derrière l'interface. */
+.end-portrait-column {
+    width: 40%;
+    height: 100%;
+}
+
+.end-results-column {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-left: 48px;
+    justify-content: center;
+    background-color: rgba(8, 10, 13, 0.9);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 28px 32px;
+}
+
+.end-title {
+    font-size: 64px;
+    -unity-font-style: bold;
+    color: rgb(255, 106, 19);
+    white-space: normal;
+}
+
+.end-subtitle {
+    font-size: 24px;
+    color: rgb(200, 205, 212);
+    margin-top: 6px;
+    margin-bottom: 30px;
+}
+
+.score-table {
+    background-color: rgba(255, 255, 255, 0.03);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 8px 0;
+}
+
+.score-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 10px 18px;
+}
+
+.score-row--header {
+    border-bottom-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.score-row--winner {
+    background-color: rgba(255, 106, 19, 0.12);
+}
+
+.score-cell {
+    width: 120px;
+    font-size: 18px;
+    color: rgb(230, 233, 237);
+    -unity-text-align: middle-center;
+}
+
+.score-cell--name {
+    width: 220px;
+    -unity-text-align: middle-left;
+    -unity-font-style: bold;
+}
+
+.score-row--header .score-cell {
+    font-size: 12px;
+    letter-spacing: 1px;
+    color: rgb(150, 158, 168);
+    -unity-font-style: normal;
+}
+
+.end-footer {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 30px;
+}
+
+.end-countdown {
+    font-size: 16px;
+    color: rgb(170, 177, 186);
+}
+
+.end-quit {
+    width: 260px;
+    margin-top: 0;
+}
+
+/* -------------------- Menu d'Échap -------------------- */
+
+.pause-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(10, 13, 17, 0.78);
+}
+
+.pause-title {
+    font-size: 54px;
+    -unity-font-style: bold;
+    color: rgb(255, 255, 255);
+    letter-spacing: 8px;
+    margin-bottom: 18px;
+    -unity-text-align: upper-center;
+}
+
+.pause-hint {
+    margin-top: 18px;
+    font-size: 13px;
+    color: rgb(150, 158, 168);
+    -unity-text-align: upper-center;
+}
+
+/* Le code de la partie en ligne, à donner à qui veut venir (2026-10-13) */
+.pause-invite {
+    margin-bottom: 14px;
+    font-size: 20px;
+    -unity-font-style: bold;
+    letter-spacing: 2px;
+    color: rgb(255, 106, 19);
+    -unity-text-align: upper-center;
+}
+
+/* -------------------- La tribune (2026-10-13) -------------------- */
+
+/* Les manches d'un duelliste, vues de la tribune : ni vertes ni rouges, on n'est d'aucun camp. */
+.score-pip--neutral {
+    background-color: rgb(240, 242, 245);
+    border-color: rgb(240, 242, 245);
+}
+
+/* L'invite de la touche F, sous le réticule : là où se trouve le regard. */
+.interact-prompt {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 56%;
+    -unity-text-align: middle-center;
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: rgb(255, 255, 255);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.8);
+}
+
+/* L'élan d'un lancer, sous l'invite. */
+.charge-bar {
+    position: absolute;
+    left: 50%;
+    top: 60%;
+    width: 160px;
+    height: 8px;
+    margin-left: -80px;
+    background-color: rgba(10, 13, 17, 0.6);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.35);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.charge-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0%;
+    background-color: rgb(255, 106, 19);
+}
+
+/* Le panneau du spectateur, en bas au centre. */
+.spectator-panel {
+    position: absolute;
+    left: 50%;
+    bottom: 24px;
+    width: 640px;
+    margin-left: -320px;
+    padding: 8px 14px 10px 14px;
+    background-color: rgba(10, 13, 17, 0.5);
+    border-radius: 6px;
+    align-items: center;
+}
+
+.spectator-role {
+    font-size: 16px;
+    -unity-font-style: bold;
+    letter-spacing: 2px;
+    color: rgb(255, 160, 90);
+    -unity-text-align: middle-center;
+}
+
+.spectator-carry {
+    font-size: 22px;
+    -unity-font-style: bold;
+    color: rgb(240, 242, 245);
+    -unity-text-align: middle-center;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.6);
+}
+
+.spectator-hints {
+    margin-top: 2px;
+    font-size: 14px;
+    color: rgba(230, 233, 237, 0.85);
+    -unity-text-align: middle-center;
+    white-space: normal;
+}
+
+/* Étourdi : l'écran se voile, le mot clignote (SpectatorHud règle l'opacité). */
+.stun-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(40, 60, 120, 0.28);
+    align-items: center;
+    justify-content: center;
+}
+
+.stun-label {
+    font-size: 64px;
+    -unity-font-style: bold;
+    letter-spacing: 6px;
+    color: rgb(180, 210, 255);
+    -unity-text-outline-width: 2px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.7);
+}

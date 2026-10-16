@@ -112,6 +112,12 @@ public class FirstPersonView : NetworkBehaviour
     private WeaponController weaponController;
     private float sprintPose;
     private WeaponData shownWeapon;   // l'arme dont le modèle est en main sur la copie
+    private WeaponModel shownModel;   // … et ce modèle
+    private WeaponAttachment shownSight; // … et le viseur qui y est monté
+    private PlayerWeaponLooks weaponLooks;
+    private PlayerWeaponAttachments weaponAttachments;
+    private MaterialPropertyBlock lensBlock;
+    private static readonly int AxeCameraId = Shader.PropertyToID("_AxeCamera");
     private Transform viewRightHand;
     private Transform viewLeftUpperArm, viewFist;
     private float aimEyeDistance = 0.10f;
@@ -130,15 +136,16 @@ public class FirstPersonView : NetworkBehaviour
     public Animator ViewAnimator => viewAnimator;
 
     /// <summary>L'œil est dans l'axe du viseur : c'est sa réticule qui marque le centre, le
-    /// réticule du HUD s'efface (CrosshairUI). Seulement pour une arme à viseur (l'écran numérique
-    /// du fusil d'assaut) : une mire métallique n'a pas de réticule, le HUD garde la sienne.</summary>
-    public bool SightOnAxis => view != null && aimBlend > 0.9f && viewSight != null && shownWeapon != null
-                               && shownWeapon.modelPrefab != null && viewSight.gameObject.name == shownWeapon.modelPrefab.name;
+    /// réticule du HUD s'efface (CrosshairUI). Seulement pour une arme à viseur : un viseur monté
+    /// (2026-10-16, AttachmentMount) ou l'écran numérique de l'ancien fusil d'assaut ; une mire
+    /// métallique n'a pas de réticule, le HUD garde la sienne.</summary>
+    public bool SightOnAxis => view != null && !hidden && !spectatorMode && aimBlend > 0.9f && shownModel != null
+                               && (shownSight != null || (viewSight != null && viewSight.gameObject == shownModel.gameObject));
 
     /// <summary>Dans la lunette plein écran du sniper (2026-10-11) : la vue zoome du grossissement de
     /// l'arme, l'arme disparaît, la lunette couvre l'écran (CrosshairUI). Comme dans Call of Duty,
     /// seulement une fois l'arme épaulée.</summary>
-    public bool Scoped => view != null && shownWeapon != null && shownWeapon.scopeMagnification > 1f
+    public bool Scoped => view != null && !hidden && !spectatorMode && shownWeapon != null && shownWeapon.scopeMagnification > 1f
                           && aimBlend >= scopeInThreshold && weaponController != null && !weaponController.IsReloading;
 
     /// <summary>Grossissement de la vue : celui de la lunette quand on y est, 1 sinon.</summary>
@@ -151,16 +158,103 @@ public class FirstPersonView : NetworkBehaviour
     /// <summary>Le réticule du HUD s'affiche-t-il à la hanche avec l'arme en main ? (pas au sniper)</summary>
     public bool HipCrosshair => shownWeapon == null || shownWeapon.hipCrosshair;
 
+    // Masqués quand le joueur est mort (PlayerDeath) : sa caméra quitte ses yeux pour regarder son
+    // épave. La copie continue d'être animée (ses paramètres viennent de PlayerAnimator), seule sa
+    // caméra s'éteint : les bras ne vivent que sur son layer.
+    private bool hidden;
+
+    // Un spectateur n'a pas d'arme (2026-10-13) : la copie armée s'éteint, mais la caméra des bras
+    // reste, pour la vue subjective du spectateur (SpectatorView : ses poings, ce qu'il tient).
+    private bool spectatorMode;
+
+    /// <summary>Masque (ou rend) les bras et l'arme de la vue subjective, et la lunette.</summary>
+    public void SetHidden(bool value)
+    {
+        hidden = value;
+        if (armsCamera != null) armsCamera.enabled = !value && !Scoped;
+        if (value && viewSight != null) viewSight.UpdateScreen(playerCamera, armsCamera, 0f);
+    }
+
+    /// <summary>La caméra des bras (layer Viewmodel), que la vue subjective du spectateur partage.</summary>
+    public Camera ArmsCamera => armsCamera;
+
+    /// <summary>La caméra du joueur, à laquelle les bras sont accrochés.</summary>
+    public Camera PlayerCamera => playerCamera;
+
+    /// <summary>Le joueur est-il en mode spectateur (copie armée éteinte) ?</summary>
+    public bool SpectatorMode => spectatorMode;
+
+    private void ApplySpectatorMode(bool value)
+    {
+        spectatorMode = value;
+        if (view != null && view.activeSelf == value) view.SetActive(!value);
+        if (value)
+        {
+            aimBlend = 0f;
+            if (viewSight != null) viewSight.UpdateScreen(playerCamera, armsCamera, 0f);
+            if (armsCamera != null) armsCamera.enabled = !hidden;
+        }
+        holdInitialized = false;
+    }
+
     public override void OnNetworkSpawn()
     {
         if (!IsOwner) return;
         locomotion = GetComponent<PlayerLocomotion>();
         weaponController = GetComponentInChildren<WeaponController>();
         Build();
+
+        // Les modèles et finitions choisis par le joueur (2026-10-15) : la copie a pris les armes du
+        // corps telles qu'elles étaient, les modèles par défaut tant que le serveur n'a rien publié.
+        weaponLooks = GetComponent<PlayerWeaponLooks>();
+        if (weaponLooks != null)
+        {
+            weaponLooks.Changed += HandleWeaponLooks;
+            if (weaponLooks.Published) HandleWeaponLooks(weaponLooks.Looks);
+        }
+        // Et les accessoires (2026-10-16), publiés de même.
+        weaponAttachments = GetComponent<PlayerWeaponAttachments>();
+        if (weaponAttachments != null)
+        {
+            weaponAttachments.Changed += HandleWeaponAttachments;
+            if (weaponAttachments.Published) HandleWeaponAttachments(weaponAttachments.Attachments);
+        }
+    }
+
+    private void HandleWeaponLooks(WeaponLooks looks)
+        => BuildWeapons(looks, weaponAttachments != null && weaponAttachments.Published ? weaponAttachments.Attachments : WeaponAttachments.None);
+
+    private void HandleWeaponAttachments(WeaponAttachments attachments)
+        => BuildWeapons(weaponLooks != null && weaponLooks.Published ? weaponLooks.Looks : WeaponLooks.Default, attachments);
+
+    private void BuildWeapons(WeaponLooks looks, WeaponAttachments attachments)
+    {
+        if (view == null || viewRightHand == null || weaponController == null) return;
+        // les nouvelles pièces prennent les réglages de la copie : ni ombre portée, ni ombre reçue
+        Renderer like = view.GetComponentInChildren<SkinnedMeshRenderer>(true);
+        HeldWeapons.Build(viewRightHand, weaponController.Loadout, looks, attachments, like);
+        AimLensesAtCamera();
+        ShowWeapon(weaponController.Data);
+    }
+
+    /// <summary>Sur les bras, le réticule des viseurs marque le centre de l'écran, d'où part le tir
+    /// (DuelArena/ViseurReticule, _AxeCamera) : l'arme balance au rythme des pas, pas le réticule.</summary>
+    private void AimLensesAtCamera()
+    {
+        lensBlock ??= new MaterialPropertyBlock();
+        foreach (WeaponAttachment attachment in viewRightHand.GetComponentsInChildren<WeaponAttachment>(true))
+        {
+            if (attachment.Lens == null) continue;
+            attachment.Lens.GetPropertyBlock(lensBlock);
+            lensBlock.SetFloat(AxeCameraId, 1f);
+            attachment.Lens.SetPropertyBlock(lensBlock);
+        }
     }
 
     public override void OnNetworkDespawn()
     {
+        if (weaponLooks != null) weaponLooks.Changed -= HandleWeaponLooks;
+        if (weaponAttachments != null) weaponAttachments.Changed -= HandleWeaponAttachments;
         if (view != null) Destroy(view);
         if (armsCamera != null) Destroy(armsCamera.gameObject);
         view = null;
@@ -210,20 +304,21 @@ public class FirstPersonView : NetworkBehaviour
         }
 
         armsCamera = BuildArmsCamera(playerCamera, layer, armsFieldOfView);
-
-        // L'écran du viseur, sur la copie seulement : le fusil vu par les autres garde le sien.
-        viewSight = view.GetComponentInChildren<WeaponSight>(true);
-        if (viewSight != null) viewSight.EnableDigitalScreen(playerCamera);
     }
 
     private void LateUpdate()
     {
         if (view == null) return;
+        bool spectating = locomotion != null && locomotion.IsSpectator;
+        if (spectating != spectatorMode) ApplySpectatorMode(spectating);
+        if (hidden || spectatorMode) return;
         if (weaponController != null && weaponController.Data != shownWeapon) ShowWeapon(weaponController.Data);
         if (sight == null) return;
 
         bool aiming = locomotion != null && locomotion.DisplayAiming;
-        float aimSpeed = shownWeapon != null && shownWeapon.aimTime > 0.01f ? 1f / shownWeapon.aimTime : aimTransitionSpeed;
+        // L'épaulement de l'arme, poignée inclinée comprise (WeaponController.AimTime, GDD § 6).
+        float aimTime = weaponController != null ? weaponController.AimTime : shownWeapon != null ? shownWeapon.aimTime : 0f;
+        float aimSpeed = aimTime > 0.01f ? 1f / aimTime : aimTransitionSpeed;
         aimBlend = Mathf.MoveTowards(aimBlend, aiming ? 1f : 0f, aimSpeed * Time.deltaTime);
 
         // La pose de l'image, dans le repère de la copie (indépendant de l'endroit où elle est posée).
@@ -304,10 +399,24 @@ public class FirstPersonView : NetworkBehaviour
         shownWeapon = data;
         WeaponModel model = data != null && weaponController != null
             ? HeldWeapons.Show(viewRightHand, weaponController.Loadout, data) : null;
-        sight = model != null && model.Sight != null ? model.Sight : PlayerAnimator.FindSight(viewAnimator);
-        aimEyeDistance = model != null ? model.AimEyeDistance : aimSightPosition.z;
+        shownModel = model;
+        shownSight = model != null ? AttachmentMount.Mounted(model.transform, AttachmentCategory.Sight) : null;
+        // la mire du viseur monté s'il y en a un, et sa distance à l'œil (AttachmentMount.SightOf)
+        Transform modelSight = model != null ? AttachmentMount.SightOf(model, out aimEyeDistance) : null;
+        sight = modelSight != null ? modelSight : PlayerAnimator.FindSight(viewAnimator);
+        if (model == null) aimEyeDistance = aimSightPosition.z;
         pistolHold = model != null && model.PistolHold;
         holdInitialized = false;
+
+        // L'écran d'un viseur numérique, sur la copie seulement : l'arme vue par les autres garde le
+        // sien. Celui de l'arme qu'on range s'éteint.
+        WeaponSight next = model != null ? model.GetComponent<WeaponSight>() : null;
+        if (next != viewSight)
+        {
+            if (viewSight != null) viewSight.UpdateScreen(playerCamera, armsCamera, 0f);
+            viewSight = next;
+            if (viewSight != null) viewSight.EnableDigitalScreen(playerCamera);
+        }
     }
 
     /// <summary>Le balancement de l'arme au rythme du pas, dans le repère de la caméra : un huit

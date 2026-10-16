@@ -5,8 +5,8 @@ using UnityEngine.UIElements;
 
 /// <summary>
 /// Écran « Options » du menu principal : Graphismes (résolution, plein écran, vsync, plafond
-/// d'images/seconde) et Commandes (sensibilité + remappage des touches). Posé sur le même
-/// GameObject que l'UIDocument (voir MainMenuController).
+/// d'images/seconde), Son (volume général et musique, 2026-10-13) et Commandes (sensibilité +
+/// remappage des touches). Posé sur le même GameObject que l'UIDocument (voir MainMenuController).
 ///
 /// Le remappage passe par l'API de rebinding interactif de l'Input System
 /// (InputActionRebindingExtensions.PerformInteractiveRebinding), appliqué à une instance LOCALE
@@ -35,7 +35,8 @@ public class OptionsController : MonoBehaviour
         ["Aim"] = "Viser",
         ["Fire"] = "Tirer",
         ["Reload"] = "Recharger",
-        ["Melee"] = "Taser (corps à corps)",
+        ["Melee"] = "Taser (corps à corps) / coup de poing",
+        ["Interact"] = "Ramasser / prendre une arme lancée",
         ["Weapon1"] = "Arme 1",
         ["Weapon2"] = "Arme 2",
         ["Weapon3"] = "Arme 3",
@@ -55,9 +56,14 @@ public class OptionsController : MonoBehaviour
 
     private VisualElement root;
     private Button tabGraphicsButton;
+    private Button tabAudioButton;
     private Button tabControlsButton;
     private VisualElement pageGraphics;
+    private VisualElement pageAudio;
     private VisualElement pageControls;
+
+    private Slider masterVolumeSlider;
+    private Slider musicVolumeSlider;
 
     private DropdownField resolutionDropdown;
     private Toggle fullscreenToggle;
@@ -72,6 +78,10 @@ public class OptionsController : MonoBehaviour
     private PlayerControls controls;
     private InputActionRebindingExtensions.RebindingOperation activeRebind;
 
+    /// <summary>Un remappage attend une touche : Échap l'annule, il ne doit pas aussi fermer le
+    /// menu d'Échap (PauseMenu) qui affiche ce panneau en partie.</summary>
+    public static bool AnyRebinding { get; private set; }
+
     private void OnEnable()
     {
         if (document == null) document = GetComponent<UIDocument>();
@@ -82,6 +92,7 @@ public class OptionsController : MonoBehaviour
 
         WireTabs();
         WireGraphics();
+        WireAudio();
         WireControls();
         BuildBindRows();
     }
@@ -90,6 +101,7 @@ public class OptionsController : MonoBehaviour
     {
         activeRebind?.Dispose();
         activeRebind = null;
+        AnyRebinding = false;
         controls?.Dispose();
         controls = null;
     }
@@ -101,20 +113,41 @@ public class OptionsController : MonoBehaviour
     private void WireTabs()
     {
         tabGraphicsButton = root.Q<Button>("tabGraphicsButton");
+        tabAudioButton = root.Q<Button>("tabAudioButton");
         tabControlsButton = root.Q<Button>("tabControlsButton");
         pageGraphics = root.Q<VisualElement>("pageGraphics");
+        pageAudio = root.Q<VisualElement>("pageAudio");
         pageControls = root.Q<VisualElement>("pageControls");
 
-        tabGraphicsButton.clicked += () => ShowTab(true);
-        tabControlsButton.clicked += () => ShowTab(false);
+        tabGraphicsButton.clicked += () => ShowTab(0);
+        tabAudioButton.clicked += () => ShowTab(1);
+        tabControlsButton.clicked += () => ShowTab(2);
     }
 
-    private void ShowTab(bool graphics)
+    private void ShowTab(int index)
     {
-        pageGraphics.EnableInClassList("hidden", !graphics);
-        pageControls.EnableInClassList("hidden", graphics);
-        tabGraphicsButton.EnableInClassList("tab-button--active", graphics);
-        tabControlsButton.EnableInClassList("tab-button--active", !graphics);
+        Button[] tabs = { tabGraphicsButton, tabAudioButton, tabControlsButton };
+        VisualElement[] pages = { pageGraphics, pageAudio, pageControls };
+        for (int i = 0; i < tabs.Length; i++)
+        {
+            pages[i].EnableInClassList("hidden", i != index);
+            tabs[i].EnableInClassList("tab-button--active", i == index);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Son (2026-10-13)
+    // ------------------------------------------------------------------
+
+    private void WireAudio()
+    {
+        masterVolumeSlider = root.Q<Slider>("masterVolumeSlider");
+        musicVolumeSlider = root.Q<Slider>("musicVolumeSlider");
+
+        masterVolumeSlider.value = GameSettings.MasterVolume;
+        masterVolumeSlider.RegisterValueChangedCallback(evt => GameSettings.MasterVolume = evt.newValue);
+        musicVolumeSlider.value = GameSettings.MusicVolume;
+        musicVolumeSlider.RegisterValueChangedCallback(evt => GameSettings.MusicVolume = evt.newValue);
     }
 
     // ------------------------------------------------------------------
@@ -236,6 +269,7 @@ public class OptionsController : MonoBehaviour
 
         button.text = "Appuie sur une touche...";
         button.AddToClassList("bind-button--listening");
+        AnyRebinding = true;
 
         activeRebind = action.PerformInteractiveRebinding(bindingIndex)
             .WithControlsExcluding("<Mouse>/delta")
@@ -251,8 +285,17 @@ public class OptionsController : MonoBehaviour
     {
         activeRebind?.Dispose();
         activeRebind = null;
+        // Libéré à l'image suivante : la touche Échap qui vient d'annuler est encore « pressée
+        // pendant cette image » quand le menu d'Échap la lit.
+        StartCoroutine(ClearRebindingNextFrame());
         button.RemoveFromClassList("bind-button--listening");
         button.text = action.GetBindingDisplayString(bindingIndex);
         GameSettings.SaveBindingOverrides(controls.asset);
+    }
+
+    private System.Collections.IEnumerator ClearRebindingNextFrame()
+    {
+        yield return null;
+        if (activeRebind == null) AnyRebinding = false;
     }
 }

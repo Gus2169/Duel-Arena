@@ -161,6 +161,8 @@ Piste recommandée : les interventions ont d'abord existé comme protocoles mili
 
 Une **plateforme circulaire fermée et surélevée, qui fait le tour de l'arène**. Une pièce de surveillance avec des écrans de caméras peut compléter le lieu, mais ne doit pas être indispensable au prototype. Les actions physiques sont plus intuitives si les spectateurs se trouvent à proximité du terrain.
 
+*Dans le prototype (2026-10-13) : une passerelle à 4,5 m au-dessus de l'arène, qui en épouse le contour, avec un garde-corps d'un mètre côté arène et un mur côté extérieur. Les cailloux viennent de **blocs fissurés** posés le long de ce mur, qu'on casse à coups de poing ; le matériel que lancent les spectateurs, ce sont des armes (GDD § 9). Le tout est en gris, à habiller.*
+
 Les interventions des spectateurs doivent rester optionnelles ou dépendre de variantes de règles, afin de ne pas rendre le duel principal injuste ou frustrant. Le mode de base peut préserver une compétition sans perturbation.
 
 ## 9. L'IA narratrice
@@ -236,6 +238,37 @@ Les armes peuvent être issues du programme militaire, de prototypes jamais fina
 | Équipements spéciaux | Power-ups ou modificateurs d'arène, ramassés dans l'arène. | Feedback visuel et sonore clair, durée et portée prévisibles. |
 
 **Les armes bricolées sont un style visuel** : elles fonctionnent exactement comme les autres, sans défaut ni enrayement.
+
+**Le programme d'essai a ses armes laser** (demandé par l'utilisateur, 2026-10-15) : quatre prototypes, un par classe d'arme (fusil FX-1, précision FX-2, dispersion FX-3, pistolet FX-4), qui sont des armes à part, aux formes franchement futuristes, dans l'esprit des armes à énergie d'*Apex Legends*. Les armes à balles du stock restent telles quelles. Une arme laser garde les points de prise de sa classe (la poignée, le chargeur devenu cellule d'énergie, le levier), donc ses gestes. *Propositions de Claude, appliquées aux modèles :*
+- des volumes en coin, épais et anguleux, en deux tons : peinture anthracite et céramique blanc cassé ;
+- l'énergie visible à travers l'arme (un cœur cerclé de bobines derrière une fenêtre, un accélérateur entre deux poutres, une charge engagée) et un émetteur sculpté qui fait la silhouette (tête carrée, fourche, coupe, anneau focaliseur) ; les huit lentilles du FX-3 dessinent la gerbe du jeu ;
+- une lueur rouge (fenêtres, évents, lentilles, compteur allumé, à l'arrière de l'arme, face au tireur), puisque ni le rouge ni le blanc ne sont des couleurs de robot ; le marquage « PROTOTYPE » et un pictogramme laser en noir et blanc cassé.
+
+**La série 30 : la dernière dotation du complexe** (demandée par l'utilisateur, 2026-10-15, sur des références d'*Apex Legends*) : quatre armes à balles, le fusil d'assaut FA-30, le fusil de précision à levier FP-30 (« un sniper type Winchester », refait le même jour d'après les images d'une carabine à levier tactique : sans chargeur, à crosse de chasse), le fusil à pompe FAP-30 et le revolver RV-30. *Propositions de Claude, appliquées aux modèles :*
+- livrées peu avant la disparition des humains et retrouvées dans leurs caisses, ce sont les armes les plus modernes du stock ;
+- des formes anguleuses, une peinture blanc cassé avec des aplats anthracite et noirs, un accent de laiton terni (ailettes, chien, détente) ; aucune lueur, ce sont des armes à balles. Le bleu des références est une couleur de robot : il devient anthracite ;
+- elles ont servi depuis : crosse bloquée par un collier, boucle de levier gainée de ruban, plaque de couche taillée dans un pneu, poignet fêlé serré de ruban, plaquettes refaites, ailette perdue, bâtons de victoires au marqueur.
+
+Chaque arme, du stock, de la série 30 ou laser, a sa propre histoire de rafistolage.
+
+**Au choix du joueur** (2026-10-15, GDD § 6) : en partie, chaque arme se montre sous le modèle du stock, celui de la série 30 ou le prototype laser de sa classe ; seule l'apparence change, ni la façon dont elle tire, ni le son qu'elle fait. Le raygun, qui tire déjà un rayon, se montre d'abord en pistolet laser (FX-4).
+
+**Les finitions** (2026-10-15, au choix de l'armurerie : GDD § 6) : la même arme peut se montrer dans six états, selon son histoire. *Propositions de Claude, appliquées aux modèles :*
+- d'origine : l'usure de tous les jours ;
+- repeinte au pinceau, couche après couche, sans décaper : l'apprêt rouge affleure au bord des éclats, des retouches d'une autre teinte les recouvrent (de l'anthracite sur le blanc, faute de blanc) ;
+- rouillée, sortie de ses caisses sans être décapée : des cloques, des creux et des coulures ;
+- dépareillée : un garde-main, une crosse, un chargeur, une carcasse pris sur d'autres armes ;
+- polie par les mains : la peinture partie là où on la tient, le métal poli ;
+- encrassée : jamais nettoyée, huile, poussière et suie.
+
+Toujours dans la palette du décor : la rouille est brune et sombre, puisque l'orange est une couleur de robot.
+
+**Les accessoires** (liste de l'utilisateur, 2026-10-16 ; leurs règles : GDD § 6) : des pièces du même stock que les armes, montées sur leurs rails, usées et rafistolées comme elles. Les viseurs reprennent les dix viseurs sans grossissement de *Rainbow Six Siege* (référence de l'utilisateur) : trois points rouges, quatre holographiques, trois réflex. *Propositions de Claude, appliquées aux modèles :*
+- des boîtiers anthracite et noirs, à l'usure du stock (arêtes polies, éclats), sur des embases de rail à vis ou à levier ; des vitres teintées comme de vraies optiques, ambrées ou bleutées ;
+- les réticules de *Rainbow Six* : rouges aux points rouges et aux holographiques, verts aux réflex ; on ne les voit qu'en visant, ils ne se confondent avec aucun robot ;
+- le laser tactique, un boîtier carré sur le flanc droit (sous le canon au pistolet), au faisceau rouge, la couleur qu'aucun robot ne porte ; les deux poignées, verticale et inclinée ; les chargeurs grande capacité, allongés dans la forme du chargeur de chaque arme ;
+- des réparations à leur échelle : un pare-soleil scotché, une vis remplacée par un écrou, un capot de pile tenu par un collier, un repère de réglage au marqueur ;
+- montés, ils prennent la finition de leur arme (une arme rouillée porte un viseur rouillé), et un viseur efface la hausse et le guidon de l'arme, comme dans *Rainbow Six* : rien ne reste dans sa fenêtre (2026-10-16).
 
 **L'arme de corps à corps est un taser**, pas un couteau : une lame n'a guère de sens contre un châssis de métal, une décharge électrique si. Ses règles sont dans le GDD (§ 6). **C'est un gant à décharge électrique**, porté sur l'avant-bras gauche, dans l'esprit des gantelets de *Fallout* : le coup est un direct du poing, qui crépite d'étincelles au contact (modèle fourni par l'utilisateur, 2026-10-11).
 
@@ -406,3 +439,22 @@ Cette bible constitue une base de travail. Les décisions finales devront être 
 | Section | Ce qui a changé | Décision |
 |---|---|---|
 | 12 | L'arme de corps à corps est un taser, plus logique qu'un couteau contre des robots. | Réponse de l'utilisateur à la relecture du 2026-10-05 |
+
+**2026-10-15 — modèles des armes**
+
+| Section | Ce qui a changé | Décision |
+|---|---|---|
+| 12 | Chaque arme du stock a son prototype laser, au même mécanisme de rechargement ; la lueur rouge qui les distingue est une proposition de Claude. | Demande de l'utilisateur, 2026-10-15 |
+| 12 | Les armes laser deviennent quatre armes à part, aux formes franchement futuristes (référence *Apex Legends*), une par classe, aux mêmes points de prise ; les armes à balles restent telles quelles. Les deux tons, la céramique et l'émetteur sculpté sont des propositions de Claude. | Précision de l'utilisateur, 2026-10-15 |
+| 12 | La série 30 : quatre armes à balles modernes (fusil d'assaut, précision à levier façon Winchester, pompe, revolver), d'après des références d'*Apex Legends* ; leur place dans le lore (la dernière dotation, retrouvée en caisse) et leurs couleurs sont des propositions de Claude. | Demande de l'utilisateur, 2026-10-15 |
+| 12 | Le FA-07 refait façon M4 d'après une photo (garde-main fin à quatre rails, guidon en « A », chargeur courbe) ; le FP-30 refait d'après les images d'une carabine à levier tactique, sans chargeur (ses cartouches entrent une à une par une porte sous la boîte de culasse, là où la main gauche du clip de rechargement va et vient) et à crosse de chasse, longue et fine, à poignet droit, reprise ensuite sur le FAP-30. La porte, les couleurs (boîte de culasse blanc cassé, levier d'acier brut) et les rafistolages sont des propositions de Claude. | Demande de l'utilisateur, 2026-10-15 |
+| 12 | Le compteur de charge des armes laser passe du flanc à l'arrière de l'arme, face au tireur, pour se lire en vue subjective. | Demande de l'utilisateur, 2026-10-15 |
+| 12 | Six finitions d'usure pour chaque arme (d'origine, repeinte, rouillée, dépareillée, polie par les mains, encrassée), au choix de l'armurerie et visibles en partie ; leur rendu est une proposition de Claude. | Demande de l'utilisateur, 2026-10-15 |
+| 12 | En partie, chaque arme se montre au choix sous trois modèles : le stock, la série 30 ou le prototype laser de sa classe ; seule l'apparence change. | Choix de l'utilisateur, 2026-10-15 (« 4 classes, 3 modèles ») |
+| 12 | Le raygun se montre par défaut en pistolet laser (FX-4), avec son rayon vert et ses sons de plasma ; le pistolet à balles du stock et le revolver restent au choix. | Choix de l'utilisateur, 2026-10-15 |
+
+**2026-10-16 — accessoires**
+
+| Section | Ce qui a changé | Décision |
+|---|---|---|
+| 12 | Les accessoires : les dix viseurs sans grossissement de *Rainbow Six Siege*, un laser tactique, deux poignées et des chargeurs grande capacité, du même stock que les armes. Leurs couleurs, leurs vitres, leurs réparations et le faisceau rouge sont des propositions de Claude. | Demande de l'utilisateur, 2026-10-16 |

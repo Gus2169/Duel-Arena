@@ -1,0 +1,109 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <!-- L'interface de la partie (2026-10-12) : barre de score, vie, messages de manche, panneau de
+         préparation, fondu au noir, écran de fin et menu d'Échap. Pilotée par GameHud, LoadoutPanel,
+         MatchEndScreen, PauseMenu et OptionsController, sur /GameUI de MultiTestScene.
+         L'ordre compte : chaque bloc se dessine par-dessus les précédents. -->
+    <ui:Template name="OptionsPanel" src="../Shared/OptionsPanel.uxml" />
+    <ui:Style src="../MainMenu/MainMenu.uss" />
+    <ui:Style src="GameHud.uss" />
+
+    <ui:VisualElement name="hudRoot" class="hud-root" picking-mode="Ignore">
+
+        <!-- Barre de score : moi à gauche, l'adversaire à droite, le chrono de la manche au milieu -->
+        <ui:VisualElement name="scoreBar" class="score-bar" picking-mode="Ignore">
+            <ui:VisualElement class="score-side score-side--left" picking-mode="Ignore">
+                <ui:Label name="leftName" class="score-name" picking-mode="Ignore" />
+                <ui:VisualElement name="leftPips" class="score-pips" picking-mode="Ignore" />
+            </ui:VisualElement>
+            <ui:Label name="roundTimer" class="round-timer" picking-mode="Ignore" />
+            <ui:VisualElement class="score-side score-side--right" picking-mode="Ignore">
+                <ui:VisualElement name="rightPips" class="score-pips" picking-mode="Ignore" />
+                <ui:Label name="rightName" class="score-name" picking-mode="Ignore" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- La vie, façon Rainbow Six : le chiffre, et une jauge dont la part perdue rougit un instant -->
+        <ui:VisualElement name="healthPanel" class="health-panel" picking-mode="Ignore">
+            <ui:VisualElement class="health-row" picking-mode="Ignore">
+                <ui:Label name="healthValue" class="health-value" picking-mode="Ignore" />
+                <ui:Label class="health-unit" text="PV" picking-mode="Ignore" />
+            </ui:VisualElement>
+            <ui:VisualElement class="health-bar" picking-mode="Ignore">
+                <ui:VisualElement name="healthTrail" class="health-trail" picking-mode="Ignore" />
+                <ui:VisualElement name="healthFill" class="health-fill" picking-mode="Ignore" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Décompte, fin de manche, attente -->
+        <ui:VisualElement name="centerMessage" class="center-message" picking-mode="Ignore">
+            <ui:Label name="centerBig" class="center-big" picking-mode="Ignore" />
+            <ui:Label name="centerSmall" class="center-small" picking-mode="Ignore" />
+        </ui:VisualElement>
+
+        <!-- La tribune (2026-10-13, piloté par SpectatorHud) : l'invite de la touche F (un spectateur
+             ramasse, un duelliste prend une arme lancée), l'élan d'un lancer, le panneau du spectateur
+             (sa place dans la file, ce qu'il tient, ses commandes) et l'étourdissement. -->
+        <ui:Label name="interactPrompt" class="interact-prompt hidden" picking-mode="Ignore" />
+        <ui:VisualElement name="chargeBar" class="charge-bar hidden" picking-mode="Ignore">
+            <ui:VisualElement name="chargeFill" class="charge-fill" picking-mode="Ignore" />
+        </ui:VisualElement>
+        <ui:VisualElement name="spectatorPanel" class="spectator-panel hidden" picking-mode="Ignore">
+            <ui:Label name="spectatorRole" class="spectator-role" picking-mode="Ignore" />
+            <ui:Label name="spectatorCarry" class="spectator-carry" picking-mode="Ignore" />
+            <ui:Label name="spectatorHints" class="spectator-hints" picking-mode="Ignore" />
+        </ui:VisualElement>
+        <ui:VisualElement name="stunOverlay" class="stun-overlay hidden" picking-mode="Ignore">
+            <ui:Label name="stunLabel" class="stun-label" text="ÉTOURDI" picking-mode="Ignore" />
+        </ui:VisualElement>
+
+        <!-- Préparation : le choix de l'arme avant la manche -->
+        <ui:VisualElement name="loadoutPanel" class="loadout-panel hidden">
+            <ui:VisualElement class="loadout-header">
+                <ui:Label name="loadoutTitle" class="loadout-title" text="Choisis ton arme" />
+                <ui:Label name="loadoutTimer" class="loadout-timer" />
+            </ui:VisualElement>
+            <ui:Label name="loadoutRound" class="loadout-round" />
+            <ui:VisualElement name="loadoutCards" class="loadout-cards" />
+            <ui:VisualElement class="loadout-footer">
+                <ui:Label name="loadoutStatus" class="loadout-status" />
+                <ui:Button name="loadoutValidate" class="menu-button menu-button--primary loadout-validate" text="Valider (Entrée)" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Écran de fin de match : la colonne de gauche est vide, le robot du gagnant y célèbre
+             dans l'arène (VictoryStage, caméra plein écran derrière l'interface) -->
+        <ui:VisualElement name="endScreen" class="end-screen hidden" picking-mode="Ignore">
+            <ui:VisualElement class="end-portrait-column" picking-mode="Ignore" />
+            <ui:VisualElement class="end-results-column">
+                <ui:Label name="endTitle" class="end-title" />
+                <ui:Label name="endSubtitle" class="end-subtitle" />
+                <ui:VisualElement name="scoreTable" class="score-table" />
+                <ui:VisualElement class="end-footer">
+                    <ui:Label name="endCountdown" class="end-countdown" />
+                    <ui:Button name="endQuitButton" class="menu-button end-quit" text="Quitter la partie" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Fondu au noir entre deux manches (GDD § 5), et autour de l'écran de fin : il couvre
+             tout sauf le menu d'Échap -->
+        <ui:VisualElement name="fade" class="fade" picking-mode="Ignore" />
+
+        <!-- Menu d'Échap : reprendre, options, quitter la partie -->
+        <ui:VisualElement name="pauseRoot" class="pause-root hidden">
+            <ui:VisualElement name="pauseMain" class="screen">
+                <ui:Label class="pause-title" text="PAUSE" />
+                <ui:Label name="pauseInviteLabel" class="pause-invite hidden" text="" />
+                <ui:Button name="pauseResumeButton" class="menu-button menu-button--primary" text="Reprendre" />
+                <ui:Button name="pauseOptionsButton" class="menu-button" text="Options" />
+                <ui:Button name="pauseQuitButton" class="menu-button menu-button--quit" text="Quitter la partie" />
+                <ui:Label class="pause-hint" text="La partie continue pendant que ce menu est ouvert." />
+            </ui:VisualElement>
+            <ui:VisualElement name="pauseOptions" class="screen hidden">
+                <ui:Instance template="OptionsPanel" class="options-instance" />
+                <ui:Button name="pauseOptionsBackButton" class="back-button" text="Retour" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+    </ui:VisualElement>
+</ui:UXML>

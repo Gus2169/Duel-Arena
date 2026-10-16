@@ -1,138 +1,116 @@
-using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using UnityEngine.SceneManagement;
+using UnityEngine.UIElements;
 
 /// <summary>
-/// Le menu d'Échap en partie (2026-10-12, relecture complète) : reprendre, quitter la partie pour
-/// revenir au menu principal, ou quitter le jeu. Avant, rien ne permettait de quitter une partie :
-/// le curseur restait verrouillé, et seul Alt+F4 en sortait.
+/// Le menu d'Échap en partie : reprendre, options, quitter la partie (2026-10-12). Refait en UI
+/// Toolkit le même jour, à la demande de l'utilisateur : les Options y sont (le même panneau que
+/// celui du menu principal, OptionsPanel.uxml, piloté par OptionsController), et « Quitter le jeu »
+/// n'y est plus.
 ///
-/// Posé sur le GameObject du NetworkManager, à côté de SessionFlow : il voyage avec la session et ne
-/// s'affiche que lorsqu'un joueur local existe. Le jeu ne se met pas en pause (c'est une partie en
-/// réseau) : menu ouvert, les commandes du joueur sont coupées, il s'arrête et ne tire plus.
+/// Sur /GameUI de MultiTestScene, à côté de GameHud. Le jeu ne se met pas en pause (c'est une
+/// partie en réseau) : menu ouvert, GameHud libère le curseur et coupe les commandes du joueur.
 ///
-/// PLACEHOLDER OnGUI, au même titre que CrosshairUI et l'affichage de RoundManager : à refaire avec
-/// le HUD en UI Toolkit. Catégorie C pure.
+/// Échap ouvre et ferme le menu ; depuis les Options, il ramène au menu. Pendant un remappage de
+/// touche, Échap annule le remappage et ne fait rien d'autre.
 /// </summary>
 [DisallowMultipleComponent]
 public class PauseMenu : MonoBehaviour
 {
-    private bool open;
-    private PlayerInputReader localInput;
-
-    // Jamais sérialisés : à chaque recompilation, l'Editor sérialise aussi les champs privés des
-    // objets de la scène ouverte et recrée un GUIStyle VIDE pour chacun. Comme le Play Mode ne
-    // recharge pas la scène dans ce projet, le style vide paraissait déjà construit : texte minuscule,
-    // boutons sans fond (vécu en le testant, 2026-10-12).
-    [System.NonSerialized] private GUIStyle titleStyle;
-    [System.NonSerialized] private GUIStyle buttonStyle;
+    [SerializeField] private UIDocument document;
 
     /// <summary>Le menu d'Échap est-il ouvert sur cette machine ?</summary>
     public static bool IsOpen { get; private set; }
 
-    private void Update()
-    {
-        PlayerInputReader player = LocalPlayerInput();
-        if (player == null)
-        {
-            if (open) Close(null);
-            return;
-        }
+    private VisualElement pauseRoot;
+    private VisualElement pauseMain;
+    private VisualElement pauseOptions;
+    private Button resumeButton;
+    private Button optionsButton;
+    private Button quitButton;
+    private Button optionsBackButton;
+    private Label inviteLabel;
 
-        Keyboard keyboard = Keyboard.current;
-        if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
-        {
-            if (open) Close(player);
-            else Open(player);
-        }
-    }
-
-    private static PlayerInputReader LocalPlayerInput()
+    private void OnEnable()
     {
-        if (SceneManager.GetActiveScene().name == SessionFlow.MenuSceneName) return null;
-        NetworkManager nm = NetworkManager.Singleton;
-        if (nm == null || !nm.IsClient || nm.LocalClient == null || nm.LocalClient.PlayerObject == null) return null;
-        return nm.LocalClient.PlayerObject.GetComponent<PlayerInputReader>();
-    }
+        if (document == null) document = GetComponent<UIDocument>();
+        VisualElement root = document.rootVisualElement;
+        pauseRoot = root.Q<VisualElement>("pauseRoot");
+        inviteLabel = root.Q<Label>("pauseInviteLabel");
+        pauseMain = root.Q<VisualElement>("pauseMain");
+        pauseOptions = root.Q<VisualElement>("pauseOptions");
+        resumeButton = root.Q<Button>("pauseResumeButton");
+        optionsButton = root.Q<Button>("pauseOptionsButton");
+        quitButton = root.Q<Button>("pauseQuitButton");
+        optionsBackButton = root.Q<Button>("pauseOptionsBackButton");
 
-    private void Open(PlayerInputReader player)
-    {
-        open = IsOpen = true;
-        localInput = player;
-        localInput.SetGameplayEnabled(false);
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
-    }
-
-    private void Close(PlayerInputReader player)
-    {
-        open = IsOpen = false;
-        if (player != null)
-        {
-            player.SetGameplayEnabled(true);
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
-        }
-        localInput = null;
+        resumeButton.clicked += Close;
+        optionsButton.clicked += ShowOptions;
+        optionsBackButton.clicked += ShowMain;
+        quitButton.clicked += QuitMatch;
+        Close();
     }
 
     private void OnDisable()
     {
+        resumeButton.clicked -= Close;
+        optionsButton.clicked -= ShowOptions;
+        optionsBackButton.clicked -= ShowMain;
+        quitButton.clicked -= QuitMatch;
         IsOpen = false;
     }
 
-    private void OnGUI()
+    private void Update()
     {
-        if (!open) return;
-        BuildStylesIfNeeded();
-        GUI.depth = -100; // par-dessus le HUD et le décompte de RoundManager
-
-        GUI.color = new Color(0f, 0f, 0f, 0.6f);
-        GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-        GUI.color = Color.white;
-
-        float width = Mathf.Max(320f, Screen.width * 0.22f);
-        float height = Mathf.Max(56f, Screen.height * 0.065f);
-        float x = (Screen.width - width) * 0.5f;
-        float y = Screen.height * 0.48f;
-
-        GUI.Label(new Rect(0f, y - height * 1.6f, Screen.width, height), "Pause", titleStyle);
-        if (GUI.Button(new Rect(x, y, width, height), "Reprendre (Échap)", buttonStyle)) Close(localInput);
-        y += height * 1.25f;
-        if (GUI.Button(new Rect(x, y, width, height), "Quitter la partie", buttonStyle))
+        // Pas de joueur (session arrêtée, robot pas encore apparu) : pas de menu.
+        if (GameHud.LocalPlayerObject == null)
         {
-            Close(null);
-            SessionFlow.ReturnToMenu("");
+            if (IsOpen) Close();
+            return;
         }
-        y += height * 1.25f;
-        if (GUI.Button(new Rect(x, y, width, height), "Quitter le jeu", buttonStyle)) Quit();
+
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard == null || !keyboard.escapeKey.wasPressedThisFrame || OptionsController.AnyRebinding) return;
+
+        if (!IsOpen) Open();
+        else if (!pauseOptions.ClassListContains("hidden")) ShowMain();
+        else Close();
     }
 
-    private static void Quit()
+    private void Open()
     {
-#if UNITY_EDITOR
-        UnityEditor.EditorApplication.isPlaying = false;
-#else
-        Application.Quit();
-#endif
+        IsOpen = true;
+        pauseRoot.RemoveFromClassList("hidden");
+
+        // Le code de la partie en ligne (ou l'adresse de l'hôte en réseau local) : de quoi inviter
+        // quelqu'un sans quitter la partie (2026-10-13).
+        string invite = GameHud.InviteLine();
+        inviteLabel.text = invite ?? "";
+        inviteLabel.EnableInClassList("hidden", string.IsNullOrEmpty(invite));
+        ShowMain();
     }
 
-    // Styles construits une seule fois : OnGUI tourne à chaque image.
-    private void BuildStylesIfNeeded()
+    private void Close()
     {
-        if (titleStyle != null) return;
-        titleStyle = new GUIStyle(GUI.skin.label)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            fontSize = Mathf.Max(32, Screen.height / 14),
-            fontStyle = FontStyle.Bold,
-        };
-        titleStyle.normal.textColor = Color.white;
-        buttonStyle = new GUIStyle(GUI.skin.button)
-        {
-            fontSize = Mathf.Max(18, Screen.height / 36),
-            fontStyle = FontStyle.Bold,
-        };
+        IsOpen = false;
+        pauseRoot.AddToClassList("hidden");
+    }
+
+    private void ShowMain()
+    {
+        pauseMain.RemoveFromClassList("hidden");
+        pauseOptions.AddToClassList("hidden");
+    }
+
+    private void ShowOptions()
+    {
+        pauseMain.AddToClassList("hidden");
+        pauseOptions.RemoveFromClassList("hidden");
+    }
+
+    private void QuitMatch()
+    {
+        Close();
+        SessionFlow.ReturnToMenu("");
     }
 }

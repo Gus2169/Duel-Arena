@@ -62,5 +62,8 @@ public class PlayerSoundEmitter : MonoBehaviour
         AudioClip clip = entry.clips[Random.Range(0, entry.clips.Length)];
         audioSource.pitch = Random.Range(entry.pitchRange.x, entry.pitchRange.y);
         audioSource.PlayOneShot(clip, volume);
+#if UNITY_EDITOR
+        if (!isMovementLoop) OneShotAudio.DebugNote("robot " + type, clip); // les pas rempliraient le journal
+#endif
     }
 }

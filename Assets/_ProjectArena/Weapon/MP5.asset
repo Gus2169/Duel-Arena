@@ -13,7 +13,13 @@ MonoBehaviour:
   m_Name: MP5
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
   weaponName: Fusil d'assaut
-  modelPrefab: {fileID: 1894665579383966096, guid: cf2fca44804ffb844a968114ac961920, type: 3}
+  modelPrefab: {fileID: 6230278374698882433, guid: d318b24d85c7840488012a61a2bc6ba4, type: 3}
+  otherModels:
+  - {fileID: 3508787465862713915, guid: e6aa5e2e6b3e0ff45bc724f1e29e1bbf, type: 3}
+  - {fileID: 9060819362404915580, guid: 93f0ff89c2d73f84aaa7c42a797c46f3, type: 3}
+  acceptedAttachments: 15
+  acceptedSights: 7
+  attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 17
   shotsPerSecond: 7
   isAutomatic: 1
@@ -40,7 +46,22 @@ MonoBehaviour:
   magazineSize: 30
   reloadDuration: 2.2
   reloadPerRound: 0
-  reloadSound: {fileID: 8300000, guid: 9c426805e939b294c84a43901a0ba7cc, type: 3}
+  reloadCues:
+  - clips:
+    - {fileID: 8300000, guid: f75db620a58756e4991d23a25584e353, type: 3}
+    at: 0.04
+    volume: 0.7
+  - clips:
+    - {fileID: 8300000, guid: 34ddabedbf33995409877878dec5d404, type: 3}
+    at: 0.45
+    volume: 0.75
+  - clips:
+    - {fileID: 8300000, guid: 2b75be781975d1d4cb86cf41ea27d726, type: 3}
+    at: 0.72
+    volume: 0.7
+  reloadRoundSounds: []
+  reloadEndSounds: []
+  reloadEndDelay: 0.3
   reloadVolume: 0.8
   sprintToFireTime: 0.3
   verticalRecoilPattern:
@@ -239,7 +260,62 @@ MonoBehaviour:
   recoilRecoverySpeed: 6
   recoilResetDelay: 0.35
   fireSounds:
-  - {fileID: 8300000, guid: 5a620fce47a844644bbbb671ffe1b851, type: 3}
-  - {fileID: 8300000, guid: 7bbfab167807f3c4cb0d3903a9d16363, type: 3}
-  fireVolume: 0.9
+  - {fileID: 8300000, guid: 71a338a5c24650d4498625dafc7c7087, type: 3}
+  - {fileID: 8300000, guid: f79a20f89845c5e4694f8f90a17d6025, type: 3}
+  - {fileID: 8300000, guid: 419820708ead17e4fb8767ed589be99d, type: 3}
+  - {fileID: 8300000, guid: 31af49bec104ac14f87a6c4535d657be, type: 3}
+  - {fileID: 8300000, guid: 8d3137e5896064046a1324ce0865ab77, type: 3}
+  - {fileID: 8300000, guid: e6c627a61e0c20f4abe2bf576f0ebb35, type: 3}
+  - {fileID: 8300000, guid: 12905fe16cf3403478cda8b08760ecf4, type: 3}
+  - {fileID: 8300000, guid: a59c4d5b81b84ee41840932d12e6c761, type: 3}
+  fireVolume: 0.85
   firePitchRange: {x: 0.97, y: 1.03}
+  fireFirstSound: {fileID: 8300000, guid: e1acbfbff12710d4490a35c1e747518d, type: 3}
+  fireTailSound: {fileID: 8300000, guid: 664a67a012e4d964b9d2c8e629fb0555, type: 3}
+  fireMechanismSounds: []
+  fireMechanismDelay: 0.4
+  fireMechanismVolume: 0.8
+  impactSounds:
+    clips:
+    - {fileID: 8300000, guid: 5eca8e94be3446a4292769fd85c3cba7, type: 3}
+    - {fileID: 8300000, guid: 34bdded649405114aa28478afb1ee6c9, type: 3}
+    - {fileID: 8300000, guid: 1a178c13c8bc7fd418e3e78810707a84, type: 3}
+    - {fileID: 8300000, guid: 1e65896a140421544818831dd7c19241, type: 3}
+    - {fileID: 8300000, guid: a5e687725470781468cf274971fa499b, type: 3}
+    - {fileID: 8300000, guid: 8975d85ef48f8a44c8b3f5c1133d32b9, type: 3}
+    volume: 0.7
+    pitchRange: {x: 0.94, y: 1.06}
+  bodyImpactSounds:
+    clips:
+    - {fileID: 8300000, guid: 77068a372cc1a0349a6222a6fcab0fa3, type: 3}
+    - {fileID: 8300000, guid: 957376f72c8cd7e4b8dc164dc80d6b41, type: 3}
+    - {fileID: 8300000, guid: de58961054d9c1f49840a7d2a71dbd5f, type: 3}
+    - {fileID: 8300000, guid: 7a0b13d9f31bb404f832b4d246aa233a, type: 3}
+    - {fileID: 8300000, guid: 762963a2a6c47fb4d86abb4236aed610, type: 3}
+    volume: 0.8
+    pitchRange: {x: 0.94, y: 1.06}
+  flybySounds:
+    clips:
+    - {fileID: 8300000, guid: 9d0c1c9dfd28cab4291c5ed5b0a6cf0b, type: 3}
+    - {fileID: 8300000, guid: 236b3bdb6baa6694580ec50dd37ce0b2, type: 3}
+    - {fileID: 8300000, guid: 2cb92b8a8ac72d143a5d45114d20bc00, type: 3}
+    - {fileID: 8300000, guid: 858a8a5bae9111d419750dd641f4b2c4, type: 3}
+    - {fileID: 8300000, guid: 62cf0d64c66899342b8265ea2df66362, type: 3}
+    - {fileID: 8300000, guid: da3a2c5020ceb69479944910a519279a, type: 3}
+    volume: 0.7
+    pitchRange: {x: 0.95, y: 1.05}
+  dryFireSounds:
+    clips:
+    - {fileID: 8300000, guid: 27a69b60ed60a604496a60fa02c497e5, type: 3}
+    - {fileID: 8300000, guid: c49377187f1a8fe43b444aa3de449a77, type: 3}
+    - {fileID: 8300000, guid: b4ab50db468e21344af36506cdeafe2e, type: 3}
+    volume: 0.6
+    pitchRange: {x: 0.98, y: 1.02}
+  raiseSounds:
+    clips:
+    - {fileID: 8300000, guid: 5ad95c324fb16ef4b8809d40f0fb7cbe, type: 3}
+    - {fileID: 8300000, guid: b363cedcf2d9d644abac54a5b87abe89, type: 3}
+    - {fileID: 8300000, guid: 035f626716887fe418b27e4cdc053dd0, type: 3}
+    - {fileID: 8300000, guid: d1c3cc6a65a3701499f82d352a7ba5ef, type: 3}
+    volume: 0.5
+    pitchRange: {x: 0.97, y: 1.03}

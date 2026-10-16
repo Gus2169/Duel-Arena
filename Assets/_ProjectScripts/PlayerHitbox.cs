@@ -44,6 +44,12 @@ public class PlayerHitbox : MonoBehaviour
     private bool queryable = true;
     private readonly List<Collider> colliders = new List<Collider>(4);
 
+    // La dernière pose appliquée aux zones (voir ApplyBlended).
+    private bool hasShownPose;
+    private PlayerLocomotion.Stance shownFrom, shownTo;
+    private float shownT, shownLean;
+    private Vector3 shownEyeFrom, shownEyeTo;
+
     public IReadOnlyList<Collider> Colliders { get { EnsureZones(); return colliders; } }
 
     /// <summary>Collider du torse : le centre de masse visuel, utilisé par les diagnostics.</summary>
@@ -116,6 +122,22 @@ public class PlayerHitbox : MonoBehaviour
                              float t, float lateralLeanOffset)
     {
         EnsureZones();
+
+        // La même pose qu'à l'appel précédent : rien à refaire. C'est le cas de la plupart des images
+        // (posture établie, lean immobile), et réécrire les colliders les fait recalculer par la
+        // physique. Le rewind passe aussi par ici, avec sa pose passée puis la pose courante : chaque
+        // changement est bien appliqué.
+        if (hasShownPose && from == shownFrom && to == shownTo && t == shownT && lateralLeanOffset == shownLean
+            && eyeFrom == shownEyeFrom && eyeTo == shownEyeTo)
+            return;
+        hasShownPose = true;
+        shownFrom = from;
+        shownTo = to;
+        shownT = t;
+        shownLean = lateralLeanOffset;
+        shownEyeFrom = eyeFrom;
+        shownEyeTo = eyeTo;
+
         BodyLayout.ComputeBlended(Body(from), eyeFrom, Body(to), eyeTo, t, lateralLeanOffset,
                                   out ZoneShape headShape, out ZoneShape torsoShape,
                                   out ZoneShape legsShape, out ZoneShape secondLegShape);

@@ -53,6 +53,12 @@ public class PlayerAnimator : MonoBehaviour
     [Tooltip("Temps (s) du passage d'une tenue à l'autre (fusil ↔ pistolet) en changeant d'arme.")]
     [SerializeField] private float holdBlendTime = 0.2f;
 
+    [Header("Gestes d'un spectateur (affichage)")]
+    [Tooltip("Temps (s) entre l'entrée dans le clip du coup de poing et le poing tendu. Le spectateur frappe avec le direct du gauche du taser (Taser Punch en miroir, entré à 0,10 s, poing tendu à 0,32 s) : le direct de boxe de Mixamo, en garde, hanches tournées, partait en l'air et sur le côté une fois posé sur un haut du corps aux hanches de face (2026-10-13). Le geste est lu à la vitesse qui fait tomber cet instant sur le contact (SpectatorController.PunchContactDelay).")]
+    [SerializeField] private float punchClipContactTime = 0.22f;
+    [Tooltip("Temps (s) de la montée et de la descente du poids de la couche des gestes.")]
+    [SerializeField] private float gestureBlendTime = 0.08f;
+
     [Header("Cadence de lecture")]
     [Tooltip("Plancher de la cadence des animations d'attente et du haut du corps. Ne descend pas à 0 : l'attente doit continuer de respirer à l'arrêt.")]
     [SerializeField] private float minPlaybackSpeed = 0.75f;
@@ -108,6 +114,16 @@ public class PlayerAnimator : MonoBehaviour
     private static readonly int DeboutStateId = Animator.StringToHash("Debout");
     private static readonly int AccroupiStateId = Animator.StringToHash("Accroupi");
     private static readonly int ProneStateId = Animator.StringToHash("Prone");
+    // Le spectateur, à mains nues (2026-10-13).
+    private static readonly int MainsNuesId = Animator.StringToHash("MainsNues");
+    private static readonly int PoingId = Animator.StringToHash("Poing");
+    private static readonly int LancerId = Animator.StringToHash("Lancer");
+    private static readonly int RamasserId = Animator.StringToHash("Ramasser");
+    private static readonly int ElanId = Animator.StringToHash("Elan");
+    private static readonly int ElanLancerId = Animator.StringToHash("ElanLancer");
+    private static readonly int GesteSpeedId = Animator.StringToHash("GesteSpeed");
+    private static readonly int ReposStateId = Animator.StringToHash("Repos");
+    private static readonly int RamasserStateId = Animator.StringToHash("Ramasser");
 
     /// <summary>Couche du haut du corps (torse, bras, tête au-dessus des hanches).</summary>
     private const int UpperBodyLayer = 1;
@@ -117,11 +133,29 @@ public class PlayerAnimator : MonoBehaviour
     /// est piloté ici, à 0 hors du geste.</summary>
     private const int TaserLayer = 2;
 
+    /// <summary>Couche des gestes d'un spectateur (MasqueHautDuCorps) : coup de poing, élan et lancer.
+    /// Son poids est piloté ici, à 0 hors d'un geste.</summary>
+    public const int SpectatorGesturesLayer = 3;
+
+    /// <summary>Couche de tout le corps d'un spectateur : il titube, étourdi, et se baisse jusqu'au sol pour
+    /// ramasser (la flexion vient des hanches et des genoux, qu'un masque du haut du corps exclut).</summary>
+    private const int FullBodyLayer = 4;
+
+    /// <summary>Allure (part de l'allure nominale) au-delà de laquelle on ne se baisse pas pour ramasser :
+    /// des jambes figées dans le geste glisseraient sous un corps qui avance.</summary>
+    private const float MaxPickUpGait = 0.25f;
+
     private PlayerLocomotion locomotion;
     private WeaponController weapon;
     private TaserController taser;
+    private SpectatorController spectator; // les gestes d'un spectateur (2026-10-13)
     private FirstPersonView firstPersonView;
     private float lastStrikeTime = float.NegativeInfinity;
+    // Durée du geste joué sur la couche du taser.
+    private float strikeGestureDuration = 0.6f;
+    private bool shownSpectator;
+    private float gestureWeight;
+    private float pickUpWeight;
     private Vector3 previousPosition;
     private Vector2 smoothedMove;
     private AnimatorRootMotionProbe rootMotion;
@@ -134,6 +168,8 @@ public class PlayerAnimator : MonoBehaviour
     private Transform sight;
     private Transform rightHand;
     private WeaponData shownWeapon; // l'arme dont le modèle est en main
+    private PlayerWeaponLooks weaponLooks; // les modèles et finitions choisis à l'armurerie (2026-10-15)
+    private PlayerWeaponAttachments weaponAttachments; // et les accessoires (2026-10-16)
     // Tenue du haut du corps : 0 fusil (deux mains, crosse à l'épaule), 1 pistolet (WeaponModel.PistolHold).
     private float pistolHold, pistolBlend;
     private bool pistolHoldShown;
@@ -152,8 +188,12 @@ public class PlayerAnimator : MonoBehaviour
         if (animator == null) animator = GetComponentInChildren<Animator>();
         weapon = GetComponentInChildren<WeaponController>();
         taser = GetComponentInChildren<TaserController>();
+        spectator = GetComponent<SpectatorController>();
         firstPersonView = GetComponent<FirstPersonView>();
+        weaponLooks = GetComponent<PlayerWeaponLooks>();
+        weaponAttachments = GetComponent<PlayerWeaponAttachments>();
         previousPosition = transform.position;
+        if (taser != null) strikeGestureDuration = taser.StrikeDuration;
 
         if (animator != null)
         {
@@ -162,10 +202,11 @@ public class PlayerAnimator : MonoBehaviour
             rootMotion = animator.GetComponent<AnimatorRootMotionProbe>();
             if (rootMotion == null) rootMotion = animator.gameObject.AddComponent<AnimatorRootMotionProbe>();
 
-            // Les armes de la panoplie, accrochées à la main comme le fusil d'assaut, avant que la
-            // vue subjective ne copie le modèle (2026-10-11).
+            // Les armes de la panoplie, accrochées à la main, avant que la vue subjective ne copie le
+            // modèle (2026-10-11) : le modèle par défaut de chaque classe, sans accessoire, jusqu'à ce
+            // que le serveur publie ce que le joueur a choisi (HandleWeaponLooks, HandleWeaponAttachments).
             rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
-            if (weapon != null) HeldWeapons.Build(rightHand, weapon.Loadout);
+            if (weapon != null) HeldWeapons.Build(rightHand, weapon.Loadout, WeaponLooks.Default);
             ShowHeldWeapon();
             spineChain = SpineChain(animator);
             planter = new FootPlanter(animator);
@@ -174,14 +215,68 @@ public class PlayerAnimator : MonoBehaviour
 
     private void OnEnable()
     {
+        if (weaponLooks != null)
+        {
+            weaponLooks.Changed += HandleWeaponLooks;
+            if (weaponLooks.Published) HandleWeaponLooks(weaponLooks.Looks);
+        }
+        if (weaponAttachments != null)
+        {
+            weaponAttachments.Changed += HandleWeaponAttachments;
+            if (weaponAttachments.Published) HandleWeaponAttachments(weaponAttachments.Attachments);
+        }
         if (weapon != null) weapon.OnShotFired += DeclencherAnimationDeTir;
         if (taser != null) taser.OnStrike += DeclencherCoupDeTaser;
+        if (spectator != null)
+        {
+            spectator.OnPunch += DeclencherCoupDePoing;
+            spectator.OnThrow += DeclencherLancer;
+            spectator.OnPickUp += DeclencherRamasser;
+        }
     }
 
     private void OnDisable()
     {
+        if (weaponLooks != null) weaponLooks.Changed -= HandleWeaponLooks;
+        if (weaponAttachments != null) weaponAttachments.Changed -= HandleWeaponAttachments;
         if (weapon != null) weapon.OnShotFired -= DeclencherAnimationDeTir;
         if (taser != null) taser.OnStrike -= DeclencherCoupDeTaser;
+        if (spectator != null)
+        {
+            spectator.OnPunch -= DeclencherCoupDePoing;
+            spectator.OnThrow -= DeclencherLancer;
+            spectator.OnPickUp -= DeclencherRamasser;
+        }
+    }
+
+    // Les gestes d'un spectateur (2026-10-13, sur la couche des gestes) : le direct du gauche (celui du
+    // taser), un lancer du bras droit et se pencher pour ramasser (clips Mixamo choisis ce jour-là). Par
+    // événement, comme le tir : chez le joueur à l'appui, chez les autres à la diffusion du serveur.
+
+    /// <summary>Le coup de poing : le poing gauche est tendu à l'instant du contact.</summary>
+    private void DeclencherCoupDePoing(float duration)
+    {
+        if (animator == null) return;
+        animator.SetFloat(GesteSpeedId, PunchPlaybackSpeed);
+        animator.SetTrigger(PoingId);
+    }
+
+    /// <summary>Vitesse de lecture du coup de poing : le poing tendu tombe sur le contact.</summary>
+    public float PunchPlaybackSpeed => spectator != null
+        ? punchClipContactTime / Mathf.Max(0.05f, spectator.PunchContactDelay)
+        : 1f;
+
+    /// <summary>Le lancer : chez le joueur, il suit l'élan (ElanLancer) ; chez les autres, qui ne voient
+    /// pas l'élan, il part du bras armé.</summary>
+    private void DeclencherLancer()
+    {
+        if (animator != null) animator.SetTrigger(LancerId);
+    }
+
+    /// <summary>Ramasser : se baisser jusqu'au sol, tout le corps, seulement à l'arrêt ou presque.</summary>
+    private void DeclencherRamasser()
+    {
+        if (animator != null && smoothedMove.magnitude < MaxPickUpGait) animator.SetTrigger(RamasserId);
     }
 
     /// <summary>L'Animator des bras de la vue subjective, chez le propriétaire seulement.</summary>
@@ -239,6 +334,7 @@ public class PlayerAnimator : MonoBehaviour
     private void DeclencherCoupDeTaser()
     {
         lastStrikeTime = Time.time;
+        strikeGestureDuration = taser != null ? taser.StrikeDuration : 0.6f;
         if (animator != null) animator.SetTrigger(TaserId);
         Animator view = ViewAnimator;
         if (view != null) view.SetTrigger(TaserId);
@@ -253,7 +349,7 @@ public class PlayerAnimator : MonoBehaviour
     {
         if (taser == null || stance == PlayerLocomotion.Stance.Prone) return 0f;
         float t = Time.time - lastStrikeTime;
-        float duration = taser.StrikeDuration;
+        float duration = strikeGestureDuration;
         if (t < 0f || t > duration) return 0f;
         float rise = Mathf.Clamp01(t / 0.05f);
         float fall = Mathf.Clamp01((duration - t) / 0.12f);
@@ -285,7 +381,22 @@ public class PlayerAnimator : MonoBehaviour
         float dt = Time.deltaTime;
         if (dt <= 0f) return;
 
-        if (weapon != null && weapon.Data != shownWeapon) ShowHeldWeapon();
+        // Un spectateur est à mains nues (2026-10-13) : ni arme, ni gant. Le rôle est publié par le
+        // serveur, donc juste sur toutes les machines.
+        bool spectating = locomotion.IsSpectator;
+        if (spectating != shownSpectator)
+        {
+            shownSpectator = spectating;
+            HeldWeapons.WearTaserGlove(animator, !spectating);
+            ShowHeldWeapon();
+        }
+        else if (weapon != null && !spectating && weapon.Data != shownWeapon)
+        {
+            ShowHeldWeapon();
+        }
+        // Debout, l'arbre de déplacement à mains nues ; accroupi, les jambes armées sous un haut du
+        // corps à mains nues (voir ApplyPostureTransition).
+        animator.SetFloat(MainsNuesId, spectating ? 1f : 0f);
         pistolBlend = Mathf.MoveTowards(pistolBlend, pistolHold, dt / Mathf.Max(0.01f, holdBlendTime));
         animator.SetFloat(PistoletId, pistolBlend);
 
@@ -389,9 +500,10 @@ public class PlayerAnimator : MonoBehaviour
         }
         if (taser != null)
         {
-            animator.SetFloat(TaserSpeedId, taserClipUsefulLength / Mathf.Max(0.05f, taser.StrikeDuration));
+            animator.SetFloat(TaserSpeedId, taserClipUsefulLength / Mathf.Max(0.05f, strikeGestureDuration));
             if (animator.layerCount > TaserLayer) animator.SetLayerWeight(TaserLayer, TaserLayerWeight(stance));
         }
+        UpdateSpectatorLayers(spectating, dt);
 
         ApplyProneModelOffset(from, stance, progress);
         ApplyAimDirection(stance, animator.layerCount > UpperBodyLayer ? animator.GetLayerWeight(UpperBodyLayer) : 0f, dt);
@@ -534,6 +646,10 @@ public class PlayerAnimator : MonoBehaviour
         {
             stanceF = Mathf.Lerp((int)from, (int)to, progress);
         }
+        // Un spectateur (2026-10-13) : debout, tout son corps joue l'arbre à mains nues et la couche se
+        // tait ; accroupi, elle pose des bras à mains nues (état MainsNues) sur les jambes accroupies,
+        // faute de marches accroupies à mains nues qui conviennent. Il ne s'allonge jamais.
+        if (locomotion.IsSpectator) upperWeight = Mathf.Clamp01(stanceF);
 
         if (animator.layerCount > UpperBodyLayer) animator.SetLayerWeight(UpperBodyLayer, upperWeight);
 
@@ -1150,11 +1266,73 @@ public class PlayerAnimator : MonoBehaviour
         foreach (Transform bone in spine) bone.rotation = share * bone.rotation;
     }
 
-    /// <summary>Montre en main le modèle de l'arme en main, et suit sa mire (2026-10-11).</summary>
+    /// <summary>
+    /// Les couches d'un spectateur (2026-10-13). Celle des gestes ne pèse que le temps d'un geste (ou de
+    /// l'élan d'un lancer, que seul le joueur voit) ; celle de tout le corps, le temps de ramasser, ou
+    /// selon le fondu de l'étourdissement (SpectatorController). Chez un duelliste, toutes deux restent
+    /// à 0. Catégorie C : rien ne lit ces os.
+    /// </summary>
+    private void UpdateSpectatorLayers(bool spectating, float dt)
+    {
+        if (animator.layerCount <= FullBodyLayer) return;
+        bool charging = spectating && spectator != null && spectator.IsCharging;
+        animator.SetBool(ElanId, charging);
+        animator.SetFloat(ElanLancerId, charging ? spectator.ChargeProgress : 0f);
+
+        bool busy = false;
+        if (spectating)
+        {
+            // Le poids retombe dès que la couche repart vers le repos : l'état vide n'a pas de pose à
+            // montrer, on ne le mêle jamais à poids plein (comme la couche du taser).
+            AnimatorStateInfo gesture = animator.GetCurrentAnimatorStateInfo(SpectatorGesturesLayer);
+            bool inTransition = animator.IsInTransition(SpectatorGesturesLayer);
+            bool toRest = inTransition && animator.GetNextAnimatorStateInfo(SpectatorGesturesLayer).shortNameHash == ReposStateId;
+            busy = charging || (!toRest && (gesture.shortNameHash != ReposStateId || inTransition));
+        }
+        gestureWeight = Mathf.MoveTowards(gestureWeight, busy ? 1f : 0f, dt / Mathf.Max(0.01f, gestureBlendTime));
+        animator.SetLayerWeight(SpectatorGesturesLayer, gestureWeight);
+
+        bool pickingUp = false;
+        if (spectating)
+        {
+            AnimatorStateInfo body = animator.GetCurrentAnimatorStateInfo(FullBodyLayer);
+            bool inTransition = animator.IsInTransition(FullBodyLayer);
+            AnimatorStateInfo next = animator.GetNextAnimatorStateInfo(FullBodyLayer);
+            pickingUp = inTransition ? next.shortNameHash == RamasserStateId : body.shortNameHash == RamasserStateId;
+        }
+        pickUpWeight = Mathf.MoveTowards(pickUpWeight, pickingUp ? 1f : 0f, dt / Mathf.Max(0.01f, gestureBlendTime));
+        float stun = spectating && spectator != null ? spectator.StunVisualWeight : 0f;
+        animator.SetLayerWeight(FullBodyLayer, Mathf.Max(stun, pickUpWeight));
+    }
+
+    /// <summary>Les modèles et finitions choisis par le joueur (PlayerWeaponLooks, 2026-10-15) : en main
+    /// du corps, avec ses ombres (une ombre seule chez le propriétaire, posée par PlayerLocomotion à
+    /// l'apparition, avant que l'apparence ne soit publiée).</summary>
+    private void HandleWeaponLooks(WeaponLooks looks) => BuildHeldWeapons(looks, PublishedAttachments);
+
+    /// <summary>Les accessoires choisis par le joueur (PlayerWeaponAttachments, 2026-10-16), montés sur
+    /// les armes du corps.</summary>
+    private void HandleWeaponAttachments(WeaponAttachments attachments) => BuildHeldWeapons(PublishedLooks, attachments);
+
+    private WeaponLooks PublishedLooks => weaponLooks != null && weaponLooks.Published ? weaponLooks.Looks : WeaponLooks.Default;
+    private WeaponAttachments PublishedAttachments
+        => weaponAttachments != null && weaponAttachments.Published ? weaponAttachments.Attachments : WeaponAttachments.None;
+
+    private void BuildHeldWeapons(WeaponLooks looks, WeaponAttachments attachments)
+    {
+        if (weapon == null || rightHand == null) return;
+        Renderer body = animator != null ? animator.GetComponentInChildren<SkinnedMeshRenderer>(true) : null;
+        HeldWeapons.Build(rightHand, weapon.Loadout, looks, attachments, body);
+        ShowHeldWeapon();
+    }
+
+    /// <summary>Montre en main le modèle de l'arme en main, et suit sa mire (2026-10-11). Un spectateur
+    /// n'en montre aucune (2026-10-13).</summary>
     private void ShowHeldWeapon()
     {
-        shownWeapon = weapon != null ? weapon.Data : null;
-        WeaponModel model = shownWeapon != null ? HeldWeapons.Show(rightHand, weapon.Loadout, shownWeapon) : null;
+        bool spectating = locomotion != null && locomotion.IsSpectator;
+        shownWeapon = weapon != null && !spectating ? weapon.Data : null;
+        WeaponModel model = weapon != null ? HeldWeapons.Show(rightHand, weapon.Loadout, shownWeapon) : null;
         sight = FindSight(animator);
         // Un pistolet se tient à deux mains, bras tendus, et non crosse à l'épaule : le haut du corps
         // joue alors les poses de pistolet de Mixamo (2026-10-11). Le premier affichage ne fond pas.
@@ -1166,13 +1344,13 @@ public class PlayerAnimator : MonoBehaviour
         }
     }
 
-    /// <summary>La mire de l'arme tenue en main droite (son +Z est l'axe du canon), ou null.</summary>
+    /// <summary>La mire de l'arme tenue en main droite (son +Z est l'axe du canon) : celle du viseur
+    /// monté s'il y en a un (AttachmentMount.SightOf), ou null.</summary>
     public static Transform FindSight(Animator animator)
     {
         Transform hand = animator.GetBoneTransform(HumanBodyBones.RightHand);
         WeaponModel model = HeldWeapons.Visible(hand);
-        if (model != null && model.Sight != null) return model.Sight;
-        return hand != null ? hand.Find(HeldWeapons.ReferenceModelName + "/Mire") : null;
+        return model != null ? AttachmentMount.SightOf(model, out _) : null;
     }
 
     /// <summary>Les os de la colonne qui tournent pour suivre le regard, du bas vers le haut.</summary>

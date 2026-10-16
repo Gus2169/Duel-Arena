@@ -48,6 +48,30 @@ public class PlayerInputReader : MonoBehaviour
     /// rechargement, pour la même raison.</summary>
     public bool MeleePressedThisFrame => controls != null && controls.Gameplay.Melee.WasPressedThisFrame();
 
+    /// <summary>La touche de l'action `actionName` de la carte Gameplay, telle que le joueur l'a réglée
+    /// (remappage compris), pour les invites du HUD : « F », « Clic gauche »...</summary>
+    public string KeyFor(string actionName)
+    {
+        InputAction action = controls?.asset.FindAction(actionName);
+        string label = action != null ? action.GetBindingDisplayString() : "";
+        return string.IsNullOrEmpty(label) ? actionName : KeyLabel(label);
+    }
+
+    /// <summary>Les boutons de la souris en français (l'Input System les abrège en anglais : « LMB »).
+    /// Fonction pure.</summary>
+    public static string KeyLabel(string label) => label switch
+    {
+        "LMB" => "Clic gauche",
+        "RMB" => "Clic droit",
+        "MMB" => "Clic molette",
+        _ => label,
+    };
+
+    /// <summary>Appui sur Interagir (F) pendant cette frame (2026-10-13) : un spectateur ramasse un
+    /// caillou ou du matériel, un duelliste prend une arme lancée dans l'arène. Même lecture directe que
+    /// le rechargement.</summary>
+    public bool InteractPressedThisFrame => controls != null && controls.Gameplay.Interact.WasPressedThisFrame();
+
     /// <summary>Appui sur la gâchette pendant cette frame, lu directement dans l'Input System : c'est
     /// lui que lit une arme au coup par coup (2026-10-11). FirePressedThisFrame, posé par callback et
     /// remis à zéro par PlayerLocomotion en fin d'Update, pouvait être consommé avant que l'arme ne
@@ -79,7 +103,7 @@ public class PlayerInputReader : MonoBehaviour
 
     private void OnEnable()
     {
-        controls.Gameplay.Enable();
+        ApplyMode(mode);
 
         controls.Gameplay.Crouch.performed += _ => CrouchPressedThisFrame = true;
         controls.Gameplay.Prone.performed += _ => PronePressedThisFrame = true;
@@ -87,11 +111,22 @@ public class PlayerInputReader : MonoBehaviour
         controls.Gameplay.LeanLeft.performed += _ => LeanLeftPressedThisFrame = true;
         controls.Gameplay.LeanRight.performed += _ => LeanRightPressedThisFrame = true;
         controls.Gameplay.Fire.performed += _ => FirePressedThisFrame = true;
+        GameSettings.BindingsChanged += ReloadBindingOverrides;
     }
 
     private void OnDisable()
     {
         controls.Gameplay.Disable();
+        GameSettings.BindingsChanged -= ReloadBindingOverrides;
+    }
+
+    /// <summary>Les touches ont changé dans les Options, en pleine partie (menu d'Échap) : on les
+    /// reprend tout de suite sur cette instance.</summary>
+    private void ReloadBindingOverrides()
+    {
+        if (controls == null) return;
+        controls.asset.RemoveAllBindingOverrides();
+        GameSettings.ApplyBindingOverrides(controls.asset);
     }
 
     // Chaque `new PlayerControls()` crée sa propre copie de l'asset d'actions : sans Dispose, elle
@@ -102,16 +137,50 @@ public class PlayerInputReader : MonoBehaviour
         controls = null;
     }
 
-    /// <summary>Coupe ou rend toutes les commandes de jeu (menu d'Échap, PauseMenu) : coupées, elles
-    /// lisent zéro, le joueur s'arrête et ne tire plus pendant qu'il clique dans le menu.</summary>
-    public void SetGameplayEnabled(bool enabled)
+    /// <summary>Ce que les commandes de jeu laissent passer pendant qu'un écran a la main.</summary>
+    public enum Mode
     {
-        if (controls == null) return;
-        if (enabled) controls.Gameplay.Enable();
-        else controls.Gameplay.Disable();
+        /// <summary>Toutes les commandes : le joueur joue.</summary>
+        Gameplay,
+        /// <summary>Seulement les touches d'arme (1 à 4), dans le panneau de préparation.</summary>
+        WeaponChoice,
+        /// <summary>Aucune : un menu a la main (Échap, écran de fin).</summary>
+        None,
     }
 
-    public bool GameplayEnabled => controls != null && controls.Gameplay.enabled;
+    private Mode mode = Mode.Gameplay;
+
+    public Mode CurrentMode => mode;
+
+    /// <summary>
+    /// Coupe ou rend les commandes de jeu (GameHud, selon les écrans ouverts). Coupées, elles lisent
+    /// zéro : le joueur s'arrête et ne tire plus pendant qu'il clique dans un menu. Pendant la
+    /// préparation, seules les touches d'arme restent, pour choisir au clavier.
+    /// </summary>
+    public void SetMode(Mode value)
+    {
+        if (value == mode) return;
+        mode = value;
+        ApplyMode(value);
+    }
+
+    private void ApplyMode(Mode value)
+    {
+        if (controls == null) return;
+        if (value == Mode.Gameplay)
+        {
+            controls.Gameplay.Enable();
+            return;
+        }
+        controls.Gameplay.Disable();
+        if (value == Mode.WeaponChoice)
+        {
+            controls.Gameplay.Weapon1.Enable();
+            controls.Gameplay.Weapon2.Enable();
+            controls.Gameplay.Weapon3.Enable();
+            controls.Gameplay.Weapon4.Enable();
+        }
+    }
 
 #if UNITY_EDITOR
     /// <summary>
@@ -201,6 +270,44 @@ public class PlayerInputReader : MonoBehaviour
 
     private static bool DrillCrossed(float from, float to, float mark)
         => from <= to ? from < mark && mark <= to : from < mark || mark <= to;
+
+    // Le regard du spectateur de test (SpectatorController.AutopilotSpectator) : un cap et un tangage
+    // à rejoindre, en degrés (tangage + = vers le bas, comme la caméra).
+    private bool autopilotLookActive;
+    private float autopilotYaw;
+    private float autopilotPitch;
+    private PlayerCameraLook autopilotCameraLook;
+
+    /// <summary>Tourne le regard du joueur de test vers ce cap et ce tangage (Editor uniquement),
+    /// comme le ferait la souris : le corps par le lacet envoyé au serveur, la caméra par le tangage.</summary>
+    public void AutopilotLookTarget(float yaw, float pitch)
+    {
+        autopilotLookActive = true;
+        autopilotYaw = yaw;
+        autopilotPitch = pitch;
+    }
+
+    private bool autopilotMoveActive;
+    private Vector2 autopilotMove;
+
+    /// <summary>Le déplacement du joueur de test (Editor uniquement), à la place du clavier.</summary>
+    public void AutopilotMove(Vector2 move)
+    {
+        autopilotMoveActive = true;
+        autopilotMove = move;
+    }
+
+    private Vector2 AutopilotLookDelta()
+    {
+        if (autopilotCameraLook == null) autopilotCameraLook = GetComponentInChildren<PlayerCameraLook>();
+        float sensitivity = 0.12f * GameSettings.SensitivityMultiplier; // PlayerCameraLook et PlayerLocomotion, réglage du prefab
+        float yawError = Mathf.DeltaAngle(transform.eulerAngles.y, autopilotYaw);
+        float pitchError = autopilotPitch - (autopilotCameraLook != null ? autopilotCameraLook.Pitch : 0f);
+        // Un quart de l'écart par image, plafonné : il tourne vite sans osciller.
+        float yawStep = Mathf.Clamp(yawError * 0.25f, -20f, 20f);
+        float pitchStep = Mathf.Clamp(pitchError * 0.25f, -20f, 20f);
+        return new Vector2(yawStep / sensitivity, -pitchStep / sensitivity);
+    }
 #endif
 
     private void Update()
@@ -244,6 +351,8 @@ public class PlayerInputReader : MonoBehaviour
 #if UNITY_EDITOR
         if (AutopilotFire) FireHeld = true;
         if (AutopilotAim) AimHeld = true;
+        if (autopilotLookActive) LookInput = AutopilotLookDelta();
+        if (autopilotMoveActive) MoveInput = autopilotMove;
 #endif
     }
 
