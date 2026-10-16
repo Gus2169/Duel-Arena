@@ -366,6 +366,37 @@ public class WeaponAttachmentsTests
     // Le montage sur l'arme (AttachmentMount)
     // ------------------------------------------------------------------
 
+    /// <summary>La vitre d'un viseur ne fait pas d'ombre, et sur l'arme du corps du joueur (vue de ses
+    /// propres yeux, une ombre seule) elle ne se dessine pas : elle flottait devant lui, une tache grise
+    /// à l'écran (vu par l'utilisateur le 2026-10-16).</summary>
+    [Test]
+    public void LaVitreDUnViseur_NeFaitPasDOmbre_EtSEteintSurLeCorpsDuJoueur()
+    {
+        WeaponData rifle = Loadout()[Rifle];
+        Transform own = Instantiate("FA07");
+        foreach (Renderer r in own.GetComponentsInChildren<Renderer>(true)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
+        AttachmentMount.Apply(own, rifle, WeaponAttachments.None.WithSight(Rifle, HoloA), Rifle, WeaponFinish.Origine);
+        WeaponAttachment ownSight = AttachmentMount.Mounted(own, AttachmentCategory.Sight);
+        Assert.IsNotNull(ownSight, "Garde : le holographique est monté.");
+        Assert.IsNotNull(ownSight.Lens, "Garde : il a une vitre.");
+        int frame = 0;
+        foreach (Renderer r in ownSight.GetComponentsInChildren<Renderer>(true))
+        {
+            if (r == ownSight.Lens) continue;
+            Assert.AreEqual(UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly, r.shadowCastingMode, $"Garde : {r.name}, comme l'arme, n'est qu'une ombre.");
+            frame++;
+        }
+        Assert.Greater(frame, 0, "Garde : le viseur a un cadre.");
+        Assert.IsTrue(ownSight.Lens.forceRenderingOff, "Sur le corps du joueur, la vitre ne se dessine pas.");
+        Assert.AreEqual(UnityEngine.Rendering.ShadowCastingMode.Off, ownSight.Lens.shadowCastingMode, "Elle ne fait pas d'ombre.");
+
+        Transform seen = Instantiate("FA07");
+        AttachmentMount.Apply(seen, rifle, WeaponAttachments.None.WithSight(Rifle, HoloA), Rifle, WeaponFinish.Origine);
+        WeaponAttachment seenSight = AttachmentMount.Mounted(seen, AttachmentCategory.Sight);
+        Assert.IsFalse(seenSight.Lens.forceRenderingOff, "Sur une arme qu'on voit, la vitre se voit.");
+        Assert.AreEqual(UnityEngine.Rendering.ShadowCastingMode.Off, seenSight.Lens.shadowCastingMode, "Toujours sans ombre.");
+    }
+
     [Test]
     public void UnViseurMonte_CacheLesOrganesDeVisee_EtLesRendQuandIlPart()
     {

@@ -158,6 +158,10 @@ public class FirstPersonView : NetworkBehaviour
     /// <summary>Le réticule du HUD s'affiche-t-il à la hanche avec l'arme en main ? (pas au sniper)</summary>
     public bool HipCrosshair => shownWeapon == null || shownWeapon.hipCrosshair;
 
+    /// <summary>L'arme des bras, quand on les voit (ni mort, ni spectateur, ni dans la lunette) : la
+    /// flamme de bouche part de sa bouche (WeaponController), le laser de son émetteur (TacticalLaser).</summary>
+    public WeaponModel ViewWeapon => view != null && !hidden && !spectatorMode && !Scoped ? shownModel : null;
+
     // Masqués quand le joueur est mort (PlayerDeath) : sa caméra quitte ses yeux pour regarder son
     // épave. La copie continue d'être animée (ses paramètres viennent de PlayerAnimator), seule sa
     // caméra s'éteint : les bras ne vivent que sur son layer.

@@ -113,6 +113,7 @@ public class WeaponController : NetworkBehaviour
 
     private PlayerInputReader input;
     private PlayerLocomotion locomotion;
+    private FirstPersonView firstPersonView; // les bras du tireur : la flamme de bouche y part
     private TaserController taser;
     private Health ownHealth; // un robot mort ne tire plus (voir ServerFire)
     private PlayerMatchState matchState; // prêt pour la manche (choix de l'arme fermé), statistiques
@@ -457,6 +458,7 @@ public class WeaponController : NetworkBehaviour
     {
         input = GetComponentInParent<PlayerInputReader>();
         locomotion = GetComponentInParent<PlayerLocomotion>();
+        firstPersonView = GetComponentInParent<FirstPersonView>();
         taser = GetComponent<TaserController>();
         weaponAudio = GetComponent<WeaponAudio>();
         ownHealth = GetComponentInParent<Health>();
@@ -837,29 +839,43 @@ public class WeaponController : NetworkBehaviour
         // Raycast LOCAL : ne sert qu'au feedback visuel instantané du tireur (tracer/impact), pas
         // aux dégâts ni à ce qui est envoyé au serveur — voir ServerFire. Il utilise la MÊME
         // résolution que le serveur (ResolveShot, PelletDirection, HipFireSpread) pour que ce que le
-        // tireur voit corresponde à ce que le serveur décide, aux différences de latence près.
+        // tireur voit corresponde à ce que le serveur décide, aux différences de latence près. Comme
+        // le serveur, il retire les zones du tireur (2026-10-16 : le regard baissé au plus bas, la
+        // balle se plantait dans ses propres jambes, à l'image et au son).
         var impacts = new ShotImpactSounds(data);
-        for (int i = 0; i < data.PelletCount; i++)
+        PlayerHitbox ownHitbox = locomotion != null ? locomotion.Hitbox : null;
+        bool ownQueryable = ownHitbox != null && ownHitbox.IsQueryable;
+        if (ownQueryable) ownHitbox.SetQueryable(false);
+        try
         {
-            Vector3 pellet = PelletDirection(shot, data.PelletOffset(i, aiming, hipScale));
-            bool hitSomething = ResolveShot(data, origin, pellet, out Vector3 end, out Vector3 localNormal, out Collider bodyHit, out _);
-            bool onBody = bodyHit != null;
-            // Une épave sur le chemin encaisse le tir et l'arrête (cosmétique, voir RobotCorpse).
-            if (RobotCorpse.TryHit(origin, end, CorpseImpulse(data), out Vector3 wreckPoint, out Vector3 wreckNormal))
+            for (int i = 0; i < data.PelletCount; i++)
             {
-                end = wreckPoint;
-                localNormal = wreckNormal;
-                hitSomething = true;
-                onBody = true;
+                Vector3 pellet = PelletDirection(shot, data.PelletOffset(i, aiming, hipScale));
+                bool hitSomething = ResolveShot(data, origin, pellet, out Vector3 end, out Vector3 localNormal, out Collider bodyHit, out _);
+                bool onBody = bodyHit != null;
+                // Une épave sur le chemin encaisse le tir et l'arrête (cosmétique, voir RobotCorpse).
+                if (RobotCorpse.TryHit(origin, end, CorpseImpulse(data), out Vector3 wreckPoint, out Vector3 wreckNormal))
+                {
+                    end = wreckPoint;
+                    localNormal = wreckNormal;
+                    hitSomething = true;
+                    onBody = true;
+                }
+                Debug.DrawLine(origin, end, hitSomething ? Color.red : Color.gray, 0.5f);
+                if (visualFeedback != null)
+                {
+                    // Le rayon du raygun se voit ; une arme à balles n'a que sa flamme de bouche.
+                    if (data.shotIsBeam) visualFeedback.SpawnTracer(origin, end, data.tracerColor);
+                    if (hitSomething) visualFeedback.SpawnImpact(end, localNormal);
+                }
+                if (hitSomething) impacts.Add(end, onBody);
             }
-            Debug.DrawLine(origin, end, hitSomething ? Color.red : Color.gray, 0.5f);
-            if (visualFeedback != null)
-            {
-                visualFeedback.SpawnTracer(origin, end, data.tracerColor);
-                if (hitSomething) visualFeedback.SpawnImpact(end, localNormal);
-            }
-            if (hitSomething) impacts.Add(end, onBody);
         }
+        finally
+        {
+            if (ownQueryable) ownHitbox.SetQueryable(true);
+        }
+        if (visualFeedback != null && !data.shotIsBeam) SpawnOwnMuzzleFlash();
 
         if (NetworkObject != null)
         {
@@ -884,11 +900,19 @@ public class WeaponController : NetworkBehaviour
             // Composant testé hors contexte réseau (pas de NetworkObject) : pas de serveur à qui
             // déléguer, on applique les dégâts directement en local comme avant le passage réseau.
             var damage = new Dictionary<Health, float>();
-            for (int i = 0; i < data.PelletCount; i++)
+            if (ownQueryable) ownHitbox.SetQueryable(false);
+            try
             {
-                Vector3 pellet = PelletDirection(shot, data.PelletOffset(i, aiming, hipScale));
-                ResolveShot(data, origin, pellet, out _, out _, out Collider body, out float distance);
-                AddDamage(damage, data, body, distance);
+                for (int i = 0; i < data.PelletCount; i++)
+                {
+                    Vector3 pellet = PelletDirection(shot, data.PelletOffset(i, aiming, hipScale));
+                    ResolveShot(data, origin, pellet, out _, out _, out Collider body, out float distance);
+                    AddDamage(damage, data, body, distance);
+                }
+            }
+            finally
+            {
+                if (ownQueryable) ownHitbox.SetQueryable(true);
             }
             foreach (var pair in damage) pair.Key.ApplyDamage(pair.Value, transform.root.gameObject);
         }
@@ -1472,6 +1496,11 @@ public class WeaponController : NetworkBehaviour
                 if (!firstHitPoint.ContainsKey(target)) firstHitPoint[target] = ends[i];
                 PlayerHitboxZone zone = bodyHit.GetComponent<PlayerHitboxZone>();
                 if (zone != null && zone.Zone == HitboxZoneType.Head) headHit = true;
+                if (ServerHitRegistered != null)
+                {
+                    HitboxZoneType zoneType = zone != null ? zone.Zone : HitboxZoneType.Torso;
+                    ServerHitRegistered(target, zoneType, data.DamageAt(zoneType, distance), distance);
+                }
                 zones.Append(zone != null ? zone.Zone.ToString() : "?").Append(' ');
             }
 
@@ -1560,6 +1589,11 @@ public class WeaponController : NetworkBehaviour
             if (hitboxWasEnabled) ownHitbox.SetQueryable(true);
         }
     }
+
+    /// <summary>Serveur : chaque balle (ou plomb) qui touche, avec sa cible, sa zone, ses dégâts et sa
+    /// distance (2026-10-16). Le stand de tir en montre les chiffres (ShootingRangeHud) ; rien du jeu ne
+    /// s'y fie.</summary>
+    public static event System.Action<Health, HitboxZoneType, float, float> ServerHitRegistered;
 
     /// <summary>Ajoute les dégâts d'un impact à sa cible : zone touchée (tête, buste, jambes) et
     /// distance (WeaponData.DamageAt).</summary>
@@ -2024,6 +2058,7 @@ public class WeaponController : NetworkBehaviour
 
         WeaponData data = DataOf(slot) ?? Data;
         PlayFireSound(data);
+        if (visualFeedback != null && data != null && !data.shotIsBeam) SpawnBodyMuzzleFlash();
 
         if (ends == null) return;
 
@@ -2044,13 +2079,36 @@ public class WeaponController : NetworkBehaviour
             }
             if (visualFeedback != null)
             {
-                visualFeedback.SpawnTracer(origin, end, data != null ? data.tracerColor : Color.yellow);
+                if (data == null || data.shotIsBeam) visualFeedback.SpawnTracer(origin, end, data != null ? data.tracerColor : Color.yellow);
                 if (hit) visualFeedback.SpawnImpact(end, normal);
             }
             if (hit) impacts.Add(end, onBody);
         }
 
         PlayFlyby(data, origin, ends, bodyMask);
+    }
+
+    private Transform bodyRightHand;
+
+    /// <summary>Chez le tireur : la flamme à la bouche de l'arme de ses bras (rien dans la lunette du
+    /// sniper, ni mort).</summary>
+    private void SpawnOwnMuzzleFlash()
+    {
+        WeaponModel model = firstPersonView != null ? firstPersonView.ViewWeapon : null;
+        if (model != null) visualFeedback.SpawnMuzzleFlash(model.Muzzle, model.transform.forward);
+    }
+
+    /// <summary>Chez les autres : la flamme à la bouche de l'arme que tient son corps.</summary>
+    private void SpawnBodyMuzzleFlash()
+    {
+        if (bodyRightHand == null && locomotion != null)
+        {
+            Transform model = locomotion.transform.Find("Model");
+            Animator animator = model != null ? model.GetComponent<Animator>() : null;
+            bodyRightHand = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightHand) : null;
+        }
+        WeaponModel held = HeldWeapons.Visible(bodyRightHand);
+        if (held != null) visualFeedback.SpawnMuzzleFlash(held.Muzzle, held.transform.forward);
     }
 
     // ------------------------------------------------------------------

@@ -1,0 +1,200 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &3566986565741046355
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7912584146183244019}
+  - component: {fileID: 741668896890903430}
+  - component: {fileID: 3517970621194630429}
+  - component: {fileID: 5474228421816598572}
+  - component: {fileID: 6337908589337639350}
+  m_Layer: 3
+  m_Name: Mannequin
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7912584146183244019
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3566986565741046355}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 429273924628176669}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &741668896890903430
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3566986565741046355}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 2442930029
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  m_InScenePlacedDisabledByDefault: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  m_InScenePlaced: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!114 &3517970621194630429
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3566986565741046355}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b4a3615f81d4bf7419f661925c73a567, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::Health
+  ShowTopMostFoldoutHeaderGroup: 1
+  maxHealth: 100
+--- !u!114 &5474228421816598572
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3566986565741046355}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bafb9980b3953c84ebed9ce1eedba502, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::TrainingDummy
+  ShowTopMostFoldoutHeaderGroup: 1
+  regenDelay: 3
+  eyeHeight: 1.65
+  robotModel: {fileID: 508831694506404385, guid: 153a04d1ca870fd41bf53540dbe6af6c, type: 3}
+  idleClip: {fileID: -203655887218126122, guid: 01c4752e9476ac644abf10709960f57a, type: 3}
+  tint: {r: 0.86, g: 0.74, b: 0.42, a: 1}
+--- !u!136 &6337908589337639350
+CapsuleCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3566986565741046355}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 2
+  m_Radius: 0.3
+  m_Height: 1.8
+  m_Direction: 1
+  m_Center: {x: 0, y: 0.9, z: 0}
+--- !u!1 &5746955340394678298
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 429273924628176669}
+  - component: {fileID: 7603036951149014625}
+  m_Layer: 0
+  m_Name: Hitbox
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &429273924628176669
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5746955340394678298}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 7912584146183244019}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &7603036951149014625
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5746955340394678298}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e827bcfb39fd5564c8d6bbbfc0691d1b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerHitbox
+  standing:
+    leanPivot: {x: 0, y: 1.08, z: -0.02}
+    legsA: {x: 0, y: 0.2, z: 0}
+    legsB: {x: 0, y: 0.8, z: 0}
+    legsRadius: 0.2
+    secondLegA: {x: 0, y: 0, z: 0}
+    secondLegB: {x: 0, y: 0, z: 0}
+    secondLegRadius: 0
+    torsoA: {x: 0, y: 1.17, z: -0.02}
+    torsoB: {x: 0, y: 1.3, z: -0.03}
+    torsoRadius: 0.23
+    headRadius: 0.14
+  crouching:
+    leanPivot: {x: 0, y: 0.56, z: -0.1}
+    legsA: {x: 0, y: 0.22, z: 0.08}
+    legsB: {x: 0, y: 0.3, z: 0.08}
+    legsRadius: 0.28
+    secondLegA: {x: 0, y: 0, z: 0}
+    secondLegB: {x: 0, y: 0, z: 0}
+    secondLegRadius: 0
+    torsoA: {x: 0, y: 0.66, z: -0.06}
+    torsoB: {x: 0, y: 0.74, z: -0.02}
+    torsoRadius: 0.22
+    headRadius: 0.14
+  prone:
+    leanPivot: {x: -0.03, y: 0.17, z: -0.28}
+    legsA: {x: -0.08, y: 0.13, z: -0.5}
+    legsB: {x: 0, y: 0.13, z: -1.22}
+    legsRadius: 0.13
+    secondLegA: {x: 0.1, y: 0.13, z: -0.5}
+    secondLegB: {x: 0.52, y: 0.13, z: -0.95}
+    secondLegRadius: 0.14
+    torsoA: {x: -0.01, y: 0.17, z: -0.35}
+    torsoB: {x: -0.12, y: 0.23, z: 0.06}
+    torsoRadius: 0.19
+    headRadius: 0.13

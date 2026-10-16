@@ -66,6 +66,17 @@ public class PlayerWeaponAttachments : NetworkBehaviour
 
     private void HandleChanged(uint previous, uint current) => Changed?.Invoke(new WeaponAttachments(current));
 
+    /// <summary>Serveur : change les accessoires en cours de partie (le stand de tir, 2026-10-16), bornés
+    /// comme à l'apparition. Les chargeurs se remplissent : leur taille a pu changer.</summary>
+    public void ServerSet(WeaponAttachments value)
+    {
+        if (!IsServer || !IsSpawned) return;
+        uint packed = value.Sanitized(weapon != null ? weapon.Loadout : null).Packed;
+        if (packed == attachments.Value) return;
+        attachments.Value = packed;
+        if (weapon != null) weapon.ServerRefillMagazine();
+    }
+
 #if UNITY_EDITOR || UNITY_INCLUDE_TESTS
     /// <summary>Hors session (tests) : les accessoires de ce joueur, sans serveur.</summary>
     public void SetOfflineForTests(WeaponAttachments value)

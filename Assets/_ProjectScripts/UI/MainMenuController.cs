@@ -72,6 +72,12 @@ public class MainMenuController : MonoBehaviour
         if (weaponCustomization == null) weaponCustomization = GetComponent<WeaponCustomizationController>();
         root = document.rootVisualElement;
 
+        // De retour d'une partie, la souris était encore verrouillée au centre de l'écran, invisible
+        // (GameHud la verrouille en jeu) : un clic y pressait le bouton du milieu (vu par l'utilisateur
+        // le 2026-10-16). Le menu la rend toujours.
+        UnityEngine.Cursor.lockState = CursorLockMode.None;
+        UnityEngine.Cursor.visible = true;
+
         WireTitleScreen();
         WirePlayScreen();
 
@@ -98,6 +104,13 @@ public class MainMenuController : MonoBehaviour
         if (subscribedManager == null) return;
         subscribedManager.OnClientConnectedCallback += HandleClientConnected;
         subscribedManager.OnClientDisconnectCallback += HandleClientDisconnected;
+
+        // Le stand ouvert dans l'Editor a chargé le menu pour qu'il le lance (ShootingRangeBootstrap).
+        if (ShootingRangeBootstrap.StartRangeOnMenuLoad)
+        {
+            ShootingRangeBootstrap.StartRangeOnMenuLoad = false;
+            StartShootingRange();
+        }
     }
 
     private void OnDestroy()
@@ -116,6 +129,8 @@ public class MainMenuController : MonoBehaviour
     {
         root.Q<Button>("playButton").clicked += () => ShowScreenByName("screenPlay");
         root.Q<Button>("armoryButton").clicked += () => ShowScreenByName("screenArmory");
+        Button rangeButton = root.Q<Button>("rangeButton");
+        if (rangeButton != null) rangeButton.clicked += StartShootingRange;
         root.Q<Button>("optionsButton").clicked += () => ShowScreenByName("screenOptions");
         root.Q<Button>("quitButton").clicked += QuitGame;
 
@@ -156,9 +171,8 @@ public class MainMenuController : MonoBehaviour
     }
 
     /// <summary>
-    /// Échap revient d'un écran de Personnalisation : de l'armurerie à Personnalisation, de
-    /// Personnalisation à l'écran titre. Tenu ici seul : chaque écran qui la lirait de son côté ferait
-    /// revenir de deux écrans d'un coup (le second voit l'appui dans la même image).
+    /// Échap revient d'un écran (BackTarget). Tenu ici seul : chaque écran qui la lirait de son côté
+    /// ferait revenir de deux écrans d'un coup (le second voit l'appui dans la même image).
     /// </summary>
     private void Update()
     {
@@ -166,12 +180,37 @@ public class MainMenuController : MonoBehaviour
         if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame) GoBack();
     }
 
-    /// <summary>Le retour d'Échap : d'un seul écran, depuis l'armurerie ou Personnalisation.</summary>
+    /// <summary>
+    /// L'écran où Échap ramène depuis `shown` (2026-10-16 : elle ne marchait que depuis
+    /// Personnalisation), ou null. L'armurerie revient à Personnalisation, Jouer, Personnalisation et
+    /// Options à l'écran titre. Rien depuis le salon, qu'on quitte par son bouton (le quitter le ferme
+    /// pour tous quand on l'héberge), ni pendant un remappage, qu'Échap annule seulement. Fonction pure,
+    /// testée.
+    /// </summary>
+    public static string BackTarget(string shown, bool rebinding)
+    {
+        if (rebinding) return null;
+        return shown switch
+        {
+            "screenWeaponCustomize" => "screenArmory",
+            "screenArmory" or "screenPlay" or "screenOptions" => "screenTitle",
+            _ => null,
+        };
+    }
+
+    /// <summary>Le retour d'Échap, d'un seul écran.</summary>
     private void GoBack()
     {
         if (root == null) return;
-        if (IsShown("screenWeaponCustomize") && weaponCustomization != null) weaponCustomization.Close();
-        else if (IsShown("screenArmory")) ShowScreenByName("screenTitle");
+        string shown = null;
+        foreach (string name in ScreenNames)
+        {
+            if (IsShown(name)) { shown = name; break; }
+        }
+        string target = BackTarget(shown, OptionsController.AnyRebinding);
+        if (target == null) return;
+        if (shown == "screenWeaponCustomize" && weaponCustomization != null) weaponCustomization.Close();
+        else ShowScreenByName(target);
     }
 
     private static void QuitGame()
@@ -259,6 +298,34 @@ public class MainMenuController : MonoBehaviour
     // ------------------------------------------------------------------
     // Réseau local (sans code)
     // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Le stand de tir (2026-10-16) : un hôte qui n'écoute que cette machine, et la scène du stand au
+    /// lieu de l'arène (ShootingRange). Lancé par le bouton de l'écran titre, ou tout seul quand on a
+    /// ouvert le stand dans l'Editor (ShootingRangeBootstrap).
+    /// </summary>
+    public void StartShootingRange()
+    {
+        if (onlineBusy) return;
+        NetworkManager nm = NetworkManager.Singleton;
+        if (nm == null || nm.IsClient || nm.IsServer) return;
+        UnityTransport transport = nm.GetComponent<UnityTransport>();
+        if (transport == null) return;
+
+        // Personne ne rejoint le stand : un port libre choisi par le système (0) plutôt que 7777, qu'une
+        // autre instance du jeu (le joueur virtuel, une build ouverte) peut déjà tenir.
+        transport.SetConnectionData("127.0.0.1", 0, "127.0.0.1");
+        SessionFlow.PrepareConnectionData(nm);
+        SessionFlow.ActiveRules = GameSettings.HostRules;
+        if (!nm.StartHost())
+        {
+            Debug.LogWarning("Stand de tir : impossible de démarrer l'hôte.", this);
+            return;
+        }
+        SceneEventProgressStatus status = nm.SceneManager.LoadScene(ShootingRange.SceneName, LoadSceneMode.Single);
+        if (status != SceneEventProgressStatus.Started)
+            Debug.LogWarning($"Stand de tir : le chargement de la scène a échoué ({status}). Est-elle dans la Build ?", this);
+    }
 
     private void OnHostClicked()
     {

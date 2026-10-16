@@ -14,7 +14,7 @@ using UnityEngine;
 ///
 /// Contrainte à respecter : "Aim Camera" doit être EXACTEMENT la même caméra que celle assignée
 /// à WeaponController.aimCamera — c'est ce qui garantit l'alignement du réticule avec les impacts.
-/// "Input Reader" est optionnel (sans lui le réticule ne se resserre pas en ADS).
+/// "Input Reader" est optionnel : la visée se lit sur PlayerLocomotion (pas de réticule en visée).
 ///
 /// Affiche aussi les MUNITIONS (2026-10-08) : compteur en bas à droite, barre de rechargement
 /// sous le réticule, rappel de la touche quand le chargeur est vide. Et depuis le 2026-10-11, le
@@ -28,7 +28,7 @@ public class CrosshairUI : MonoBehaviour
     [Tooltip("Doit être la MÊME caméra que celle assignée dans WeaponController.aimCamera.")]
     [SerializeField] private Camera aimCamera;
 
-    [Header("Référence optionnelle (resserre le viseur en ADS)")]
+    [Header("Référence optionnelle (la visée, à défaut de PlayerLocomotion)")]
     [SerializeField] private PlayerInputReader inputReader;
 
     [Header("Apparence - à la hanche")]
@@ -36,10 +36,6 @@ public class CrosshairUI : MonoBehaviour
     [SerializeField] private float hipLineLength = 8f;
     [SerializeField] private float lineThickness = 2f;
     [SerializeField] private Color crosshairColor = Color.white;
-
-    [Header("Apparence - visée (ADS)")]
-    [SerializeField] private float adsGap = 2f;
-    [SerializeField] private float adsLineLength = 4f;
 
     [Header("Point central (optionnel)")]
     [SerializeField] private bool showCenterDot = true;
@@ -58,6 +54,7 @@ public class CrosshairUI : MonoBehaviour
     private Texture2D pixel;
     private Texture2D scopeMask; // disque transparent sur fond noir, construit une fois
     private FirstPersonView firstPersonView;
+    private PlayerLocomotion locomotion;
     private Health health;
     private PlayerMatchState matchState;
     // Jamais sérialisés : voir PauseMenu (une recompilation recrée sinon des GUIStyle vides).
@@ -81,6 +78,7 @@ public class CrosshairUI : MonoBehaviour
         useGUILayout = false;
         if (weapon == null) weapon = GetComponentInChildren<WeaponController>();
         firstPersonView = GetComponent<FirstPersonView>();
+        locomotion = GetComponent<PlayerLocomotion>();
         health = GetComponent<Health>();
         matchState = GetComponent<PlayerMatchState>();
 
@@ -102,7 +100,7 @@ public class CrosshairUI : MonoBehaviour
         // Mort (la caméra regarde l'épave), ou un écran a la main (préparation, Échap, fin de
         // match) : ni réticule ni munitions.
         if (health != null && health.IsDead) return;
-        if (GameHud.HidesCrosshair) return;
+        if (GameHud.HidesCrosshair || ShootingRangePanel.IsOpen) return;
 
         // Un spectateur n'a pas d'arme (2026-10-13) : un simple point, pour viser ses lancers et ses
         // coups. Aucune aide de plus : le geste reste imparfait (GDD § 3).
@@ -147,11 +145,14 @@ public class CrosshairUI : MonoBehaviour
             return;
         }
 
-        bool isAiming = inputReader != null && inputReader.AimHeld;
+        // En visée, pas de réticule : on vise avec l'arme (demandé par l'utilisateur le 2026-10-16). La
+        // visée de la simulation, pas la touche : pendant un rechargement, elle est refusée
+        // (PlayerLocomotion.GateAim) et le réticule de la hanche reste.
+        bool isAiming = locomotion != null ? locomotion.DisplayAiming : inputReader != null && inputReader.AimHeld;
 
         // Le sniper n'a pas de réticule à la hanche, comme dans Call of Duty (tranché le
         // 2026-10-11) : il faut deviner le centre de son cône (HipFireSpread).
-        if (!isAiming && firstPersonView != null && !firstPersonView.HipCrosshair)
+        if (isAiming || (firstPersonView != null && !firstPersonView.HipCrosshair))
         {
             DrawAmmo(cx, cy);
             GUI.color = Color.white;
@@ -159,8 +160,8 @@ public class CrosshairUI : MonoBehaviour
         }
         // Les branches s'écartent jusqu'au bord du cône où partira la prochaine balle, comme dans
         // Rainbow Six (2026-10-16) : il s'ouvre en bougeant et en rafale, se referme en épaulant.
-        float gap = Mathf.Max(isAiming ? adsGap : hipGap, ConePixels(weapon != null ? weapon.HipSpreadDegrees : 0f));
-        float length = isAiming ? adsLineLength : hipLineLength;
+        float gap = Mathf.Max(hipGap, ConePixels(weapon != null ? weapon.HipSpreadDegrees : 0f));
+        float length = hipLineLength;
 
         GUI.color = crosshairColor;
 

@@ -101,7 +101,9 @@ public class WeaponData : ScriptableObject
     [Min(1f)] public float scopeMagnification = 1f;
     [Tooltip("Le réticule du HUD s'affiche-t-il à la hanche ? Non pour le sniper, comme dans CoD : il faut deviner le centre de son cône (hipSpread).")]
     public bool hipCrosshair = true;
-    [Tooltip("Couleur du traçant (le rayon du raygun se voit de loin).")]
+    [Tooltip("Le tir se voit comme un rayon, de la couleur tracerColor (le raygun) ; sinon, une arme à balles, par la flamme de bouche et sans traçant (2026-10-16, demandé par l'utilisateur).")]
+    public bool shotIsBeam = false;
+    [Tooltip("Couleur du rayon (le rayon du raygun se voit de loin).")]
     public Color tracerColor = new Color(1f, 0.85f, 0.4f, 1f);
 
     [Tooltip("Layers qui ARRÊTENT une balle : la géométrie du monde. NE DOIT PAS contenir le layer des joueurs ni celui des hitbox — le tir est résolu en deux traces distinctes (voir WeaponController.FireServerRpc), et mélanger les deux ferait bloquer les balles par le collider de MOUVEMENT des joueurs, qui ne suit pas le lean.")]

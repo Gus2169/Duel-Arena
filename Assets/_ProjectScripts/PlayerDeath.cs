@@ -180,9 +180,20 @@ public class PlayerDeath : NetworkBehaviour
             foreach (Renderer live in paint.PaintedRenderers) paint.PaintOnce(corpse.TwinOf(live));
         }
 
-        // Le modèle vivant disparaît, armes et gant compris (y compris ceux créés au lancement).
-        hiddenRenderers = modelRoot != null ? modelRoot.GetComponentsInChildren<Renderer>(true) : System.Array.Empty<Renderer>();
-        foreach (Renderer r in hiddenRenderers) r.forceRenderingOff = true;
+        // Le modèle vivant disparaît, armes et gant compris (y compris ceux créés au lancement). Seuls
+        // ceux qu'on montrait reviendront : la vitre d'un viseur, éteinte sur le corps du propriétaire
+        // (AttachmentMount.SetUpLens), le reste.
+        var shown = new System.Collections.Generic.List<Renderer>();
+        if (modelRoot != null)
+        {
+            foreach (Renderer r in modelRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r.forceRenderingOff) continue;
+                r.forceRenderingOff = true;
+                shown.Add(r);
+            }
+        }
+        hiddenRenderers = shown.ToArray();
 
         if (corpse != null && pendingImpulse && Time.time - pendingAt < 1f) corpse.ApplyImpulse(pendingPoint, pendingForce);
         pendingImpulse = false;

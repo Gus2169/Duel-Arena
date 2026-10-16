@@ -44,6 +44,7 @@ MonoBehaviour:
   aimTime: 0.1
   scopeMagnification: 1
   hipCrosshair: 1
+  shotIsBeam: 1
   tracerColor: {r: 0.35, g: 1, b: 0.35, a: 1}
   worldMask:
     serializedVersion: 2

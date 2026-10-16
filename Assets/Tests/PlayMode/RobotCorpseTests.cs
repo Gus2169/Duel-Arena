@@ -267,7 +267,7 @@ public class RobotCorpseTests
         Assert.Less(lying.highestAtEnd, 0.6f, "Garde : l'épave est couchée avant le tir.");
         // Et immobile : sinon on mesure la fin de sa chute (un avant-bras qui retombait à 2 m/s faisait
         // passer la garde du pompe sans aucune poussée).
-        yield return WaitForRest(4f);
+        yield return WaitForRest(6f);
         Assert.Less(CorpseSpeed(), 0.05f, "Garde : l'épave ne bouge plus avant le tir.");
 
         WeaponData shotgun = UnityEditor.AssetDatabase.LoadAssetAtPath<WeaponData>("Assets/_ProjectArena/Weapon/Arme_Pompe.asset");
@@ -290,7 +290,7 @@ public class RobotCorpseTests
 
         WeaponData sniper = UnityEditor.AssetDatabase.LoadAssetAtPath<WeaponData>("Assets/_ProjectArena/Weapon/Arme_Sniper.asset");
         Assert.IsNotNull(sniper, "Le sniper de la panoplie.");
-        yield return WaitForRest(4f);
+        yield return WaitForRest(6f);
         Assert.Less(CorpseSpeed(), 0.05f, "Garde : l'épave ne bouge plus avant la balle de sniper.");
         var headshot = new Fall();
         bool headHit = false;

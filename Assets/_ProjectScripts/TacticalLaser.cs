@@ -1,21 +1,22 @@
 using UnityEngine;
 
 /// <summary>
-/// Le laser tactique (2026-10-16, GDD § 6) : un point rouge là où le joueur vise, et, chez les autres,
-/// le faisceau qui y mène depuis l'émetteur de son laser. Il aide le tir au juger (le cône de la hanche
-/// et la gerbe d'un pompe se resserrent : AttachmentCatalog.laserHipSpread ; le point marque le centre
-/// du cône) et trahit qui le porte : le faisceau se voit de loin, le point sur le mur aussi. Un vrai
-/// choix, comme le voulait l'utilisateur.
+/// Le laser tactique (2026-10-16, GDD § 6) : un faisceau qui sort de l'émetteur, droit dans l'axe du
+/// canon, et un point rouge là où il s'arrête. Il aide le tir au juger (le cône de la hanche et la gerbe
+/// d'un pompe se resserrent : AttachmentCatalog.laserHipSpread) et trahit qui le porte : le faisceau se
+/// voit de loin, le point sur le mur aussi. Un vrai choix, comme le voulait l'utilisateur.
 ///
-/// Le point est au bout du regard : chez le joueur, le rayon même du tir (la caméra) ; chez les
-/// autres, l'œil et le regard affichés de sa pose (PlayerLocomotion.DisplayEyePosition,
-/// DisplayLookDirection), arrêtés par le décor et les corps comme une balle (WeaponData.worldMask,
-/// hitboxMask). Le joueur voit aussi son propre faisceau, comme dans Call of Duty : il part du laser
-/// de ses bras et il est dessiné par leur caméra (layer Viewmodel, FirstPersonView) ; son bout, sur
-/// l'axe de la caméra, tombe au même endroit pour les deux caméras. Pas dans la lunette du sniper.
+/// Un vrai laser (demandé par l'utilisateur le 2026-10-16 ; il suivait le regard) : il suit l'arme,
+/// pendant le rechargement, le sprint, la sortie de l'arme comme en visée. Chez les autres, il part de
+/// l'arme de son corps ; chez le joueur, de celle de ses bras, dessinée par leur caméra au champ plus
+/// étroit (FirstPersonView) : le faisceau est cherché dans le monde là où le joueur le VOIT
+/// (ArmsRayToWorld), et dessiné par la caméra du joueur depuis l'endroit où il voit l'émetteur. Il est
+/// arrêté par le décor et les corps comme une balle (WeaponData.worldMask, hitboxMask), jamais par les
+/// zones du joueur. Pas dans la lunette du sniper : le point y suit le regard.
 ///
-/// Catégorie C réseautée : les accessoires sont publiés par le serveur (PlayerWeaponAttachments), le
-/// regard voyage dans la pose ; rien ne relit le faisceau. Posé sur la racine du préfab joueur.
+/// Catégorie C réseautée : les accessoires sont publiés par le serveur (PlayerWeaponAttachments), la
+/// pose de l'arme suit l'animation de chaque machine ; rien ne relit le faisceau. Posé sur la racine du
+/// préfab joueur.
 /// </summary>
 [DisallowMultipleComponent]
 [DefaultExecutionOrder(600)] // après PlayerAnimator (l'arme suit le regard) et la caméra du joueur
@@ -32,7 +33,7 @@ public class TacticalLaser : MonoBehaviour
     private Health health;
     private FirstPersonView firstPersonView;
     private Transform rightHand;
-    private int worldLayer, viewLayer;
+    private int worldLayer;
     private LineRenderer beam;
     private MeshRenderer dot;
     private readonly RaycastHit[] hits = new RaycastHit[16];
@@ -52,7 +53,6 @@ public class TacticalLaser : MonoBehaviour
         health = GetComponent<Health>();
         firstPersonView = GetComponent<FirstPersonView>();
         worldLayer = 0;   // Default : la caméra du joueur le dessine
-        viewLayer = LayerMask.NameToLayer(FirstPersonView.LayerName);
         Transform model = transform.Find("Model");
         Animator animator = model != null ? model.GetComponent<Animator>() : null;
         rightHand = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightHand) : null;
@@ -66,7 +66,7 @@ public class TacticalLaser : MonoBehaviour
 
     private void LateUpdate()
     {
-        bool on = TryAim(out Vector3 origin, out Vector3 direction, out bool owner, out WeaponData data);
+        bool on = TryAim(out Vector3 origin, out Vector3 direction, out bool beamShown, out WeaponData data);
         AttachmentCatalog catalog = data != null ? data.attachmentCatalog : null;
         if (!on || catalog == null || catalog.dotMaterial == null)
         {
@@ -80,24 +80,24 @@ public class TacticalLaser : MonoBehaviour
         if (hit) end = stop.point - direction * 0.01f;   // posé devant la surface, pas dedans
 
         Camera viewer = Camera.main;
-        Transform emitter = owner ? ViewEmitter() : Emitter(rightHand);
-        bool beamShown = emitter != null && catalog.beamMaterial != null;
+        beamShown &= catalog.beamMaterial != null;
         Show(hit, beamShown);
         if (hit) PlaceDot(end, viewer, catalog);
         if (beamShown)
         {
-            // Le faisceau du joueur est dessiné par la caméra de ses bras, avec eux.
-            int layer = owner && viewLayer >= 0 ? viewLayer : worldLayer;
-            if (beam.gameObject.layer != layer) beam.gameObject.layer = layer;
-            PlaceBeam(emitter.position, end, viewer, catalog);
+            // Dessiné par la caméra du joueur (layer Default), du point où l'on voit l'émetteur.
+            if (beam.gameObject.layer != worldLayer) beam.gameObject.layer = worldLayer;
+            PlaceBeam(origin, end, viewer, catalog);
         }
     }
 
-    /// <summary>Le laser est-il allumé, et d'où part le regard qu'il suit ?</summary>
-    private bool TryAim(out Vector3 origin, out Vector3 direction, out bool owner, out WeaponData data)
+    /// <summary>Le laser est-il allumé, d'où part son faisceau, dans quel sens, et se voit-il ? Le long du
+    /// canon de l'arme tenue : celle des bras chez le joueur, ramenée là où il la voit ; celle du corps
+    /// chez les autres.</summary>
+    private bool TryAim(out Vector3 origin, out Vector3 direction, out bool beamShown, out WeaponData data)
     {
         origin = direction = Vector3.zero;
-        owner = false;
+        beamShown = false;
         data = null;
         if (weapon == null || locomotion == null || locomotion.IsSpectator) return false;
         if (health != null && health.IsDead) return false;
@@ -105,19 +105,54 @@ public class TacticalLaser : MonoBehaviour
         data = weapon.DataOf(slot);
         if (data == null || !weapon.Attachments.Laser(slot) || !WeaponAttachments.Accepts(data, AttachmentCategory.Laser, 1)) return false;
 
-        owner = weapon.IsOwner && weapon.AimCamera != null;
-        if (owner)
+        if (weapon.IsOwner && weapon.AimCamera != null)
         {
-            Transform cam = weapon.AimCamera.transform;
-            origin = cam.position;
-            direction = cam.forward;
+            WeaponModel view = firstPersonView != null ? firstPersonView.ViewWeapon : null;
+            Transform emitter = Emitter(view);
+            Camera arms = firstPersonView != null ? firstPersonView.ArmsCamera : null;
+            Camera eye = weapon.AimCamera;
+            if (emitter != null && arms != null)
+            {
+                ArmsRayToWorld(emitter.position, view.transform.forward, eye.transform, eye.fieldOfView, arms.fieldOfView,
+                               out origin, out direction);
+                beamShown = true;
+            }
+            else
+            {
+                // Dans la lunette, les bras ne se voient plus : le point suit le regard, sans faisceau.
+                origin = eye.transform.position;
+                direction = eye.transform.forward;
+            }
         }
         else
         {
-            origin = locomotion.DisplayEyePosition;
-            direction = locomotion.DisplayLookDirection;
+            WeaponModel held = HeldWeapons.Visible(rightHand);
+            Transform emitter = Emitter(held);
+            if (emitter == null) return false;
+            origin = emitter.position;
+            direction = held.transform.forward;
+            beamShown = true;
         }
         return direction.sqrMagnitude > 0.5f;
+    }
+
+    /// <summary>
+    /// Le faisceau que le joueur voit partir de ses bras, dans le monde. Les bras sont dessinés par une
+    /// caméra au même endroit que la sienne, au champ plus étroit (FirstPersonView) : un point des bras
+    /// se voit là où la caméra du joueur montrerait le point du monde dont l'écart à l'axe est divisé
+    /// par le rapport des tangentes de leurs demi-champs (l'inverse d'ElectricArc.WorldToArms). Une
+    /// droite reste une droite : le faisceau des bras (`armsOrigin`, `armsDirection`) se voit le long de
+    /// ce rayon du monde. Fonction pure, testée.
+    /// </summary>
+    public static void ArmsRayToWorld(Vector3 armsOrigin, Vector3 armsDirection, Transform eye, float playerFieldOfView,
+                                      float armsFieldOfView, out Vector3 origin, out Vector3 direction)
+    {
+        float k = Mathf.Tan(armsFieldOfView * 0.5f * Mathf.Deg2Rad) / Mathf.Tan(playerFieldOfView * 0.5f * Mathf.Deg2Rad);
+        if (!(k > 1e-4f)) k = 1f;
+        Vector3 localOrigin = eye.InverseTransformPoint(armsOrigin);
+        Vector3 localDirection = eye.InverseTransformDirection(armsDirection);
+        origin = eye.TransformPoint(new Vector3(localOrigin.x / k, localOrigin.y / k, localOrigin.z));
+        direction = eye.TransformDirection(new Vector3(localDirection.x / k, localDirection.y / k, localDirection.z)).normalized;
     }
 
     /// <summary>Le premier obstacle du regard : le décor, ou un autre corps devant lui (comme le tir,
@@ -137,20 +172,11 @@ public class TacticalLaser : MonoBehaviour
         return found;
     }
 
-    /// <summary>L'émetteur du laser monté sur l'arme tenue par cette main, ou null.</summary>
-    private static Transform Emitter(Transform hand)
+    /// <summary>L'émetteur du laser monté sur cette arme, ou null.</summary>
+    private static Transform Emitter(WeaponModel model)
     {
-        WeaponModel model = HeldWeapons.Visible(hand);
         WeaponAttachment laser = model != null ? AttachmentMount.Mounted(model.transform, AttachmentCategory.Laser) : null;
         return laser != null ? laser.Beam : null;
-    }
-
-    /// <summary>Chez le joueur : l'émetteur du laser de ses bras, ou null quand on ne les voit pas
-    /// (lunette du sniper, mort).</summary>
-    private Transform ViewEmitter()
-    {
-        if (firstPersonView == null || firstPersonView.ViewAnimator == null || firstPersonView.Scoped) return null;
-        return Emitter(firstPersonView.ViewAnimator.GetBoneTransform(HumanBodyBones.RightHand));
     }
 
     private void Show(bool dotShown, bool beamShown)

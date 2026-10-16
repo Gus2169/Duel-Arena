@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /// <summary>
 /// Monte les accessoires d'une arme sur une copie de son modèle (2026-10-16, GDD § 6) : sur le corps
@@ -152,13 +153,26 @@ public static class AttachmentMount
         {
             foreach (Renderer r in copy.GetComponentsInChildren<Renderer>(true))
             {
-                // la vitre n'a jamais d'ombre : elle ne cache rien
                 if (attachment != null && r == attachment.Lens) continue;
                 r.shadowCastingMode = like.shadowCastingMode;
                 r.receiveShadows = like.receiveShadows;
             }
         }
+        if (attachment != null && attachment.Lens != null) SetUpLens(attachment.Lens, like);
         return attachment;
+    }
+
+    /// <summary>
+    /// La vitre d'un viseur n'a jamais d'ombre : elle ne cache rien. Et sur une arme qui n'est qu'une
+    /// ombre (le corps du joueur, vu de ses propres yeux), elle ne se dessine pas du tout : elle restait
+    /// la seule pièce visible de l'arme de son corps, une tache grise qui flottait devant lui (vu par
+    /// l'utilisateur le 2026-10-16). Sans état, testée.
+    /// </summary>
+    public static void SetUpLens(Renderer lens, Renderer weaponPiece)
+    {
+        lens.shadowCastingMode = ShadowCastingMode.Off;
+        lens.receiveShadows = false;
+        lens.forceRenderingOff = weaponPiece != null && weaponPiece.shadowCastingMode == ShadowCastingMode.ShadowsOnly;
     }
 
     /// <summary>Une pièce de l'arme elle-même (pas d'un accessoire) : celle dont on prend les ombres.</summary>

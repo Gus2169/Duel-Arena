@@ -9,6 +9,7 @@
             <ui:Label name="gameSubtitle" class="game-subtitle" text="DUEL 1V1 — ROBOTS DE COMBAT" />
             <ui:Button name="playButton" class="menu-button menu-button--primary" text="Jouer" />
             <ui:Button name="armoryButton" class="menu-button" text="Personnalisation" />
+            <ui:Button name="rangeButton" class="menu-button" text="Stand de tir" />
             <ui:Button name="optionsButton" class="menu-button" text="Options" />
             <ui:Button name="quitButton" class="menu-button menu-button--quit" text="Quitter" />
         </ui:VisualElement>

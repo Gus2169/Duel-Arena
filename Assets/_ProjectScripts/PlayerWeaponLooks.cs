@@ -54,4 +54,12 @@ public class PlayerWeaponLooks : NetworkBehaviour
     }
 
     private void HandleChanged(uint previous, uint current) => Changed?.Invoke(new WeaponLooks(current));
+
+    /// <summary>Serveur : change l'apparence en cours de partie (le stand de tir, 2026-10-16), bornée
+    /// comme à l'apparition.</summary>
+    public void ServerSet(WeaponLooks value)
+    {
+        if (!IsServer || !IsSpawned) return;
+        looks.Value = value.Sanitized(weapon != null ? weapon.Loadout : null).Packed;
+    }
 }

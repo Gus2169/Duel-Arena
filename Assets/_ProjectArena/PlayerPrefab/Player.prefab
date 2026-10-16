@@ -400,8 +400,6 @@ MonoBehaviour:
   hipLineLength: 8
   lineThickness: 2
   crosshairColor: {r: 1, g: 1, b: 1, a: 1}
-  adsGap: 2
-  adsLineLength: 4
   showCenterDot: 1
   centerDotSize: 2
   weapon: {fileID: 0}
@@ -426,6 +424,13 @@ MonoBehaviour:
   impactColor: {r: 1, g: 0.3, b: 0.1, a: 1}
   impactSize: 0.12
   impactLifetime: 1.2
+  muzzleFlashMaterial: {fileID: 2100000, guid: 701943ffeef320349a4a6737a4eb38cd, type: 2}
+  muzzleFlashDuration: 0.05
+  muzzleFlashSize: 0.22
+  muzzleFlashLength: 0.36
+  muzzleLightColor: {r: 1, g: 0.62, b: 0.25, a: 1}
+  muzzleLightIntensity: 3
+  muzzleLightRange: 4
 --- !u!114 &9223354944556659811
 MonoBehaviour:
   m_ObjectHideFlags: 0

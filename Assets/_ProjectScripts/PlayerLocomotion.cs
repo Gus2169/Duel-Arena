@@ -1778,6 +1778,16 @@ public class PlayerLocomotion : NetworkBehaviour
         if (IsVaulting && weapon != null && weapon.IsReloading) weapon.CancelLocalReload();
     }
 
+    /// <summary>
+    /// On ne vise pas en rechargeant (demandé par l'utilisateur le 2026-10-16) : l'arme montait à l'œil
+    /// pendant que le rechargement la déplaçait, et la caméra entrait dans l'arme ou dans le robot. La
+    /// visée reprend d'elle-même à la fin du rechargement si la touche est toujours tenue ; tirer au
+    /// pompe interrompt son rechargement, comme avant. Décidé chez le joueur avant le snapshot, comme le
+    /// sprint (GateSprint) : Move() reste une fonction du seul snapshot, et le serveur ne voit pas de
+    /// visée pendant un rechargement. Fonction pure, testée.
+    /// </summary>
+    public static bool GateAim(bool aimHeld, bool reloading) => aimHeld && !reloading;
+
     private MovementInputSnapshot ReadLocalInput()
     {
         // Le sprint s'efface devant le rechargement et le taser, et se mettre à courir annule un
@@ -1826,7 +1836,7 @@ public class PlayerLocomotion : NetworkBehaviour
             lookX = input.LookInput.x * LookScale * GameSettings.SensitivityMultiplier,
             sprintHeld = input.SprintHeld && sprintAllowed,
             sneakHeld = input.SneakHeld,
-            aimHeld = input.AimHeld,
+            aimHeld = GateAim(input.AimHeld, !spectating && weapon != null && weapon.IsReloading),
             aimPitch = cameraLook != null ? cameraLook.Pitch : 0f,
             fireHeld = input.FireHeld,
             firePressedThisFrame = input.FirePressedThisFrame,
