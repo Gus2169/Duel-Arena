@@ -71,7 +71,8 @@ public class ShootingRange : NetworkBehaviour
     public void ServerRestoreDummies()
     {
         if (!IsServer) return;
+        // Les cibles de la Fosse ne se relèvent qu'au départ d'une course (ShootingCourse).
         foreach (TrainingDummy dummy in Dummies)
-            if (dummy != null) dummy.ServerRestore();
+            if (dummy != null && dummy.Regenerates) dummy.ServerRestore();
     }
 }

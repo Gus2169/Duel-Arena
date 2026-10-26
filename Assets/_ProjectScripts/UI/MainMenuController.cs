@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using DuelArena.UI;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
@@ -7,18 +9,20 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
 
 /// <summary>
-/// Écran titre + navigation + écran « Jouer » du menu principal. Posé sur le même GameObject que
-/// l'UIDocument, dans la scène MainMenu (voir CLAUDE.md « Le menu principal et la session »).
+/// La navigation du menu principal, refait le 2026-10-17 d'après les maquettes de l'utilisateur. Posé sur le
+/// même GameObject que l'UIDocument, dans la scène MainMenu (voir CLAUDE.md « Le menu principal et la
+/// session »).
 ///
-/// L'écran Jouer (refait le 2026-10-13, demandé par l'utilisateur) : le pseudo, puis CRÉER une partie (un
-/// salon privé et son code) ou la REJOINDRE en tapant son code. Le salon lui-même, avec le mode et les
-/// réglages de la partie, est LobbyController ; la partie en ligne, OnlineSession. Le réseau local par
-/// adresse IP reste, replié en bas de l'écran : pour jouer sans internet, et pour le banc de test à deux
-/// instances (son clone se connecte à 127.0.0.1:7777).
-///
-/// Les écrans Personnalisation et Options sont gérés par des composants séparés (ArmoryController,
-/// OptionsController) sur le même GameObject : celui-ci ne fait que la navigation entre écrans (via la
-/// classe USS "hidden") et l'écran Jouer.
+/// Les écrans : le titre (Jouer, Personnalisation, Options, Quitter), Jouer (PlayScreenController : les
+/// modes, les salons, l'entraînement), le salon (LobbyController), Personnalisation (ArmoryController pour
+/// le robot, WeaponCustomizationController pour les armes) et Options (OptionsController). Ils se montrent
+/// par la classe USS « hidden ». Ce composant tient aussi :
+/// - le fond (l'arène vue de la tribune, MenuArtwork), voilé hors de l'écran titre ;
+/// - la carte du joueur, en haut à droite de chaque écran : son pseudo et la couleur de son robot ; un clic
+///   ouvre la fenêtre du pseudo (sauf dans le salon, où il est déjà parti chez les autres) ;
+/// - la fenêtre « Quitter le jeu ? », ouverte par Quitter ou par Échap depuis l'écran titre ;
+/// - Échap, qui revient d'un écran (BackTarget) ;
+/// - les salons sans code (réseau local) et le message sous les cartes de l'écran Jouer.
 ///
 /// Réseau local : Héberger démarre le host puis charge IMMÉDIATEMENT la scène de jeu en mode Single — le
 /// patron standard de Netcode pour une scène de menu (le NetworkManager survit au changement de scène,
@@ -27,42 +31,66 @@ using UnityEngine.UIElements;
 /// </summary>
 public class MainMenuController : MonoBehaviour
 {
+    public const string TitleScreen = "screenTitle";
+    public const string PlayScreen = "screenPlay";
+    public const string LobbyScreen = "screenLobby";
+    public const string CustomizeScreen = "screenCustomize";
+    public const string OptionsScreen = "screenOptions";
+
     [Tooltip("Nom de la scène de jeu à charger une fois l'hébergement démarré. Doit être dans les Build Settings.")]
     [SerializeField] private string gameplaySceneName = "MultiTestScene";
 
     [SerializeField] private UIDocument document;
 
-    [Tooltip("Pour couper la caméra d'aperçu 3D quand on quitte l'écran Personnalisation (voir ShowScreenByName).")]
+    [Tooltip("Le robot de Personnalisation : la palette des robots, lue sur le préfab joueur.")]
     [SerializeField] private CharacterPreviewController characterPreview;
 
     [Tooltip("Le salon des parties en ligne (sur le même GameObject si vide).")]
     [SerializeField] private LobbyController lobby;
 
-    [Tooltip("Personnalisation : le robot et les armes (sur le même GameObject si vide).")]
+    [Tooltip("Personnalisation : le robot, et les onglets (sur le même GameObject si vide).")]
     [SerializeField] private ArmoryController armory;
 
-    [Tooltip("L'armurerie (sur le même GameObject si vide).")]
+    [Tooltip("L'onglet ARMES de Personnalisation (sur le même GameObject si vide).")]
     [SerializeField] private WeaponCustomizationController weaponCustomization;
 
-    private static readonly string[] ScreenNames = { "screenTitle", "screenPlay", "screenLobby", "screenArmory", "screenOptions", "screenWeaponCustomize" };
+    [Tooltip("L'écran Jouer : les modes, l'entraînement (sur le même GameObject si vide).")]
+    [SerializeField] private PlayScreenController playScreen;
+
+    [Tooltip("Les images du menu (le fond de l'écran titre), cuites par Duel Arena > Menu > Capturer les images du menu.")]
+    [SerializeField] private MenuArtwork artwork;
+
+    private static readonly string[] ScreenNames = { TitleScreen, PlayScreen, LobbyScreen, CustomizeScreen, OptionsScreen };
 
     private VisualElement root;
+    private VisualElement backdrop;
+    private VisualElement backdropDim;
+    private VisualElement quitModal;
+    private VisualElement pseudoModal;
+    private TextField pseudoField;
+    private ArenaLogo pseudoModalLogo;
+    private readonly List<Button> playerCards = new();
 
     private TextField joinCodeField;
-    private Button createButton;
     private Button joinCodeButton;
-
     private TextField hostPortField;
     private TextField joinIpField;
     private TextField joinPortField;
     private Button hostButton;
     private Button joinButton;
+    private Label joinButtonLabel;
     private Label localIpLabel;
     private Label lanRulesLabel;
     private Label playStatusLabel;
 
     private bool joinAttemptInProgress;
     private bool onlineBusy;
+    private VisualElement wiredScreen;   // l'écran titre de l'arbre branché (voir OnEnable)
+
+    public MenuArtwork Artwork => artwork;
+
+    /// <summary>Une fenêtre (Quitter, le pseudo) est ouverte : les écrans dessous ne lisent pas le clavier.</summary>
+    public bool ModalOpen => IsOpen(quitModal) || IsOpen(pseudoModal);
 
     private void OnEnable()
     {
@@ -70,6 +98,8 @@ public class MainMenuController : MonoBehaviour
         if (lobby == null) lobby = GetComponent<LobbyController>();
         if (armory == null) armory = GetComponent<ArmoryController>();
         if (weaponCustomization == null) weaponCustomization = GetComponent<WeaponCustomizationController>();
+        if (playScreen == null) playScreen = GetComponent<PlayScreenController>();
+        if (characterPreview == null) characterPreview = GetComponent<CharacterPreviewController>();
         root = document.rootVisualElement;
 
         // De retour d'une partie, la souris était encore verrouillée au centre de l'écran, invisible
@@ -78,16 +108,33 @@ public class MainMenuController : MonoBehaviour
         UnityEngine.Cursor.lockState = CursorLockMode.None;
         UnityEngine.Cursor.visible = true;
 
-        WireTitleScreen();
-        WirePlayScreen();
+        backdrop = root.Q<VisualElement>("backdrop");
+        backdropDim = root.Q<VisualElement>("backdropDim");
+        if (backdrop != null && artwork != null && artwork.titleBackdrop != null)
+            backdrop.style.backgroundImage = new StyleBackground(artwork.titleBackdrop);
+        Label version = root.Q<Label>("versionLabel");
+        if (version != null) version.text = "v" + Application.version;
 
-        ShowScreenByName("screenTitle");
+        // Un arbre ne se branche qu'une fois (un second OnEnable sur le même arbre doublerait les clics :
+        // Rejoindre démarrerait puis annulerait aussitôt) ; un arbre neuf (l'UIDocument recrée le sien
+        // quand il se réactive) se rebranche.
+        VisualElement title = root.Q<VisualElement>(TitleScreen);
+        if (title != wiredScreen)
+        {
+            wiredScreen = title;
+            WireTitleScreen();
+            WireModals();
+            WirePlayerCards();
+            WirePlayScreen();
+        }
+
+        ShowScreenByName(TitleScreen);
 
         // De retour d'une partie (l'hôte est parti, la connexion est tombée...) : l'écran Jouer,
         // avec la raison (SessionFlow.ReturnToMenu).
         if (!string.IsNullOrEmpty(SessionFlow.PendingMenuMessage))
         {
-            ShowScreenByName("screenPlay");
+            ShowScreenByName(PlayScreen);
             SetStatus(SessionFlow.PendingMenuMessage, true);
             SessionFlow.PendingMenuMessage = "";
         }
@@ -127,22 +174,18 @@ public class MainMenuController : MonoBehaviour
 
     private void WireTitleScreen()
     {
-        root.Q<Button>("playButton").clicked += () => ShowScreenByName("screenPlay");
-        root.Q<Button>("armoryButton").clicked += () => ShowScreenByName("screenArmory");
-        Button rangeButton = root.Q<Button>("rangeButton");
-        if (rangeButton != null) rangeButton.clicked += StartShootingRange;
-        root.Q<Button>("optionsButton").clicked += () => ShowScreenByName("screenOptions");
-        root.Q<Button>("quitButton").clicked += QuitGame;
+        root.Q<Button>("playButton").clicked += () => ShowScreenByName(PlayScreen);
+        root.Q<Button>("armoryButton").clicked += () => ShowScreenByName(CustomizeScreen);
+        root.Q<Button>("optionsButton").clicked += () => ShowScreenByName(OptionsScreen);
+        root.Q<Button>("quitButton").clicked += OpenQuit;
 
-        root.Q<Button>("playBackButton").clicked += () => ShowScreenByName("screenTitle");
-        root.Q<Button>("armoryBackButton").clicked += () => ShowScreenByName("screenTitle");
-        root.Q<Button>("optionsBackButton").clicked += () => ShowScreenByName("screenTitle");
+        root.Q<Button>("playBackButton").clicked += () => ShowScreenByName(TitleScreen);
+        root.Q<Button>("customBackButton").clicked += GoBack;
+        root.Q<Button>("optionsBackButton").clicked += () => ShowScreenByName(TitleScreen);
     }
 
-    /// <summary>Affiche l'écran demandé, masque les autres. Pas d'animation : un menu de duel n'a
-    /// pas besoin de fioritures, et ça reste trivial à maintenir si un écran s'ajoute. Public : la
-    /// l'armurerie (WeaponCustomizationController) revient à Personnalisation par
-    /// ce même chemin, et le salon (LobbyController) s'ouvre et se referme par lui.</summary>
+    /// <summary>Affiche l'écran demandé, masque les autres. Public : le salon (LobbyController) s'ouvre et
+    /// se referme par lui.</summary>
     public void ShowScreenByName(string screenName)
     {
         foreach (string name in ScreenNames)
@@ -150,24 +193,31 @@ public class MainMenuController : MonoBehaviour
             VisualElement s = root.Q<VisualElement>(name);
             if (s != null) s.EnableInClassList("hidden", name != screenName);
         }
+        // L'arène se voit en grand derrière l'écran titre ; les autres écrans la voilent.
+        backdropDim?.EnableInClassList("hidden", screenName == TitleScreen);
 
-        // La caméra d'aperçu du personnage ne tourne que pendant qu'on la regarde — coupée dès
-        // qu'on quitte Personnalisation, y compris en passant par l'armurerie (qui prend
-        // elle-même la main sur le même PreviewStage, voir WeaponCustomizationController).
-        if (characterPreview != null)
+        // Le plateau d'aperçu (robot, arme) ne tourne que sur Personnalisation.
+        if (armory != null)
         {
-            if (screenName == "screenArmory") characterPreview.Show();
-            else if (screenName != "screenWeaponCustomize") characterPreview.Hide();
+            if (screenName == CustomizeScreen) armory.OnShown();
+            else armory.OnHidden();
         }
-
-        if (screenName == "screenArmory" && armory != null) armory.Refresh();
-        if (screenName == "screenPlay") OnPlayScreenShown();
+        if (screenName == PlayScreen) OnPlayScreenShown();
+        RefreshPlayerCards();
     }
 
-    private bool IsShown(string screenName)
+    /// <summary>L'écran affiché, ou null.</summary>
+    public string CurrentScreen
     {
-        VisualElement screen = root.Q<VisualElement>(screenName);
-        return screen != null && !screen.ClassListContains("hidden");
+        get
+        {
+            foreach (string name in ScreenNames)
+            {
+                VisualElement screen = root?.Q<VisualElement>(name);
+                if (screen != null && !screen.ClassListContains("hidden")) return name;
+            }
+            return null;
+        }
     }
 
     /// <summary>
@@ -181,37 +231,38 @@ public class MainMenuController : MonoBehaviour
     }
 
     /// <summary>
-    /// L'écran où Échap ramène depuis `shown` (2026-10-16 : elle ne marchait que depuis
-    /// Personnalisation), ou null. L'armurerie revient à Personnalisation, Jouer, Personnalisation et
-    /// Options à l'écran titre. Rien depuis le salon, qu'on quitte par son bouton (le quitter le ferme
-    /// pour tous quand on l'héberge), ni pendant un remappage, qu'Échap annule seulement. Fonction pure,
-    /// testée.
+    /// L'écran où Échap ramène depuis `shown`, ou null. Jouer, Personnalisation et Options reviennent à
+    /// l'écran titre. Rien depuis le salon, qu'on quitte par son bouton (le quitter le ferme pour tous quand
+    /// on l'héberge), ni depuis l'écran titre (Échap y ouvre la fenêtre « Quitter le jeu ? »), ni pendant un
+    /// remappage, qu'Échap annule seulement. Fonction pure, testée.
     /// </summary>
     public static string BackTarget(string shown, bool rebinding)
     {
         if (rebinding) return null;
         return shown switch
         {
-            "screenWeaponCustomize" => "screenArmory",
-            "screenArmory" or "screenPlay" or "screenOptions" => "screenTitle",
+            PlayScreen or CustomizeScreen or OptionsScreen => TitleScreen,
             _ => null,
         };
     }
 
-    /// <summary>Le retour d'Échap, d'un seul écran.</summary>
+    /// <summary>Le retour d'Échap, d'un seul pas : une fenêtre ouverte se ferme, la bande des choix de
+    /// l'armurerie se replie, puis l'écran revient.</summary>
     private void GoBack()
     {
         if (root == null) return;
-        string shown = null;
-        foreach (string name in ScreenNames)
-        {
-            if (IsShown(name)) { shown = name; break; }
-        }
-        string target = BackTarget(shown, OptionsController.AnyRebinding);
-        if (target == null) return;
-        if (shown == "screenWeaponCustomize" && weaponCustomization != null) weaponCustomization.Close();
-        else ShowScreenByName(target);
+        if (IsOpen(quitModal)) { CloseQuit(); return; }
+        if (IsOpen(pseudoModal)) { ClosePseudo(); return; }
+        if (OptionsController.AnyRebinding) return;
+
+        string shown = CurrentScreen;
+        if (shown == CustomizeScreen && weaponCustomization != null && weaponCustomization.CloseStrip()) return;
+        if (shown == TitleScreen) { OpenQuit(); return; }
+        string target = BackTarget(shown, false);
+        if (target != null) ShowScreenByName(target);
     }
+
+    private static bool IsOpen(VisualElement modal) => modal != null && !modal.ClassListContains("hidden");
 
     private static void QuitGame()
     {
@@ -223,23 +274,129 @@ public class MainMenuController : MonoBehaviour
     }
 
     // ------------------------------------------------------------------
-    // Écran Jouer
+    // Les fenêtres : quitter le jeu, le pseudo
+    // ------------------------------------------------------------------
+
+    private void WireModals()
+    {
+        quitModal = root.Q<VisualElement>("quitModal");
+        pseudoModal = root.Q<VisualElement>("pseudoModal");
+        pseudoField = root.Q<TextField>("pseudoField");
+        pseudoModalLogo = root.Q<ArenaLogo>("pseudoModalLogo");
+
+        root.Q<Button>("quitCancelButton").clicked += CloseQuit;
+        root.Q<Button>("quitBackHint").clicked += CloseQuit;
+        root.Q<Button>("quitConfirmButton").clicked += QuitGame;
+
+        // Le pseudo (2026-10-12), retenu d'une partie à l'autre, annoncé au salon et à l'hôte.
+        pseudoField.RegisterValueChangedCallback(evt =>
+        {
+            GameSettings.PlayerName = evt.newValue;
+            RefreshPlayerCards();
+        });
+        pseudoField.RegisterCallback<KeyDownEvent>(evt =>
+        {
+            if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter) ClosePseudo();
+        }, TrickleDown.TrickleDown);
+        root.Q<Button>("pseudoOkButton").clicked += ClosePseudo;
+    }
+
+    private void OpenQuit()
+    {
+        root.panel?.focusController?.focusedElement?.Blur();
+        quitModal?.RemoveFromClassList("hidden");
+    }
+
+    private void CloseQuit() => quitModal?.AddToClassList("hidden");
+
+    private void OpenPseudo()
+    {
+        if (pseudoModal == null) return;
+        pseudoField.SetValueWithoutNotify(GameSettings.PlayerName);
+        pseudoModal.RemoveFromClassList("hidden");
+        pseudoField.schedule.Execute(() =>
+        {
+            pseudoField.Focus();
+            pseudoField.SelectAll();
+        });
+    }
+
+    private void ClosePseudo()
+    {
+        if (pseudoModal == null) return;
+        pseudoModal.AddToClassList("hidden");
+        pseudoField.Blur();
+        RefreshPlayerCards();
+        armory?.RefreshPlayerName();
+    }
+
+    // ------------------------------------------------------------------
+    // La carte du joueur
+    // ------------------------------------------------------------------
+
+    private void WirePlayerCards()
+    {
+        playerCards.Clear();
+        root.Query<Button>(className: "player-card").ForEach(card =>
+        {
+            playerCards.Add(card);
+            // Dans le salon, le pseudo est déjà parti chez les autres (OnlineSession) : la carte ne s'y
+            // change plus.
+            bool inLobby = ScreenOf(card) == LobbyScreen;
+            card.EnableInClassList("player-card--static", inLobby);
+            if (!inLobby) card.clicked += OpenPseudo;
+        });
+    }
+
+    // Le nom de l'écran qui contient `element`, ou null.
+    private static string ScreenOf(VisualElement element)
+    {
+        for (VisualElement v = element; v != null; v = v.parent)
+        {
+            if (System.Array.IndexOf(ScreenNames, v.name) >= 0) return v.name;
+        }
+        return null;
+    }
+
+    /// <summary>Le pseudo et la couleur du robot, sur toutes les cartes du joueur (après un changement de
+    /// pseudo ou de couleur).</summary>
+    public void RefreshPlayerCards()
+    {
+        string name = PlayerMatchState.SanitizeName(GameSettings.PlayerName);
+        Color32 color = PlayerColor;
+        foreach (Button card in playerCards)
+        {
+            bool editable = !card.ClassListContains("player-card--static");
+            Label label = card.Q<Label>(className: "player-card__name");
+            if (label != null)
+                label.text = !string.IsNullOrEmpty(name) ? name.ToUpperInvariant() : editable ? "CHOISIS TON PSEUDO" : "JOUEUR";
+            ArenaLogo logo = card.Q<ArenaLogo>();
+            if (logo != null) logo.LogoColor = color;
+        }
+        if (pseudoModalLogo != null) pseudoModalLogo.LogoColor = color;
+    }
+
+    /// <summary>La couleur du robot du joueur : celle qu'il a choisie, sinon la première de la palette (celle
+    /// que reçoit le premier arrivé).</summary>
+    public Color32 PlayerColor
+    {
+        get
+        {
+            IReadOnlyList<Color32> palette = characterPreview != null ? characterPreview.Palette : System.Array.Empty<Color32>();
+            if (palette.Count == 0) return new Color32(244, 190, 28, 255);
+            int index = GameSettings.PreferredColorIndex;
+            return palette[index >= 0 && index < palette.Count ? index : 0];
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Écran Jouer : rejoindre par le code, le réseau local, le message
     // ------------------------------------------------------------------
 
     private void WirePlayScreen()
     {
-        // Le pseudo (2026-10-12), retenu d'une partie à l'autre, annoncé au salon et à l'hôte.
-        TextField pseudoField = root.Q<TextField>("pseudoField");
-        if (pseudoField != null)
-        {
-            pseudoField.value = GameSettings.PlayerName;
-            pseudoField.RegisterValueChangedCallback(evt => GameSettings.PlayerName = evt.newValue);
-        }
-
-        createButton = root.Q<Button>("createButton");
         joinCodeButton = root.Q<Button>("joinCodeButton");
         joinCodeField = root.Q<TextField>("joinCodeField");
-        createButton.clicked += () => lobby.Create();
         joinCodeButton.clicked += () => lobby.Join(joinCodeField.value);
 
         // Le code s'écrit comme le service l'attend (majuscules, lettres et chiffres), et Entrée rejoint.
@@ -259,6 +416,7 @@ public class MainMenuController : MonoBehaviour
         joinPortField = root.Q<TextField>("joinPortField");
         hostButton = root.Q<Button>("hostButton");
         joinButton = root.Q<Button>("joinButton");
+        joinButtonLabel = root.Q<Label>("joinButtonLabel");
         localIpLabel = root.Q<Label>("localIpLabel");
         lanRulesLabel = root.Q<Label>("lanRulesLabel");
         playStatusLabel = root.Q<Label>("playStatusLabel");
@@ -269,7 +427,8 @@ public class MainMenuController : MonoBehaviour
 
     private void OnPlayScreenShown()
     {
-        if (lanRulesLabel != null) lanRulesLabel.text = "Réglages : ceux de ta dernière partie créée. " + LobbyController.DescribeRules(GameSettings.HostRules);
+        if (lanRulesLabel != null) lanRulesLabel.text = "Réglages : " + LobbyController.DescribeRules(GameSettings.HostRules);
+        playScreen?.OnShown();
 
         // Les services en ligne se préparent pendant que le joueur lit l'écran : créer ou rejoindre
         // part ensuite sans attendre la connexion. Un échec (pas d'internet) se dira au clic.
@@ -282,27 +441,30 @@ public class MainMenuController : MonoBehaviour
         catch (System.Exception e) { Debug.Log($"[En ligne] Services injoignables pour l'instant : {e.Message}"); }
     }
 
-    /// <summary>Le message sous les cartes de l'écran Jouer (le salon y renvoie ses erreurs).</summary>
+    /// <summary>Le message de l'écran Jouer (le salon y renvoie ses erreurs).</summary>
     public void ShowPlayStatus(string message, bool isError) => SetStatus(message, isError);
 
     /// <summary>Une demande au service en ligne est en cours : pas de seconde demande en même temps.</summary>
     public void SetOnlineBusy(bool busy)
     {
         onlineBusy = busy;
-        createButton?.SetEnabled(!busy);
         joinCodeButton?.SetEnabled(!busy);
         hostButton?.SetEnabled(!busy && !joinAttemptInProgress);
         joinButton?.SetEnabled(!busy);
+        playScreen?.SetBusy(busy);
     }
 
+    /// <summary>Une demande en ligne ou une connexion en réseau local est en cours.</summary>
+    public bool Busy => onlineBusy || joinAttemptInProgress;
+
     // ------------------------------------------------------------------
-    // Réseau local (sans code)
+    // Le stand de tir, le réseau local (sans code)
     // ------------------------------------------------------------------
 
     /// <summary>
     /// Le stand de tir (2026-10-16) : un hôte qui n'écoute que cette machine, et la scène du stand au
-    /// lieu de l'arène (ShootingRange). Lancé par le bouton de l'écran titre, ou tout seul quand on a
-    /// ouvert le stand dans l'Editor (ShootingRangeBootstrap).
+    /// lieu de l'arène (ShootingRange). Lancé par l'onglet Entraînement de l'écran Jouer, ou tout seul quand
+    /// on a ouvert le stand dans l'Editor (ShootingRangeBootstrap).
     /// </summary>
     public void StartShootingRange()
     {
@@ -393,7 +555,7 @@ public class MainMenuController : MonoBehaviour
         }
 
         joinAttemptInProgress = true;
-        joinButton.text = "Annuler";
+        joinButtonLabel.text = "ANNULER";
         hostButton.SetEnabled(false);
         SetStatus($"Connexion à {ip}:{port}...", false);
     }
@@ -422,7 +584,7 @@ public class MainMenuController : MonoBehaviour
     private void EndJoinAttempt(string message, bool isError)
     {
         joinAttemptInProgress = false;
-        joinButton.text = "Rejoindre";
+        joinButtonLabel.text = "REJOINDRE";
         hostButton.SetEnabled(!onlineBusy);
         SetStatus(message, isError);
     }
@@ -431,8 +593,8 @@ public class MainMenuController : MonoBehaviour
     {
         if (playStatusLabel == null) return;
         playStatusLabel.text = message;
-        playStatusLabel.EnableInClassList("status-label--error", isError);
-        playStatusLabel.EnableInClassList("status-label--ok", !isError && message == "Connecté.");
+        playStatusLabel.EnableInClassList("da-status--error", isError);
+        playStatusLabel.EnableInClassList("da-status--ok", !isError && message == "Connecté.");
     }
 
     private static ushort ParsePort(string text, ushort fallback)

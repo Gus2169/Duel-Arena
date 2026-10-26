@@ -134,6 +134,7 @@ public static class AttachmentImporter
         material.SetFloat("_Intensite", ReticleIntensity);
         material.SetFloat("_Forme", shape);
         material.SetFloat("_Rayon", ReticleRadius(d.rayonReticule));
+        material.SetFloat("_Trait", ReticleRadius(d.traitReticule > 0f ? d.traitReticule : d.rayonReticule * 0.075f));
         material.SetFloat("_AxeCamera", 0f);   // la vue subjective le pose sur sa copie (FirstPersonView)
         material.enableInstancing = false;
         EditorUtility.SetDirty(material);
@@ -342,6 +343,7 @@ public static class AttachmentImporter
         public string reticule;          // viseur : la forme du réticule (ReticleShapes)
         public string couleurReticule;   // « rouge » ou « vert »
         public float rayonReticule;      // m, tel que dessiné dans Blender
+        public float traitReticule;      // m, l'épaisseur de ses traits (0 : 7,5 % du rayon, comme avant le 2026-10-26)
         public float hauteurAxe;         // m, l'axe optique au-dessus du rail
         public string couleurFaisceau;   // laser
         public string effet;             // poignée : « recul » ou « epaulement »

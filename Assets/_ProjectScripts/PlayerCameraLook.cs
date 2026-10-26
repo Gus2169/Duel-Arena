@@ -81,6 +81,8 @@ public class PlayerCameraLook : MonoBehaviour
         Vector2 look = input.LookInput * mouseSensitivity * GameSettings.SensitivityMultiplier
             * (firstPersonView != null ? firstPersonView.LookScale : 1f);
 
+        // L'axe vertical inversé (Options) ne change que le sens du tangage, avant le snapshot qui le lit.
+        if (GameSettings.InvertY) look.y = -look.y;
         pitch = Mathf.Clamp(pitch - look.y, minPitch, maxPitch);
         ApplyLocalRotation();
         ApplyLean();

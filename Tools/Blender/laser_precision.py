@@ -334,12 +334,21 @@ def rafistolages(a):
         kit.vis_six_pans(pc, P(av, 0.106, 0.0292), GAUCHE, r=0.0018, h=0.0010, mat="Acier")
     a.objet(pc)
 
-    # le compteur de charge, sur son boîtier à l'arrière de la carcasse, sous la lunette, face au joueur
+    # le compteur de charge, dans un boîtier vissé sur le haut gauche de la carcasse, entre les embases
+    # de la lunette, tourné vers l'œil à la hanche (2026-10-26, signalé par l'utilisateur : au dos de la
+    # carcasse, sous l'oculaire, il sortait de l'écran à la hanche ; en visée, la lunette le remplit).
+    # L'œil à la hanche, mesuré dans Unity : 35 cm derrière l'oculaire, 18 cm au-dessus, 12 cm à gauche.
     pc = a.piece("Compteur", "Peinture")
-    f = kit.prisme(pc, [(-0.093, 0.1428), (-0.080, 0.1610), (-0.064, 0.1610), (-0.064, 0.1480)], -0.0145, 0.0145,
-                   "Peinture")
-    kit.chanfreiner(pc, 0.0010, f)
-    ca.compteur_arriere(pc, P(-0.0865, 0.1519), 0.0230, 0.0170, elevation=35.5, chiffres="05")
+    centre, largeur, hauteur, elevation, lacet = P(0.057, 0.150, 0.028), 0.0260, 0.0180, 23.3, 10.9
+    n, haut, droite = ca.repere_compteur(elevation, lacet)
+    profondeur = 0.024   # le boîtier s'enfonce dans la carcasse, vers l'avant et le bas
+    f = kit.boite_axes(pc, centre - n * (profondeur / 2), droite, haut, n, largeur / 2 + 0.0015, hauteur / 2 + 0.0015,
+                       profondeur / 2, "Peinture")
+    kit.chanfreiner(pc, 0.0012, f)
+    for u in (-1, 1):   # ses deux vis, sur le flanc qui regarde le joueur
+        kit.vis_six_pans(pc, centre - n * 0.012 - haut * (u * 0.005) + droite * -(largeur / 2 + 0.0015), -droite,
+                         r=0.0019, h=0.0010, mat="Acier")
+    ca.compteur_arriere(pc, centre, largeur, hauteur, elevation=elevation, lacet=lacet, chiffres="05")
     a.objet(pc)
 
 

@@ -579,3 +579,237 @@
     -unity-text-outline-width: 2px;
     -unity-text-outline-color: rgba(0, 0, 0, 0.7);
 }
+
+/* Les Options dans le menu d'Échap (2026-10-17) : le panneau partagé, plus large que les boutons du menu. */
+.pause-options {
+    width: 1300px;
+    max-width: 94%;
+}
+
+.pause-options > .options-instance {
+    width: auto;
+    max-width: none;
+}
+
+/* -------------------- Vote de fin de match (2026-10-26) -------------------- */
+
+.end-vote {
+    margin-top: 24px;
+}
+
+.end-vote-status {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.end-vote-chip {
+    flex-direction: row;
+    align-items: center;
+    margin-right: 18px;
+    padding: 6px 12px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+}
+
+.end-vote-chip__name {
+    font-size: 16px;
+    -unity-font-style: bold;
+    color: rgb(232, 236, 240);
+    margin: 0 10px 0 0;
+    padding: 0;
+}
+
+.end-vote-chip__choice {
+    font-size: 15px;
+    color: rgb(150, 160, 172);
+    margin: 0;
+    padding: 0;
+}
+
+.end-vote-chip--rematch {
+    border-color: rgba(120, 220, 140, 0.7);
+}
+
+.end-vote-chip--rematch > .end-vote-chip__choice {
+    color: rgb(140, 230, 160);
+}
+
+.end-vote-chip--salon {
+    border-color: rgba(255, 200, 80, 0.7);
+}
+
+.end-vote-chip--salon > .end-vote-chip__choice {
+    color: rgb(255, 210, 110);
+}
+
+.end-vote-buttons {
+    flex-direction: row;
+}
+
+.end-vote-button {
+    width: 260px;
+    margin-top: 0;
+    margin-right: 14px;
+}
+
+.end-vote-button--chosen {
+    border-width: 3px;
+    border-color: rgb(255, 255, 255);
+}
+
+/* -------------------- Salon de la partie (2026-10-26) -------------------- */
+
+.salon-panel {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 1040px;
+    translate: -50% -50%;
+    background-color: rgba(12, 15, 20, 0.95);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 28px 32px;
+}
+
+.salon-header {
+    flex-direction: row;
+    align-items: flex-end;
+    margin-bottom: 18px;
+}
+
+.salon-title {
+    font-size: 44px;
+    -unity-font-style: bold;
+    letter-spacing: 4px;
+    color: rgb(255, 210, 30);
+    margin: 0 18px 0 0;
+    padding: 0;
+}
+
+.salon-mode {
+    font-size: 20px;
+    color: rgb(200, 205, 212);
+    margin: 0 0 6px 0;
+    padding: 0;
+}
+
+.salon-body {
+    flex-direction: row;
+}
+
+.salon-column {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-right: 28px;
+}
+
+.salon-section {
+    font-size: 14px;
+    -unity-font-style: bold;
+    letter-spacing: 2px;
+    color: rgb(143, 155, 168);
+    margin: 0 0 8px 0;
+    padding: 0;
+}
+
+.salon-players {
+    background-color: rgba(255, 255, 255, 0.03);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 6px 0;
+}
+
+.salon-player {
+    flex-direction: row;
+    align-items: center;
+    height: 40px;
+    padding: 0 14px;
+}
+
+.salon-player__swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    margin-right: 12px;
+}
+
+.salon-player__name {
+    flex-grow: 1;
+    font-size: 18px;
+    -unity-font-style: bold;
+    color: rgb(232, 236, 240);
+    margin: 0;
+    padding: 0;
+}
+
+.salon-player__role {
+    font-size: 15px;
+    color: rgb(150, 160, 172);
+    margin: 0;
+    padding: 0;
+}
+
+.salon-rule {
+    flex-direction: row;
+    align-items: center;
+    height: 42px;
+    border-bottom-width: 1px;
+    border-color: rgba(150, 170, 190, 0.16);
+}
+
+.salon-rule__label {
+    flex-grow: 1;
+    font-size: 14px;
+    -unity-font-style: bold;
+    letter-spacing: 1px;
+    color: rgb(143, 155, 168);
+    margin: 0;
+    padding: 0;
+}
+
+.salon-rule__cycler {
+    flex-grow: 0;
+    width: 260px;
+}
+
+.salon-hint {
+    font-size: 14px;
+    color: rgb(143, 155, 168);
+    margin-top: 8px;
+    white-space: normal;
+}
+
+.salon-invite {
+    font-size: 16px;
+    color: rgb(200, 205, 212);
+    margin-top: 18px;
+}
+
+.salon-footer {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 18px;
+}
+
+.salon-status {
+    font-size: 16px;
+    color: rgb(170, 177, 186);
+    flex-shrink: 1;
+    white-space: normal;
+}
+
+.salon-buttons {
+    flex-direction: row;
+}
+
+.salon-button {
+    width: 240px;
+    margin-top: 0;
+    margin-left: 14px;
+}

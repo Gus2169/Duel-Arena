@@ -288,16 +288,36 @@ def arc(pc, centre, r, ep, mat, a0=0.0, a1=2 * math.pi, n=28, normale=VERS_TIREU
 FORMES_RETICULE = ("point", "cercle_point", "cercle_chevron", "losange_point", "tirets_point", "cercle_croix",
                    "triangle", "tirets_chevron")
 
+# Les chevrons, en part du rayon : demi-envergure et chute de leurs branches (le shader a les mêmes).
+CHEVRONS = {"cercle_chevron": (0.22, 0.18), "tirets_chevron": (0.20, 0.16)}
 
-def reticule(a, forme, couleur, av, h, rayon):
+
+def chevron(pc, pt, demi, chute, ep, mat):
+    """Un « ^ » dont la pointe est le point visé, au centre (comme les chevrons de Rainbow Six) : ses
+    branches descendent de `chute` en s'écartant de `demi`, d'épaisseur ep ; leur face extérieure
+    passe par la pointe et leurs bouts sont coupés d'équerre. pt(u, v) : un point du réticule, dans
+    les unités de demi, chute et ep."""
+    longueur = math.hypot(demi, chute)
+    nu, nv = chute / longueur, demi / longueur        # normale de la branche droite, vers l'extérieur
+    for s in (1, -1):
+        bout = (s * demi, -chute)
+        coins = [(0.0, 0.0), bout, (bout[0] - s * nu * ep, bout[1] - nv * ep), (0.0, -ep * longueur / demi)]
+        kit.quad(pc, [pt(u, v) for u, v in (coins if s > 0 else reversed(coins))], mat, normale=VERS_TIREUR)
+
+
+def reticule(a, forme, couleur, av, h, rayon, trait_=None):
     """Le réticule de Rainbow Six tel qu'on le voit en visant, posé contre la vitre, pour les seuls
     rendus de contrôle : dans Unity, le shader du viseur le dessine à l'infini (fiche : forme, couleur).
-    rayon : celui du cercle du réticule, ou sa demi-largeur."""
+    rayon : celui du cercle du réticule, ou sa demi-largeur. trait_ : l'épaisseur des traits (m, dans
+    les mêmes unités que rayon) ; par défaut, 7,5 % du rayon.
+    Les réticules qui visent par une pointe (chevrons, triangle) l'ont au centre exact (2026-10-26 :
+    elle était au-dessus du point visé, ou le triangle centré sur lui, et l'utilisateur les trouvait
+    « pas précis »)."""
     assert forme in FORMES_RETICULE, forme
     mat = "ReticuleRouge" if couleur == "rouge" else "ReticuleVert"
     pc = a.piece("Reticule", mat)
     c = P(av, h) + VERS_TIREUR * 0.0004
-    ep = rayon * 0.075
+    ep = rayon * 0.075 if trait_ is None else trait_
 
     def pt(u, v):
         return c + DROITE * (u * rayon) + HAUT * (v * rayon)
@@ -316,18 +336,19 @@ def reticule(a, forme, couleur, av, h, rayon):
     if forme in ("tirets_point", "tirets_chevron"):
         for s in (1, -1):
             trait(pc, pt(s * 0.32, 0), pt(s * 0.95, 0), ep * 1.3, mat)
-    if forme in ("cercle_chevron", "tirets_chevron"):
-        k = 0.42 if forme == "cercle_chevron" else 0.30
-        trait(pc, pt(-k, -k * 0.75), pt(0, k * 0.15), ep * 1.2, mat)
-        trait(pc, pt(0, k * 0.15), pt(k, -k * 0.75), ep * 1.2, mat)
+    if forme in CHEVRONS:
+        demi, chute = CHEVRONS[forme]
+        chevron(pc, pt, demi, chute, ep / rayon, mat)
     if forme == "triangle":
-        kit.quad(pc, [pt(-0.30, -0.22), pt(0.30, -0.22), pt(0.0, 0.30)], mat, normale=VERS_TIREUR)
+        # plein, sa pointe en haut au point visé ; rayon : sa demi-largeur
+        kit.quad(pc, [pt(0.0, 0.0), pt(-1.0, -1.6), pt(1.0, -1.6)], mat, normale=VERS_TIREUR)
     ob = a.objet(pc, angle=None)
     a.controle.append(ob)
     a.objets.remove(ob)
     a.donnees["reticule"] = forme
     a.donnees["couleurReticule"] = couleur
     a.donnees["rayonReticule"] = rayon   # Unity en tire sa taille à l'écran (WeaponImporter)
+    a.donnees["traitReticule"] = ep
     return ob
 
 

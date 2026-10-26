@@ -76,15 +76,16 @@ public class UiSounds : MonoBehaviour
         return null;
     }
 
-    /// <summary>Le genre de son d'un élément cliquable, d'après ses classes USS. Fonction pure, testée.</summary>
+    /// <summary>Le genre de son d'un élément cliquable, d'après ses classes USS. Le menu refait le 2026-10-17
+    /// porte des classes qui ne servent qu'à ça (`ui-confirm`, `ui-back`, `ui-select`) ; l'interface de la
+    /// partie garde les siennes. Fonction pure, testée.</summary>
     public static Kind KindOf(VisualElement element)
     {
         if (element == null) return Kind.None;
-        if (element.ClassListContains("back-button") || element.ClassListContains("menu-button--quit")) return Kind.Back;
-        if (element.ClassListContains("menu-button--primary")) return Kind.Confirm;
-        if (element.ClassListContains("custom-weapon-row") || element.ClassListContains("loadout-card")
-            || element.ClassListContains("color-swatch") || element.ClassListContains("gunsmith-tab")
-            || element.ClassListContains("gunsmith-tile") || element.ClassListContains("gunsmith-choice")) return Kind.Select;
+        if (element.ClassListContains("ui-back") || element.ClassListContains("back-button")
+            || element.ClassListContains("menu-button--quit")) return Kind.Back;
+        if (element.ClassListContains("ui-confirm") || element.ClassListContains("menu-button--primary")) return Kind.Confirm;
+        if (element.ClassListContains("ui-select") || element.ClassListContains("loadout-card")) return Kind.Select;
         return Kind.Click;
     }
 }

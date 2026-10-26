@@ -42,6 +42,12 @@ public static class OnlineSession
     /// <summary>Propriété de chaque joueur : son pseudo, tel qu'il l'a tapé (nettoyé).</summary>
     public const string NameKey = "pseudo";
 
+    /// <summary>Propriété de chaque joueur : la couleur choisie pour son robot (son rang dans la palette, -1
+    /// sans choix), pour les portraits du salon (2026-10-17).</summary>
+    public const string ColorKey = "couleur";
+    /// <summary>Le châssis choisi par chaque joueur (son rang, ChassisId), pour les portraits du salon (2026-10-26).</summary>
+    public const string ChassisKey = "chassis";
+
     /// <summary>Le salon de cette machine, null hors d'une partie en ligne.</summary>
     public static ISession Current { get; private set; }
 
@@ -453,11 +459,35 @@ public static class OnlineSession
         => new Dictionary<string, PlayerProperty>
         {
             [NameKey] = new PlayerProperty(PlayerMatchState.SanitizeName(GameSettings.PlayerName), VisibilityPropertyOptions.Member),
+            [ColorKey] = new PlayerProperty(GameSettings.PreferredColorIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), VisibilityPropertyOptions.Member),
+            [ChassisKey] = new PlayerProperty(((int)GameSettings.PreferredChassis).ToString(System.Globalization.CultureInfo.InvariantCulture), VisibilityPropertyOptions.Member),
         };
 
     /// <summary>Le pseudo d'un joueur du salon (vide s'il n'en a pas donné).</summary>
     public static string NameOf(IReadOnlyPlayer player)
         => player != null && player.Properties != null ? PlayerMatchState.SanitizeName(PropertyValue(player.Properties, NameKey)) : "";
+
+    /// <summary>La couleur choisie par un joueur du salon (son rang dans la palette), -1 sans choix.</summary>
+    public static int ColorOf(IReadOnlyPlayer player)
+        => player != null && ParseColor(PropertyValue(player.Properties, ColorKey), out int index) ? index : -1;
+
+    /// <summary>Le châssis choisi par un joueur du salon : le CT-01 sans choix lisible.</summary>
+    public static ChassisId ChassisOf(IReadOnlyPlayer player)
+        => player != null && int.TryParse(PropertyValue(player.Properties, ChassisKey), System.Globalization.NumberStyles.None,
+                                          System.Globalization.CultureInfo.InvariantCulture, out int value)
+            ? RobotChassis.Sanitized(value)
+            : ChassisId.CT01;
+
+    /// <summary>Le rang de couleur publié par un joueur : un entier de -1 à 63, sinon rien. Fonction pure,
+    /// testée.</summary>
+    public static bool ParseColor(string text, out int index)
+    {
+        index = -1;
+        if (!int.TryParse(text, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out int value)) return false;
+        if (value < -1 || value > 63) return false;
+        index = value;
+        return true;
+    }
 
     private static string PropertyValue(IReadOnlyDictionary<string, SessionProperty> properties, string key)
         => properties != null && properties.TryGetValue(key, out SessionProperty property) && property != null ? property.Value ?? "" : "";
@@ -483,12 +513,12 @@ public static class OnlineSession
         return builder.ToString();
     }
 
-    /// <summary>Les réglages en propriété du salon : « places;organisation;interventions ». Fonction pure,
-    /// testée (aller-retour avec ParseRules).</summary>
+    /// <summary>Les réglages en propriété du salon : « places;organisation;interventions;manches ». Fonction
+    /// pure, testée (aller-retour avec ParseRules).</summary>
     public static string FormatRules(MatchRules rules)
     {
         MatchRules r = rules.Sanitized();
-        return $"{r.capacity};{(int)r.organization};{(r.spectatorInterventions ? 1 : 0)}";
+        return $"{r.capacity};{(int)r.organization};{(r.spectatorInterventions ? 1 : 0)};{r.roundsToWin}";
     }
 
     /// <summary>Relit les réglages publiés par l'hôte. Ce qui manque ou ne se lit pas garde sa valeur par
@@ -501,6 +531,7 @@ public static class OnlineSession
         if (parts.Length > 0 && byte.TryParse(parts[0], out byte capacity)) rules.capacity = capacity;
         if (parts.Length > 1 && byte.TryParse(parts[1], out byte organization)) rules.organization = (DuelOrganization)organization;
         if (parts.Length > 2) rules.spectatorInterventions = parts[2].Trim() != "0";
+        if (parts.Length > 3 && byte.TryParse(parts[3], out byte rounds)) rules.roundsToWin = rounds;
         return rules.Sanitized();
     }
 

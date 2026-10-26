@@ -1,58 +1,107 @@
-<ui:UXML xmlns:ui="UnityEngine.UIElements">
-    <!-- Le panneau des Options, partagé par le menu principal et le menu d'Échap en partie
-         (2026-10-12). OptionsController le retrouve par les noms ci-dessous, où qu'il soit. -->
-    <ui:Style src="../MainMenu/MainMenu.uss" />
-    <ui:VisualElement class="panel">
-        <ui:Label class="panel-title" text="Options" />
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:da="DuelArena.UI">
+    <!-- Le panneau des Options, partagé par le menu principal et le menu d'Échap en partie (2026-10-12),
+         refait le 2026-10-17 d'après la maquette de l'utilisateur : onglets verticaux, curseurs avec leur
+         valeur, sélecteurs « ‹ Non › ». OptionsController le retrouve par les noms ci-dessous, où qu'il soit.
+         Pas de bouton Appliquer : chaque réglage s'applique aussitôt. -->
+    <ui:Style src="Theme.uss" />
+    <ui:Style src="OptionsPanel.uss" />
+    <ui:VisualElement class="opt-panel da-vars da-font">
+        <da:ArenaLogo class="opt-watermark" />
 
-        <ui:VisualElement class="tab-row">
-            <ui:Button name="tabGraphicsButton" class="tab-button tab-button--active" text="Graphismes" />
-            <ui:Button name="tabAudioButton" class="tab-button" text="Son" />
-            <ui:Button name="tabControlsButton" class="tab-button" text="Commandes" />
+        <ui:VisualElement class="opt-header">
+            <da:ArenaLogo class="opt-header__logo" />
+            <ui:Label class="opt-header__title" text="OPTIONS" />
         </ui:VisualElement>
 
-        <!-- Graphismes -->
-        <ui:VisualElement name="pageGraphics" class="options-page">
-            <ui:VisualElement class="option-row">
-                <ui:Label text="Résolution" />
-                <ui:DropdownField name="resolutionDropdown" class="option-control" />
-            </ui:VisualElement>
-            <ui:VisualElement class="option-row">
-                <ui:Label text="Plein écran" />
-                <ui:Toggle name="fullscreenToggle" class="option-control" />
-            </ui:VisualElement>
-            <ui:VisualElement class="option-row">
-                <ui:Label text="Synchronisation verticale" />
-                <ui:Toggle name="vsyncToggle" class="option-control" />
-            </ui:VisualElement>
-            <ui:VisualElement class="option-row">
-                <ui:Label text="Limite d'images / seconde" />
-                <ui:DropdownField name="frameRateDropdown" class="option-control" />
-            </ui:VisualElement>
-        </ui:VisualElement>
-
-        <!-- Son (2026-10-13) -->
-        <ui:VisualElement name="pageAudio" class="options-page hidden">
-            <ui:VisualElement class="option-row">
-                <ui:Label text="Volume général" />
-                <ui:Slider name="masterVolumeSlider" class="option-control" low-value="0" high-value="1" />
-            </ui:VisualElement>
-            <ui:VisualElement class="option-row">
-                <ui:Label text="Musique" />
-                <ui:Slider name="musicVolumeSlider" class="option-control" low-value="0" high-value="1" />
-            </ui:VisualElement>
-        </ui:VisualElement>
-
-        <!-- Commandes -->
-        <ui:VisualElement name="pageControls" class="options-page hidden">
-            <ui:VisualElement class="option-row">
-                <ui:Label text="Sensibilité de la souris" />
-                <ui:Slider name="sensitivitySlider" class="option-control" low-value="0.2" high-value="3" />
+        <ui:VisualElement class="opt-body">
+            <ui:VisualElement class="opt-tabs">
+                <ui:Button name="tabGameplayButton" class="da-btn opt-tab opt-tab--active" focusable="false">
+                    <da:SlantBox class="slant-bg" />
+                    <ui:Label class="da-btn__label opt-tab__label" text="GAMEPLAY" picking-mode="Ignore" />
+                    <ui:VisualElement class="opt-tab__chevron ico-chevron-right" picking-mode="Ignore" />
+                </ui:Button>
+                <ui:Button name="tabAudioButton" class="da-btn opt-tab" focusable="false">
+                    <da:SlantBox class="slant-bg" />
+                    <ui:Label class="da-btn__label opt-tab__label" text="AUDIO" picking-mode="Ignore" />
+                    <ui:VisualElement class="opt-tab__chevron ico-chevron-right" picking-mode="Ignore" />
+                </ui:Button>
+                <ui:Button name="tabGraphicsButton" class="da-btn opt-tab" focusable="false">
+                    <da:SlantBox class="slant-bg" />
+                    <ui:Label class="da-btn__label opt-tab__label" text="VIDÉO" picking-mode="Ignore" />
+                    <ui:VisualElement class="opt-tab__chevron ico-chevron-right" picking-mode="Ignore" />
+                </ui:Button>
+                <ui:Button name="tabControlsButton" class="da-btn opt-tab" focusable="false">
+                    <da:SlantBox class="slant-bg" />
+                    <ui:Label class="da-btn__label opt-tab__label" text="CONTRÔLES" picking-mode="Ignore" />
+                    <ui:VisualElement class="opt-tab__chevron ico-chevron-right" picking-mode="Ignore" />
+                </ui:Button>
             </ui:VisualElement>
 
-            <ui:Label class="section-label" text="TOUCHES" />
-            <ui:ScrollView name="bindRowScroll" class="controls-scroll" />
-            <ui:Button name="resetBindingsButton" class="reset-bindings-button" text="Réinitialiser les touches" />
+            <da:SlantBox class="opt-content">
+                <!-- Gameplay -->
+                <ui:VisualElement name="pageGameplay" class="opt-page">
+                    <ui:VisualElement class="opt-row">
+                        <ui:Label class="opt-row__label" text="Sensibilité de la souris" />
+                        <ui:Slider name="sensitivitySlider" class="da-slider opt-row__slider" low-value="0.2" high-value="3" fill="true" />
+                        <ui:Label name="sensitivityValue" class="opt-row__value" text="" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="opt-row">
+                        <ui:Label class="opt-row__label" text="Inversion de l'axe vertical" />
+                        <da:OptionCycler name="invertYCycler" class="opt-row__cycler" choices-text="Non;Oui" loop="true" />
+                        <ui:VisualElement class="opt-row__value" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <!-- Audio (2026-10-13) -->
+                <ui:VisualElement name="pageAudio" class="opt-page hidden">
+                    <ui:VisualElement class="opt-row">
+                        <ui:Label class="opt-row__label" text="Volume général" />
+                        <ui:Slider name="masterVolumeSlider" class="da-slider opt-row__slider" low-value="0" high-value="1" fill="true" />
+                        <ui:Label name="masterVolumeValue" class="opt-row__value" text="" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="opt-row">
+                        <ui:Label class="opt-row__label" text="Musique" />
+                        <ui:Slider name="musicVolumeSlider" class="da-slider opt-row__slider" low-value="0" high-value="1" fill="true" />
+                        <ui:Label name="musicVolumeValue" class="opt-row__value" text="" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <!-- Vidéo -->
+                <ui:VisualElement name="pageGraphics" class="opt-page hidden">
+                    <ui:VisualElement class="opt-row">
+                        <ui:Label class="opt-row__label" text="Résolution" />
+                        <da:OptionCycler name="resolutionCycler" class="opt-row__cycler" />
+                        <ui:VisualElement class="opt-row__value" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="opt-row">
+                        <ui:Label class="opt-row__label" text="Plein écran" />
+                        <da:OptionCycler name="fullscreenCycler" class="opt-row__cycler" choices-text="Non;Oui" loop="true" />
+                        <ui:VisualElement class="opt-row__value" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="opt-row">
+                        <ui:Label class="opt-row__label" text="Synchronisation verticale" />
+                        <da:OptionCycler name="vsyncCycler" class="opt-row__cycler" choices-text="Non;Oui" loop="true" />
+                        <ui:VisualElement class="opt-row__value" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="opt-row">
+                        <ui:Label class="opt-row__label" text="Limite d'images par seconde" />
+                        <da:OptionCycler name="frameRateCycler" class="opt-row__cycler" />
+                        <ui:VisualElement class="opt-row__value" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <!-- Contrôles -->
+                <ui:VisualElement name="pageControls" class="opt-page hidden">
+                    <ui:VisualElement class="opt-controls-head">
+                        <ui:Label class="opt-section" text="TOUCHES" />
+                        <ui:Button name="resetBindingsButton" class="da-btn opt-reset" focusable="false">
+                            <da:SlantBox class="slant-bg" />
+                            <ui:Label class="da-btn__label" text="RÉINITIALISER" picking-mode="Ignore" />
+                        </ui:Button>
+                    </ui:VisualElement>
+                    <ui:ScrollView name="bindRowScroll" class="opt-binds" horizontal-scroller-visibility="Hidden" />
+                </ui:VisualElement>
+            </da:SlantBox>
         </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

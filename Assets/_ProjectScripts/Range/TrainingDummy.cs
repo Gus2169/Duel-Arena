@@ -23,6 +23,9 @@ public class TrainingDummy : NetworkBehaviour
     [Tooltip("Le temps (s) sans être touché après lequel le mannequin retrouve toute sa vie.")]
     [SerializeField] private float regenDelay = 3f;
 
+    [Tooltip("Se relève-t-il seul ? Faux pour les cibles de la Fosse, relevées par le parcours (CourseTarget).")]
+    [SerializeField] private bool regenerates = true;
+
     [Tooltip("Hauteur de l'œil (m) : la tête touchable est centrée dessus, comme celle d'un robot debout (PlayerLocomotion).")]
     [SerializeField] private float eyeHeight = 1.65f;
 
@@ -35,6 +38,7 @@ public class TrainingDummy : NetworkBehaviour
     [SerializeField] private Color tint = new Color(0.86f, 0.74f, 0.42f, 1f);
 
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+    private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
 
     private Health health;
     private PlayerHitbox hitbox;
@@ -44,6 +48,8 @@ public class TrainingDummy : NetworkBehaviour
     private double lastHitAt = double.NegativeInfinity;
 
     public Health Health => health;
+    public PlayerHitbox Hitbox => hitbox;
+    public bool Regenerates => regenerates;
     public float RegenDelay => regenDelay;
     public float EyeHeight => eyeHeight;
 
@@ -73,7 +79,7 @@ public class TrainingDummy : NetworkBehaviour
         if (idlePlayable.IsValid() && idleClip != null && idleClip.length > 0f && idlePlayable.GetTime() >= idleClip.length)
             idlePlayable.SetTime(idlePlayable.GetTime() % idleClip.length);
 
-        if (!IsServer || !IsSpawned || health == null) return;
+        if (!regenerates || !IsServer || !IsSpawned || health == null) return;
         double now = NetworkManager.ServerTime.Time;
         float current = health.Current;
         if (lastSeenHealth >= 0f && current < lastSeenHealth) lastHitAt = now;
@@ -118,6 +124,16 @@ public class TrainingDummy : NetworkBehaviour
             r.GetPropertyBlock(block);
             block.SetColor(BaseColorId, tint);
             r.SetPropertyBlock(block);
+            // Un mannequin n'a pas de lueurs (les yeux et les fentes du CT-01) : sable, éteintes.
+            Material[] materials = r.sharedMaterials;
+            for (int i = 0; i < materials.Length; i++)
+            {
+                if (materials[i] == null || !materials[i].name.Contains(PlayerPaint.GlowSlot)) continue;
+                r.GetPropertyBlock(block, i);
+                block.SetColor(BaseColorId, tint);
+                block.SetColor(EmissionColorId, Color.black);
+                r.SetPropertyBlock(block, i);
+            }
         }
 
         Animator animator = copy.GetComponent<Animator>();

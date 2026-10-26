@@ -1,13 +1,14 @@
-<ui:UXML xmlns:ui="UnityEngine.UIElements">
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:da="DuelArena.UI">
     <!-- L'interface de la partie (2026-10-12) : barre de score, vie, messages de manche, panneau de
-         préparation, fondu au noir, écran de fin et menu d'Échap. Pilotée par GameHud, LoadoutPanel,
-         MatchEndScreen, PauseMenu et OptionsController, sur /GameUI de MultiTestScene.
+         préparation, fondu au noir, écran de fin et son vote, salon de la partie et menu d'Échap. Pilotée
+         par GameHud, LoadoutPanel, MatchEndScreen, SalonPanel, PauseMenu et OptionsController, sur /GameUI
+         de MultiTestScene.
          L'ordre compte : chaque bloc se dessine par-dessus les précédents. -->
     <ui:Template name="OptionsPanel" src="../Shared/OptionsPanel.uxml" />
-    <ui:Style src="../MainMenu/MainMenu.uss" />
+    <ui:Style src="../Shared/Theme.uss" />
     <ui:Style src="GameHud.uss" />
 
-    <ui:VisualElement name="hudRoot" class="hud-root" picking-mode="Ignore">
+    <ui:VisualElement name="hudRoot" class="hud-root da-vars" picking-mode="Ignore">
 
         <!-- Barre de score : moi à gauche, l'adversaire à droite, le chrono de la manche au milieu -->
         <ui:VisualElement name="scoreBar" class="score-bar" picking-mode="Ignore">
@@ -78,9 +79,60 @@
                 <ui:Label name="endTitle" class="end-title" />
                 <ui:Label name="endSubtitle" class="end-subtitle" />
                 <ui:VisualElement name="scoreTable" class="score-table" />
+                <!-- Le vote des deux duellistes (2026-10-26) : la revanche demande leurs deux voix -->
+                <ui:VisualElement name="endVote" class="end-vote">
+                    <ui:VisualElement name="endVoteStatus" class="end-vote-status" />
+                    <ui:VisualElement name="endVoteButtons" class="end-vote-buttons">
+                        <ui:Button name="endRematchButton" class="menu-button menu-button--primary end-vote-button" text="Revanche" />
+                        <ui:Button name="endSalonButton" class="menu-button end-vote-button" text="Retour au salon" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
                 <ui:VisualElement class="end-footer">
                     <ui:Label name="endCountdown" class="end-countdown" />
                     <ui:Button name="endQuitButton" class="menu-button end-quit" text="Quitter la partie" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Le salon de la partie (2026-10-26) : après un match sans revanche. L'hôte règle et relance,
+             les autres l'attendent. -->
+        <ui:VisualElement name="salonPanel" class="salon-panel hidden">
+            <ui:VisualElement class="salon-header">
+                <ui:Label class="salon-title" text="SALON" />
+                <ui:Label name="salonMode" class="salon-mode" />
+            </ui:VisualElement>
+            <ui:VisualElement class="salon-body">
+                <ui:VisualElement class="salon-column">
+                    <ui:Label class="salon-section" text="JOUEURS" />
+                    <ui:VisualElement name="salonPlayers" class="salon-players" />
+                </ui:VisualElement>
+                <ui:VisualElement class="salon-column">
+                    <ui:Label class="salon-section" text="RÉGLAGES" />
+                    <ui:VisualElement class="salon-rule">
+                        <ui:Label class="salon-rule__label" text="MANCHES" />
+                        <da:OptionCycler name="salonRoundsCycler" class="salon-rule__cycler" choices-text="BO5 · premier à 3;BO3 · premier à 2" loop="true" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="salon-rule">
+                        <ui:Label class="salon-rule__label" text="PLACES" />
+                        <da:OptionCycler name="salonCapacityCycler" class="salon-rule__cycler" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="salon-rule">
+                        <ui:Label class="salon-rule__label" text="DUELS" />
+                        <da:OptionCycler name="salonOrganizationCycler" class="salon-rule__cycler" choices-text="Roi de la colline;Duellistes fixes" loop="true" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="salon-rule">
+                        <ui:Label class="salon-rule__label" text="INTERVENTIONS" />
+                        <da:OptionCycler name="salonInterventionsCycler" class="salon-rule__cycler" choices-text="Non;Oui" loop="true" />
+                    </ui:VisualElement>
+                    <ui:Label name="salonRulesHint" class="salon-hint" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:Label name="salonInvite" class="salon-invite" />
+            <ui:VisualElement class="salon-footer">
+                <ui:Label name="salonStatus" class="salon-status" />
+                <ui:VisualElement class="salon-buttons">
+                    <ui:Button name="salonQuitButton" class="menu-button salon-button" text="Quitter la partie" />
+                    <ui:Button name="salonLaunchButton" class="menu-button menu-button--primary salon-button" text="Lancer la partie" />
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
@@ -99,7 +151,7 @@
                 <ui:Button name="pauseQuitButton" class="menu-button menu-button--quit" text="Quitter la partie" />
                 <ui:Label class="pause-hint" text="La partie continue pendant que ce menu est ouvert." />
             </ui:VisualElement>
-            <ui:VisualElement name="pauseOptions" class="screen hidden">
+            <ui:VisualElement name="pauseOptions" class="pause-options hidden">
                 <ui:Instance template="OptionsPanel" class="options-instance" />
                 <ui:Button name="pauseOptionsBackButton" class="back-button" text="Retour" />
             </ui:VisualElement>

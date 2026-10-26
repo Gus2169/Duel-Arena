@@ -27,7 +27,7 @@ public class ShootingRangePanel : MonoBehaviour
     private PlayerWeaponLooks looksSource;
     private PlayerWeaponAttachments attachmentsSource;
     private int shownSlot = -1;
-    private Rect window = new Rect(0f, 0f, 980f, 640f);
+    private Rect window = new Rect(0f, 0f, 980f, 700f);
     [System.NonSerialized] private GUIStyle headerStyle;
     [System.NonSerialized] private GUIStyle smallStyle;
     [System.NonSerialized] private GUIStyle statStyle;
@@ -205,6 +205,20 @@ public class ShootingRangePanel : MonoBehaviour
                         $"{(ShootingRange.Instance != null && ShootingRange.Instance.Dummies.Count > 0 ? ShootingRange.Instance.Dummies[0].RegenDelay : 3f):0} s sans être touchés. " +
                         "Chaque touche affiche ses dégâts et sa zone ; un mannequin neutralisé, le temps et le nombre d'impacts.", smallStyle);
         GUILayout.FlexibleSpace();
+
+        // La Fosse (ShootingCourse) : ses cibles tombent-elles au premier impact, et la remettre à zéro.
+        ShootingCourse course = ShootingCourse.Instance;
+        if (course != null)
+        {
+            GUILayout.Label("LA FOSSE", headerStyle);
+            GUI.enabled = server;
+            bool oneHit = GUILayout.Toggle(course.OneHit, "  Une touche suffit (les cibles en carton de la Fosse)");
+            if (oneHit != course.OneHit) course.ServerSetOneHit(oneHit);
+            if (GUILayout.Button("Recommencer la Fosse", GUILayout.Height(28f))) course.ServerReset();
+            GUI.enabled = true;
+            GUILayout.Space(8f);
+        }
+
         GUI.enabled = server;
         if (GUILayout.Button("Relever les mannequins", GUILayout.Height(28f)) && ShootingRange.Instance != null)
             ShootingRange.Instance.ServerRestoreDummies();

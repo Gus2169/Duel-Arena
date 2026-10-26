@@ -1,33 +1,33 @@
 using System;
 using System.Collections.Generic;
+using DuelArena.UI;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
 using UnityEngine.UIElements.Experimental;
 
 /// <summary>
-/// L'armurerie : un écran plein, ouvert depuis Personnalisation, posé sur le GameObject `MainMenuUI`
-/// à côté des autres contrôleurs d'écran. Refaite le 2026-10-16 sur la disposition d'un écran
-/// d'armurerie de Call of Duty, demandée par l'utilisateur (la disposition seulement : couleurs et
-/// images restent celles du jeu) :
-/// - en haut, les quatre classes d'arme (touches 1 à 4) et la carte du joueur ;
-/// - à gauche, la carte de l'arme (classe, modèle, famille), les tuiles des accessoires et de
-///   l'apparence, puis la bande des choix de la tuile ouverte, avec ses flèches ;
-/// - à droite, l'arme en grand (on la fait tourner en glissant), sa fiche en barres
-///   (WeaponStatSheet) et le mot de l'IA de supervision (Bible § 9 : froide, exacte) ;
-/// - en bas, les touches : Échap revient (MainMenuController), F équipe, ← → prévisualisent (le survol
-///   aussi), ↑ ↓ changent de tuile, 1 à 4 d'arme.
+/// L'onglet ARMES de Personnalisation (l'armurerie), posé sur le GameObject `MainMenuUI` à côté des autres
+/// contrôleurs d'écran. Refait le 2026-10-17 sur le plan donné par l'utilisateur (« façon Rainbow Six ») :
+/// - à gauche, la panoplie : les quatre armes, chacune avec sa vignette, son modèle et sa classe (touches 1
+///   à 4) ;
+/// - au milieu, l'arme en grand (on la fait tourner en glissant) et, en bas, ses emplacements : viseur,
+///   poignée, laser, chargeur, puis le modèle et la finition. Un emplacement ouvre au-dessus la bande de ses
+///   choix ; survoler un choix le prévisualise, cliquer l'équipe ;
+/// - à droite, sa fiche : le modèle, la classe, les barres (WeaponStatSheet) et le mot de l'IA de supervision
+///   (Bible § 9 : froide, exacte).
+/// Pas de bouton Appliquer : équiper enregistre.
 ///
-/// Prévisualiser n'enregistre rien : l'arme, sa carte et ses barres montrent le choix survolé, et les
-/// barres disent ce qu'il gagne ou perd. Équiper (clic ou F) l'enregistre : le modèle et la finition
-/// dans GameSettings.WeaponLooks (GDD § 6, 2026-10-15), les accessoires dans
-/// GameSettings.WeaponAttachments (2026-10-16). Ils partent avec la demande de connexion
-/// (SessionFlow) ; le serveur les borne et les publie (PlayerWeaponLooks, PlayerWeaponAttachments).
+/// Prévisualiser n'enregistre rien : l'arme, sa fiche et ses barres montrent le choix survolé, et les barres
+/// disent ce qu'il gagne ou perd. Équiper (clic ou F) l'enregistre : le modèle et la finition dans
+/// GameSettings.WeaponLooks (GDD § 6, 2026-10-15), les accessoires dans GameSettings.WeaponAttachments
+/// (2026-10-16). Ils partent avec la demande de connexion (SessionFlow) ; le serveur les borne et les publie
+/// (PlayerWeaponLooks, PlayerWeaponAttachments).
 ///
 /// Le modèle et la finition ne changent que l'apparence ; les accessoires changent l'arme (recul,
 /// épaulement, chargeur). Tous sont ouverts à tous, et une arme ne propose que ce qu'elle prend
 /// (WeaponAttachments.Accepts : pas de viseur sur le sniper, que les réflex et pas de poignée sur un
-/// pistolet) : les autres tuiles sont grisées, avec la raison. L'aperçu monte les accessoires comme
+/// pistolet) : les autres emplacements sont grisés, avec la raison. L'aperçu monte les accessoires comme
 /// l'arme tenue en jeu (AttachmentMount).
 /// </summary>
 public class WeaponCustomizationController : MonoBehaviour
@@ -39,24 +39,26 @@ public class WeaponCustomizationController : MonoBehaviour
     [SerializeField] private UIDocument document;
     [SerializeField] private MainMenuController mainMenu;
 
-    [Tooltip("Le robot de Personnalisation : la palette et la vie d'un robot, lues sur le préfab joueur (sur le même GameObject si vide).")]
+    [Tooltip("Le robot de Personnalisation : la vie d'un robot, lue sur le préfab joueur (sur le même GameObject si vide).")]
     [SerializeField] private CharacterPreviewController characterPreview;
+
+    [Tooltip("Les vignettes des armes et des accessoires.")]
+    [SerializeField] private MenuThumbnails thumbnails;
 
     [Tooltip("Vitesse d'écriture des messages de l'IA de supervision (caractères par seconde).")]
     [SerializeField] private float aiTypingSpeed = 140f;
 
-    /// <summary>Les tuiles : les quatre rubriques d'accessoires, puis l'apparence.</summary>
+    /// <summary>Les emplacements : les quatre rubriques d'accessoires, puis l'apparence.</summary>
     private enum Rubric { Sight, Grip, Laser, Magazine, Model, Finish }
 
     private static readonly Rubric[] AttachmentRubrics = { Rubric.Sight, Rubric.Grip, Rubric.Laser, Rubric.Magazine };
-    private static readonly Rubric[] LookRubrics = { Rubric.Model, Rubric.Finish };
     private static readonly Rubric[] AllRubrics = { Rubric.Sight, Rubric.Grip, Rubric.Laser, Rubric.Magazine, Rubric.Model, Rubric.Finish };
 
-    private sealed class Tile
+    private sealed class Slot
     {
         public Rubric rubric;
         public Button button;
-        public Label badge, caption, value, effect;
+        public Label value;
     }
 
     private sealed class Choice
@@ -73,23 +75,25 @@ public class WeaponCustomizationController : MonoBehaviour
     }
 
     private VisualElement root;
-    private VisualElement screen;
+    private VisualElement page;
     private Image viewport;
-    private VisualElement tabRow, attachmentGrid, lookGrid, statRowContainer, infoGrid, playerColor;
-    private Label playerName, slotKey, classLabel, modelLabel, familyTag, description;
+    private VisualElement weaponList, slotRow, slotStrip, statRowContainer, infoGrid;
+    private Label modelLabel, classLabel, description;
     private Label stripTitle, stripCount, statsLegend, aiHeader, aiText;
     private ScrollView stripScroll;
     private Button stripPrev, stripNext;
     private Label rangeValue, reloadValue, fireModeValue, zonesValue;
 
-    private readonly List<Button> tabs = new();
-    private readonly List<Tile> tiles = new();
+    private readonly List<Button> weaponRows = new();
+    private readonly List<Slot> slots = new();
     private readonly List<Choice> choices = new();
     private readonly List<StatRow> statRows = new();
 
     private int currentSlot;
     private Rubric selectedRubric = Rubric.Sight;
+    private bool stripOpen;
     private int previewVariant = -1;   // le choix survolé dans la bande, -1 : on montre ce qui est équipé
+    private bool open;
 
     private GameObject weaponInstance;
     private int instanceModel = -1;
@@ -99,48 +103,47 @@ public class WeaponCustomizationController : MonoBehaviour
     private float aiStartTime;
     private IVisualElementScheduledItem aiTyping;
 
-    private bool wired;
+    private VisualElement wiredScreen;   // l'onglet sur lequel la panoplie est construite (voir OnEnable)
 
     private void OnEnable()
     {
         if (document == null) document = GetComponent<UIDocument>();
         if (stage == null) stage = GetComponent<PreviewStage>();
         if (characterPreview == null) characterPreview = GetComponent<CharacterPreviewController>();
+        if (mainMenu == null) mainMenu = GetComponent<MainMenuController>();
         root = document.rootVisualElement;
 
-        screen = root.Q<VisualElement>("screenWeaponCustomize");
+        page = root.Q<VisualElement>("customPageWeapons");
         viewport = root.Q<Image>("gunsmithPreview");
-        tabRow = root.Q<VisualElement>("gunsmithTabs");
-        playerColor = root.Q<VisualElement>("gunsmithPlayerColor");
-        playerName = root.Q<Label>("gunsmithPlayerName");
-        slotKey = root.Q<Label>("gunsmithSlotKey");
-        classLabel = root.Q<Label>("gunsmithClassLabel");
-        modelLabel = root.Q<Label>("gunsmithModelLabel");
-        familyTag = root.Q<Label>("gunsmithFamilyTag");
-        description = root.Q<Label>("gunsmithDescription");
-        attachmentGrid = root.Q<VisualElement>("gunsmithAttachmentGrid");
-        lookGrid = root.Q<VisualElement>("gunsmithLookGrid");
-        stripTitle = root.Q<Label>("gunsmithStripTitle");
-        stripCount = root.Q<Label>("gunsmithStripCount");
-        stripScroll = root.Q<ScrollView>("gunsmithStripScroll");
-        stripPrev = root.Q<Button>("gunsmithStripPrev");
-        stripNext = root.Q<Button>("gunsmithStripNext");
+        weaponList = root.Q<VisualElement>("weaponList");
+        slotRow = root.Q<VisualElement>("slotRow");
+        slotStrip = root.Q<VisualElement>("slotStrip");
+        stripTitle = root.Q<Label>("slotStripTitle");
+        stripCount = root.Q<Label>("slotStripCount");
+        stripScroll = root.Q<ScrollView>("slotStripScroll");
+        stripPrev = root.Q<Button>("slotStripPrev");
+        stripNext = root.Q<Button>("slotStripNext");
+        modelLabel = root.Q<Label>("weaponModelLabel");
+        classLabel = root.Q<Label>("weaponClassLabel");
+        description = root.Q<Label>("weaponDescription");
         statRowContainer = root.Q<VisualElement>("gunsmithStatRows");
         infoGrid = root.Q<VisualElement>("gunsmithInfoGrid");
         statsLegend = root.Q<Label>("gunsmithStatsLegend");
         aiHeader = root.Q<Label>("gunsmithAiHeader");
         aiText = root.Q<Label>("gunsmithAiText");
 
-        if (wired) return;
-        wired = true;
+        GameSettings.WeaponLooksChanged += RefreshWeaponRows;
+        GameSettings.WeaponAttachmentsChanged += RefreshWeaponRows;
 
-        BuildTabs();
-        BuildTiles();
+        // Une seule construction par arbre (voir PlayScreenController.OnEnable).
+        if (page == wiredScreen) return;
+        wiredScreen = page;
+
+        BuildWeaponRows();
+        BuildSlots();
         BuildStatRows();
         BuildInfoGrid();
 
-        stripPrev.focusable = false;
-        stripNext.focusable = false;
         stripPrev.clicked += () => PageStrip(-1);
         stripNext.clicked += () => PageStrip(1);
         stripScroll.horizontalScroller.valueChanged += _ => RefreshArrows();
@@ -154,39 +157,57 @@ public class WeaponCustomizationController : MonoBehaviour
         }, TrickleDown.TrickleDown);
         // Quitter la bande rend l'arme équipée.
         stripScroll.RegisterCallback<PointerLeaveEvent>(_ => Preview(-1));
-
-        root.Q<Button>("gunsmithBackButton").clicked += Close;
     }
 
-    /// <summary>Ouvre l'armurerie sur l'arme demandée (appelé par ArmoryController).</summary>
-    public void Open(int weaponSlot)
+    private void OnDisable()
+    {
+        GameSettings.WeaponLooksChanged -= RefreshWeaponRows;
+        GameSettings.WeaponAttachmentsChanged -= RefreshWeaponRows;
+    }
+
+    /// <summary>Ouvre l'onglet sur l'arme qu'on regardait (la première au premier passage) ; appelé par
+    /// ArmoryController.</summary>
+    public void Open()
     {
         // Un champ resté actif sur un autre écran prendrait les touches de celui-ci.
         root.panel?.focusController?.focusedElement?.Blur();
-        RefreshPlayerCard();
-        ShowSlot(Mathf.Clamp(weaponSlot, 0, loadout.Length - 1));
+        open = true;
+        RefreshWeaponRows();
+        ShowSlot(Mathf.Clamp(currentSlot, 0, Mathf.Max(0, loadout.Length - 1)));
     }
 
-    /// <summary>Revient à Personnalisation (le bouton Retour, et Échap par MainMenuController, qui
-    /// tient seul cette touche : traitée ici aussi, elle ferait revenir de deux écrans d'un coup).</summary>
-    public void Close()
+    /// <summary>Quitte l'onglet : l'arme équipée revient, la bande se replie, le plateau se coupe.</summary>
+    public void Hide()
     {
+        if (!open) return;
+        open = false;
         previewVariant = -1;
+        SetStripOpen(false);
         stage.Hide();
-        mainMenu.ShowScreenByName("screenArmory");
+    }
+
+    /// <summary>Échap replie d'abord la bande des choix (MainMenuController, qui tient seul cette touche).
+    /// Rend vrai si elle était ouverte.</summary>
+    public bool CloseStrip()
+    {
+        if (!open || !stripOpen) return false;
+        if (previewVariant >= 0) Preview(-1);
+        SetStripOpen(false);
+        return true;
     }
 
     // ------------------------------------------------------------------
-    // Les touches (F, flèches, 1 à 4), lues seulement quand l'écran est affiché
+    // Les touches (F, flèches, 1 à 4), lues seulement quand l'onglet est affiché
     // ------------------------------------------------------------------
 
     private void Update()
     {
-        if (screen == null || screen.ClassListContains("hidden")) return;
+        if (!open || page == null || page.ClassListContains("hidden")) return;
+        if (mainMenu != null && (mainMenu.ModalOpen || mainMenu.CurrentScreen != MainMenuController.CustomizeScreen)) return;
         Keyboard keyboard = Keyboard.current;
         if (keyboard == null) return;
 
-        if (keyboard.fKey.wasPressedThisFrame || keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame)
+        if (stripOpen && (keyboard.fKey.wasPressedThisFrame || keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame))
             Equip(previewVariant);
         if (keyboard.leftArrowKey.wasPressedThisFrame) StepPreview(-1);
         if (keyboard.rightArrowKey.wasPressedThisFrame) StepPreview(1);
@@ -202,6 +223,7 @@ public class WeaponCustomizationController : MonoBehaviour
     /// <summary>Le choix suivant ou précédent de la bande, à partir de celui qu'on regarde.</summary>
     private void StepPreview(int direction)
     {
+        if (!stripOpen) SetStripOpen(true);
         if (choices.Count == 0) return;
         int from = previewVariant >= 0 ? previewVariant : Equipped(selectedRubric);
         int index = choices.FindIndex(c => c.variant == from);
@@ -218,7 +240,7 @@ public class WeaponCustomizationController : MonoBehaviour
         {
             Rubric next = AllRubrics[((index + direction * step) % count + count) % count];
             if (!Available(next)) continue;
-            SelectRubric(next);
+            SelectRubric(next, openStrip: true);
             return;
         }
     }
@@ -276,13 +298,13 @@ public class WeaponCustomizationController : MonoBehaviour
         weaponInstance = null;
         ShowWeapon(GameSettings.WeaponLooks, GameSettings.WeaponAttachments, resetRotation: true);
 
-        // La tuile ouverte reste la même d'une arme à l'autre, sauf une rubrique que la nouvelle ne
+        // L'emplacement ouvert reste le même d'une arme à l'autre, sauf une rubrique que la nouvelle ne
         // prend pas : la première qu'elle prend.
         if (!Available(selectedRubric)) selectedRubric = FirstAvailableRubric();
 
-        RefreshTabs();
+        RefreshWeaponRowStates();
         RefreshHeader();
-        RefreshTiles();
+        RefreshSlots();
         BuildStrip();
         RefreshStats();
         Say(WeaponStatSheet.Brief(CurrentData, MaxHealth));
@@ -424,13 +446,15 @@ public class WeaponCustomizationController : MonoBehaviour
         previewVariant = -1;
         ShowWeapon(GameSettings.WeaponLooks, GameSettings.WeaponAttachments, resetRotation: false);
         RefreshHeader();
-        RefreshTiles();
-        RefreshChoiceStates();
+        RefreshSlots();
+        // Un autre modèle n'a pas les mêmes accessoires ni les mêmes finitions : la bande se refait.
+        if (selectedRubric == Rubric.Model) BuildStrip();
+        else RefreshChoiceStates();
         RefreshStats();
         Say($"Configuration enregistrée. {RubricLabel(selectedRubric)} : {ChoiceTitle(selectedRubric, variant)}.");
     }
 
-    private void SelectRubric(Rubric rubric)
+    private void SelectRubric(Rubric rubric, bool openStrip)
     {
         if (!Available(rubric)) return;
         if (previewVariant >= 0)
@@ -440,10 +464,42 @@ public class WeaponCustomizationController : MonoBehaviour
             RefreshHeader();
             RefreshStats();
         }
+        bool changed = rubric != selectedRubric;
         selectedRubric = rubric;
-        RefreshTiles();
-        BuildStrip();
+        if (changed) BuildStrip();
+        SetStripOpen(openStrip);
+        RefreshSlots();
         Say(RubricMessage(rubric));
+    }
+
+    /// <summary>Un clic sur un emplacement ouvre sa bande, ou la replie si c'est déjà la sienne.</summary>
+    private void OnSlotClicked(Rubric rubric)
+    {
+        if (rubric == selectedRubric && stripOpen)
+        {
+            CloseStrip();
+            RefreshSlots();
+            return;
+        }
+        SelectRubric(rubric, openStrip: true);
+    }
+
+    private void SetStripOpen(bool value)
+    {
+        stripOpen = value;
+        slotStrip?.EnableInClassList("hidden", !value);
+        RefreshSlots();
+        if (!value) return;
+        // Une fois la bande mise en page : on y voit le choix équipé. La bande a pu être refaite entre
+        // temps (une autre rubrique ouverte dans la même image) : sa carte n'y est alors plus.
+        int equipped = Equipped(selectedRubric);
+        Choice current = choices.Find(c => c.variant == equipped);
+        stripScroll.scrollOffset = Vector2.zero;
+        stripScroll.schedule.Execute(() =>
+        {
+            if (current != null && current.button.parent == stripScroll.contentContainer) stripScroll.ScrollTo(current.button);
+            RefreshArrows();
+        });
     }
 
     // ------------------------------------------------------------------
@@ -468,6 +524,16 @@ public class WeaponCustomizationController : MonoBehaviour
         Rubric.Magazine => "Chargeur",
         Rubric.Model => "Modèle",
         _ => "Finition",
+    };
+
+    private static string RubricIcon(Rubric rubric) => rubric switch
+    {
+        Rubric.Sight => "ico-sight",
+        Rubric.Grip => "ico-grip",
+        Rubric.Laser => "ico-laser",
+        Rubric.Magazine => "ico-magazine",
+        Rubric.Model => "ico-rifle",
+        _ => "ico-brush",
     };
 
     private bool Available(Rubric rubric)
@@ -511,7 +577,7 @@ public class WeaponCustomizationController : MonoBehaviour
         return (int)GameSettings.WeaponLooks.Finish(currentSlot);
     }
 
-    /// <summary>Pourquoi une tuile est grisée.</summary>
+    /// <summary>Pourquoi un emplacement est grisé.</summary>
     private string UnavailableReason(Rubric rubric)
     {
         WeaponData data = CurrentData;
@@ -543,8 +609,8 @@ public class WeaponCustomizationController : MonoBehaviour
         _ => "Prototype laser",
     };
 
-    /// <summary>Ce qui s'écrit dans la case d'un choix : la désignation de l'accessoire ou du modèle, les
-    /// balles du chargeur, l'abrégé de la finition.</summary>
+    /// <summary>Ce qui s'écrit sur un emplacement et sur la case d'un choix : la désignation de l'accessoire
+    /// ou du modèle, les balles du chargeur, l'abrégé de la finition.</summary>
     private string ChoiceCode(Rubric rubric, int variant)
     {
         if (IsAttachment(rubric)) return AttachmentCode(CurrentData, ShownModel, Category(rubric), variant);
@@ -575,9 +641,9 @@ public class WeaponCustomizationController : MonoBehaviour
     }
 
     /// <summary>
-    /// Une arme telle que la partie ARMES de Personnalisation la résume : le modèle choisi et sa famille
-    /// (« FA-30 · Série 30 »), puis sa finition et les accessoires que l'arme porte vraiment (« Repeinte ·
-    /// PI-1 · LT-1 · chargeur 45 ») : ce qu'elle ne prend pas, le serveur le ferait tomber.
+    /// Une arme résumée : le modèle choisi et sa famille (« FA-30 · Série 30 »), puis sa finition et les
+    /// accessoires que l'arme porte vraiment (« Repeinte · PI-1 · LT-1 · chargeur 45 ») : ce qu'elle ne prend
+    /// pas, le serveur le ferait tomber.
     /// </summary>
     public static void Summarize(WeaponData data, int slot, WeaponLooks looks, WeaponAttachments attachments,
                                  out string model, out string details)
@@ -621,7 +687,7 @@ public class WeaponCustomizationController : MonoBehaviour
         }
     }
 
-    /// <summary>L'effet d'un choix, en quelques mots (tuile et bande), lu dans le catalogue.</summary>
+    /// <summary>L'effet d'un choix, en quelques mots (case de la bande), lu dans le catalogue.</summary>
     private string ChoiceEffect(Rubric rubric, int variant)
     {
         AttachmentCatalog catalog = Catalog;
@@ -695,7 +761,7 @@ public class WeaponCustomizationController : MonoBehaviour
         }
     }
 
-    /// <summary>Ce que l'IA dit d'une tuile qu'on ouvre.</summary>
+    /// <summary>Ce que l'IA dit d'un emplacement qu'on ouvre.</summary>
     private string RubricMessage(Rubric rubric)
     {
         WeaponData data = CurrentData;
@@ -708,7 +774,7 @@ public class WeaponCustomizationController : MonoBehaviour
             case Rubric.Grip:
                 return "Poignées : la verticale retient le recul vertical, l'inclinée fait épauler plus vite. Une seule à la fois.";
             case Rubric.Laser:
-                return "Laser tactique : moins de recul à la hanche. Son point se voit.";
+                return "Laser tactique : moins de dispersion à la hanche. Son point se voit.";
             case Rubric.Magazine:
                 return data != null && data.reloadPerRound
                     ? "Chargeur grande capacité : plus de cartouches, chacune glissée aussi vite."
@@ -735,129 +801,112 @@ public class WeaponCustomizationController : MonoBehaviour
     private static string Milliseconds(float seconds) => $"{Mathf.RoundToInt(seconds * 1000f)} ms";
 
     // ------------------------------------------------------------------
-    // Barre du haut : les classes et la carte du joueur
+    // À gauche : la panoplie
     // ------------------------------------------------------------------
 
-    private void BuildTabs()
+    private void BuildWeaponRows()
     {
-        tabRow.Clear();
-        tabs.Clear();
+        weaponList.Clear();
+        weaponRows.Clear();
         for (int i = 0; i < loadout.Length; i++)
         {
             int slot = i;
-            var tab = new Button { focusable = false };
-            tab.AddToClassList("gunsmith-tab");
-            tab.Add(NewLabel((i + 1).ToString(), "gunsmith-tab-key"));
-            tab.Add(NewLabel(loadout[i] != null ? loadout[i].weaponName.ToUpperInvariant() : $"ARME {i + 1}", "gunsmith-tab-name"));
-            tab.clicked += () => ShowSlot(slot);
-            tabRow.Add(tab);
-            tabs.Add(tab);
+            var row = new Button { focusable = false };
+            row.AddToClassList("da-btn");
+            row.AddToClassList("side-btn");
+            row.AddToClassList("ui-select");
+            var background = new SlantBox { pickingMode = PickingMode.Ignore };
+            background.AddToClassList("slant-bg");
+            row.Add(background);
+            var thumb = new VisualElement { pickingMode = PickingMode.Ignore };
+            thumb.AddToClassList("side-btn__thumb");
+            row.Add(thumb);
+            var text = new VisualElement { pickingMode = PickingMode.Ignore };
+            text.AddToClassList("side-btn__text");
+            text.Add(NewLabel("", "side-btn__title"));
+            text.Add(NewLabel(loadout[i] != null ? loadout[i].weaponName.ToUpperInvariant() : $"ARME {i + 1}", "side-btn__subtitle"));
+            row.Add(text);
+            row.Add(NewLabel((i + 1).ToString(), "side-btn__key"));
+            row.clicked += () => ShowSlot(slot);
+            weaponList.Add(row);
+            weaponRows.Add(row);
         }
+        RefreshWeaponRows();
     }
 
-    private void RefreshTabs()
+    /// <summary>Le modèle et la vignette de chaque arme, telle qu'elle est équipée.</summary>
+    private void RefreshWeaponRows()
     {
-        for (int i = 0; i < tabs.Count; i++) tabs[i].EnableInClassList("gunsmith-tab--active", i == currentSlot);
+        WeaponLooks looks = GameSettings.WeaponLooks;
+        WeaponAttachments attachments = GameSettings.WeaponAttachments;
+        for (int i = 0; i < weaponRows.Count && i < loadout.Length; i++)
+        {
+            WeaponData data = loadout[i];
+            GameObject prefab = data != null ? data.ModelPrefabFor(looks.Model(i)) : null;
+            WeaponModel model = prefab != null ? prefab.GetComponent<WeaponModel>() : null;
+            Label title = weaponRows[i].Q<Label>(className: "side-btn__title");
+            if (title != null) title.text = model != null ? model.Designation : data != null ? data.weaponName.ToUpperInvariant() : "";
+
+            VisualElement thumb = weaponRows[i].Q<VisualElement>(className: "side-btn__thumb");
+            if (thumbnails == null || thumb == null || data == null) continue;
+            thumbnails.Weapon(data, looks.Model(i), looks.Finish(i), attachments, i, 224, 112, texture =>
+            {
+                if (texture is RenderTexture rt) thumb.style.backgroundImage = new StyleBackground(Background.FromRenderTexture(rt));
+            });
+        }
+        RefreshWeaponRowStates();
     }
 
-    private void RefreshPlayerCard()
+    private void RefreshWeaponRowStates()
     {
-        string name = GameSettings.PlayerName;
-        playerName.text = string.IsNullOrEmpty(name) ? "Sans pseudo" : name;
-
-        // La couleur choisie dans Personnalisation (le serveur la donne si personne ne la porte).
-        IReadOnlyList<Color32> palette = characterPreview != null ? characterPreview.Palette : Array.Empty<Color32>();
-        int color = GameSettings.PreferredColorIndex;
-        playerColor.style.backgroundColor = palette.Count == 0 ? new StyleColor(Color.gray)
-            : new StyleColor(palette[color >= 0 && color < palette.Count ? color : 0]);
+        for (int i = 0; i < weaponRows.Count; i++) weaponRows[i].EnableInClassList("side-btn--active", i == currentSlot);
     }
 
     // ------------------------------------------------------------------
-    // Colonne de gauche : la carte de l'arme, les tuiles, la bande des choix
+    // Au milieu : les emplacements et la bande de leurs choix
     // ------------------------------------------------------------------
 
-    private void RefreshHeader()
+    private void BuildSlots()
     {
-        WeaponData data = CurrentData;
-        WeaponModel model = ShownModel;
-        slotKey.text = (currentSlot + 1).ToString();
-        classLabel.text = data != null ? data.weaponName.ToUpperInvariant() : "";
-        modelLabel.text = model != null ? model.Designation : "";
-        familyTag.text = model != null ? WeaponModel.FamilyLabel(model.ModelFamily).ToUpperInvariant() : "";
-        familyTag.style.display = model != null ? DisplayStyle.Flex : DisplayStyle.None;
-        description.text = model != null ? WeaponModel.FamilyDescription(model.ModelFamily) : "";
-    }
-
-    private void BuildTiles()
-    {
-        attachmentGrid.Clear();
-        lookGrid.Clear();
-        tiles.Clear();
-        AddTileRows(attachmentGrid, AttachmentRubrics);
-        AddTileRows(lookGrid, LookRubrics);
-    }
-
-    /// <summary>Les tuiles deux par deux (USS n'a pas de :nth-child : la première de chaque rangée porte
-    /// sa marge).</summary>
-    private void AddTileRows(VisualElement grid, Rubric[] rubrics)
-    {
-        for (int i = 0; i < rubrics.Length; i += 2)
+        slotRow.Clear();
+        slots.Clear();
+        foreach (Rubric rubric in AllRubrics)
         {
-            var row = new VisualElement();
-            row.AddToClassList("gunsmith-grid-row");
-            for (int j = i; j < Mathf.Min(i + 2, rubrics.Length); j++)
-            {
-                Tile tile = CreateTile(rubrics[j]);
-                if (j == i) tile.button.AddToClassList("gunsmith-tile--left");
-                row.Add(tile.button);
-            }
-            grid.Add(row);
+            var button = new Button { focusable = false };
+            button.AddToClassList("slot-btn");
+            button.AddToClassList("ui-select");
+            if (rubric == Rubric.Model) button.AddToClassList("slot-btn--group-start");
+            var icon = new VisualElement { pickingMode = PickingMode.Ignore };
+            icon.AddToClassList("slot-btn__icon");
+            icon.AddToClassList(RubricIcon(rubric));
+            button.Add(icon);
+            button.Add(NewLabel(RubricLabel(rubric), "slot-btn__label"));
+            Label value = NewLabel("", "slot-btn__value");
+            button.Add(value);
+            var edge = new SlantBox { pickingMode = PickingMode.Ignore };
+            edge.AddToClassList("slot-btn__edge");
+            button.Add(edge);
+            Rubric chosen = rubric;
+            button.clicked += () => OnSlotClicked(chosen);
+            slotRow.Add(button);
+            slots.Add(new Slot { rubric = rubric, button = button, value = value });
         }
     }
 
-    private Tile CreateTile(Rubric rubric)
+    /// <summary>Chaque emplacement montre ce qui est équipé ; grisé, il dit pourquoi.</summary>
+    private void RefreshSlots()
     {
-        var tile = new Tile { rubric = rubric, button = new Button { focusable = false } };
-        tile.button.AddToClassList("gunsmith-tile");
-        tile.badge = NewLabel("", "gunsmith-badge");
-        var text = new VisualElement { pickingMode = PickingMode.Ignore };
-        text.AddToClassList("gunsmith-tile-text");
-        tile.caption = NewLabel(RubricLabel(rubric).ToUpperInvariant(), "gunsmith-tile-caption");
-        tile.value = NewLabel("", "gunsmith-tile-value");
-        tile.effect = NewLabel("", "gunsmith-tile-effect");
-        text.Add(tile.caption);
-        text.Add(tile.value);
-        text.Add(tile.effect);
-        tile.button.Add(tile.badge);
-        tile.button.Add(text);
-        tile.button.clicked += () => SelectRubric(rubric);
-        tiles.Add(tile);
-        return tile;
-    }
-
-    /// <summary>Chaque tuile montre ce qui est équipé ; grisée, elle dit pourquoi.</summary>
-    private void RefreshTiles()
-    {
-        foreach (Tile tile in tiles)
+        foreach (Slot slot in slots)
         {
-            bool available = Available(tile.rubric);
-            tile.button.SetEnabled(available);
-            tile.button.EnableInClassList("gunsmith-tile--selected", available && tile.rubric == selectedRubric);
-            if (!available)
-            {
-                tile.badge.text = "—";
-                tile.value.text = UnavailableReason(tile.rubric);
-                tile.effect.text = "";
-                continue;
-            }
-            int equipped = Equipped(tile.rubric);
-            tile.badge.text = ChoiceCode(tile.rubric, equipped);
-            tile.value.text = ChoiceTitle(tile.rubric, equipped);
-            tile.effect.text = ChoiceEffect(tile.rubric, equipped);
+            bool available = Available(slot.rubric);
+            slot.button.SetEnabled(available);
+            slot.button.EnableInClassList("slot-btn--open", available && stripOpen && slot.rubric == selectedRubric);
+            slot.button.tooltip = available ? ChoiceTitle(slot.rubric, Equipped(slot.rubric)) : UnavailableReason(slot.rubric);
+            slot.value.text = available ? ChoiceCode(slot.rubric, Equipped(slot.rubric)) : "—";
         }
     }
 
-    /// <summary>La bande des choix de la tuile ouverte : ceux que l'arme prend, celui qui est équipé
+    /// <summary>La bande des choix de l'emplacement ouvert : ceux que l'arme prend, celui qui est équipé
     /// marqué. Survoler prévisualise, cliquer équipe.</summary>
     private void BuildStrip()
     {
@@ -867,37 +916,61 @@ public class WeaponCustomizationController : MonoBehaviour
         {
             if (!Accepted(selectedRubric, variant)) continue;
             int chosen = variant;
-            // La case du code tient la place de l'image d'un accessoire dans Call of Duty ; le nom et
-            // l'effet en dessous.
             var card = new Button { focusable = false };
-            card.AddToClassList("gunsmith-choice");
-            card.Add(NewLabel(ChoiceCode(selectedRubric, variant), "gunsmith-choice-code"));
-            var text = new VisualElement { pickingMode = PickingMode.Ignore };
-            text.AddToClassList("gunsmith-choice-text");
-            text.Add(NewLabel(ChoiceTitle(selectedRubric, variant), "gunsmith-choice-title"));
-            text.Add(NewLabel(ChoiceEffect(selectedRubric, variant), "gunsmith-choice-effect"));
-            card.Add(text);
-            card.Add(NewLabel("ÉQUIPÉ", "gunsmith-choice-tag"));
+            card.AddToClassList("choice-card");
+            card.AddToClassList("ui-select");
+            var art = new VisualElement { pickingMode = PickingMode.Ignore };
+            art.AddToClassList("choice-card__art");
+            card.Add(art);
+            Label code = NewLabel(ChoiceCode(selectedRubric, variant), "choice-card__code");
+            card.Add(code);
+            card.Add(NewLabel(ChoiceTitle(selectedRubric, variant), "choice-card__title"));
+            card.Add(NewLabel(ChoiceEffect(selectedRubric, variant), "choice-card__effect"));
+            card.Add(NewLabel("ÉQUIPÉ", "choice-card__tag"));
+            var edge = new SlantBox { pickingMode = PickingMode.Ignore };
+            edge.AddToClassList("choice-card__edge");
+            card.Add(edge);
             card.RegisterCallback<PointerEnterEvent>(_ => Preview(chosen));
             card.clicked += () => Equip(chosen);
             stripScroll.Add(card);
             choices.Add(new Choice { variant = variant, button = card });
+            RequestChoiceArt(variant, art, code);
         }
 
         stripTitle.text = RubricLabel(selectedRubric).ToUpperInvariant();
         stripCount.text = choices.Count > 1 ? $"{choices.Count} choix" : "";
         RefreshChoiceStates();
+        if (stripOpen) SetStripOpen(true);
+    }
 
-        // Une fois la bande mise en page : on y voit le choix équipé. La bande a pu être refaite entre
-        // temps (une autre tuile ouverte dans la même image) : sa carte n'y est alors plus.
-        int equipped = Equipped(selectedRubric);
-        Choice current = choices.Find(c => c.variant == equipped);
-        stripScroll.scrollOffset = Vector2.zero;
-        stripScroll.schedule.Execute(() =>
+    /// <summary>La vignette d'un choix : l'accessoire seul, l'arme dans un autre modèle ou une autre
+    /// finition. Sans vignette (la mire, « aucun »), le code reste écrit à sa place.</summary>
+    private void RequestChoiceArt(int variant, VisualElement art, Label code)
+    {
+        if (thumbnails == null) return;
+        WeaponData data = CurrentData;
+        WeaponLooks looks = GameSettings.WeaponLooks;
+        void Show(Texture texture)
         {
-            if (current != null && current.button.parent == stripScroll.contentContainer) stripScroll.ScrollTo(current.button);
-            RefreshArrows();
-        });
+            if (texture is not RenderTexture rt) return;
+            art.style.backgroundImage = new StyleBackground(Background.FromRenderTexture(rt));
+            code.AddToClassList("hidden");
+        }
+
+        switch (selectedRubric)
+        {
+            case Rubric.Model:
+                thumbnails.Weapon(data, variant, looks.Finish(currentSlot), WeaponAttachments.None, currentSlot, 300, 132, Show);
+                break;
+            case Rubric.Finish:
+                thumbnails.Weapon(data, looks.Model(currentSlot), (WeaponFinish)variant, WeaponAttachments.None, currentSlot, 300, 132, Show);
+                break;
+            default:
+                if (variant == 0) return;
+                GameObject prefab = AttachmentMount.PrefabFor(Catalog, EquippedModel, Category(selectedRubric), variant);
+                if (prefab != null) thumbnails.Attachment(prefab, looks.Finish(currentSlot), 300, 132, Show);
+                break;
+        }
     }
 
     private void RefreshChoiceStates()
@@ -905,8 +978,8 @@ public class WeaponCustomizationController : MonoBehaviour
         int equipped = Equipped(selectedRubric);
         foreach (Choice choice in choices)
         {
-            choice.button.EnableInClassList("gunsmith-choice--equipped", choice.variant == equipped);
-            choice.button.EnableInClassList("gunsmith-choice--previewed", choice.variant == previewVariant);
+            choice.button.EnableInClassList("choice-card--equipped", choice.variant == equipped);
+            choice.button.EnableInClassList("choice-card--previewed", choice.variant == previewVariant);
         }
     }
 
@@ -914,8 +987,8 @@ public class WeaponCustomizationController : MonoBehaviour
 
     private void PageStrip(int direction)
     {
-        float page = Mathf.Max(100f, stripScroll.contentViewport.layout.width * 0.8f);
-        ScrollStripTo(stripScroll.scrollOffset.x + direction * page, animate: true);
+        float pageWidth = Mathf.Max(100f, stripScroll.contentViewport.layout.width * 0.8f);
+        ScrollStripTo(stripScroll.scrollOffset.x + direction * pageWidth, animate: true);
     }
 
     private void ScrollStripTo(float x, bool animate)
@@ -947,6 +1020,16 @@ public class WeaponCustomizationController : MonoBehaviour
     // À droite : la fiche de l'arme et l'IA de supervision
     // ------------------------------------------------------------------
 
+    private void RefreshHeader()
+    {
+        WeaponData data = CurrentData;
+        WeaponModel model = ShownModel;
+        modelLabel.text = model != null ? model.Designation : data != null ? data.weaponName.ToUpperInvariant() : "";
+        string family = model != null ? WeaponModel.FamilyLabel(model.ModelFamily).ToUpperInvariant() : "";
+        classLabel.text = data == null ? "" : string.IsNullOrEmpty(family) ? data.weaponName.ToUpperInvariant() : $"{data.weaponName.ToUpperInvariant()} · {family}";
+        description.text = model != null ? WeaponModel.FamilyDescription(model.ModelFamily) : "";
+    }
+
     private void BuildStatRows()
     {
         statRowContainer.Clear();
@@ -954,19 +1037,22 @@ public class WeaponCustomizationController : MonoBehaviour
         foreach (WeaponStatSheet.Stat stat in WeaponStatSheet.Bars)
         {
             var row = new VisualElement();
-            row.AddToClassList("gunsmith-stat-row");
-            row.Add(NewLabel(WeaponStatSheet.Label(stat), "gunsmith-stat-label"));
+            row.AddToClassList("stat-row");
+            var head = new VisualElement();
+            head.AddToClassList("stat-row__head");
+            head.Add(NewLabel(WeaponStatSheet.Label(stat), "stat-row__label"));
+            Label value = NewLabel("", "stat-row__value");
+            head.Add(value);
+            row.Add(head);
             var track = new VisualElement();
-            track.AddToClassList("gunsmith-stat-track");
+            track.AddToClassList("stat-row__track");
             var fill = new VisualElement();
-            fill.AddToClassList("gunsmith-stat-fill");
+            fill.AddToClassList("stat-row__fill");
             var delta = new VisualElement();
-            delta.AddToClassList("gunsmith-stat-delta");
+            delta.AddToClassList("stat-row__delta");
             track.Add(fill);
             track.Add(delta);
             row.Add(track);
-            Label value = NewLabel("", "gunsmith-stat-value");
-            row.Add(value);
             statRowContainer.Add(row);
             statRows.Add(new StatRow { stat = stat, fill = fill, delta = delta, value = value });
         }
@@ -984,9 +1070,9 @@ public class WeaponCustomizationController : MonoBehaviour
     private Label AddInfo(string caption)
     {
         var info = new VisualElement();
-        info.AddToClassList("gunsmith-info");
-        info.Add(NewLabel(caption, "gunsmith-info-caption"));
-        Label value = NewLabel("", "gunsmith-info-value");
+        info.AddToClassList("info-cell");
+        info.Add(NewLabel(caption, "info-cell__caption"));
+        Label value = NewLabel("", "info-cell__value");
         info.Add(value);
         infoGrid.Add(info);
         return value;
@@ -1016,11 +1102,11 @@ public class WeaponCustomizationController : MonoBehaviour
             row.fill.style.width = Length.Percent(low * 100f);
             row.delta.style.left = Length.Percent(low * 100f);
             row.delta.style.width = Length.Percent(Mathf.Abs(after - before) * 100f);
-            row.delta.EnableInClassList("gunsmith-stat-delta--gain", changed && gain);
-            row.delta.EnableInClassList("gunsmith-stat-delta--loss", changed && !gain);
+            row.delta.EnableInClassList("stat-row__delta--gain", changed && gain);
+            row.delta.EnableInClassList("stat-row__delta--loss", changed && !gain);
             row.value.text = changed ? WeaponStatSheet.FormatChange(row.stat, data, from, to) : WeaponStatSheet.Format(row.stat, data, to);
-            row.value.EnableInClassList("gunsmith-stat-value--gain", changed && gain);
-            row.value.EnableInClassList("gunsmith-stat-value--loss", changed && !gain);
+            row.value.EnableInClassList("stat-row__value--gain", changed && gain);
+            row.value.EnableInClassList("stat-row__value--loss", changed && !gain);
         }
 
         rangeValue.text = WeaponStatSheet.EffectiveRange(data);
@@ -1034,8 +1120,8 @@ public class WeaponCustomizationController : MonoBehaviour
         bool slower = reloadChanged && data != null
             && AttachmentCatalog.ReloadDuration(data, shown.ExtendedMagazine(currentSlot), data.attachmentCatalog)
              > AttachmentCatalog.ReloadDuration(data, equipped.ExtendedMagazine(currentSlot), data.attachmentCatalog);
-        reloadValue.EnableInClassList("gunsmith-stat-value--loss", reloadChanged && slower);
-        reloadValue.EnableInClassList("gunsmith-stat-value--gain", reloadChanged && !slower);
+        reloadValue.EnableInClassList("stat-row__value--loss", reloadChanged && slower);
+        reloadValue.EnableInClassList("stat-row__value--gain", reloadChanged && !slower);
 
         statsLegend.text = anyChange || reloadChanged ? "APERÇU : CE QUI CHANGE" : "";
     }

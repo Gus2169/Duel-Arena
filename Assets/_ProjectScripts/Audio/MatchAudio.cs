@@ -184,6 +184,11 @@ public class MatchAudio : MonoBehaviour
         {
             music.Play(sounds.preparationMusic);
         }
+        else if (phase == RoundManager.Phase.Salon)
+        {
+            // Le salon est un menu : sa musique (2026-10-26).
+            music.Play(sounds.menuMusic);
+        }
         else if (phase == RoundManager.Phase.MatchOver && MatchEndScreen.IsShown)
         {
             // Le noir retombe avant le match suivant : la musique s'éteint avec la lumière.

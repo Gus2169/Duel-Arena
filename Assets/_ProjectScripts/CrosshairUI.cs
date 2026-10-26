@@ -45,6 +45,8 @@ public class CrosshairUI : MonoBehaviour
     [Tooltip("L'arme du joueur. Trouvée dans les enfants si laissée vide.")]
     [SerializeField] private WeaponController weapon;
     [SerializeField] private Color ammoEmptyColor = new Color(1f, 0.4f, 0.3f);
+    [Tooltip("Le fond du compteur de munitions : la teinte de la jauge de vie du HUD (GameHud.uss), un peu plus sombre.")]
+    [SerializeField] private Color ammoPanelColor = new Color(10f / 255f, 13f / 255f, 17f / 255f, 0.8f);
 
     [Header("Lunette du sniper")]
     [Tooltip("Diamètre de l'ouverture de la lunette, en part de la hauteur de l'écran.")]
@@ -62,9 +64,11 @@ public class CrosshairUI : MonoBehaviour
     [System.NonSerialized] private GUIStyle nameStyle;
     [System.NonSerialized] private GUIStyle hintStyle;
 
-    // Les textes affichés et ce dont ils dépendent.
+    // Les textes affichés, ce dont ils dépendent, et leur taille (mesurée quand ils changent).
     [System.NonSerialized] private string ammoText;
     [System.NonSerialized] private string nameText;
+    [System.NonSerialized] private GUIContent measured;
+    private Vector2 ammoTextSize, nameTextSize;
     private int shownAmmo, shownMagazineSize, shownSlot;
     private WeaponData shownWeaponData;
 
@@ -197,29 +201,45 @@ public class CrosshairUI : MonoBehaviour
         int ammo = weapon.DisplayedAmmo;
         Color textColor = ammo == 0 ? ammoEmptyColor : crosshairColor;
 
-        GUI.color = Color.white;
-        ammoStyle.normal.textColor = textColor;
-        float margin = Screen.height * 0.04f;
-        // Les textes ne sont refaits que quand ils changent : OnGUI tourne à chaque image.
+        // Les textes ne sont refaits (et mesurés) que quand ils changent : OnGUI tourne à chaque image.
         int size = weapon.MagazineSize;
+        measured ??= new GUIContent();
         if (ammoText == null || ammo != shownAmmo || size != shownMagazineSize)
         {
             shownAmmo = ammo;
             shownMagazineSize = size;
             ammoText = $"{ammo} / {size}";
+            measured.text = ammoText;
+            ammoTextSize = ammoStyle.CalcSize(measured);
         }
-        GUI.Label(new Rect(0f, 0f, Screen.width - margin, Screen.height - margin), ammoText, ammoStyle);
-        if (weapon.Data != null)
+        bool named = weapon.Data != null;
+        if (named && (nameText == null || weapon.Data != shownWeaponData || weapon.DisplayedSlot != shownSlot))
         {
-            if (nameText == null || weapon.Data != shownWeaponData || weapon.DisplayedSlot != shownSlot)
-            {
-                shownWeaponData = weapon.Data;
-                shownSlot = weapon.DisplayedSlot;
-                nameText = $"{shownSlot + 1}  {shownWeaponData.weaponName}";
-            }
-            nameStyle.normal.textColor = crosshairColor;
-            GUI.Label(new Rect(0f, 0f, Screen.width - margin, Screen.height - margin - ammoStyle.fontSize * 1.3f), nameText, nameStyle);
+            shownWeaponData = weapon.Data;
+            shownSlot = weapon.DisplayedSlot;
+            nameText = $"{shownSlot + 1}  {shownWeaponData.weaponName}";
+            measured.text = nameText;
+            nameTextSize = nameStyle.CalcSize(measured);
         }
+
+        // Sur un fond sombre, en bas à droite, comme la jauge de vie en bas à gauche (GameHud) : en blanc
+        // sur un mur ou un sol clair, il ne se lisait pas (signalé par l'utilisateur le 2026-10-26).
+        float scale = Screen.height / 1080f;
+        float padding = 14f * scale;
+        float nameHeight = named ? nameTextSize.y : 0f;
+        float panelWidth = Mathf.Max(ammoTextSize.x, named ? nameTextSize.x : 0f) + 2f * padding;
+        float panelHeight = nameHeight + ammoTextSize.y + 8f * scale;
+        var panel = new Rect(Screen.width - 28f * scale - panelWidth, Screen.height - 24f * scale - panelHeight, panelWidth, panelHeight);
+        GUI.color = ammoPanelColor;
+        GUI.DrawTexture(panel, pixel);
+        GUI.color = Color.white;
+        if (named)
+        {
+            nameStyle.normal.textColor = crosshairColor;
+            GUI.Label(new Rect(panel.x, panel.y + 4f * scale, panelWidth - padding, nameHeight), nameText, nameStyle);
+        }
+        ammoStyle.normal.textColor = textColor;
+        GUI.Label(new Rect(panel.x, panel.y + 4f * scale + nameHeight, panelWidth - padding, ammoTextSize.y), ammoText, ammoStyle);
 
         float below = cy + hipGap + hipLineLength + 14f;
         if (weapon.IsReloading)
@@ -235,6 +255,9 @@ public class CrosshairUI : MonoBehaviour
         }
         else if (ammo == 0)
         {
+            // Une ombre sous le texte : il se lit aussi sur un mur clair.
+            hintStyle.normal.textColor = new Color(0f, 0f, 0f, 0.75f);
+            GUI.Label(new Rect(cx - 149f, below - 3f, 300f, 30f), "R : recharger", hintStyle);
             hintStyle.normal.textColor = textColor;
             GUI.Label(new Rect(cx - 150f, below - 4f, 300f, 30f), "R : recharger", hintStyle);
         }

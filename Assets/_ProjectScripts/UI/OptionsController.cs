@@ -1,12 +1,17 @@
 using System.Collections.Generic;
+using System.Globalization;
+using DuelArena.UI;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
 
 /// <summary>
-/// Écran « Options » du menu principal : Graphismes (résolution, plein écran, vsync, plafond
-/// d'images/seconde), Son (volume général et musique, 2026-10-13) et Commandes (sensibilité +
-/// remappage des touches). Posé sur le même GameObject que l'UIDocument (voir MainMenuController).
+/// Le panneau des Options, dans le menu principal et dans le menu d'Échap en partie, refait le 2026-10-17
+/// d'après la maquette de l'utilisateur : quatre onglets verticaux, Gameplay (sensibilité, axe vertical
+/// inversé), Audio (volume général et musique, 2026-10-13), Vidéo (résolution, plein écran, synchronisation
+/// verticale, plafond d'images) et Contrôles (remappage des touches) ; des curseurs avec leur valeur et des
+/// sélecteurs « ‹ Non › » (OptionCycler). Chaque réglage s'applique aussitôt : pas de bouton Appliquer.
+/// Posé sur le même GameObject que l'UIDocument.
 ///
 /// Le remappage passe par l'API de rebinding interactif de l'Input System
 /// (InputActionRebindingExtensions.PerformInteractiveRebinding), appliqué à une instance LOCALE
@@ -51,27 +56,20 @@ public class OptionsController : MonoBehaviour
         ["right"] = "Déplacement : aller à droite",
     };
 
+    private static readonly CultureInfo French = CultureInfo.GetCultureInfo("fr-FR");
+
     private readonly int[] frameRateCaps = { 0, 60, 120, 144, 240 };
-    private readonly List<string> frameRateLabels = new() { "Illimitée", "60", "120", "144", "240" };
+    private readonly string[] frameRateLabels = { "Illimitée", "60", "120", "144", "240" };
 
     private VisualElement root;
-    private Button tabGraphicsButton;
-    private Button tabAudioButton;
-    private Button tabControlsButton;
-    private VisualElement pageGraphics;
-    private VisualElement pageAudio;
-    private VisualElement pageControls;
+    private Button[] tabs;
+    private VisualElement[] pages;
 
-    private Slider masterVolumeSlider;
-    private Slider musicVolumeSlider;
-
-    private DropdownField resolutionDropdown;
-    private Toggle fullscreenToggle;
-    private Toggle vsyncToggle;
-    private DropdownField frameRateDropdown;
+    private Slider sensitivitySlider, masterVolumeSlider, musicVolumeSlider;
+    private Label sensitivityValue, masterVolumeValue, musicVolumeValue;
+    private OptionCycler invertYCycler, resolutionCycler, fullscreenCycler, vsyncCycler, frameRateCycler;
     private Resolution[] resolutions;
 
-    private Slider sensitivitySlider;
     private ScrollView bindScroll;
     private Button resetBindingsButton;
 
@@ -91,8 +89,9 @@ public class OptionsController : MonoBehaviour
         GameSettings.ApplyBindingOverrides(controls.asset);
 
         WireTabs();
-        WireGraphics();
+        WireGameplay();
         WireAudio();
+        WireGraphics();
         WireControls();
         BuildBindRows();
     }
@@ -112,54 +111,101 @@ public class OptionsController : MonoBehaviour
 
     private void WireTabs()
     {
-        tabGraphicsButton = root.Q<Button>("tabGraphicsButton");
-        tabAudioButton = root.Q<Button>("tabAudioButton");
-        tabControlsButton = root.Q<Button>("tabControlsButton");
-        pageGraphics = root.Q<VisualElement>("pageGraphics");
-        pageAudio = root.Q<VisualElement>("pageAudio");
-        pageControls = root.Q<VisualElement>("pageControls");
-
-        tabGraphicsButton.clicked += () => ShowTab(0);
-        tabAudioButton.clicked += () => ShowTab(1);
-        tabControlsButton.clicked += () => ShowTab(2);
+        tabs = new[]
+        {
+            root.Q<Button>("tabGameplayButton"),
+            root.Q<Button>("tabAudioButton"),
+            root.Q<Button>("tabGraphicsButton"),
+            root.Q<Button>("tabControlsButton"),
+        };
+        pages = new[]
+        {
+            root.Q<VisualElement>("pageGameplay"),
+            root.Q<VisualElement>("pageAudio"),
+            root.Q<VisualElement>("pageGraphics"),
+            root.Q<VisualElement>("pageControls"),
+        };
+        for (int i = 0; i < tabs.Length; i++)
+        {
+            int index = i;
+            tabs[i].clicked += () => ShowTab(index);
+        }
     }
 
     private void ShowTab(int index)
     {
-        Button[] tabs = { tabGraphicsButton, tabAudioButton, tabControlsButton };
-        VisualElement[] pages = { pageGraphics, pageAudio, pageControls };
         for (int i = 0; i < tabs.Length; i++)
         {
             pages[i].EnableInClassList("hidden", i != index);
-            tabs[i].EnableInClassList("tab-button--active", i == index);
+            tabs[i].EnableInClassList("opt-tab--active", i == index);
         }
     }
 
     // ------------------------------------------------------------------
-    // Son (2026-10-13)
+    // Gameplay : la souris
+    // ------------------------------------------------------------------
+
+    private void WireGameplay()
+    {
+        sensitivitySlider = root.Q<Slider>("sensitivitySlider");
+        sensitivityValue = root.Q<Label>("sensitivityValue");
+        invertYCycler = root.Q<OptionCycler>("invertYCycler");
+
+        sensitivitySlider.SetValueWithoutNotify(GameSettings.SensitivityMultiplier);
+        sensitivityValue.text = Sensitivity(sensitivitySlider.value);
+        sensitivitySlider.RegisterValueChangedCallback(evt =>
+        {
+            GameSettings.SensitivityMultiplier = evt.newValue;
+            sensitivityValue.text = Sensitivity(evt.newValue);
+        });
+
+        invertYCycler.SetValueWithoutNotify(GameSettings.InvertY ? 1 : 0);
+        invertYCycler.RegisterValueChangedCallback(evt => GameSettings.InvertY = evt.newValue == 1);
+    }
+
+    /// <summary>La sensibilité telle qu'on la lit (« 1,25 »). Fonction pure.</summary>
+    public static string Sensitivity(float multiplier) => multiplier.ToString("0.00", French);
+
+    /// <summary>Un volume en pourcentage (« 80 »). Fonction pure.</summary>
+    public static string Percent(float volume) => Mathf.RoundToInt(Mathf.Clamp01(volume) * 100f).ToString(CultureInfo.InvariantCulture);
+
+    // ------------------------------------------------------------------
+    // Audio (2026-10-13)
     // ------------------------------------------------------------------
 
     private void WireAudio()
     {
         masterVolumeSlider = root.Q<Slider>("masterVolumeSlider");
         musicVolumeSlider = root.Q<Slider>("musicVolumeSlider");
+        masterVolumeValue = root.Q<Label>("masterVolumeValue");
+        musicVolumeValue = root.Q<Label>("musicVolumeValue");
 
-        masterVolumeSlider.value = GameSettings.MasterVolume;
-        masterVolumeSlider.RegisterValueChangedCallback(evt => GameSettings.MasterVolume = evt.newValue);
-        musicVolumeSlider.value = GameSettings.MusicVolume;
-        musicVolumeSlider.RegisterValueChangedCallback(evt => GameSettings.MusicVolume = evt.newValue);
+        masterVolumeSlider.SetValueWithoutNotify(GameSettings.MasterVolume);
+        masterVolumeValue.text = Percent(masterVolumeSlider.value);
+        masterVolumeSlider.RegisterValueChangedCallback(evt =>
+        {
+            GameSettings.MasterVolume = evt.newValue;
+            masterVolumeValue.text = Percent(evt.newValue);
+        });
+        musicVolumeSlider.SetValueWithoutNotify(GameSettings.MusicVolume);
+        musicVolumeValue.text = Percent(musicVolumeSlider.value);
+        musicVolumeSlider.RegisterValueChangedCallback(evt =>
+        {
+            GameSettings.MusicVolume = evt.newValue;
+            musicVolumeValue.text = Percent(evt.newValue);
+        });
     }
 
     // ------------------------------------------------------------------
-    // Graphismes
+    // Vidéo
     // ------------------------------------------------------------------
 
     private void WireGraphics()
     {
-        resolutionDropdown = root.Q<DropdownField>("resolutionDropdown");
-        fullscreenToggle = root.Q<Toggle>("fullscreenToggle");
-        vsyncToggle = root.Q<Toggle>("vsyncToggle");
-        frameRateDropdown = root.Q<DropdownField>("frameRateDropdown");
+        resolutionCycler = root.Q<OptionCycler>("resolutionCycler");
+        fullscreenCycler = root.Q<OptionCycler>("fullscreenCycler");
+        vsyncCycler = root.Q<OptionCycler>("vsyncCycler");
+        frameRateCycler = root.Q<OptionCycler>("frameRateCycler");
 
         resolutions = Screen.resolutions;
         var choices = new List<string>();
@@ -167,55 +213,50 @@ public class OptionsController : MonoBehaviour
         for (int i = 0; i < resolutions.Length; i++)
         {
             Resolution r = resolutions[i];
-            choices.Add($"{r.width} x {r.height} @ {r.refreshRateRatio.value:0} Hz");
+            choices.Add($"{r.width} × {r.height} · {r.refreshRateRatio.value:0} Hz");
             if (r.width == Screen.currentResolution.width && r.height == Screen.currentResolution.height) currentIndex = i;
         }
-        resolutionDropdown.choices = choices;
-
+        resolutionCycler.Choices = choices;
         int savedIndex = GameSettings.ResolutionIndex;
-        resolutionDropdown.index = (savedIndex >= 0 && savedIndex < choices.Count) ? savedIndex : currentIndex;
-        resolutionDropdown.RegisterValueChangedCallback(_ =>
+        resolutionCycler.SetValueWithoutNotify(savedIndex >= 0 && savedIndex < choices.Count ? savedIndex : currentIndex);
+        resolutionCycler.RegisterValueChangedCallback(evt =>
         {
-            GameSettings.ResolutionIndex = resolutionDropdown.index;
+            GameSettings.ResolutionIndex = evt.newValue;
             GameSettings.ApplyGraphics();
         });
 
-        fullscreenToggle.value = GameSettings.Fullscreen;
-        fullscreenToggle.RegisterValueChangedCallback(evt =>
+        fullscreenCycler.SetValueWithoutNotify(GameSettings.Fullscreen ? 1 : 0);
+        fullscreenCycler.RegisterValueChangedCallback(evt =>
         {
-            GameSettings.Fullscreen = evt.newValue;
+            GameSettings.Fullscreen = evt.newValue == 1;
             GameSettings.ApplyGraphics();
         });
 
-        vsyncToggle.value = GameSettings.VSync;
-        vsyncToggle.RegisterValueChangedCallback(evt =>
+        vsyncCycler.SetValueWithoutNotify(GameSettings.VSync ? 1 : 0);
+        vsyncCycler.RegisterValueChangedCallback(evt =>
         {
-            GameSettings.VSync = evt.newValue;
+            GameSettings.VSync = evt.newValue == 1;
             GameSettings.ApplyGraphics();
         });
 
-        frameRateDropdown.choices = frameRateLabels;
+        frameRateCycler.Choices = frameRateLabels;
         int capIndex = System.Array.IndexOf(frameRateCaps, GameSettings.FrameRateCap);
-        frameRateDropdown.index = capIndex >= 0 ? capIndex : 0;
-        frameRateDropdown.RegisterValueChangedCallback(_ =>
+        frameRateCycler.SetValueWithoutNotify(capIndex >= 0 ? capIndex : 0);
+        frameRateCycler.RegisterValueChangedCallback(evt =>
         {
-            GameSettings.FrameRateCap = frameRateCaps[frameRateDropdown.index];
+            GameSettings.FrameRateCap = frameRateCaps[Mathf.Clamp(evt.newValue, 0, frameRateCaps.Length - 1)];
             GameSettings.ApplyGraphics();
         });
     }
 
     // ------------------------------------------------------------------
-    // Commandes
+    // Contrôles
     // ------------------------------------------------------------------
 
     private void WireControls()
     {
-        sensitivitySlider = root.Q<Slider>("sensitivitySlider");
         bindScroll = root.Q<ScrollView>("bindRowScroll");
         resetBindingsButton = root.Q<Button>("resetBindingsButton");
-
-        sensitivitySlider.value = GameSettings.SensitivityMultiplier;
-        sensitivitySlider.RegisterValueChangedCallback(evt => GameSettings.SensitivityMultiplier = evt.newValue);
 
         resetBindingsButton.clicked += () =>
         {

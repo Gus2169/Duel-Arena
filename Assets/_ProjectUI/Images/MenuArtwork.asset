@@ -1,0 +1,88 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b306dda5b8eeb34da1bae5768f98e9d, type: 3}
+  m_Name: MenuArtwork
+  m_EditorClassIdentifier: DuelArena.Runtime::MenuArtwork
+  arenaName: SALLE DE TEST 01
+  titleBackdrop: {fileID: 2800000, guid: a2c8af09072556c4a9270811f5cdd130, type: 3}
+  arenaOverview: {fileID: 2800000, guid: 1558b586f851a7647b73bb65c3d0c095, type: 3}
+  arenaTopDown: {fileID: 2800000, guid: 18fe1cadc07870947b29951fededbe0b, type: 3}
+  topDownWorldRect:
+    serializedVersion: 2
+    x: -38.5
+    y: -11
+    width: 77
+    height: 85
+  mapMarkers:
+  - kind: 0
+    position: {x: 0, y: 2}
+    label: A
+  - kind: 0
+    position: {x: 0, y: 58}
+    label: B
+  - kind: 1
+    position: {x: -33.067444, y: 14.032255}
+    label: 
+  - kind: 1
+    position: {x: -17.504026, y: -5.5493026}
+    label: 
+  - kind: 1
+    position: {x: 0, y: -8.9}
+    label: 
+  - kind: 1
+    position: {x: 17.504026, y: -5.5493026}
+    label: 
+  - kind: 1
+    position: {x: 33.067444, y: 14.032255}
+    label: 
+  - kind: 1
+    position: {x: 36.4, y: 31.5}
+    label: 
+  - kind: 1
+    position: {x: 31.049303, y: 53.00403}
+    label: 
+  - kind: 1
+    position: {x: 17.504026, y: 68.5493}
+    label: 
+  - kind: 1
+    position: {x: 0, y: 71.899994}
+    label: 
+  - kind: 1
+    position: {x: -17.504026, y: 68.5493}
+    label: 
+  - kind: 1
+    position: {x: -31.049303, y: 53.00403}
+    label: 
+  - kind: 1
+    position: {x: -36.4, y: 31.5}
+    label: 
+  walkwayRail:
+  - {x: -33.5, y: 21.381962}
+  - {x: -27.447214, y: 9.276388}
+  - {x: -23.410927, y: 1.2038199}
+  - {x: -22.296179, y: 0.08907279}
+  - {x: -10.118034, y: -6}
+  - {x: 10.118034, y: -6}
+  - {x: 22.296179, y: 0.08907279}
+  - {x: 23.410927, y: 1.2038199}
+  - {x: 27.447214, y: 9.276388}
+  - {x: 33.5, y: 21.381962}
+  - {x: 33.5, y: 41.61804}
+  - {x: 23.410927, y: 61.79618}
+  - {x: 22.296179, y: 62.910927}
+  - {x: 10.118034, y: 69}
+  - {x: -10.118034, y: 69}
+  - {x: -22.296179, y: 62.910927}
+  - {x: -23.410927, y: 61.79618}
+  - {x: -33.5, y: 41.61804}
+  rangeImage: {fileID: 2800000, guid: 987f64158514e6546bdf2ee9705844cb, type: 3}
+  courseImage: {fileID: 2800000, guid: 25a291a16c10b144c8ceb0b0d4b1b689, type: 3}

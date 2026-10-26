@@ -100,6 +100,19 @@ public class PlayerMatchState : NetworkBehaviour
     private readonly NetworkVariable<byte> queuePosition = new NetworkVariable<byte>(
         0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+    /// <summary>Le choix d'un duelliste pendant l'écran de fin (2026-10-26) : la revanche, ou le salon.
+    /// Les valeurs voyagent par variable réseau : ajouter les nouvelles à la fin.</summary>
+    public enum MatchVote : byte
+    {
+        None,
+        Rematch,
+        Salon,
+    }
+
+    // Son vote de fin de match, accepté par le serveur (RoundManager le compte).
+    private readonly NetworkVariable<MatchVote> vote = new NetworkVariable<MatchVote>(
+        MatchVote.None, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
     private static readonly List<PlayerMatchState> spawned = new List<PlayerMatchState>();
 
     /// <summary>Les fiches des joueurs présents.</summary>
@@ -153,6 +166,33 @@ public class PlayerMatchState : NetworkBehaviour
     /// <summary>Place dans la file des spectateurs (1 = le prochain duel), 0 pour un duelliste.</summary>
     public int QueuePosition => queuePosition.Value;
 
+    /// <summary>Son vote de fin de match, tel que le serveur l'a accepté.</summary>
+    public MatchVote Vote => vote.Value;
+
+    /// <summary>Le propriétaire vote, pendant l'écran de fin (MatchEndScreen). Il peut changer d'avis tant
+    /// que le vote n'est pas tranché.</summary>
+    public void RequestVote(MatchVote choice)
+    {
+        if (!IsOwner || !IsSpawned || choice == MatchVote.None || choice == vote.Value) return;
+        VoteServerRpc(choice);
+    }
+
+    /// <summary>Un vote ne compte que d'un duelliste, pendant le vote (RoundManager.VoteOpen).</summary>
+    [ServerRpc]
+    private void VoteServerRpc(MatchVote choice)
+    {
+        RoundManager rm = RoundManager.Instance;
+        if (rm == null || !rm.VoteOpen || !IsDuelist) return;
+        if (choice != MatchVote.Rematch && choice != MatchVote.Salon) return;
+        vote.Value = choice;
+    }
+
+    /// <summary>Serveur : efface le vote (nouveau match, salon, attente).</summary>
+    public void ServerClearVote()
+    {
+        if (IsServer && vote.Value != MatchVote.None) vote.Value = MatchVote.None;
+    }
+
     /// <summary>Serveur : le rôle de ce joueur et sa place dans la file (RoundManager).</summary>
     public void ServerSetRole(PlayerRole value, int position)
     {
@@ -197,6 +237,13 @@ public class PlayerMatchState : NetworkBehaviour
     /// une seconde et demie après le début de la préparation (le clone de Multiplayer Play Mode,
     /// que personne ne pilote).</summary>
     public static bool AutopilotReady;
+
+    /// <summary>BANC DE TEST — Editor uniquement : le vote de fin de match de cette instance, deux secondes
+    /// après l'ouverture de l'écran de fin (None : elle ne vote pas). Remis à zéro à chaque lancement.</summary>
+    public static MatchVote AutopilotVote;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetAutopilotVote() => AutopilotVote = MatchVote.None;
 #endif
 
     private void Update()
@@ -205,6 +252,9 @@ public class PlayerMatchState : NetworkBehaviour
         if (readyRequested && !IsPreparing()) readyRequested = false;
 #if UNITY_EDITOR
         if (AutopilotReady && IsOwner && IsPreparing() && RoundManager.Instance.PhaseElapsed > 1.5f) RequestReady();
+        RoundManager round = RoundManager.Instance;
+        if (AutopilotVote != MatchVote.None && IsOwner && round != null && round.VoteOpen
+            && round.PhaseElapsed > round.EndScreenDelay + 2f) RequestVote(AutopilotVote);
 #endif
     }
 

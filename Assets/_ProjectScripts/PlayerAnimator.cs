@@ -91,6 +91,10 @@ public class PlayerAnimator : MonoBehaviour
     [Tooltip("Même chose allongé : le buste est au sol, il ne peut guère se relever ni plonger.")]
     [SerializeField] private float maxProneTorsoPitch = 20f;
 
+    [Header("Les mains sur l'arme (affichage)")]
+    [Tooltip("La main gauche sur le garde-main (ou la poignée montée), la droite sur le poignet d'une crosse droite (WeaponGrip, 2026-10-17). Les bras de la vue subjective prennent les mêmes réglages.")]
+    [SerializeField] private WeaponGrip.Settings handGrip = new WeaponGrip.Settings();
+
     private static readonly int MoveXId = Animator.StringToHash("MoveX");
     private static readonly int MoveYId = Animator.StringToHash("MoveY");
     private static readonly int StanceId = Animator.StringToHash("Stance");
@@ -168,6 +172,8 @@ public class PlayerAnimator : MonoBehaviour
     private Transform sight;
     private Transform rightHand;
     private WeaponData shownWeapon; // l'arme dont le modèle est en main
+    private WeaponModel shownModel; // … et ce modèle
+    private WeaponGrip grip;        // les mains sur l'arme (2026-10-17)
     private PlayerWeaponLooks weaponLooks; // les modèles et finitions choisis à l'armurerie (2026-10-15)
     private PlayerWeaponAttachments weaponAttachments; // et les accessoires (2026-10-16)
     // Tenue du haut du corps : 0 fusil (deux mains, crosse à l'épaule), 1 pistolet (WeaponModel.PistolHold).
@@ -210,8 +216,13 @@ public class PlayerAnimator : MonoBehaviour
             ShowHeldWeapon();
             spineChain = SpineChain(animator);
             planter = new FootPlanter(animator);
+            grip = new WeaponGrip(animator);
         }
     }
+
+    /// <summary>Les réglages de la prise des mains sur l'arme, que les bras de la vue subjective
+    /// reprennent (FirstPersonView) : une seule source, celle du préfab.</summary>
+    public WeaponGrip.Settings HandGrip => handGrip;
 
     private void OnEnable()
     {
@@ -377,6 +388,9 @@ public class PlayerAnimator : MonoBehaviour
     private void LateUpdate()
     {
         if (animator == null) return;
+        // Avant toute lecture de la mire : la main droite d'une crosse droite a déplacé l'arme à l'image
+        // d'avant (WeaponGrip), et l'Animator a remis la main dans sa pose animée.
+        grip?.RestoreWeapon();
 
         float dt = Time.deltaTime;
         if (dt <= 0f) return;
@@ -508,6 +522,7 @@ public class PlayerAnimator : MonoBehaviour
         ApplyProneModelOffset(from, stance, progress);
         ApplyAimDirection(stance, animator.layerCount > UpperBodyLayer ? animator.GetLayerWeight(UpperBodyLayer) : 0f, dt);
         ApplyVisualLean(from, stance, progress);
+        ApplyHandGrip(dt);
         MirrorToView();
 
 #if UNITY_EDITOR
@@ -710,6 +725,22 @@ public class PlayerAnimator : MonoBehaviour
                                             hitbox.LeanRotation(to, locomotion.EyeLocal(to), lean), progress);
         Quaternion world = transform.rotation * local * Quaternion.Inverse(transform.rotation);
         spine.rotation = world * spine.rotation;
+    }
+
+    /// <summary>
+    /// Les mains sur l'arme (WeaponGrip, 2026-10-17) : la main gauche sur le garde-main, la droite sur le
+    /// poignet d'une crosse droite. APRÈS la direction du buste et le lean, qui tournent la colonne et
+    /// emportent les bras et l'arme : la main se pose sur l'arme là où on la voit. La main gauche la lâche
+    /// pendant le rechargement, le franchissement et la mort ; elle suit le haut du corps quand il s'efface
+    /// (passage au sol) et le geste du taser quand il monte.
+    /// </summary>
+    private void ApplyHandGrip(float dt)
+    {
+        if (grip == null) return;
+        bool holding = locomotion.IsAlive && !locomotion.DisplayVaulting && (weapon == null || !weapon.IsReloading);
+        float upper = animator.layerCount > UpperBodyLayer ? animator.GetLayerWeight(UpperBodyLayer) : 0f;
+        float strike = animator.layerCount > TaserLayer ? animator.GetLayerWeight(TaserLayer) : 0f;
+        grip.Apply(shownModel, shownWeapon != null ? shownWeapon.attachmentCatalog : null, holding, upper * (1f - strike), handGrip, dt);
     }
 
     // ------------------------------------------------------------------
@@ -1333,6 +1364,7 @@ public class PlayerAnimator : MonoBehaviour
         bool spectating = locomotion != null && locomotion.IsSpectator;
         shownWeapon = weapon != null && !spectating ? weapon.Data : null;
         WeaponModel model = weapon != null ? HeldWeapons.Show(rightHand, weapon.Loadout, shownWeapon) : null;
+        shownModel = model;
         sight = FindSight(animator);
         // Un pistolet se tient à deux mains, bras tendus, et non crosse à l'épaule : le haut du corps
         // joue alors les poses de pistolet de Mixamo (2026-10-11). Le premier affichage ne fond pas.

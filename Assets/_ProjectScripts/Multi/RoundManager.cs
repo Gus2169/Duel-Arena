@@ -3,7 +3,8 @@ using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// Boucle de manches d'un duel 1v1, en BO5 (premier à `roundsToWin` manches gagnées).
+/// Boucle de manches d'un duel 1v1, en BO5 ou en BO3 au choix de l'hôte (premier à
+/// `MatchRules.roundsToWin` manches gagnées, 2026-10-25).
 ///
 /// ENTIÈREMENT SERVEUR-AUTORITAIRE : la phase, le score et les transitions sont décidés par le
 /// serveur et publiés en `NetworkVariable`. Les clients ne font que lire et afficher (GameHud). La
@@ -26,6 +27,17 @@ using UnityEngine;
 /// dans sa fiche (PlayerMatchState). La manche ne regarde que les duellistes : eux seuls se préparent,
 /// se replacent, marquent. En fin de match, au roi de la colline, le gagnant reste et le perdant cède sa
 /// place au premier de la file ; en duellistes fixes, rien ne tourne.
+///
+/// L'ABANDON (2026-10-25, GDD § 4, dette n° 58) : un duelliste qui quitte la partie en plein match perd
+/// par forfait. L'autre remporte le match (même temps pour lui, puis l'écran de fin) ; ensuite, le
+/// premier spectateur de la file prend la place libre et un nouveau match commence contre lui ; sans
+/// spectateur, le gagnant attend un adversaire.
+///
+/// LA FIN DU MATCH (2026-10-26, règles de l'utilisateur) : pendant l'écran de fin, les deux duellistes
+/// votent (PlayerMatchState.RequestVote). La revanche demande leurs deux voix ; l'un qui choisit le
+/// salon, ou les 15 s écoulées sans les deux voix, ramènent tout le monde au SALON de la partie : la
+/// phase Salon, dans l'arène, où l'hôte change les réglages (manches, places, duels, interventions) et
+/// relance, et où les autres l'attendent (SalonPanel). Pas de vote après un forfait.
 /// </summary>
 public class RoundManager : NetworkBehaviour
 {
@@ -37,14 +49,19 @@ public class RoundManager : NetworkBehaviour
         RoundOver,   // quelqu'un est mort : le survivant garde la main, puis fondu au noir
         MatchOver,   // un joueur a atteint roundsToWin : même temps, puis l'écran de fin
         Preparation, // choix de l'arme avant la manche (2026-10-12, ajoutée à la fin de l'énumération)
+        Salon,       // le salon de la partie, après un match sans revanche : l'hôte règle et relance (2026-10-26)
+    }
+
+    /// <summary>Ce que le vote de fin de match a décidé (publié : l'écran de fin l'annonce).</summary>
+    public enum MatchDecision : byte
+    {
+        Pending,
+        Rematch,
+        Salon,
     }
 
     /// <summary>Aucun vainqueur (manche nulle, ou pas encore de manche jouée).</summary>
     public const ulong NoWinner = ulong.MaxValue;
-
-    [Header("Format")]
-    [Tooltip("Manches à gagner pour remporter le match. 3 = BO5, conformément au GDD.")]
-    [SerializeField] private int roundsToWin = 3;
 
     [Header("Durées (s)")]
     [Tooltip("Préparation avant chaque manche : chaque joueur choisit son arme dans le panneau du centre de l'écran. Le décompte part dès que les deux ont validé, au plus tard à la fin de ce temps (2026-10-12, demandé par l'utilisateur : 20 s).")]
@@ -56,8 +73,11 @@ public class RoundManager : NetworkBehaviour
     [Tooltip("Après une mort : le survivant garde la main (il bouge, tire, se penche) pour narguer son adversaire, puis l'écran passe au noir et les joueurs sont replacés (GDD § 5). Les dernières secondes servent au fondu (GameHud).")]
     [SerializeField] private float roundOverDuration = 5f;
 
-    [Tooltip("Durée de l'écran de fin, après le même temps que roundOverDuration pour le gagnant. Un nouveau match repart ensuite automatiquement.")]
-    [SerializeField] private float endScreenDuration = 12f;
+    [Tooltip("Durée de l'écran de fin, après le même temps que roundOverDuration pour le gagnant : le temps du vote des deux duellistes. Sans leurs deux voix pour la revanche, retour au salon (2026-10-26, demandé par l'utilisateur : 15 s).")]
+    [SerializeField] private float endScreenDuration = 15f;
+
+    [Tooltip("Le vote tranché, l'écran de fin dure encore ce temps (s) : le noir tombe, puis vient la revanche ou le salon.")]
+    [SerializeField] private float decisionTail = 1f;
 
     [Tooltip("Durée max d'une manche, en secondes. 0 = AUCUNE limite, conformément au GDD (§ 5, tranché le 2026-10-02) : une manche se termine par une mort. Ne sert qu'à un test ponctuel ; si des manches passives apparaissent en playtest, la piste retenue est la révélation sonore, pas le retour d'un chrono.")]
     [SerializeField] private float roundTimeLimit = 0f;
@@ -88,6 +108,14 @@ public class RoundManager : NetworkBehaviour
     /// <summary>Le gagnant de la dernière manche (du match, en MatchOver), ou NoWinner.</summary>
     private readonly NetworkVariable<ulong> lastRoundWinner = new NetworkVariable<ulong>(
         NoWinner, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    /// <summary>Le match en cours (en MatchOver) a-t-il été gagné par forfait ?</summary>
+    private readonly NetworkVariable<bool> wonByForfeit = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    /// <summary>Ce que le vote de fin de match a décidé (en MatchOver).</summary>
+    private readonly NetworkVariable<MatchDecision> decision = new NetworkVariable<MatchDecision>(
+        MatchDecision.Pending, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     public struct Score : INetworkSerializable, System.IEquatable<Score>
     {
@@ -132,8 +160,26 @@ public class RoundManager : NetworkBehaviour
 
     public Phase CurrentPhase => phase.Value;
     public int RoundNumber => roundNumber.Value;
-    public int RoundsToWin => roundsToWin;
+    /// <summary>Manches à gagner pour remporter le match : 3 en BO5, 2 en BO3 (MatchRules).</summary>
+    public int RoundsToWin => rules.Value.Sanitized().roundsToWin;
     public ulong LastRoundWinner => lastRoundWinner.Value;
+    /// <summary>Le match vient-il d'être gagné par forfait (en MatchOver) ?</summary>
+    public bool WonByForfeit => wonByForfeit.Value;
+    /// <summary>Ce que le vote de fin de match a décidé (en MatchOver).</summary>
+    public MatchDecision Decision => decision.Value;
+
+    /// <summary>Le vote est-il ouvert ? Pendant l'écran de fin d'un match gagné (pas d'un forfait), tant
+    /// qu'il n'est pas tranché.</summary>
+    public bool VoteOpen => phase.Value == Phase.MatchOver && !wonByForfeit.Value && decision.Value == MatchDecision.Pending
+                            && PhaseElapsed >= EndScreenDelay;
+
+    /// <summary>Le match suivant oppose-t-il les mêmes duellistes ? Non au roi de la colline quand quelqu'un
+    /// attend : le perdant cède sa place (l'écran de fin dit alors « Match suivant » plutôt que « Revanche »).</summary>
+    public bool NextMatchRotates => rules.Value.organization == DuelOrganization.KingOfTheHill && spectatorQueueCount.Value > 0;
+
+    // Le nombre de spectateurs en file, publié pour l'écran de fin (la file elle-même reste au serveur).
+    private readonly NetworkVariable<byte> spectatorQueueCount = new NetworkVariable<byte>(
+        0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     public MatchRules Rules => rules.Value;
 
     /// <summary>Les fiches des duellistes présents, dans l'ordre d'apparition (sur toutes les
@@ -201,7 +247,8 @@ public class RoundManager : NetworkBehaviour
     ///   pas s'échauffer seul) ;
     /// - après une mort, en fin de manche comme en fin de match (2026-10-12, demandé par l'utilisateur :
     ///   le gagnant garde la main pour narguer le perdant). L'écran de fin, lui, coupe les commandes.
-    /// Gelé pendant la préparation et le décompte, pour que les deux joueurs partent ensemble.
+    /// Gelé pendant la préparation et le décompte, pour que les deux joueurs partent ensemble, et au
+    /// salon, où l'on attend l'hôte.
     ///
     /// Lu depuis `PlayerLocomotion.Move()`, donc depuis une fonction rejouée par la réconciliation :
     /// la valeur utilisée lors d'un rejeu est celle de MAINTENANT, pas celle de l'input rejoué.
@@ -287,13 +334,7 @@ public class RoundManager : NetworkBehaviour
 
         // Qui est là, qui se bat, qui attend : par sondage, comme la mort (voir la doc de classe).
         bool duelistLeft = ServerUpdateRoster();
-        if (duelistLeft && phase.Value != Phase.WaitingForPlayers)
-        {
-            // Un duelliste est parti : le match s'arrête. Le premier de la file prend sa place, et un
-            // nouveau match commence. (Le forfait du GDD, dette n° 58, attend encore son écran.)
-            Debug.Log("[Round] Un duelliste a quitté la partie : le match s'arrête.");
-            EnterWaiting();
-        }
+        if (duelistLeft) ServerOnDuelistLeft();
 
         switch (phase.Value)
         {
@@ -321,14 +362,34 @@ public class RoundManager : NetworkBehaviour
                 break;
 
             case Phase.MatchOver:
+                if (VoteOpen) ServerTallyVotes();
                 if (PhaseHasEnded)
                 {
-                    // Le roi de la colline : le gagnant reste, le perdant passe sur la tribune, le
-                    // premier de la file descend. Le noir est tombé : personne ne voit l'échange.
-                    if (DuelRoster.RotateAfterMatch(rules.Value.organization, duelistIds, spectatorQueue, lastRoundWinner.Value))
-                        ServerApplyRoles();
-                    StartMatch();
+                    if (wonByForfeit.Value)
+                    {
+                        // Après un forfait, pas de vote : la place libre va au premier de la file ; sans
+                        // lui, le gagnant attend un adversaire.
+                        if (DuelRoster.FillFromQueue(duelistIds, spectatorQueue, DuelistSlotsForSession)) ServerApplyRoles();
+                        if (HasEnoughPlayers()) StartMatch();
+                        else EnterWaiting();
+                    }
+                    else if (decision.Value == MatchDecision.Rematch)
+                    {
+                        // Le roi de la colline : le gagnant reste, le perdant passe sur la tribune, le
+                        // premier de la file descend. Le noir est tombé : personne ne voit l'échange.
+                        RotateAndFill();
+                        if (HasEnoughPlayers()) StartMatch();
+                        else EnterSalon();
+                    }
+                    else
+                    {
+                        EnterSalon();
+                    }
                 }
+                break;
+
+            case Phase.Salon:
+                // On attend l'hôte (ServerLaunchFromSalon).
                 break;
         }
     }
@@ -357,11 +418,58 @@ public class RoundManager : NetworkBehaviour
         }
 
         int slots = DuelistSlotsForSession;
-        DuelRoster.Sync(presentIds, duelistIds, spectatorQueue, slots, out bool duelistLeft);
-        // Une place libre (un duelliste parti, ou la partie qui commence) va au premier de la file.
-        if (phase.Value == Phase.WaitingForPlayers || duelistLeft) DuelRoster.FillFromQueue(duelistIds, spectatorQueue, slots);
+        bool noMatch = phase.Value == Phase.WaitingForPlayers || phase.Value == Phase.Salon;
+        DuelRoster.Sync(presentIds, duelistIds, spectatorQueue, slots, out bool duelistLeft, admitNewcomers: noMatch);
+        // Une place libre va au premier de la file quand aucun match ne se joue ; celle d'un duelliste
+        // parti en plein match, après l'écran de fin du forfait (Update, MatchOver).
+        if (noMatch) DuelRoster.FillFromQueue(duelistIds, spectatorQueue, slots);
         ServerApplyRoles();
+        byte waiting = (byte)Mathf.Min(spectatorQueue.Count, 255);
+        if (spectatorQueueCount.Value != waiting) spectatorQueueCount.Value = waiting;
         return duelistLeft;
+    }
+
+    /// <summary>
+    /// Un match se joue-t-il, qu'un départ ferait perdre par forfait ? De la préparation de la première
+    /// manche à la fin de la dernière ; pas en attente, ni une fois le match gagné. Fonction pure, testée.
+    /// </summary>
+    public static bool ForfeitApplies(Phase current)
+        => current == Phase.Preparation || current == Phase.Starting || current == Phase.Active || current == Phase.RoundOver;
+
+    /// <summary>Serveur : un duelliste a quitté la partie.</summary>
+    private void ServerOnDuelistLeft()
+    {
+        CollectDuelists(roundPlayers);
+        if (ForfeitApplies(phase.Value) && roundPlayers.Count > 0)
+        {
+            // Forfait (GDD § 4) : celui qui reste remporte le match. Il garde la main le même temps qu'à
+            // une victoire, puis vient l'écran de fin ; un mort au dernier coup se relève pour le voir.
+            PlayerLocomotion survivor = roundPlayers[0];
+            Health health = survivor.GetComponent<Health>();
+            if (health != null && health.IsDead) health.ResetHealth();
+            lastRoundWinner.Value = survivor.OwnerClientId;
+            wonByForfeit.Value = true;
+            Debug.Log($"[Round] Un duelliste a quitté la partie : {PlayerMatchState.NameOf(survivor.OwnerClientId)} gagne le match par forfait.");
+            SetPhase(Phase.MatchOver, roundOverDuration + endScreenDuration);
+            return;
+        }
+        // Le perdant d'un match fini qui s'en va : l'écran de fin continue (le vote ne peut plus donner de
+        // revanche). Au salon, la place va au premier de la file, et l'on attend toujours l'hôte.
+        if (phase.Value == Phase.MatchOver && duelistIds.Contains(lastRoundWinner.Value)) return;
+        if (phase.Value == Phase.Salon)
+        {
+            if (DuelRoster.FillFromQueue(duelistIds, spectatorQueue, DuelistSlotsForSession)) ServerApplyRoles();
+            return;
+        }
+
+        // Les deux sont partis, ou le gagnant d'un match fini : il n'y a plus rien à montrer.
+        if (phase.Value != Phase.WaitingForPlayers)
+        {
+            Debug.Log("[Round] Un duelliste a quitté la partie : le match s'arrête.");
+            DuelRoster.FillFromQueue(duelistIds, spectatorQueue, DuelistSlotsForSession);
+            ServerApplyRoles();
+            EnterWaiting();
+        }
     }
 
 #if UNITY_EDITOR
@@ -512,6 +620,9 @@ public class RoundManager : NetworkBehaviour
 
     private void StartMatch()
     {
+        wonByForfeit.Value = false;
+        decision.Value = MatchDecision.Pending;
+        ClearVotes();
         scores.Clear();
         CollectDuelists(roundPlayers);
         foreach (PlayerLocomotion player in roundPlayers)
@@ -579,7 +690,130 @@ public class RoundManager : NetworkBehaviour
             if (state != null) state.ServerSetReady(false);
         }
         lastRoundWinner.Value = NoWinner;
+        wonByForfeit.Value = false;
+        decision.Value = MatchDecision.Pending;
+        ClearVotes();
         SetPhase(Phase.WaitingForPlayers, 0f);
+    }
+
+    // ------------------------------------------------------------------
+    // La fin du match : le vote, le salon (2026-10-26)
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Le vote de fin de match, selon les règles de l'utilisateur : la revanche demande les voix des deux
+    /// duellistes ; une voix pour le salon, ou le temps écoulé sans les deux voix, ramènent au salon.
+    /// `votes` : celles des duellistes présents. Fonction pure, testée.
+    /// </summary>
+    public static MatchDecision DecideVote(IReadOnlyList<PlayerMatchState.MatchVote> votes, bool timeUp)
+    {
+        int rematch = 0;
+        foreach (PlayerMatchState.MatchVote vote in votes)
+        {
+            if (vote == PlayerMatchState.MatchVote.Salon) return MatchDecision.Salon;
+            if (vote == PlayerMatchState.MatchVote.Rematch) rematch++;
+        }
+        if (rematch >= DuelRoster.DuelistSlots && rematch == votes.Count) return MatchDecision.Rematch;
+        return timeUp ? MatchDecision.Salon : MatchDecision.Pending;
+    }
+
+    private readonly List<PlayerMatchState.MatchVote> roundVotes = new List<PlayerMatchState.MatchVote>();
+
+    /// <summary>Serveur : compte les voix des duellistes ; une fois le vote tranché, l'écran de fin ne dure
+    /// plus que `decisionTail` (le noir tombe, puis la revanche ou le salon).</summary>
+    private void ServerTallyVotes()
+    {
+        roundVotes.Clear();
+        foreach (PlayerMatchState state in PlayerMatchState.Spawned)
+        {
+            if (state != null && state.IsSpawned && state.IsDuelist) roundVotes.Add(state.Vote);
+        }
+        MatchDecision decided = DecideVote(roundVotes, PhaseHasEnded);
+        if (decided == MatchDecision.Pending) return;
+        decision.Value = decided;
+        Debug.Log($"[Round] Fin du match : {(decided == MatchDecision.Rematch ? "revanche" : "retour au salon")}.");
+        if (!PhaseHasEnded) phaseEndsAt.Value = Now + decisionTail;
+    }
+
+    private void ClearVotes()
+    {
+        foreach (PlayerMatchState state in PlayerMatchState.Spawned)
+        {
+            if (state != null && state.IsSpawned) state.ServerClearVote();
+        }
+    }
+
+    /// <summary>La rotation du roi de la colline, puis les places libres aux premiers de la file.</summary>
+    private void RotateAndFill()
+    {
+        bool changed = DuelRoster.RotateAfterMatch(rules.Value.organization, duelistIds, spectatorQueue, lastRoundWinner.Value);
+        changed |= DuelRoster.FillFromQueue(duelistIds, spectatorQueue, DuelistSlotsForSession);
+        if (changed) ServerApplyRoles();
+    }
+
+    /// <summary>Le salon : le match suivant se prépare (les rôles ont tourné), tout le monde est soigné et
+    /// gelé, et l'on attend que l'hôte relance, après avoir changé les réglages s'il le veut.</summary>
+    private void EnterSalon()
+    {
+        RotateAndFill();
+        foreach (PlayerLocomotion player in PlayerLocomotion.SpawnedPlayers)
+        {
+            if (player == null) continue;
+            Health health = player.GetComponent<Health>();
+            if (health != null && health.IsDead) health.ResetHealth();
+            PlayerMatchState state = player.GetComponent<PlayerMatchState>();
+            if (state != null) state.ServerSetReady(false);
+        }
+        ClearVotes();
+        lastRoundWinner.Value = NoWinner;
+        wonByForfeit.Value = false;
+        decision.Value = MatchDecision.Pending;
+        Debug.Log("[Round] Retour au salon de la partie.");
+        SetPhase(Phase.Salon, 0f);
+    }
+
+    /// <summary>L'hôte peut-il relancer depuis le salon ? Il faut deux duellistes.</summary>
+    public bool CanLaunchFromSalon => phase.Value == Phase.Salon && DuelistCount >= DuelRoster.DuelistSlots;
+
+    /// <summary>Les duellistes présents (sur toutes les machines : les rôles sont publiés).</summary>
+    public static int DuelistCount
+    {
+        get
+        {
+            int count = 0;
+            foreach (PlayerMatchState state in PlayerMatchState.Spawned)
+            {
+                if (state != null && state.IsSpawned && state.IsDuelist) count++;
+            }
+            return count;
+        }
+    }
+
+    /// <summary>L'hôte relance la partie depuis le salon (SalonPanel, sur sa machine : le serveur).</summary>
+    public void ServerLaunchFromSalon()
+    {
+        if (!IsServer || phase.Value != Phase.Salon) return;
+        if (DuelRoster.FillFromQueue(duelistIds, spectatorQueue, DuelistSlotsForSession)) ServerApplyRoles();
+        if (!HasEnoughPlayers()) return;
+        Debug.Log("[Round] L'hôte relance la partie.");
+        StartMatch();
+    }
+
+    /// <summary>
+    /// L'hôte change les réglages au salon : publiés à tous, appliqués aux connexions suivantes
+    /// (SessionFlow.ActiveRules), retenus pour sa prochaine partie et publiés au salon en ligne. Jamais
+    /// moins de places que de joueurs présents.
+    /// </summary>
+    public void ServerSetRules(MatchRules value)
+    {
+        if (!IsServer || phase.Value != Phase.Salon) return;
+        MatchRules r = value.Sanitized();
+        int floor = Mathf.Clamp(PlayerMatchState.Spawned.Count, MatchRules.MinCapacity, MatchRules.MaxCapacity);
+        if (r.capacity < floor) r.capacity = (byte)floor;
+        rules.Value = r;
+        SessionFlow.ActiveRules = r;
+        GameSettings.HostRules = r;
+        if (OnlineSession.IsHost) OnlineSession.SetRules(r);
     }
 
     /// <summary>Change de phase. Une durée nulle ou négative signifie : pas de fin programmée.</summary>
@@ -629,7 +863,7 @@ public class RoundManager : NetworkBehaviour
         winner = 0;
         for (int i = 0; i < scores.Count; i++)
         {
-            if (scores[i].wins < roundsToWin) continue;
+            if (scores[i].wins < RoundsToWin) continue;
             winner = scores[i].clientId;
             return true;
         }

@@ -655,17 +655,26 @@ SEPT_SEGMENTS = {"0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgb
                  "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcdfg"}
 
 
-def compteur_arriere(pc, centre, largeur, hauteur, elevation=0.0, chiffres="30", saillie=0.0025, epaisseur=0.004):
+def repere_compteur(elevation=0.0, lacet=0.0):
+    """Le repère de l'écran d'un compteur : sa normale (vers le joueur : l'arrière, +Y, relevée de
+    `elevation` degrés et tournée de `lacet` degrés vers la gauche), le haut et la droite de l'écran."""
+    e, l = math.radians(elevation), math.radians(lacet)
+    n = Vector((math.sin(l) * math.cos(e), math.cos(l) * math.cos(e), math.sin(e)))
+    haut = Vector((-math.sin(l) * math.sin(e), -math.cos(l) * math.sin(e), math.cos(e)))
+    droite = Vector((-math.cos(l), math.sin(l), 0.0))   # la droite du joueur
+    return n, haut, droite
+
+
+def compteur_arriere(pc, centre, largeur, hauteur, elevation=0.0, chiffres="30", saillie=0.0025, epaisseur=0.004,
+                     lacet=0.0):
     """Compteur de charge des armes laser, à l'arrière de l'arme, face au joueur, pour qu'il se lise en
     vue subjective (demandé par l'utilisateur le 2026-10-15) : un écran à sept segments allumé, dans
     son cadre. centre : milieu de l'écran, sur la face qui le porte ; elevation : l'écran relevé, en
     degrés (0 : vertical, face à l'arrière ; posé sur un pan qui monte vers l'avant, il regarde l'œil,
-    derrière et au-dessus de l'arme) ; saillie : de combien le cadre dépasse de la face. Les chiffres
-    se lisent de gauche à droite pour le joueur."""
-    e = math.radians(elevation)
-    n = Vector((0.0, math.cos(e), math.sin(e)))      # vers le joueur : l'arrière (+Y), relevé
-    haut = Vector((0.0, -math.sin(e), math.cos(e)))  # le haut de l'écran, vers l'avant s'il est relevé
-    droite = Vector((-1.0, 0.0, 0.0))                # la droite du joueur
+    derrière et au-dessus de l'arme) ; lacet : l'écran tourné vers la gauche, en degrés (celui du FX-2,
+    sur le flanc gauche, regarde l'œil à la hanche) ; saillie : de combien le cadre dépasse de la face.
+    Les chiffres se lisent de gauche à droite pour le joueur."""
+    n, haut, droite = repere_compteur(elevation, lacet)
     surface = centre + n * saillie
     f = kit.boite_axes(pc, surface - n * (epaisseur / 2), droite, haut, n, largeur / 2, hauteur / 2, epaisseur / 2,
                        "Polymere")

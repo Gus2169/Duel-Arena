@@ -115,11 +115,14 @@ public class FirstPersonView : NetworkBehaviour
     private WeaponModel shownModel;   // … et ce modèle
     private WeaponAttachment shownSight; // … et le viseur qui y est monté
     private PlayerWeaponLooks weaponLooks;
+    private PlayerChassis chassis;
     private PlayerWeaponAttachments weaponAttachments;
     private MaterialPropertyBlock lensBlock;
     private static readonly int AxeCameraId = Shader.PropertyToID("_AxeCamera");
     private Transform viewRightHand;
     private Transform viewLeftUpperArm, viewFist;
+    private WeaponGrip viewGrip;      // les mains des bras sur l'arme (2026-10-17)
+    private PlayerAnimator body;      // ses réglages, ceux du corps
     private float aimEyeDistance = 0.10f;
     private bool pistolHold; // WeaponModel.PistolHold : les bras jouent la pose de pistolet (PlayerAnimator)
 
@@ -208,6 +211,14 @@ public class FirstPersonView : NetworkBehaviour
         weaponController = GetComponentInChildren<WeaponController>();
         Build();
 
+        // Le châssis du robot (2026-10-26) : la copie a pris celui que montrait le corps ; elle suit le publié.
+        chassis = GetComponent<PlayerChassis>();
+        if (chassis != null)
+        {
+            chassis.Changed += HandleChassis;
+            HandleChassis(chassis.Value);
+        }
+
         // Les modèles et finitions choisis par le joueur (2026-10-15) : la copie a pris les armes du
         // corps telles qu'elles étaient, les modèles par défaut tant que le serveur n'a rien publié.
         weaponLooks = GetComponent<PlayerWeaponLooks>();
@@ -223,6 +234,11 @@ public class FirstPersonView : NetworkBehaviour
             weaponAttachments.Changed += HandleWeaponAttachments;
             if (weaponAttachments.Published) HandleWeaponAttachments(weaponAttachments.Attachments);
         }
+    }
+
+    private void HandleChassis(ChassisId id)
+    {
+        if (view != null) RobotChassis.Apply(view.transform, id);
     }
 
     private void HandleWeaponLooks(WeaponLooks looks)
@@ -257,6 +273,7 @@ public class FirstPersonView : NetworkBehaviour
 
     public override void OnNetworkDespawn()
     {
+        if (chassis != null) chassis.Changed -= HandleChassis;
         if (weaponLooks != null) weaponLooks.Changed -= HandleWeaponLooks;
         if (weaponAttachments != null) weaponAttachments.Changed -= HandleWeaponAttachments;
         if (view != null) Destroy(view);
@@ -294,6 +311,8 @@ public class FirstPersonView : NetworkBehaviour
         viewLeftUpperArm = viewAnimator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
         Transform glove = HeldWeapons.TaserGlove(viewAnimator);
         viewFist = glove != null ? glove.Find("Poing") : null;
+        viewGrip = new WeaponGrip(viewAnimator);
+        body = GetComponent<PlayerAnimator>();
 
         // La peinture du joueur sur ses propres bras.
         PlayerPaint paint = GetComponent<PlayerPaint>();
@@ -313,6 +332,9 @@ public class FirstPersonView : NetworkBehaviour
     private void LateUpdate()
     {
         if (view == null) return;
+        // Avant de mesurer la mire : la main droite d'une crosse droite a déplacé l'arme à l'image d'avant
+        // (WeaponGrip), et l'Animator des bras a remis la main dans sa pose animée.
+        viewGrip?.RestoreWeapon();
         bool spectating = locomotion != null && locomotion.IsSpectator;
         if (spectating != spectatorMode) ApplySpectatorMode(spectating);
         if (hidden || spectatorMode) return;
@@ -369,6 +391,13 @@ public class FirstPersonView : NetworkBehaviour
         offsets += strikeOffset * dip;
         Quaternion extra = Quaternion.Euler(sprintEuler * sprintPose + raiseEuler * lowered + strikeEuler * dip);
         Place(root, extra * holdRotation, holdPivot, new Vector3(aimSightPosition.x, aimSightPosition.y, aimEyeDistance) + offsets);
+        // Les mains sur l'arme, une fois l'arme placée (sa mire a été mesurée sans elles) : la main gauche
+        // la lâche pour le rechargement et pour le coup de taser, que AimStrike oriente ensuite ; la droite
+        // lâche le poignet d'une crosse droite en visée.
+        if (viewGrip != null && body != null)
+            viewGrip.Apply(shownModel, shownWeapon != null ? shownWeapon.attachmentCatalog : null,
+                           !viewAnimator.GetBool(ReloadingId), 1f - strikeWeight, body.HandGrip, Time.deltaTime,
+                           StraightStockHold(aimBlend));
         if (striking && viewLeftUpperArm != null && viewFist != null)
             AimStrike(viewLeftUpperArm, viewFist, playerCamera.transform.TransformPoint(strikeFistTarget), dip);
 
@@ -381,6 +410,15 @@ public class FirstPersonView : NetworkBehaviour
         bool screenWeapon = viewSight != null && viewSight.gameObject.activeInHierarchy;
         if (viewSight != null) viewSight.UpdateScreen(playerCamera, armsCamera, screenWeapon ? aimBlend : 0f);
     }
+
+    /// <summary>
+    /// Le poids de la main droite sur le poignet d'une crosse droite (FP-30, FAP-30 ; WeaponGrip), selon
+    /// l'épaulement : 1 à la hanche, 0 en visée, suivant la courbe du décalage de hanche. En visée, ce
+    /// poignet est à 7 cm devant l'œil et sous lui : la main qui le tenait et son avant-bras couvraient
+    /// 62 % du tiers droit de l'écran au FAP-30 (mesuré le 2026-10-17). Laissée à sa pose de clip, la main
+    /// est sous l'arme, à 78° sous l'axe du regard : hors de l'image. Sans état, testée.
+    /// </summary>
+    public static float StraightStockHold(float aimBlend) => 1f - Mathf.SmoothStep(0f, 1f, aimBlend);
 
     /// <summary>Pendant le coup de taser : le bras tourne à l'épaule pour que le poing parte vers
     /// `target` (monde), à la distance de l'épaule que lui donne le clip (élan, frappe, retour). Sans

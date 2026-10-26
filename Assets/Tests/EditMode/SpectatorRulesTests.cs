@@ -65,11 +65,78 @@ public class SpectatorRulesTests
         var duelists = Ids(0, 1);
         var queue = Ids(2, 3);
         DuelRoster.Sync(Ids(0, 2, 3), duelists, queue, out bool left);
-        Assert.IsTrue(left, "Le match en cours doit s'arrêter.");
+        Assert.IsTrue(left, "Le match en cours se termine (par forfait, RoundManager).");
         CollectionAssert.AreEqual(new ulong[] { 0 }, duelists);
         Assert.IsTrue(DuelRoster.FillFromQueue(duelists, queue));
         CollectionAssert.AreEqual(new ulong[] { 0, 2 }, duelists);
         CollectionAssert.AreEqual(new ulong[] { 3 }, queue);
+    }
+
+    /// <summary>
+    /// L'abandon (GDD § 4, 2026-10-25) : un duelliste qui part en plein match perd par forfait, de la
+    /// préparation de la première manche à la fin de la dernière ; pas en attente, ni une fois le match
+    /// gagné. Sa place attend la fin de l'écran de fin : un joueur qui arrive entre-temps passe par la
+    /// file, même si personne n'attend, puis la prend pour le match suivant.
+    /// </summary>
+    [Test]
+    public void UnDuellisteQuiPartEnPleinMatch_PerdParForfait_SaPlaceAttendLaFinDuMatch()
+    {
+        foreach (Phase phase in new[] { Phase.Preparation, Phase.Starting, Phase.Active, Phase.RoundOver })
+            Assert.IsTrue(RoundManager.ForfeitApplies(phase), $"{phase} : le match se joue, partir c'est perdre.");
+        Assert.IsFalse(RoundManager.ForfeitApplies(Phase.WaitingForPlayers), "Pas de match en attente.");
+        Assert.IsFalse(RoundManager.ForfeitApplies(Phase.MatchOver), "Le match est déjà gagné.");
+
+        var duelists = Ids(0, 1);
+        var queue = Ids();
+        DuelRoster.Sync(Ids(0, 9), duelists, queue, DuelRoster.DuelistSlots, out bool left, admitNewcomers: false);
+        Assert.IsTrue(left);
+        CollectionAssert.AreEqual(new ulong[] { 0 }, duelists, "Le gagnant par forfait reste seul jusqu'à la fin de l'écran.");
+        CollectionAssert.AreEqual(new ulong[] { 9 }, queue, "Le nouveau venu attend dans la file.");
+        Assert.IsTrue(DuelRoster.FillFromQueue(duelists, queue), "L'écran fini, il prend la place.");
+        CollectionAssert.AreEqual(new ulong[] { 0, 9 }, duelists);
+
+        // Sans match, un nouveau venu entre tout de suite, comme avant.
+        duelists = Ids(0);
+        queue = Ids();
+        DuelRoster.Sync(Ids(0, 9), duelists, queue, DuelRoster.DuelistSlots, out _);
+        CollectionAssert.AreEqual(new ulong[] { 0, 9 }, duelists);
+    }
+
+    /// <summary>
+    /// La fin du match (2026-10-26, règles de l'utilisateur) : la revanche demande les voix des deux
+    /// duellistes ; une voix pour le salon y ramène aussitôt ; sans les deux voix, le temps écoulé ramène
+    /// au salon. Seul, un duelliste n'a jamais de revanche (son adversaire est parti).
+    /// </summary>
+    [Test]
+    public void LaRevanche_DemandeLesDeuxVoix_SinonRetourAuSalon()
+    {
+        const PlayerMatchState.MatchVote None = PlayerMatchState.MatchVote.None;
+        const PlayerMatchState.MatchVote Rematch = PlayerMatchState.MatchVote.Rematch;
+        const PlayerMatchState.MatchVote Salon = PlayerMatchState.MatchVote.Salon;
+        RoundManager.MatchDecision Decide(bool timeUp, params PlayerMatchState.MatchVote[] votes) => RoundManager.DecideVote(votes, timeUp);
+
+        Assert.AreEqual(RoundManager.MatchDecision.Pending, Decide(false, None, None), "Personne n'a voté.");
+        Assert.AreEqual(RoundManager.MatchDecision.Pending, Decide(false, Rematch, None), "Une seule voix pour la revanche : on attend l'autre.");
+        Assert.AreEqual(RoundManager.MatchDecision.Rematch, Decide(false, Rematch, Rematch), "Les deux voix : la revanche, sans attendre.");
+        Assert.AreEqual(RoundManager.MatchDecision.Salon, Decide(false, Rematch, Salon), "L'un veut le salon : pas de revanche.");
+        Assert.AreEqual(RoundManager.MatchDecision.Salon, Decide(false, Salon, None), "Le salon, aussitôt choisi.");
+        Assert.AreEqual(RoundManager.MatchDecision.Salon, Decide(true, Rematch, None), "Les 15 s passées sans les deux voix : le salon.");
+        Assert.AreEqual(RoundManager.MatchDecision.Salon, Decide(true, None, None));
+        Assert.AreEqual(RoundManager.MatchDecision.Pending, Decide(false, Rematch), "Seul (l'adversaire est parti) : jamais de revanche…");
+        Assert.AreEqual(RoundManager.MatchDecision.Salon, Decide(true, Rematch), "… et le salon à la fin.");
+
+        // Le salon gèle tout le monde, sans changement d'arme ; un départ n'y est pas un forfait.
+        Assert.IsFalse(RoundManager.PlayAllowed(Phase.Salon, true));
+        Assert.IsFalse(RoundManager.WeaponSwitchAllowed(Phase.Salon, false));
+        Assert.IsFalse(RoundManager.ForfeitApplies(Phase.Salon));
+
+        Assert.AreEqual("Duelliste", SalonPanel.RoleText(true, 0));
+        Assert.AreEqual("Tribune · 1er à entrer", SalonPanel.RoleText(false, 1));
+        Assert.AreEqual("Tribune · 3e à entrer", SalonPanel.RoleText(false, 3));
+        StringAssert.Contains("retour au salon dans 7 s", MatchEndScreen.CountdownText(false, RoundManager.MatchDecision.Pending, "Revanche", 7));
+        Assert.AreEqual("Revanche !", MatchEndScreen.CountdownText(false, RoundManager.MatchDecision.Rematch, "Revanche", 1));
+        Assert.AreEqual("Nouvelle partie dans 4 s", MatchEndScreen.CountdownText(true, RoundManager.MatchDecision.Pending, "Revanche", 4),
+                        "Après un forfait, pas de vote.");
     }
 
     [Test]

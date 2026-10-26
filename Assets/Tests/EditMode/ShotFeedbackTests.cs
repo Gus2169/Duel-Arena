@@ -65,6 +65,38 @@ public class ShotFeedbackTests
         Assert.AreEqual(0f, Vector3.Angle(armsDirection, direction), 1e-3f);
     }
 
+    /// <summary>
+    /// Le laser est réglé sur la ligne de visée (2026-10-26) : son faisceau, parti de l'émetteur sous le
+    /// viseur et à droite, passe par le point que vise la mire, à la distance de ce qu'elle touche. En
+    /// visée, le point tombe donc au centre du réticule, de près comme de loin ; parallèle au canon, il
+    /// s'en écartait de l'écart de l'émetteur à la mire.
+    /// </summary>
+    [Test]
+    public void LeLaser_SeRegleSurLaLigneDeVisee()
+    {
+        var weaponObject = new GameObject("Arme");
+        created.Add(weaponObject);
+        Transform weapon = weaponObject.transform;
+        weapon.SetPositionAndRotation(new Vector3(-2f, 1.4f, 5f), Quaternion.Euler(-4f, 120f, 3f));
+        Vector3 sightOrigin = weapon.TransformPoint(new Vector3(0f, 0.07f, -0.06f));
+        Vector3 emitter = weapon.TransformPoint(new Vector3(0.031f, -0.004f, 0.18f));   // rail de droite, sous la mire
+        Vector3 sightDirection = weapon.forward;
+
+        foreach (float distance in new[] { 1f, 3f, 7.5f, 40f })
+        {
+            Vector3 direction = TacticalLaser.ZeroedDirection(emitter, sightOrigin, sightDirection, distance);
+            Vector3 target = sightOrigin + sightDirection * distance;
+            Vector3 toTarget = target - emitter;
+            Assert.AreEqual(1f, direction.magnitude, 1e-4f);
+            Assert.Less(Vector3.Cross(toTarget, direction).magnitude, 1e-4f, $"À {distance} m, le faisceau passe par le point visé.");
+            Assert.Greater(Vector3.Dot(toTarget, direction), 0f, "Vers l'avant.");
+            // Garde : l'émetteur est bien décalé, un faisceau parallèle au canon passerait à côté.
+            Assert.Greater(Vector3.Cross(toTarget, sightDirection).magnitude, 0.02f);
+        }
+        Assert.AreEqual(sightDirection, TacticalLaser.ZeroedDirection(sightOrigin, sightOrigin, sightDirection, 0f),
+                        "Sur le point visé lui-même, il reste dans l'axe.");
+    }
+
     [Test]
     public void EnRechargeant_OnNeVisePas()
     {
@@ -99,6 +131,31 @@ public class ShotFeedbackTests
             Assert.IsNotNull(prefab.GetComponent<WeaponModel>().Muzzle, $"{prefab.name} : la flamme part de sa bouche.");
     }
 
+    /// <summary>
+    /// La classe 4 s'appelle « Pistolet » (2026-10-25, GDD § 6 ; « Raygun » jusque-là) et son rayon est
+    /// rouge, la couleur de l'énergie (la lueur des armes laser, les arcs du gant) : il était vert, une
+    /// couleur de robot. Aucune couleur de la palette des robots ne doit s'en approcher.
+    /// </summary>
+    [Test]
+    public void LePistolet_TireUnRayonRouge_QuAucunRobotNePorte()
+    {
+        WeaponData pistol = Loadout()[Pistol];
+        Assert.AreEqual("Pistolet", pistol.weaponName);
+        Color.RGBToHSV(pistol.tracerColor, out float hue, out float saturation, out float value);
+        Assert.That(Mathf.Min(hue, 1f - hue), Is.LessThan(0.03f), "Un rouge.");
+        Assert.Greater(saturation, 0.8f, "Franc, pas rose.");
+        Assert.Greater(value, 0.8f, "Lumineux : il se voit de loin.");
+
+        IReadOnlyList<Color32> palette = PlayerPrefab.GetComponent<PlayerPaint>().Palette;
+        Assert.Greater(palette.Count, 0, "Garde : la palette du préfab.");
+        foreach (Color32 paint in palette)
+        {
+            Color.RGBToHSV(paint, out float paintHue, out _, out _);
+            float gap = Mathf.Abs(paintHue - hue);
+            Assert.Greater(Mathf.Min(gap, 1f - gap), 0.05f, $"Le rayon se confondrait avec un robot ({paint}).");
+        }
+    }
+
     private static IEnumerable<GameObject> Models(WeaponData data)
     {
         for (int i = 0; i < data.ModelCount; i++)
@@ -114,9 +171,8 @@ public class ShotFeedbackTests
     {
         Assert.AreEqual("screenTitle", MainMenuController.BackTarget("screenPlay", false), "De l'écran Jouer, à l'écran titre.");
         Assert.AreEqual("screenTitle", MainMenuController.BackTarget("screenOptions", false), "Des Options aussi.");
-        Assert.AreEqual("screenTitle", MainMenuController.BackTarget("screenArmory", false), "De Personnalisation aussi.");
-        Assert.AreEqual("screenArmory", MainMenuController.BackTarget("screenWeaponCustomize", false), "De l'armurerie, à Personnalisation.");
-        Assert.IsNull(MainMenuController.BackTarget("screenTitle", false), "L'écran titre ne revient nulle part.");
+        Assert.AreEqual("screenTitle", MainMenuController.BackTarget("screenCustomize", false), "De Personnalisation aussi, de ses deux onglets.");
+        Assert.IsNull(MainMenuController.BackTarget("screenTitle", false), "L'écran titre ne revient nulle part (Échap y ouvre « Quitter le jeu ? »).");
         Assert.IsNull(MainMenuController.BackTarget("screenLobby", false), "Le salon se quitte par son bouton.");
         Assert.IsNull(MainMenuController.BackTarget("screenOptions", true), "Pendant un remappage, Échap ne fait que l'annuler.");
         Assert.IsNull(MainMenuController.BackTarget(null, false));

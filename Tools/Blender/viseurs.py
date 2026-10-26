@@ -175,7 +175,7 @@ def point_rouge_b(a):
     a.objet(pc, angle=None)
 
     acc.vitre_ronde(a, 0.016, H0, R_INT, "ambre")
-    acc.reticule(a, "cercle_chevron", "rouge", 0.016, H0, 0.0070)
+    acc.reticule(a, "cercle_chevron", "rouge", 0.016, H0, 0.0070, trait_=0.0004)
     a.mire(-0.026, H0)
 
 
@@ -304,6 +304,11 @@ def holo_b(a):
 
 # --- HO-C -----------------------------------------------------------------------------------------------
 
+# Le cadre de la fenêtre, de l'arrière à l'avant : au bout de l'embase, dont le dessus, plus loin devant,
+# remontait en perspective dans le bas de la fenêtre.
+AV_CADRE_HOC = (0.026, 0.044)
+
+
 def holo_c(a):
     H0 = 0.0438
     pc = a.piece("Boitier", "Peinture")
@@ -312,7 +317,9 @@ def holo_c(a):
               (acc.RAIL / 2, 0.0), (acc.RAIL / 2, -0.003)]
     f = kit.loft(pc, kit.sections_av([(-0.040, profil), (0.044, profil)]), "Peinture")
     kit.chanfreiner(pc, 0.0012, f)
-    f = acc.cadre(pc, -0.034, 0.030,
+    # la fenêtre, un cadre de 18 mm de profondeur (2026-10-26) : sur 64 mm, ses faces intérieures, vues
+    # de l'œil, faisaient un grand tunnel autour de la vitre (« espace vide », signalé par l'utilisateur)
+    f = acc.cadre(pc, AV_CADRE_HOC[0], AV_CADRE_HOC[1],
                   [(0.0270, 0.0250), (0.0252, 0.0638), (0.0212, 0.0676), (-0.0212, 0.0676), (-0.0252, 0.0638),
                    (-0.0270, 0.0250)],
                   [(0.0222, 0.0256), (0.0208, 0.0618), (-0.0208, 0.0618), (-0.0222, 0.0256)], "Peinture")
@@ -328,16 +335,18 @@ def holo_c(a):
     kit.vis_six_pans(pc, P(0.018, 0.0122, 0.0275), GAUCHE, r=0.0024, h=0.0020, mat="AcierBrut")   # écrou de fortune
     a.objet(pc)
 
-    # un ruban toilé sur le dessus du cadre, là où il s'est fendu
+    # un ruban toilé autour du haut du cadre, là où il s'est fendu : serré sur la traverse, il ne passe
+    # dans la fenêtre que d'un millimètre (il la barrait de 6 mm)
+    av_ruban = (AV_CADRE_HOC[0] + AV_CADRE_HOC[1]) / 2
     pc = a.piece("Ruban", "RubanNoir")
-    contour = kit.contour_rect(0.0480, 0.0120, chanfrein=0.004, cy=0.0620)
-    kit.bande(pc, contour, P(0.016, 0.0), Vector((1, 0, 0)), Vector((0, 0, 1)), AVANT, 0.0090, 0.0010, "RubanNoir",
+    contour = kit.contour_rect(0.0470, 0.0072, chanfrein=0.0018, cy=0.0647)
+    kit.bande(pc, contour, P(av_ruban, 0.0), Vector((1, 0, 0)), Vector((0, 0, 1)), AVANT, 0.0090, 0.0010, "RubanNoir",
               inclinaison=-0.06, irregularite=0.0004, rng=a.rng, rabat=(6, 0.006))
     a.objet(pc)
 
-    acc.vitre_plane(a, [P(-0.012, 0.0256, 0.0222), P(-0.012, 0.0256, -0.0222), P(-0.012, 0.0618, -0.0208),
-                        P(-0.012, 0.0618, 0.0208)], "bleu")
-    acc.reticule(a, "tirets_point", "rouge", -0.012, H0, 0.0120)
+    acc.vitre_plane(a, [P(av_ruban, 0.0256, 0.0222), P(av_ruban, 0.0256, -0.0222), P(av_ruban, 0.0618, -0.0208),
+                        P(av_ruban, 0.0618, 0.0208)], "bleu")
+    acc.reticule(a, "tirets_point", "rouge", av_ruban, H0, 0.0120)
     a.mire(-0.040, H0)
 
 
@@ -384,6 +393,11 @@ def holo_d(a):
 
 # --- RX-A -----------------------------------------------------------------------------------------------
 
+# La demi-largeur du triangle des réflex A et C : 11 mrad de large à l'écran, 9 de haut, sa pointe au
+# point visé (2026-10-26 ; il faisait le double, centré sur le point visé : « trop gros »).
+RAYON_TRIANGLE = 0.00092
+
+
 def reflex_a(a):
     H0 = 0.0290
     pc = a.piece("Rehausse", "Peinture")
@@ -396,13 +410,17 @@ def reflex_a(a):
     temoins(pc, [(P(0.0035, 0.0150, 0.01308), P(0.0035, 0.0185, 0.01308))], GAUCHE)    # témoin de serrage
     a.objet(pc)
 
+    # Le dos ne monte plus au-dessus du bas de la fenêtre (2026-10-26) : avec sa diode, il arrivait juste
+    # sous le réticule et cachait le bas de l'écran en visée (signalé par l'utilisateur). Il ne reste que
+    # deux joues sur les côtés, de part et d'autre de la ligne de visée.
     pc = a.piece("Corps", "Peinture")
     f = kit.boite(pc, -0.022, 0.019, 0.0163, 0.0225, -0.0124, 0.0124)                 # semelle du réflex
     kit.chanfreiner(pc, 0.0014, f)
-    f = kit.boite(pc, -0.022, 0.004, 0.0220, 0.0262, -0.0124, 0.0124)                 # dos, la diode
-    kit.chanfreiner(pc, 0.0014, f)
-    f = kit.boite(pc, -0.020, -0.012, 0.0262, 0.0284, -0.0035, 0.0035)
-    kit.chanfreiner(pc, 0.0008, f)
+    for x0, x1 in ((0.0100, 0.0124), (-0.0124, -0.0100)):                             # les joues du dos
+        f = kit.boite(pc, -0.022, 0.004, 0.0220, 0.0262, x0, x1)
+        kit.chanfreiner(pc, 0.0008, f)
+    kit.quad(pc, [P(-0.019, 0.02252, 0.0030), P(-0.019, 0.02252, -0.0030), P(-0.013, 0.02252, -0.0030),
+                  P(-0.013, 0.02252, 0.0030)], "Interieur", normale=HAUT)            # la fenêtre de la diode
     f = acc.cadre(pc, 0.004, 0.015,
                   [(0.0124, 0.0220), (0.0124, 0.0300), (0.0098, 0.0380), (-0.0098, 0.0380), (-0.0124, 0.0300),
                    (-0.0124, 0.0220)],
@@ -416,7 +434,7 @@ def reflex_a(a):
     interieur = [(0.0098, 0.0225), (0.0098, 0.0296), (0.0078, 0.0352), (-0.0078, 0.0352), (-0.0098, 0.0296),
                  (-0.0098, 0.0225)]
     acc.vitre_plane(a, [P(0.0095, h, x) for x, h in interieur], "neutre")
-    acc.reticule(a, "triangle", "vert", 0.0095, H0, 0.0060)
+    acc.reticule(a, "triangle", "vert", 0.0095, H0, RAYON_TRIANGLE)
     a.mire(-0.022, H0)
 
 
@@ -434,26 +452,34 @@ def reflex_b(a):
     acc.vis_de_serrage(pc, -0.004, 0.0146, h=0.0015)
     a.objet(pc)
 
+    # Le corps, sur le flanc gauche (2026-10-26) : il commençait 4,6 cm derrière la lentille, montait
+    # 1,6 cm au-dessus de l'axe et portait au dos un gros commutateur, à 3 cm de l'œil en visée (« trop
+    # gros et gênant », signalé par l'utilisateur). Il ne dépasse plus la lentille que de 8 mm vers
+    # l'arrière, tient l'anneau par le bas, et reste hors de la lentille vu de l'œil.
+    AV_CORPS, X_CORPS, H_CORPS = (0.006, 0.026), (0.0185, 0.0275), 0.0335
     pc = a.piece("Corps", "Peinture")
-    f = kit.boite(pc, -0.032, 0.026, 0.0075, 0.0560, 0.0168, 0.0300)                 # le corps, sur le flanc gauche
-    kit.chanfreiner(pc, 0.0024, f)
+    f = kit.boite(pc, AV_CORPS[0], AV_CORPS[1], 0.0075, H_CORPS, X_CORPS[0], X_CORPS[1])   # le corps, à gauche
+    kit.chanfreiner(pc, 0.0018, f)
+    f = kit.boite(pc, AV_CORPS[0], AV_CORPS[1], 0.0078, 0.0160, 0.0080, X_CORPS[0] + 0.0005)   # son pied, sur l'embase
+    kit.chanfreiner(pc, 0.0010, f)
     f = kit.anneau(pc, 0.014, 0.024, H0, R_EXT, R_INT, 24, "Peinture")               # la grande lentille ronde
     kit.chanfreiner(pc, 0.0008, f, angle_min=60)
     f = kit.boite(pc, 0.014, 0.024, 0.0075, H0 - R_EXT + 0.0010, 0.0060, 0.0170)      # le pied de la lentille
     kit.chanfreiner(pc, 0.0008, f)
-    acc.molette(pc, P(-0.032, 0.0420, 0.0234), VERS_TIREUR, 0.0058, 0.0035, dents=10)  # commutateur, au dos
-    acc.molette(pc, P(-0.004, 0.0250, 0.0300), GAUCHE, 0.0080, 0.0034, dents=12)      # bouchon de pile, à gauche
+    acc.molette(pc, P(AV_CORPS[0], 0.0200, 0.0230), VERS_TIREUR, 0.0034, 0.0022, dents=10)   # commutateur, au dos
+    acc.molette(pc, P(0.016, 0.0205, X_CORPS[1]), GAUCHE, 0.0060, 0.0030, dents=12)   # bouchon de pile, à gauche
     a.objet(pc)
 
-    # le corps a pris un coup : une boucle de fil de fer le tient serré à l'embase
+    # le corps a pris un coup : une boucle de fil de fer le tient serré
     pc = a.piece("Fil", "Fil")
-    contour = kit.contour_rect(0.0150, 0.0505, chanfrein=0.003, cx=0.0234, cy=0.0300)
-    kit.bande(pc, contour, P(-0.020, 0.0), Vector((1, 0, 0)), Vector((0, 0, 1)), AVANT, 0.0016, 0.0012, "Fil",
+    contour = kit.contour_rect(X_CORPS[1] - X_CORPS[0] + 0.0020, H_CORPS - 0.0075 + 0.0020, chanfrein=0.0025,
+                               cx=(X_CORPS[0] + X_CORPS[1]) / 2, cy=(H_CORPS + 0.0075) / 2)
+    kit.bande(pc, contour, P(0.0085, 0.0), Vector((1, 0, 0)), Vector((0, 0, 1)), AVANT, 0.0016, 0.0012, "Fil",
               irregularite=0.0003, rng=a.rng)
     a.objet(pc)
 
     acc.vitre_ronde(a, 0.019, H0, R_INT, "neutre", n=24)
-    acc.reticule(a, "tirets_chevron", "vert", 0.019, H0, 0.0120)
+    acc.reticule(a, "tirets_chevron", "vert", 0.019, H0, 0.0080, trait_=0.0004)
     a.mire(0.014, H0)
 
 
@@ -467,13 +493,16 @@ def reflex_c(a):
     kit.cylindre(pc, P(-0.003, 0.0060, 0.0128), P(-0.003, 0.0060, 0.0142), 0.0034, 8, mat="Acier")
     a.objet(pc)
 
+    # Comme le RX-A (2026-10-26) : le dos ne monte plus au-dessus du bas de la fenêtre, deux joues
+    # restent sur les côtés.
     pc = a.piece("Corps", "Peinture")
     f = kit.boite(pc, -0.022, 0.018, 0.0148, 0.0205, -0.0124, 0.0124)
     kit.chanfreiner(pc, 0.0014, f)
-    f = kit.boite(pc, -0.022, 0.004, 0.0200, 0.0250, -0.0124, 0.0124)
-    kit.chanfreiner(pc, 0.0014, f)
-    f = kit.boite(pc, -0.020, -0.011, 0.0250, 0.0270, -0.0034, 0.0034)
-    kit.chanfreiner(pc, 0.0008, f)
+    for x0, x1 in ((0.0098, 0.0124), (-0.0124, -0.0098)):
+        f = kit.boite(pc, -0.022, 0.004, 0.0200, 0.0250, x0, x1)
+        kit.chanfreiner(pc, 0.0008, f)
+    kit.quad(pc, [P(-0.019, 0.02052, 0.0028), P(-0.019, 0.02052, -0.0028), P(-0.013, 0.02052, -0.0028),
+                  P(-0.013, 0.02052, 0.0028)], "Interieur", normale=HAUT)            # la fenêtre de la diode
     exterieur = [(0.0124, 0.0200)] + arc_profil(0.0124, 0.0290, 0, 180, 10) + [(-0.0124, 0.0200)]
     interieur = [(0.0094, 0.0205)] + arc_profil(0.0094, 0.0290, 0, 180, 10) + [(-0.0094, 0.0205)]
     f = acc.cadre(pc, 0.004, 0.016, exterieur, interieur, "Peinture")
@@ -488,7 +517,7 @@ def reflex_c(a):
     a.objet(pc)
 
     acc.vitre_plane(a, [P(0.010, h, x) for x, h in interieur], "neutre")
-    acc.reticule(a, "triangle", "vert", 0.010, H0, 0.0060)
+    acc.reticule(a, "triangle", "vert", 0.010, H0, RAYON_TRIANGLE)
     a.mire(-0.022, H0)
 
 

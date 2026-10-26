@@ -97,6 +97,8 @@ public class RobotCorpse : MonoBehaviour
             r.forceRenderingOff = false;
             if (r is SkinnedMeshRenderer skinned) skinned.updateWhenOffscreen = true;
         }
+        // Hors service : la visière affiche FATAL ERROR, les lueurs s'éteignent (un robot sans visière n'a rien à afficher).
+        RobotFaceScreen.ShowDeath(copy, Time.timeSinceLevelLoad);
 
         copy.transform.SetParent(null, true);
         Destroy(holder);

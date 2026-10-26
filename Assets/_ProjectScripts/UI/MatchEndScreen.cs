@@ -11,7 +11,12 @@ using UnityEngine.UIElements;
 ///
 /// Il s'ouvre une fois que le gagnant a eu le même temps qu'entre deux manches pour narguer son
 /// adversaire (RoundManager.EndScreenDelay), après un fondu au noir (GameHud), et se ferme quand le
-/// match suivant commence. Catégorie C pure.
+/// match suivant commence, ou au salon.
+///
+/// Le vote (2026-10-26, règles de l'utilisateur) : chaque duelliste choisit la revanche ou le salon ; la
+/// revanche demande les deux voix, sinon tout le monde revient au salon (au plus tard à la fin de
+/// l'écran). Les voix de chacun s'affichent chez tous. Le serveur compte (RoundManager) : cet écran ne
+/// fait que demander et montrer. Pas de vote après un forfait.
 /// </summary>
 [DisallowMultipleComponent]
 public class MatchEndScreen : MonoBehaviour
@@ -33,8 +38,16 @@ public class MatchEndScreen : MonoBehaviour
     private VisualElement table;
     private Label countdownLabel;
     private Button quitButton;
+    private VisualElement voteBlock;
+    private VisualElement voteStatus;
+    private VisualElement voteButtons;
+    private Button rematchButton;
+    private Button salonButton;
     private VictoryStage stage;
     private bool shown;
+
+    // Ce que montrent le vote et le compte à rebours : refaits seulement quand cela change.
+    private int shownVoteKey = int.MinValue;
 
     private void OnEnable()
     {
@@ -46,13 +59,23 @@ public class MatchEndScreen : MonoBehaviour
         table = root.Q<VisualElement>("scoreTable");
         countdownLabel = root.Q<Label>("endCountdown");
         quitButton = root.Q<Button>("endQuitButton");
+        voteBlock = root.Q<VisualElement>("endVote");
+        voteStatus = root.Q<VisualElement>("endVoteStatus");
+        voteButtons = root.Q<VisualElement>("endVoteButtons");
+        rematchButton = root.Q<Button>("endRematchButton");
+        salonButton = root.Q<Button>("endSalonButton");
         quitButton.clicked += QuitMatch;
+        rematchButton.clicked += VoteRematch;
+        salonButton.clicked += VoteSalon;
         shown = false;
+        shownVoteKey = int.MinValue;
     }
 
     private void OnDisable()
     {
         if (quitButton != null) quitButton.clicked -= QuitMatch;
+        if (rematchButton != null) rematchButton.clicked -= VoteRematch;
+        if (salonButton != null) salonButton.clicked -= VoteSalon;
         IsShown = false;
         if (stage != null) stage.Hide();
     }
@@ -78,16 +101,94 @@ public class MatchEndScreen : MonoBehaviour
         IsShown = show;
         if (!show) return;
 
-        countdownLabel.text = $"Nouvelle partie dans {Mathf.CeilToInt(rm.PhaseTimeRemaining)} s";
+        UpdateVote(rm);
         // La célébration suit l'horloge du serveur : la même image chez les deux joueurs.
         if (stage != null) stage.SetTime(rm.PhaseElapsed - rm.EndScreenDelay);
     }
+
+    /// <summary>Les voix des duellistes, les boutons du joueur local et le compte à rebours.</summary>
+    private void UpdateVote(RoundManager rm)
+    {
+        PlayerMatchState local = LocalState();
+        int seconds = Mathf.CeilToInt(rm.PhaseTimeRemaining);
+        int key = seconds;
+        key = key * 31 + (int)rm.Decision;
+        key = key * 31 + (rm.WonByForfeit ? 1 : 0);
+        key = key * 31 + (rm.VoteOpen ? 1 : 0);
+        key = key * 31 + (rm.NextMatchRotates ? 1 : 0);
+        key = key * 31 + (local != null && local.IsDuelist ? 1 : 0);
+        foreach (PlayerMatchState state in PlayerMatchState.Spawned)
+        {
+            if (state != null && state.IsDuelist) key = key * 31 + (int)state.OwnerClientId * 4 + (int)state.Vote;
+        }
+        if (key == shownVoteKey) return;
+        shownVoteKey = key;
+
+        bool vote = !rm.WonByForfeit;
+        voteBlock.EnableInClassList("hidden", !vote);
+        string rematch = rm.NextMatchRotates ? "Match suivant" : "Revanche";
+        if (vote)
+        {
+            voteStatus.Clear();
+            foreach (PlayerMatchState state in PlayerMatchState.Spawned)
+            {
+                if (state == null || !state.IsDuelist) continue;
+                voteStatus.Add(VoteChip(state.DisplayName, state.Vote, rematch));
+            }
+            bool canVote = rm.VoteOpen && local != null && local.IsDuelist;
+            voteButtons.EnableInClassList("hidden", !canVote);
+            rematchButton.text = rematch;
+            PlayerMatchState.MatchVote mine = local != null ? local.Vote : PlayerMatchState.MatchVote.None;
+            rematchButton.EnableInClassList("end-vote-button--chosen", mine == PlayerMatchState.MatchVote.Rematch);
+            salonButton.EnableInClassList("end-vote-button--chosen", mine == PlayerMatchState.MatchVote.Salon);
+        }
+
+        countdownLabel.text = CountdownText(rm.WonByForfeit, rm.Decision, rematch, seconds);
+    }
+
+    /// <summary>Le texte sous le tableau : ce qui vient, et quand. Fonction pure.</summary>
+    public static string CountdownText(bool forfeit, RoundManager.MatchDecision decided, string rematch, int seconds)
+    {
+        if (forfeit) return $"Nouvelle partie dans {seconds} s";
+        return decided switch
+        {
+            RoundManager.MatchDecision.Rematch => $"{rematch} !",
+            RoundManager.MatchDecision.Salon => "Retour au salon…",
+            _ => $"{rematch} si les deux duellistes la choisissent, sinon retour au salon dans {seconds} s",
+        };
+    }
+
+    private static VisualElement VoteChip(string name, PlayerMatchState.MatchVote vote, string rematch)
+    {
+        var chip = new VisualElement();
+        chip.AddToClassList("end-vote-chip");
+        if (vote == PlayerMatchState.MatchVote.Rematch) chip.AddToClassList("end-vote-chip--rematch");
+        if (vote == PlayerMatchState.MatchVote.Salon) chip.AddToClassList("end-vote-chip--salon");
+        var nameLabel = new Label(name);
+        nameLabel.AddToClassList("end-vote-chip__name");
+        chip.Add(nameLabel);
+        var choice = new Label(vote == PlayerMatchState.MatchVote.Rematch ? rematch
+                             : vote == PlayerMatchState.MatchVote.Salon ? "Retour au salon" : "réfléchit…");
+        choice.AddToClassList("end-vote-chip__choice");
+        chip.Add(choice);
+        return chip;
+    }
+
+    private static PlayerMatchState LocalState()
+    {
+        NetworkObject local = GameHud.LocalPlayerObject;
+        return local != null && local.TryGetComponent(out PlayerMatchState state) ? state : null;
+    }
+
+    private void VoteRematch() => LocalState()?.RequestVote(PlayerMatchState.MatchVote.Rematch);
+
+    private void VoteSalon() => LocalState()?.RequestVote(PlayerMatchState.MatchVote.Salon);
 
     private void Fill(RoundManager rm)
     {
         ulong winner = rm.LastRoundWinner;
         string winnerName = PlayerMatchState.NameOf(winner);
-        titleLabel.text = $"{winnerName} a gagné !";
+        titleLabel.text = rm.WonByForfeit ? $"{winnerName} a gagné par forfait" : $"{winnerName} a gagné !";
 
         // Le gagnant d'abord, puis son adversaire : les deux duellistes du match (les spectateurs
         // n'ont pas joué ce match ; les rôles ne tournent qu'à la fin de l'écran).
@@ -104,7 +205,9 @@ public class MatchEndScreen : MonoBehaviour
         {
             if (state.OwnerClientId != winner) loserWins = Mathf.Max(loserWins, rm.WinsOf(state.OwnerClientId));
         }
-        subtitleLabel.text = $"Victoire {rm.WinsOf(winner)} – {loserWins}";
+        subtitleLabel.text = rm.WonByForfeit
+            ? "Son adversaire a quitté la partie"
+            : $"Victoire {rm.WinsOf(winner)} – {loserWins}";
 
         table.Clear();
         table.Add(Row(true, false, "JOUEUR", "MANCHES", "PRÉCISION", "TÊTE", "DÉGÂTS", "MANCHE LA PLUS RAPIDE"));
@@ -157,10 +260,12 @@ public class MatchEndScreen : MonoBehaviour
         NetworkManager nm = NetworkManager.Singleton;
         GameObject playerPrefab = nm != null ? nm.NetworkConfig.PlayerPrefab : null;
         Color32 paint = default;
+        ChassisId chassis = ChassisId.CT01;
         foreach (PlayerLocomotion player in PlayerLocomotion.SpawnedPlayers)
         {
             if (player == null || player.OwnerClientId != winner) continue;
             if (player.TryGetComponent(out PlayerPaint playerPaint)) paint = playerPaint.Paint;
+            if (player.TryGetComponent(out PlayerChassis playerChassis)) chassis = playerChassis.Value;
         }
 
         if (playerPrefab == null || victorySpot == null)
@@ -169,7 +274,7 @@ public class MatchEndScreen : MonoBehaviour
             return;
         }
         if (stage == null) stage = VictoryStage.Create();
-        stage.Show(victorySpot, playerPrefab, paint, celebrationClips, seed);
+        stage.Show(victorySpot, playerPrefab, chassis, paint, celebrationClips, seed);
     }
 
     private void QuitMatch()

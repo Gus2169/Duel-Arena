@@ -1,0 +1,17 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:da="DuelArena.UI">
+    <!-- La carte du joueur, en haut à droite des écrans du menu (2026-10-17, d'après les maquettes) : le logo
+         à la couleur de son robot, son pseudo. Un clic ouvre la fenêtre du pseudo (MainMenuController),
+         sauf dans le salon, où le pseudo est déjà parti chez les autres. Les styles sont dans Theme.uss. -->
+    <ui:Button class="player-card ui-click" focusable="false">
+        <da:SlantBox class="slant-bg" />
+        <da:ArenaLogo class="player-card__logo" />
+        <ui:VisualElement class="player-card__text" picking-mode="Ignore">
+            <ui:Label class="player-card__name" text="" picking-mode="Ignore" />
+            <ui:Label class="player-card__subtitle" text="PROTOTYPE DE COMBAT" picking-mode="Ignore" />
+        </ui:VisualElement>
+        <ui:VisualElement class="player-card__badge" picking-mode="Ignore">
+            <ui:VisualElement class="player-card__badge-icon" picking-mode="Ignore" />
+        </ui:VisualElement>
+        <ui:VisualElement class="player-card__bar" picking-mode="Ignore" />
+    </ui:Button>
+</ui:UXML>

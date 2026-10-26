@@ -294,6 +294,7 @@ public class PlayerDeath : NetworkBehaviour
         Vector2 look = input != null ? input.LookInput : Vector2.zero;
         float sensitivity = orbitSensitivity * GameSettings.SensitivityMultiplier;
         orbitYaw += look.x * sensitivity;
+        if (GameSettings.InvertY) look.y = -look.y;
         orbitPitch = Mathf.Clamp(orbitPitch - look.y * sensitivity, 5f, 75f);
 
         Vector3 target = (corpse != null ? corpse.Center : transform.position + Vector3.up * 0.9f) + Vector3.up * 0.3f;

@@ -3,8 +3,8 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// Réglages du joueur, persistés en PlayerPrefs : sensibilité souris, graphismes, remappage des
-/// touches, et ce que le joueur choisit dans Personnalisation (la couleur de son robot, l'apparence
-/// et les accessoires de ses armes).
+/// touches, et ce que le joueur choisit dans Personnalisation (le châssis et la couleur de son robot,
+/// l'apparence et les accessoires de ses armes).
 ///
 /// Catégorie C, au même titre que le lean ou le head bob : rien ici n'est lu par la simulation ni le
 /// hitbox. La sensibilité ne touche qu'à la lecture de la souris (PlayerCameraLook). Les choix de
@@ -14,6 +14,7 @@ using UnityEngine.InputSystem;
 public static class GameSettings
 {
     private const string SensitivityKey = "DuelArena.Sensitivity";
+    private const string InvertYKey = "DuelArena.InvertY";
     /// <summary>La clé de la couleur choisie dans PlayerPrefs (publique pour les tests).</summary>
     public const string PreferredColorKey = "DuelArena.PreferredColorIndex";
     private const string FullscreenKey = "DuelArena.Fullscreen";
@@ -24,6 +25,7 @@ public static class GameSettings
     private const string HostCapacityKey = "DuelArena.Host.Capacity";
     private const string HostOrganizationKey = "DuelArena.Host.Organization";
     private const string HostInterventionsKey = "DuelArena.Host.SpectatorInterventions";
+    private const string HostRoundsKey = "DuelArena.Host.RoundsToWin";
     private const string MasterVolumeKey = "DuelArena.Volume.Master";
     private const string MusicVolumeKey = "DuelArena.Volume.Music";
 
@@ -57,9 +59,9 @@ public static class GameSettings
 
     /// <summary>
     /// Les réglages de la partie que cette machine hébergera (2026-10-13) : capacité, organisation des
-    /// duels (roi de la colline ou duellistes fixes), interventions des spectateurs. Choisis sur l'écran
-    /// Jouer en attendant le lobby, retenus d'une session à l'autre, appliqués par le serveur seul
-    /// (SessionFlow.ActiveRules, RoundManager).
+    /// duels (roi de la colline ou duellistes fixes), interventions des spectateurs, et depuis le
+    /// 2026-10-25 le nombre de manches (BO5 ou BO3). Choisis au salon, retenus d'une session à l'autre,
+    /// appliqués par le serveur seul (SessionFlow.ActiveRules, RoundManager).
     /// </summary>
     public static MatchRules HostRules
     {
@@ -71,6 +73,7 @@ public static class GameSettings
                 capacity = (byte)Mathf.Clamp(PlayerPrefs.GetInt(HostCapacityKey, defaults.capacity), 0, 255),
                 organization = (DuelOrganization)Mathf.Clamp(PlayerPrefs.GetInt(HostOrganizationKey, (int)defaults.organization), 0, 255),
                 spectatorInterventions = PlayerPrefs.GetInt(HostInterventionsKey, defaults.spectatorInterventions ? 1 : 0) == 1,
+                roundsToWin = (byte)Mathf.Clamp(PlayerPrefs.GetInt(HostRoundsKey, defaults.roundsToWin), 0, 255),
             }.Sanitized();
         }
         set
@@ -79,6 +82,7 @@ public static class GameSettings
             PlayerPrefs.SetInt(HostCapacityKey, r.capacity);
             PlayerPrefs.SetInt(HostOrganizationKey, (int)r.organization);
             PlayerPrefs.SetInt(HostInterventionsKey, r.spectatorInterventions ? 1 : 0);
+            PlayerPrefs.SetInt(HostRoundsKey, r.roundsToWin);
             PlayerPrefs.Save();
         }
     }
@@ -212,6 +216,27 @@ public static class GameSettings
     // La sensibilité de CETTE instance du jeu, lue une fois (NaN = pas encore lue).
     private static float sensitivity = float.NaN;
 
+    /// <summary>L'axe vertical de la souris inversé (2026-10-17, la maquette des Options) : pousser la souris
+    /// fait baisser le regard. Lu à chaque image par la caméra (PlayerCameraLook), donc gardé en mémoire
+    /// comme la sensibilité.</summary>
+    public static bool InvertY
+    {
+        get
+        {
+            invertY ??= PlayerPrefs.GetInt(InvertYKey, 0) == 1;
+            return invertY.Value;
+        }
+        set
+        {
+            invertY = value;
+            PlayerPrefs.SetInt(InvertYKey, value ? 1 : 0);
+            PlayerPrefs.Save();
+        }
+    }
+
+    // L'inversion de CETTE instance du jeu, lue une fois (vide = pas encore lue).
+    private static bool? invertY;
+
     /// <summary>
     /// La couleur choisie pour le robot dans Personnalisation : son rang dans la palette de PlayerPaint,
     /// -1 = aucun choix (le serveur donne alors la première couleur libre). Annoncée à l'hôte en se
@@ -238,6 +263,32 @@ public static class GameSettings
 
     // La couleur choisie par CETTE instance, lue une fois (vide = pas encore lue).
     private static int? preferredColor;
+
+    /// <summary>La clé du châssis choisi dans PlayerPrefs (publique pour les tests).</summary>
+    public const string PreferredChassisKey = "DuelArena.PreferredChassis";
+
+    /// <summary>
+    /// Le châssis choisi pour le robot dans Personnalisation (RobotChassis : le CT-01 par défaut). Annoncé à
+    /// l'hôte en se connectant (SessionFlow), borné et publié par le serveur (PlayerChassis) ; 2026-10-26.
+    /// Lu une fois par lancement, puis gardé en mémoire, comme la couleur.
+    /// </summary>
+    public static ChassisId PreferredChassis
+    {
+        get
+        {
+            if (!preferredChassis.HasValue) preferredChassis = RobotChassis.Sanitized(PlayerPrefs.GetInt(PreferredChassisKey, 0));
+            return preferredChassis.Value;
+        }
+        set
+        {
+            preferredChassis = value;
+            PlayerPrefs.SetInt(PreferredChassisKey, (int)value);
+            PlayerPrefs.Save();
+        }
+    }
+
+    // Le châssis choisi par CETTE instance, lu une fois (vide = pas encore lu).
+    private static ChassisId? preferredChassis;
 
     public static bool Fullscreen
     {

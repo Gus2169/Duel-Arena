@@ -288,6 +288,8 @@ GameObject:
   - component: {fileID: 819321432}
   - component: {fileID: 819321431}
   - component: {fileID: 819321433}
+  - component: {fileID: 819321435}
+  - component: {fileID: 819321434}
   m_Layer: 0
   m_Name: MainMenuUI
   m_TagString: Untagged
@@ -349,8 +351,10 @@ MonoBehaviour:
   document: {fileID: 0}
   characterPreview: {fileID: 819321429}
   lobby: {fileID: 819321433}
-  armory: {fileID: 0}
-  weaponCustomization: {fileID: 0}
+  armory: {fileID: 819321427}
+  weaponCustomization: {fileID: 819321430}
+  playScreen: {fileID: 819321435}
+  artwork: {fileID: 11400000, guid: b1e0ccf30f01c0e478a169132c29e49e, type: 2}
 --- !u!114 &819321427
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -363,14 +367,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: eeee6f44352c80245943d94e3abff747, type: 3}
   m_Name: 
   m_EditorClassIdentifier: DuelArena.Runtime::ArmoryController
-  loadoutPreview:
-  - {fileID: 11400000, guid: b440da299e5267f43b00e97e946bbf53, type: 2}
-  - {fileID: 11400000, guid: 728f72f05ce172c4f8a4311040daccb1, type: 2}
-  - {fileID: 11400000, guid: 0f67bef9704b65747a4569234398678d, type: 2}
-  - {fileID: 11400000, guid: 72f50928e0375ed42bc4c515b8619fdf, type: 2}
   characterPreview: {fileID: 819321429}
   weaponCustomization: {fileID: 819321430}
   mainMenu: {fileID: 819321426}
+  thumbnails: {fileID: 819321434}
   document: {fileID: 0}
 --- !u!114 &819321428
 MonoBehaviour:
@@ -422,7 +422,8 @@ MonoBehaviour:
   stage: {fileID: 1162473221}
   document: {fileID: 0}
   mainMenu: {fileID: 819321426}
-  characterPreview: {fileID: 0}
+  characterPreview: {fileID: 819321429}
+  thumbnails: {fileID: 819321434}
   aiTypingSpeed: 140
 --- !u!114 &819321431
 MonoBehaviour:
@@ -466,7 +467,123 @@ MonoBehaviour:
   m_EditorClassIdentifier: DuelArena.Runtime::LobbyController
   document: {fileID: 819321425}
   mainMenu: {fileID: 819321426}
+  thumbnails: {fileID: 819321434}
+  characterPreview: {fileID: 819321429}
   gameplaySceneName: MultiTestScene
+--- !u!114 &819321434
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 819321423}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 95df363f1f2e05c40aca2aaeb01f50a8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::MenuThumbnails
+  playerPrefab: {fileID: 4948709451476686498, guid: 153a04d1ca870fd41bf53540dbe6af6c, type: 3}
+  idleClip: {fileID: -203655887218126122, guid: 01c4752e9476ac644abf10709960f57a, type: 3}
+  rendersPerFrame: 2
+--- !u!114 &819321435
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 819321423}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 03fb69f8b7c78d445b2307d8e7a94b69, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::PlayScreenController
+  document: {fileID: 819321425}
+  mainMenu: {fileID: 819321426}
+  lobby: {fileID: 819321433}
+  thumbnails: {fileID: 819321434}
+  characterPreview: {fileID: 819321429}
+  modeArt:
+  - mode: 0
+    pose: {fileID: -203655887218126122, guid: 1d69971b921e2d74e86cdafb77000f57, type: 3}
+    time: 0.12
+    paint: 0
+    yaw: 0
+    duo: 1
+    duoPose: {fileID: -203655887218126122, guid: 1d69971b921e2d74e86cdafb77000f57, type: 3}
+    duoTime: 0.12
+    duoPaint: 1
+  - mode: 1
+    pose: {fileID: -203655887218126122, guid: c73facbeda1d24c45823d7f7019e1884, type: 3}
+    time: 1.2
+    paint: 6
+    yaw: -20
+    duo: 0
+    duoPose: {fileID: 0}
+    duoTime: 0
+    duoPaint: 0
+  - mode: 2
+    pose: {fileID: -203655887218126122, guid: 2f369ce8dbbb94a43b7a6cc5c2887b71, type: 3}
+    time: 1
+    paint: 5
+    yaw: -25
+    duo: 0
+    duoPose: {fileID: 0}
+    duoTime: 0
+    duoPaint: 0
+  - mode: 3
+    pose: {fileID: 4061839508520268033, guid: fe8ee4140065a2748b327edea313cdeb, type: 3}
+    time: 0.25
+    paint: 2
+    yaw: -30
+    duo: 0
+    duoPose: {fileID: 0}
+    duoTime: 0
+    duoPaint: 0
+  - mode: 4
+    pose: {fileID: -203655887218126122, guid: ea19f8f4b4b3ff748a8c27ef0f2052d1, type: 3}
+    time: 0.9
+    paint: 3
+    yaw: -25
+    duo: 0
+    duoPose: {fileID: 0}
+    duoTime: 0
+    duoPaint: 0
+  - mode: 5
+    pose: {fileID: 4061839508520268033, guid: fe8ee4140065a2748b327edea313cdeb, type: 3}
+    time: 0.45
+    paint: 4
+    yaw: 30
+    duo: 0
+    duoPose: {fileID: 0}
+    duoTime: 0
+    duoPaint: 0
+  - mode: 6
+    pose: {fileID: -203655887218126122, guid: 01c4752e9476ac644abf10709960f57a, type: 3}
+    time: 0.5
+    paint: -1
+    yaw: -20
+    duo: 0
+    duoPose: {fileID: 0}
+    duoTime: 0
+    duoPaint: 0
+  - mode: 7
+    pose: {fileID: -203655887218126122, guid: d6b9d8c6c68934044945b35c9cc382ed, type: 3}
+    time: 1
+    paint: 0
+    yaw: -25
+    duo: 0
+    duoPose: {fileID: 0}
+    duoTime: 0
+    duoPaint: 0
+  - mode: 8
+    pose: {fileID: -203655887218126122, guid: 5830749721cbdeb4bb42a586f0394b3b, type: 3}
+    time: 1
+    paint: 1
+    yaw: -20
+    duo: 0
+    duoPose: {fileID: 0}
+    duoTime: 0
+    duoPaint: 0
 --- !u!1 &1115163074
 GameObject:
   m_ObjectHideFlags: 0

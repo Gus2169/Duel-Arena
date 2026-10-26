@@ -1,0 +1,225 @@
+/* Le panneau des Options (2026-10-17, d'après la maquette de l'utilisateur). Partagé par le menu principal
+   et le menu d'Échap en partie ; la charte commune est dans Theme.uss. */
+
+.options-instance {
+    width: 1260px;
+    max-width: 94%;
+    height: 700px;
+    max-height: 90%;
+}
+
+.opt-panel {
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+.opt-watermark {
+    position: absolute;
+    right: -150px;
+    top: 90px;
+    width: 520px;
+    height: 520px;
+    opacity: 0.07;
+}
+
+.opt-header {
+    flex-direction: row;
+    align-items: center;
+    height: 80px;
+    flex-shrink: 0;
+}
+
+.opt-header__logo {
+    width: 58px;
+    height: 58px;
+    margin-right: 18px;
+}
+
+.opt-header__title {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    font-size: 40px;
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+}
+
+.opt-body {
+    flex-direction: row;
+    flex-grow: 1;
+    margin-top: 20px;
+}
+
+.opt-tabs {
+    width: 280px;
+    margin-right: 22px;
+}
+
+.opt-tab {
+    height: 54px;
+    margin-bottom: 10px;
+    padding: 0 18px 0 24px;
+    justify-content: flex-start;
+}
+
+.opt-tab > .slant-bg {
+    --fill-color: rgba(12, 17, 23, 0.9);
+    --edge-color: rgba(150, 170, 190, 0.3);
+    --cut-tl: 0;
+    --cut-br: 14;
+}
+
+.opt-tab__label {
+    flex-grow: 1;
+    font-size: 17px;
+    -unity-text-align: middle-left;
+}
+
+.opt-tab__chevron {
+    width: 18px;
+    height: 18px;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: var(--on-yellow);
+    display: none;
+}
+
+.opt-tab--active > .slant-bg,
+.opt-tab--active:hover > .slant-bg {
+    --fill-color: rgb(244, 190, 28);
+    --edge-width: 0;
+    --accent-color: rgb(18, 22, 28);
+    --accent-width: 5;
+}
+
+.opt-tab--active > .opt-tab__label,
+.opt-tab--active:hover > .opt-tab__label {
+    color: var(--on-yellow);
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+}
+
+.opt-tab--active > .opt-tab__chevron {
+    display: flex;
+}
+
+.opt-content {
+    flex-grow: 1;
+    flex-basis: 0;
+    max-width: 880px;
+    padding: 18px 30px;
+    --fill-color: rgba(12, 17, 23, 0.92);
+    --edge-color: rgba(150, 170, 190, 0.28);
+    --edge-width: 1;
+    --cut-tr: 18;
+    --cut-bl: 18;
+}
+
+.opt-page {
+    flex-grow: 1;
+}
+
+.opt-row {
+    flex-direction: row;
+    align-items: center;
+    height: 56px;
+    border-bottom-width: 1px;
+    border-color: rgba(150, 170, 190, 0.12);
+}
+
+.opt-row__label {
+    width: 330px;
+    flex-shrink: 0;
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Medium.ttf");
+    font-size: 17px;
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+}
+
+.opt-row__slider {
+    flex-grow: 1;
+}
+
+.opt-row__cycler {
+    flex-grow: 1;
+}
+
+.opt-row__value {
+    width: 76px;
+    flex-shrink: 0;
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    font-size: 17px;
+    color: var(--text);
+    -unity-text-align: middle-right;
+    margin: 0;
+    padding: 0;
+}
+
+.opt-controls-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.opt-section {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    flex-grow: 1;
+    margin: 0;
+    padding: 0;
+}
+
+.opt-reset {
+    width: 190px;
+    height: 38px;
+}
+
+.opt-reset > .da-btn__label {
+    font-size: 13px;
+}
+
+.opt-binds {
+    flex-grow: 1;
+}
+
+.bind-row {
+    flex-direction: row;
+    align-items: center;
+    height: 44px;
+    border-bottom-width: 1px;
+    border-color: rgba(150, 170, 190, 0.1);
+}
+
+.bind-row-label {
+    flex-grow: 1;
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Medium.ttf");
+    font-size: 15px;
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+}
+
+.bind-button {
+    width: 230px;
+    height: 32px;
+    margin: 0 6px 0 0;
+    border-width: 1px;
+    border-color: rgba(150, 170, 190, 0.4);
+    border-radius: 3px;
+    background-color: rgba(6, 9, 13, 0.85);
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf");
+    font-size: 13px;
+    color: var(--text);
+}
+
+.bind-button:hover {
+    border-color: var(--yellow);
+    color: var(--yellow);
+}
+
+.bind-button--listening,
+.bind-button--listening:hover {
+    background-color: var(--yellow);
+    border-color: var(--yellow);
+    color: var(--on-yellow);
+}

@@ -28,8 +28,6 @@ using UnityEngine.Rendering.Universal;
 /// </summary>
 public class VictoryStage : MonoBehaviour
 {
-    private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
-
     /// <summary>Le champ vertical de la caméra (degrés) : un portrait, peu déformé.</summary>
     public const float FieldOfView = 32f;
     /// <summary>Où se tient le robot sur l'écran, en fraction de sa largeur : au milieu de la colonne
@@ -118,11 +116,12 @@ public class VictoryStage : MonoBehaviour
     // ------------------------------------------------------------------
 
     /// <summary>
-    /// Montre le robot du gagnant sur `victorySpot` : modèle du préfab joueur, peint de `paint`,
-    /// sans arme, qui enchaîne les célébrations `clips` au hasard de `celebrationSeed`. Sans clip,
+    /// Montre le robot du gagnant sur `victorySpot` : modèle du préfab joueur, dans son châssis, peint de
+    /// `paint`, sans arme, qui enchaîne les célébrations `clips` au hasard de `celebrationSeed`. Sans clip,
     /// une pose de victoire provisoire (le poing levé).
     /// </summary>
-    public void Show(Transform victorySpot, GameObject playerPrefab, Color32 paint, IReadOnlyList<AnimationClip> clips, int celebrationSeed)
+    public void Show(Transform victorySpot, GameObject playerPrefab, ChassisId chassis, Color32 paint, IReadOnlyList<AnimationClip> clips,
+                     int celebrationSeed)
     {
         Clear();
         Transform assetModel = playerPrefab != null ? playerPrefab.transform.Find("Model") : null;
@@ -135,6 +134,7 @@ public class VictoryStage : MonoBehaviour
         model = RobotAppearance.Copy(assetModel.gameObject, transform, "RobotVictoire");
         model.transform.SetPositionAndRotation(spot.position, Quaternion.Euler(0f, spot.eulerAngles.y, 0f));
         modelAnimator = model.GetComponent<Animator>();
+        RobotChassis.Apply(model.transform, chassis);
         Paint(playerPrefab, assetModel, paint);
 
         if (modelAnimator != null)
@@ -212,9 +212,7 @@ public class VictoryStage : MonoBehaviour
         {
             Transform twin = Twin(assetModel, assetRenderer != null ? assetRenderer.transform : null, model.transform);
             if (twin == null || !twin.TryGetComponent(out Renderer r)) continue;
-            r.GetPropertyBlock(block);
-            block.SetColor(BaseColorId, paint);
-            r.SetPropertyBlock(block);
+            PlayerPaint.PaintPart(r, paint, block, true);
         }
     }
 

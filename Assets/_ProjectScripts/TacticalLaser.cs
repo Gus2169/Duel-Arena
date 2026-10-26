@@ -14,6 +14,12 @@ using UnityEngine;
 /// arrêté par le décor et les corps comme une balle (WeaponData.worldMask, hitboxMask), jamais par les
 /// zones du joueur. Pas dans la lunette du sniper : le point y suit le regard.
 ///
+/// Réglé sur la ligne de visée de l'arme (2026-10-26) : le faisceau va de l'émetteur au point que touche
+/// la ligne de visée (la mire du viseur, ou de l'arme, dans l'axe du canon), comme un laser réglé à la
+/// distance de ce qu'on vise. Parallèle au canon, il passait à une dizaine de centimètres sous le
+/// viseur et à droite : de près, le point n'était pas au centre du réticule en visée (signalé par
+/// l'utilisateur). Il suit toujours l'arme : la ligne de visée bouge avec elle.
+///
 /// Catégorie C réseautée : les accessoires sont publiés par le serveur (PlayerWeaponAttachments), la
 /// pose de l'arme suit l'animation de chaque machine ; rien ne relit le faisceau. Posé sur la racine du
 /// préfab joueur.
@@ -27,6 +33,9 @@ public class TacticalLaser : MonoBehaviour
 
     [Tooltip("La luminosité du faisceau à son bout, rapportée à celle de l'émetteur : il s'éteint en portant.")]
     [SerializeField, Range(0f, 1f)] private float endBrightness = 0.3f;
+
+    /// <summary>La distance de réglage la plus courte (m) : contre un mur, le faisceau ne vire pas en travers.</summary>
+    public const float MinimumZeroDistance = 1f;
 
     private PlayerLocomotion locomotion;
     private WeaponController weapon;
@@ -66,7 +75,8 @@ public class TacticalLaser : MonoBehaviour
 
     private void LateUpdate()
     {
-        bool on = TryAim(out Vector3 origin, out Vector3 direction, out bool beamShown, out WeaponData data);
+        bool on = TryAim(out Vector3 origin, out Vector3 direction, out bool beamShown, out WeaponData data,
+                         out bool zeroed, out Vector3 sightOrigin, out Vector3 sightDirection);
         AttachmentCatalog catalog = data != null ? data.attachmentCatalog : null;
         if (!on || catalog == null || catalog.dotMaterial == null)
         {
@@ -75,6 +85,11 @@ public class TacticalLaser : MonoBehaviour
         }
 
         float range = catalog.beamRange;
+        if (zeroed)
+        {
+            float zero = Cast(sightOrigin, sightDirection, range, data, out RaycastHit seen) ? seen.distance : range;
+            direction = ZeroedDirection(origin, sightOrigin, sightDirection, Mathf.Max(MinimumZeroDistance, zero));
+        }
         Vector3 end = origin + direction * range;
         bool hit = Cast(origin, direction, range, data, out RaycastHit stop);
         if (hit) end = stop.point - direction * 0.01f;   // posé devant la surface, pas dedans
@@ -93,11 +108,12 @@ public class TacticalLaser : MonoBehaviour
 
     /// <summary>Le laser est-il allumé, d'où part son faisceau, dans quel sens, et se voit-il ? Le long du
     /// canon de l'arme tenue : celle des bras chez le joueur, ramenée là où il la voit ; celle du corps
-    /// chez les autres.</summary>
-    private bool TryAim(out Vector3 origin, out Vector3 direction, out bool beamShown, out WeaponData data)
+    /// chez les autres. Et la ligne de visée de cette arme, sur laquelle le régler (`zeroed`).</summary>
+    private bool TryAim(out Vector3 origin, out Vector3 direction, out bool beamShown, out WeaponData data,
+                        out bool zeroed, out Vector3 sightOrigin, out Vector3 sightDirection)
     {
-        origin = direction = Vector3.zero;
-        beamShown = false;
+        origin = direction = sightOrigin = sightDirection = Vector3.zero;
+        beamShown = zeroed = false;
         data = null;
         if (weapon == null || locomotion == null || locomotion.IsSpectator) return false;
         if (health != null && health.IsDead) return false;
@@ -113,8 +129,16 @@ public class TacticalLaser : MonoBehaviour
             Camera eye = weapon.AimCamera;
             if (emitter != null && arms != null)
             {
-                ArmsRayToWorld(emitter.position, view.transform.forward, eye.transform, eye.fieldOfView, arms.fieldOfView,
+                Vector3 forward = view.transform.forward;
+                ArmsRayToWorld(emitter.position, forward, eye.transform, eye.fieldOfView, arms.fieldOfView,
                                out origin, out direction);
+                Transform sight = AttachmentMount.SightOf(view, out _);
+                if (sight != null)
+                {
+                    ArmsRayToWorld(sight.position, forward, eye.transform, eye.fieldOfView, arms.fieldOfView,
+                                   out sightOrigin, out sightDirection);
+                    zeroed = true;
+                }
                 beamShown = true;
             }
             else
@@ -131,9 +155,28 @@ public class TacticalLaser : MonoBehaviour
             if (emitter == null) return false;
             origin = emitter.position;
             direction = held.transform.forward;
+            Transform sight = AttachmentMount.SightOf(held, out _);
+            if (sight != null)
+            {
+                sightOrigin = sight.position;
+                sightDirection = direction;
+                zeroed = true;
+            }
             beamShown = true;
         }
         return direction.sqrMagnitude > 0.5f;
+    }
+
+    /// <summary>
+    /// Le faisceau réglé sur la ligne de visée (2026-10-26) : de l'émetteur vers le point de la ligne de
+    /// visée (`sightOrigin`, `sightDirection`, unitaire) à `distance`, celle de ce qu'elle touche. En
+    /// visée, ce point est au centre du réticule : le point du laser y tombe, à toute distance. Fonction
+    /// pure, testée.
+    /// </summary>
+    public static Vector3 ZeroedDirection(Vector3 emitter, Vector3 sightOrigin, Vector3 sightDirection, float distance)
+    {
+        Vector3 toTarget = sightOrigin + sightDirection * distance - emitter;
+        return toTarget.sqrMagnitude > 1e-8f ? toTarget.normalized : sightDirection;
     }
 
     /// <summary>

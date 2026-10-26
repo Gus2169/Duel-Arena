@@ -54,6 +54,7 @@ public class SpectatorView : NetworkBehaviour
     private float punchStartedAt = float.NegativeInfinity;
     private float punchDuration = 0.45f;
     private float throwStartedAt = float.NegativeInfinity;
+    private PlayerChassis chassis;
 
     public override void OnNetworkSpawn()
     {
@@ -69,6 +70,12 @@ public class SpectatorView : NetworkBehaviour
             spectator.OnThrow += HandleThrow;
         }
         BuildArms();
+        chassis = GetComponent<PlayerChassis>();
+        if (chassis != null)
+        {
+            chassis.Changed += HandleChassis;
+            HandleChassis(chassis.Value);
+        }
     }
 
     public override void OnNetworkDespawn()
@@ -78,10 +85,17 @@ public class SpectatorView : NetworkBehaviour
             spectator.OnPunch -= HandlePunch;
             spectator.OnThrow -= HandleThrow;
         }
+        if (chassis != null) chassis.Changed -= HandleChassis;
         if (arms != null) Destroy(arms);
         if (held != null) Destroy(held);
         arms = null;
         held = null;
+    }
+
+    // Les bras à mains nues dans le châssis publié (2026-10-26), comme ceux de la vue armée.
+    private void HandleChassis(ChassisId id)
+    {
+        if (arms != null) RobotChassis.Apply(arms.transform, id);
     }
 
     private void HandlePunch(float duration)

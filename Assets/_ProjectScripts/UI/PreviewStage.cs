@@ -277,7 +277,7 @@ public class PreviewStage : MonoBehaviour
     /// (2 m × 1,8 m pour le robot), et le cadrage le montrait deux fois trop petit. Les os de
     /// Mixamo vont du bout de la tête au bout des orteils ; la marge couvre l'épaisseur du corps.
     /// Les effets (particules) sont ignorés : leurs bornes vides à l'origine fausseraient tout.</summary>
-    private static Bounds ComputeWorldBounds(Transform root)
+    internal static Bounds ComputeWorldBounds(Transform root)
     {
         // Un modèle tout juste réactivé n'a pas encore été évalué par son Animator : sans ça, on
         // mesurerait la pose de repos (bras en croix).

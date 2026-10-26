@@ -1,5 +1,5 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements">
-    <ui:Style src="MainMenu.uss" />
+    <ui:Style src="../Shared/OptionsPanel.uss" />
     <ui:VisualElement name="bindRow" class="bind-row">
         <ui:Label name="bindLabel" class="bind-row-label" text="Action" />
         <ui:Button name="bindButton" class="bind-button" text="Touche" />

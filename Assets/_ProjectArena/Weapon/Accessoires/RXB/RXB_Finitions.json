@@ -10,10 +10,11 @@
   "teinte": "neutre",
   "reticule": "tirets_chevron",
   "couleurReticule": "vert",
-  "rayonReticule": 0.012,
+  "rayonReticule": 0.008,
+  "traitReticule": 0.0004,
   "hauteurAxe": 0.04
  },
- "triangles": 1444,
+ "triangles": 1488,
  "pieces": 3,
  "resolution": 512,
  "finitions": [

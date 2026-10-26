@@ -1,0 +1,813 @@
+/* =====================================================================
+   Charte du menu de Duel Arena (2026-10-17, d'après les maquettes de
+   l'utilisateur) : jaune de crash-test sur fond d'acier sombre, coins
+   coupés, équerres. Partagée par le menu principal, le panneau des Options
+   et l'interface de la partie.
+
+   Les propriétés personnalisées des éléments sur mesure (SlantBox,
+   GradientFill...) sont écrites en couleurs littérales, sans var() : elles
+   sont lues par du C#.
+   ===================================================================== */
+
+:root, .da-vars {
+    --yellow: rgb(244, 190, 28);
+    --yellow-hover: rgb(255, 211, 77);
+    --yellow-soft: rgba(244, 190, 28, 0.16);
+    --ink: rgb(9, 12, 16);
+    --panel: rgba(12, 17, 23, 0.94);
+    --panel-raised: rgba(21, 28, 37, 0.96);
+    --edge: rgba(150, 170, 190, 0.3);
+    --edge-strong: rgba(190, 205, 220, 0.55);
+    --text: rgb(232, 236, 240);
+    --text-dim: rgb(143, 155, 168);
+    --text-faint: rgb(92, 103, 116);
+    --on-yellow: rgb(18, 22, 28);
+    --green: rgb(69, 212, 131);
+    --red: rgb(229, 72, 77);
+}
+
+/* ---------- Polices (Roboto, voir Fonts/LICENCES.md) ---------- */
+
+.t-display { -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf"); }
+.t-black { -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Black.ttf"); }
+.t-bold { -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf"); }
+.t-bolditalic { -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BoldItalic.ttf"); }
+.t-medium { -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Medium.ttf"); }
+.t-regular { -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf"); }
+.t-mono { -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf"); }
+
+.da-font {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Medium.ttf");
+    color: var(--text);
+    font-size: 15px;
+}
+
+.hidden {
+    display: none;
+}
+
+/* ---------- Icônes (SVG blancs, teintés en USS) ---------- */
+
+.da-icon {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: var(--text);
+}
+
+.ico-play { background-image: url("project://database/Assets/_ProjectUI/Icons/play.svg"); }
+.ico-wrench { background-image: url("project://database/Assets/_ProjectUI/Icons/wrench.svg"); }
+.ico-gear { background-image: url("project://database/Assets/_ProjectUI/Icons/gear.svg"); }
+.ico-exit { background-image: url("project://database/Assets/_ProjectUI/Icons/exit.svg"); }
+.ico-chevron-left { background-image: url("project://database/Assets/_ProjectUI/Icons/chevron-left.svg"); }
+.ico-chevron-right { background-image: url("project://database/Assets/_ProjectUI/Icons/chevron-right.svg"); }
+.ico-lock { background-image: url("project://database/Assets/_ProjectUI/Icons/lock.svg"); }
+.ico-check { background-image: url("project://database/Assets/_ProjectUI/Icons/check.svg"); }
+.ico-copy { background-image: url("project://database/Assets/_ProjectUI/Icons/copy.svg"); }
+.ico-users { background-image: url("project://database/Assets/_ProjectUI/Icons/users.svg"); }
+.ico-user { background-image: url("project://database/Assets/_ProjectUI/Icons/user.svg"); }
+.ico-robot { background-image: url("project://database/Assets/_ProjectUI/Icons/robot.svg"); }
+.ico-palette { background-image: url("project://database/Assets/_ProjectUI/Icons/palette.svg"); }
+.ico-tag { background-image: url("project://database/Assets/_ProjectUI/Icons/tag.svg"); }
+.ico-sparkle { background-image: url("project://database/Assets/_ProjectUI/Icons/sparkle.svg"); }
+.ico-sight { background-image: url("project://database/Assets/_ProjectUI/Icons/sight.svg"); }
+.ico-grip { background-image: url("project://database/Assets/_ProjectUI/Icons/grip.svg"); }
+.ico-laser { background-image: url("project://database/Assets/_ProjectUI/Icons/laser.svg"); }
+.ico-magazine { background-image: url("project://database/Assets/_ProjectUI/Icons/magazine.svg"); }
+.ico-rifle { background-image: url("project://database/Assets/_ProjectUI/Icons/rifle.svg"); }
+.ico-brush { background-image: url("project://database/Assets/_ProjectUI/Icons/brush.svg"); }
+.ico-target { background-image: url("project://database/Assets/_ProjectUI/Icons/target.svg"); }
+.ico-stopwatch { background-image: url("project://database/Assets/_ProjectUI/Icons/stopwatch.svg"); }
+.ico-crown { background-image: url("project://database/Assets/_ProjectUI/Icons/crown.svg"); }
+.ico-trophy { background-image: url("project://database/Assets/_ProjectUI/Icons/trophy.svg"); }
+.ico-medal { background-image: url("project://database/Assets/_ProjectUI/Icons/medal.svg"); }
+.ico-eye { background-image: url("project://database/Assets/_ProjectUI/Icons/eye.svg"); }
+.ico-gift { background-image: url("project://database/Assets/_ProjectUI/Icons/gift.svg"); }
+.ico-rock { background-image: url("project://database/Assets/_ProjectUI/Icons/rock.svg"); }
+.ico-moon { background-image: url("project://database/Assets/_ProjectUI/Icons/moon.svg"); }
+.ico-skull { background-image: url("project://database/Assets/_ProjectUI/Icons/skull.svg"); }
+.ico-swords { background-image: url("project://database/Assets/_ProjectUI/Icons/swords.svg"); }
+.ico-flag { background-image: url("project://database/Assets/_ProjectUI/Icons/flag.svg"); }
+.ico-pin { background-image: url("project://database/Assets/_ProjectUI/Icons/pin.svg"); }
+.ico-key { background-image: url("project://database/Assets/_ProjectUI/Icons/key.svg"); }
+.ico-sound { background-image: url("project://database/Assets/_ProjectUI/Icons/sound.svg"); }
+.ico-monitor { background-image: url("project://database/Assets/_ProjectUI/Icons/monitor.svg"); }
+.ico-gamepad { background-image: url("project://database/Assets/_ProjectUI/Icons/gamepad.svg"); }
+.ico-info { background-image: url("project://database/Assets/_ProjectUI/Icons/info.svg"); }
+.ico-pencil { background-image: url("project://database/Assets/_ProjectUI/Icons/pencil.svg"); }
+.ico-spark { background-image: url("project://database/Assets/_ProjectUI/Icons/spark.svg"); }
+
+/* ---------- Fond biseauté d'un bouton (SlantBox, premier enfant) ---------- */
+
+.slant-bg {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* ---------- Boutons ---------- */
+
+.da-btn {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    margin: 0;
+    padding: 0 26px;
+    border-width: 0;
+    border-radius: 0;
+    background-color: rgba(0, 0, 0, 0);
+    transition-duration: 0.12s;
+}
+
+.da-btn > .slant-bg {
+    --fill-color: rgba(14, 19, 26, 0.92);
+    --edge-color: rgba(150, 170, 190, 0.35);
+    --edge-width: 1;
+    --cut-tl: 0;
+    --cut-br: 12;
+}
+
+.da-btn:hover > .slant-bg {
+    --fill-color: rgba(26, 34, 45, 0.96);
+    --edge-color: rgba(244, 190, 28, 0.85);
+}
+
+.da-btn:active > .slant-bg {
+    --fill-color: rgba(244, 190, 28, 0.22);
+}
+
+.da-btn__label {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    font-size: 16px;
+    letter-spacing: 1px;
+    color: var(--text);
+    padding: 0;
+    margin: 0;
+}
+
+.da-btn__icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 12px;
+    flex-shrink: 0;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: var(--text);
+}
+
+.da-btn:hover > .da-btn__label {
+    color: var(--yellow);
+}
+
+.da-btn:hover > .da-btn__icon {
+    -unity-background-image-tint-color: var(--yellow);
+}
+
+.da-btn--primary > .slant-bg {
+    --fill-color: rgb(244, 190, 28);
+    --edge-color: rgba(0, 0, 0, 0);
+    --edge-width: 0;
+}
+
+.da-btn--primary:hover > .slant-bg {
+    --fill-color: rgb(255, 211, 77);
+}
+
+.da-btn--primary:active > .slant-bg {
+    --fill-color: rgb(214, 162, 16);
+}
+
+.da-btn--primary > .da-btn__label {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    color: var(--on-yellow);
+}
+
+.da-btn--primary:hover > .da-btn__label {
+    color: var(--on-yellow);
+}
+
+.da-btn--primary > .da-btn__icon,
+.da-btn--primary:hover > .da-btn__icon {
+    -unity-background-image-tint-color: var(--on-yellow);
+}
+
+.da-btn:disabled {
+    opacity: 1;
+}
+
+.da-btn:disabled > .slant-bg {
+    --fill-color: rgba(14, 19, 26, 0.7);
+    --edge-color: rgba(150, 170, 190, 0.15);
+}
+
+.da-btn:disabled > .da-btn__label {
+    color: var(--text-faint);
+}
+
+.da-btn:disabled > .da-btn__icon {
+    -unity-background-image-tint-color: var(--text-faint);
+}
+
+/* ---------- En-tête des écrans : la marque, les onglets ---------- */
+
+.da-header {
+    flex-direction: row;
+    align-items: center;
+    height: 72px;
+    flex-shrink: 0;
+}
+
+.da-brand {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.da-brand__logo {
+    width: 44px;
+    height: 44px;
+    margin-right: 14px;
+}
+
+.da-brand__name {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    font-size: 30px;
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+}
+
+.da-header__spacer {
+    flex-grow: 1;
+}
+
+.da-tabs {
+    flex-direction: row;
+    height: 42px;
+    margin-left: 44px;
+    padding: 3px;
+    border-width: 1px;
+    border-color: var(--edge);
+    background-color: rgba(10, 14, 19, 0.75);
+}
+
+.da-tab {
+    flex-direction: row;
+    align-items: center;
+    height: 100%;
+    margin: 0 1px;
+    padding: 0 22px;
+    border-width: 0;
+    border-radius: 0;
+    background-color: rgba(0, 0, 0, 0);
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    font-size: 15px;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    transition-duration: 0.1s;
+}
+
+.da-tab:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+    color: var(--text);
+}
+
+.da-tab--active,
+.da-tab--active:hover {
+    background-color: var(--yellow);
+    color: var(--on-yellow);
+}
+
+.da-tab:disabled {
+    opacity: 1;
+    color: var(--text-faint);
+    background-color: rgba(0, 0, 0, 0);
+}
+
+/* Un onglet qui porte une icône écrit son texte dans un Label : le texte propre d'un bouton n'est plus
+   mesuré dès qu'il a des enfants, et l'icône se posait dessus. */
+.da-tab__label {
+    margin: 0;
+    padding: 0;
+}
+
+.da-tab__lock {
+    width: 13px;
+    height: 13px;
+    margin-left: 8px;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: var(--text-faint);
+    background-image: url("project://database/Assets/_ProjectUI/Icons/lock.svg");
+}
+
+/* ---------- La carte du joueur (en haut à droite de chaque écran) ---------- */
+
+.player-card {
+    flex-direction: row;
+    align-items: center;
+    width: 372px;
+    height: 66px;
+    margin: 0;
+    padding: 0 18px 0 14px;
+    border-width: 0;
+    border-radius: 0;
+    background-color: rgba(0, 0, 0, 0);
+    flex-shrink: 0;
+}
+
+.player-card > .slant-bg {
+    --fill-color: rgba(12, 17, 23, 0.92);
+    --edge-color: rgba(150, 170, 190, 0.35);
+    --edge-width: 1;
+    --cut-br: 14;
+}
+
+.player-card:hover > .slant-bg {
+    --edge-color: rgba(244, 190, 28, 0.85);
+}
+
+.player-card__logo {
+    width: 40px;
+    height: 40px;
+    margin-right: 14px;
+}
+
+.player-card__text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow: hidden;
+}
+
+.player-card__name {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Black.ttf");
+    -unity-text-align: middle-left;
+    font-size: 19px;
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+    -unity-text-overflow-position: end;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.player-card__subtitle {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    -unity-text-align: middle-left;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin: 2px 0 0 0;
+    padding: 0;
+}
+
+.player-card__badge {
+    width: 26px;
+    height: 26px;
+    margin-left: 10px;
+    rotate: 45deg;
+    border-width: 2px;
+    border-color: var(--yellow);
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.player-card__badge-icon {
+    width: 13px;
+    height: 13px;
+    rotate: -45deg;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: var(--yellow);
+    background-image: url("project://database/Assets/_ProjectUI/Icons/pencil.svg");
+}
+
+.player-card__bar {
+    position: absolute;
+    left: 68px;
+    right: 60px;
+    bottom: 6px;
+    height: 3px;
+    background-color: var(--yellow);
+}
+
+.player-card--static .player-card__badge {
+    display: none;
+}
+
+/* ---------- Pied d'écran : touches et actions ---------- */
+
+.da-footer {
+    flex-direction: row;
+    align-items: center;
+    height: 60px;
+    flex-shrink: 0;
+}
+
+.da-footer__spacer {
+    flex-grow: 1;
+}
+
+.key-hint {
+    flex-direction: row;
+    align-items: center;
+    height: 40px;
+    margin: 0 26px 0 0;
+    padding: 0;
+    border-width: 0;
+    border-radius: 0;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.key-hint__cap {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf");
+    font-size: 12px;
+    color: var(--text);
+    padding: 4px 8px;
+    margin: 0 10px 0 0;
+    border-width: 1px;
+    border-color: var(--edge-strong);
+    border-radius: 3px;
+    background-color: rgba(12, 17, 23, 0.85);
+}
+
+.key-hint__label {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    font-size: 14px;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin: 0;
+    padding: 0;
+}
+
+.key-hint:hover > .key-hint__cap {
+    border-color: var(--yellow);
+    color: var(--yellow);
+}
+
+.key-hint:hover > .key-hint__label {
+    color: var(--text);
+}
+
+/* ---------- Panneaux (SlantBox porteur) ---------- */
+
+.da-panel {
+    --fill-color: rgba(12, 17, 23, 0.9);
+    --edge-color: rgba(150, 170, 190, 0.28);
+    --edge-width: 1;
+    --cut-tr: 16;
+    --cut-bl: 16;
+    padding: 22px 24px;
+}
+
+.da-section {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    margin: 0 0 10px 0;
+    padding: 0;
+}
+
+.da-title {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    font-size: 30px;
+    color: var(--yellow);
+    margin: 0;
+    padding: 0;
+}
+
+.da-text {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf");
+    font-size: 16px;
+    color: var(--text);
+    white-space: normal;
+    margin: 0;
+    padding: 0;
+}
+
+.da-hint {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf");
+    font-size: 13px;
+    color: var(--text-dim);
+    white-space: normal;
+    margin: 0;
+    padding: 0;
+}
+
+.da-status {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Medium.ttf");
+    font-size: 14px;
+    color: var(--text-dim);
+    white-space: normal;
+    margin: 0;
+}
+
+.da-status--error {
+    color: var(--red);
+}
+
+.da-status--ok {
+    color: var(--green);
+}
+
+/* ---------- Champ de texte ---------- */
+
+.da-field {
+    margin: 0;
+    height: 46px;
+}
+
+.da-field > .unity-base-text-field__input {
+    background-color: rgba(6, 9, 13, 0.9);
+    border-width: 1px;
+    border-color: var(--edge);
+    border-radius: 0;
+    padding: 0 14px;
+    color: var(--text);
+    font-size: 18px;
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+}
+
+.da-field:focus > .unity-base-text-field__input {
+    border-color: var(--yellow);
+}
+
+/* ---------- Fenêtre modale (Quitter le jeu, le pseudo) ---------- */
+
+.modal-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(4, 6, 9, 0.78);
+}
+
+.modal {
+    width: 560px;
+    padding: 58px 44px 34px 44px;
+    align-items: center;
+    --fill-color: rgba(13, 18, 25, 0.97);
+    --edge-color: rgba(150, 170, 190, 0.3);
+    --edge-width: 1;
+    --cut-tl: 18;
+    --cut-br: 18;
+    --bracket-color: rgb(244, 190, 28);
+    --bracket-size: 22;
+    --bracket-width: 3;
+    --bracket-corners: 15;
+}
+
+.modal__logo {
+    position: absolute;
+    top: -30px;
+    width: 60px;
+    height: 60px;
+    align-self: center;
+}
+
+.modal__title {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    font-size: 34px;
+    color: var(--text);
+    margin: 0 0 12px 0;
+    padding: 0;
+}
+
+.modal__text {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf");
+    font-size: 17px;
+    color: var(--text-dim);
+    -unity-text-align: middle-center;
+    white-space: normal;
+    margin: 0 0 28px 0;
+    padding: 0;
+}
+
+.modal__buttons {
+    flex-direction: row;
+    align-self: stretch;
+}
+
+.modal__buttons > .da-btn {
+    flex-grow: 1;
+    flex-basis: 0;
+}
+
+.modal__gap {
+    width: 18px;
+}
+
+.modal__field {
+    align-self: stretch;
+    margin-bottom: 8px;
+}
+
+.modal-overlay > .modal-back {
+    margin-top: 26px;
+}
+
+.modal__hint {
+    align-self: stretch;
+    margin-bottom: 24px;
+    -unity-text-align: middle-center;
+}
+
+/* ---------- Curseurs, sélecteurs ‹ › ---------- */
+
+.da-slider {
+    flex-grow: 1;
+    margin: 0;
+    height: 28px;
+}
+
+.da-slider .unity-base-slider__drag-container {
+    height: 28px;
+}
+
+.da-slider .unity-base-slider__tracker {
+    height: 4px;
+    margin-top: -2px;
+    border-width: 0;
+    border-radius: 2px;
+    background-color: rgba(255, 255, 255, 0.16);
+}
+
+.da-slider .unity-base-slider__fill {
+    background-color: var(--yellow);
+    border-radius: 2px;
+}
+
+.da-slider .unity-base-slider__dragger {
+    width: 18px;
+    height: 18px;
+    margin-top: -9px;
+    border-width: 0;
+    border-radius: 9px;
+    background-color: var(--yellow);
+}
+
+.da-slider .unity-base-slider__dragger-border {
+    display: none;
+}
+
+.option-cycler {
+    flex-direction: row;
+    align-items: center;
+    flex-grow: 1;
+    height: 34px;
+}
+
+.option-cycler__arrow {
+    width: 34px;
+    height: 34px;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+    border-radius: 0;
+    background-color: rgba(0, 0, 0, 0);
+    align-items: center;
+    justify-content: center;
+}
+
+.option-cycler__arrow:hover {
+    background-color: rgba(244, 190, 28, 0.14);
+}
+
+.option-cycler__icon {
+    width: 18px;
+    height: 18px;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: var(--yellow);
+}
+
+.option-cycler__arrow--prev > .option-cycler__icon {
+    background-image: url("project://database/Assets/_ProjectUI/Icons/chevron-left.svg");
+}
+
+.option-cycler__arrow--next > .option-cycler__icon {
+    background-image: url("project://database/Assets/_ProjectUI/Icons/chevron-right.svg");
+}
+
+.option-cycler__arrow:disabled {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.option-cycler__arrow:disabled > .option-cycler__icon {
+    -unity-background-image-tint-color: rgba(143, 155, 168, 0.25);
+}
+
+.option-cycler__value {
+    flex-grow: 1;
+    -unity-text-align: middle-center;
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    font-size: 16px;
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+}
+
+.option-cycler:disabled > .option-cycler__value {
+    color: var(--text-dim);
+}
+
+/* ---------- Indicateur d'attente ---------- */
+
+.da-spinner {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    --spinner-color: rgb(244, 190, 28);
+}
+
+/* =====================================================================
+   Classes de l'interface de la partie (GameHud.uxml : menu d'Échap,
+   préparation, écran de fin), passées à la charte.
+   ===================================================================== */
+
+.screen {
+    flex-direction: column;
+    align-items: center;
+    width: 820px;
+    max-width: 92%;
+}
+
+.menu-button {
+    width: 340px;
+    height: 52px;
+    margin-top: 10px;
+    background-color: rgba(14, 19, 26, 0.92);
+    border-width: 1px;
+    border-color: rgba(150, 170, 190, 0.35);
+    border-radius: 0;
+    color: var(--text);
+    font-size: 17px;
+    letter-spacing: 1px;
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    -unity-text-align: middle-center;
+    transition-duration: 0.1s;
+}
+
+.menu-button:hover {
+    border-color: var(--yellow);
+    color: var(--yellow);
+    background-color: rgba(26, 34, 45, 0.96);
+}
+
+.menu-button:active {
+    background-color: rgba(244, 190, 28, 0.22);
+}
+
+.menu-button--primary {
+    background-color: var(--yellow);
+    border-color: var(--yellow);
+    color: var(--on-yellow);
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+}
+
+.menu-button--primary:hover {
+    background-color: var(--yellow-hover);
+    border-color: var(--yellow-hover);
+    color: var(--on-yellow);
+}
+
+.menu-button--quit:hover {
+    border-color: var(--red);
+    color: var(--red);
+}
+
+.back-button {
+    width: 180px;
+    height: 40px;
+    margin-top: 22px;
+    align-self: flex-start;
+    background-color: rgba(12, 17, 23, 0.85);
+    border-width: 1px;
+    border-color: var(--edge-strong);
+    border-radius: 0;
+    color: var(--text);
+    font-size: 14px;
+    letter-spacing: 1px;
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+}
+
+.back-button:hover {
+    border-color: var(--yellow);
+    color: var(--yellow);
+}
+
+.key-hint.back-button {
+    width: auto;
+    height: 40px;
+    margin-top: 0;
+    align-self: auto;
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+}

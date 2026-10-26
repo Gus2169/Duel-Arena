@@ -306,7 +306,8 @@ public class PlayerInputReader : MonoBehaviour
         // Un quart de l'écart par image, plafonné : il tourne vite sans osciller.
         float yawStep = Mathf.Clamp(yawError * 0.25f, -20f, 20f);
         float pitchStep = Mathf.Clamp(pitchError * 0.25f, -20f, 20f);
-        return new Vector2(yawStep / sensitivity, -pitchStep / sensitivity);
+        // L'axe vertical inversé (Options) est retourné par la caméra : le pilote le retourne d'avance.
+        return new Vector2(yawStep / sensitivity, (GameSettings.InvertY ? pitchStep : -pitchStep) / sensitivity);
     }
 #endif
 

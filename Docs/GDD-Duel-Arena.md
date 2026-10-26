@@ -6,7 +6,9 @@
 
 *Le monde et l'apparence du jeu (lore, personnages, armes, arènes, ton, direction artistique) vivent dans la bible, `Docs/Bible-Lore-DA.md`. **Ce document-ci fait foi pour les règles du jeu, la bible pour le monde et l'apparence.** En cas de conflit sur une règle de jeu, c'est le GDD qui gagne (tranché le 2026-10-04).*
 
-*« Duel Arena » est un nom **provisoire**.*
+*« Duel Arena » est un nom **provisoire**. Parmi les noms proposés par Claude le 2026-10-25, « Last Unit Standing » a retenu l'utilisateur : « il y a de l'idée mais c'est pas encore ça ». La recherche continue.*
+
+*Revu le 2026-10-25 à partir d'une seconde revue de conception (55 questions : ce qui n'avait jamais été tranché, ce qui était resté flou, ce que le jeu contredisait, ce qui avait changé en route), puis de sa suite le même jour (15 questions : les précisions, et les listes demandées à Claude). Chaque décision de ces revues porte sa date.*
 
 ---
 
@@ -46,21 +48,21 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 ## 4. Structure d'une session
 
-**Un lobby de plusieurs joueurs, deux duellistes à la fois.** Les autres sont spectateurs, dans la tribune, et attendent leur tour. Le nombre de spectateurs dépend du mode : **deux pour le prototype** (4 joueurs au total), peut-être jusqu'à six plus tard.
+**Un lobby de plusieurs joueurs, deux duellistes à la fois.** Les autres sont spectateurs, dans la tribune, et attendent leur tour. Le nombre de places dépend du mode et des réglages de l'hôte : **six au plus pour l'instant**, soit quatre spectateurs (2026-10-25). On verra plus tard s'il en faut davantage.
 
 **L'organisation des duels se règle par partie** :
-- **Roi de la colline** — le format par défaut. Le gagnant reste, le perdant retourne dans la file, le suivant prend sa place.
+- **Roi de la colline** — le format par défaut. Le gagnant reste, le perdant retourne dans la file, le suivant prend sa place. **Pas de plafond de victoires** : un champion reste tant qu'il gagne (2026-10-25).
 - **Duellistes fixes** — les deux premiers arrivés se battent tout le match ; les autres regardent depuis la tribune (ajouté le 2026-10-13).
 - **Tournoi** — arbre à élimination dans le lobby.
 - **Hasard** — l'adversaire suivant est tiré au sort.
 
 *Le 2026-10-13 : l'hôte règle, dans le salon de sa partie (le lobby privé à code), le nombre de places (2 à 6, 4 par défaut), l'organisation (roi de la colline ou duellistes fixes) et les interventions des spectateurs (§ 9) ; tous les joueurs du salon voient ces réglages. Le roi de la colline est un mode à part entière (l'utilisateur, le même jour). Les premiers arrivés se battent ; les suivants attendent dans leur ordre d'arrivée, et le premier de la file remplace un duelliste qui s'en va.*
 
-**Un match** se joue en BO5 ou en BO3, selon le mode. Une manche dure rarement plus d'une minute, donc un BO5 reste court même pour ceux qui attendent.
+**Un match** se joue en BO5 ou en BO3, **au choix de l'hôte**, dans le salon (2026-10-25). Une manche dure rarement plus d'une minute, donc un BO5 reste court même pour ceux qui attendent.
 
 **Tout le monde repart à 100 PV** à chaque manche, gagnant compris. Exception : le mode *Until Death* (§ 11), où les blessures restent.
 
-**Abandon en plein match** : forfait automatique.
+**Abandon en plein match** (2026-10-25) : **forfait**, l'autre gagne le match. S'il y a un spectateur, un nouveau match commence ensuite contre lui ; sinon, le gagnant attend un adversaire.
 
 **Matchmaking** : à la sortie, **uniquement des lobbys privés avec un code**, sans file publique : sans serveur dédié, une file publique mettrait des inconnus face à un hôte qui a l'avantage de la latence (tranché le 2026-10-04). **Après la sortie** : la file classée (sans spectateurs, sur serveur dédié), avec un matchmaking par région pour limiter le ping.
 
@@ -74,7 +76,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Spawns** : plusieurs points différents dans l'arène, avec échange de côté d'une manche à l'autre. Leur disposition dépendra surtout des modes de jeu, donc elle sera fixée plus tard ; d'ici là, le prototype garde ses deux points opposés (2026-10-05).
 
-**Préparation** (tranché le 2026-10-12) : avant chaque manche, un panneau s'ouvre au centre de l'écran et chaque joueur y choisit son arme (clic, ou touches 1 à 4), puis valide. Le décompte part dès que les deux ont validé, au plus tard au bout de **20 secondes**. Les joueurs sont replacés et immobiles pendant ce temps. Une fois la manche lancée, on garde son arme.
+**Préparation** (tranché le 2026-10-12) : avant chaque manche, un panneau s'ouvre au centre de l'écran et chaque joueur y choisit son arme (clic, ou touches 1 à 4, qui disparaîtront : § 6), puis valide. Le décompte part dès que les deux ont validé, au plus tard au bout de **20 secondes**. Les joueurs sont replacés et immobiles pendant ce temps. Une fois la manche lancée, on garde son arme.
 
 **Décompte** : 3 à 5 secondes. Le regard et le changement de posture sont libres, le déplacement non.
 
@@ -82,13 +84,22 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Échange de tirs** : quand deux joueurs se tirent dessus au même instant, le premier tir reçu par le serveur gagne ; un robot mort ne tire plus (tranché le 2026-10-12). Cela donne un léger avantage à l'hôte, comme le reste du mode hôte (§ 3).
 
-**Le kill** déclenche une **mini-célébration** : une phrase écrite à l'écran pour le gagnant, et une autre pour le perdant. *Pour l'instant (2026-10-12), une seule phrase pour les deux : « Untel a gagné la manche », avec le score.*
+**Le kill** déclenche une **mini-célébration** : une phrase à l'écran, **la même pour tous**, « Untel a gagné la manche », avec le score (2026-10-12, confirmé le 2026-10-25 ; une phrase différente pour le gagnant et le perdant n'est plus voulue).
 
 **Le gagnant garde la main** (tranché le 2026-10-12) : après le kill, pendant quelques secondes (5 pour l'instant), le survivant peut encore bouger, tirer, se pencher, s'accroupir : de quoi narguer le perdant, qui regarde son épave. Ses tirs ne comptent plus. Puis vient le fondu au noir.
 
-**Entre deux manches** : fondu au noir. Toutes les lumières de l'arène s'éteignent, les deux joueurs sont replacés dans l'obscurité, puis la lumière revient et la manche suivante démarre. Le replacement n'est jamais vu, pas même par les spectateurs. Dans le noir, **on entend la reconstruction des châssis** (perceuses, servomoteurs). Une killcam pour les deux joueurs est envisagée, à condition de ne pas casser le rythme.
+**Entre deux manches** : fondu au noir. Toutes les lumières de l'arène s'éteignent, les deux joueurs sont replacés dans l'obscurité, puis la lumière revient et la manche suivante démarre. Le replacement n'est jamais vu, pas même par les spectateurs. Dans le noir, **on entend la reconstruction des châssis** (perceuses, servomoteurs). Pas de killcam : le replay du coup mortel en tient lieu (§ 6, 2026-10-25).
 
 **Fin de match** : un écran de victoire mis en scène pour le gagnant (mouvement de caméra, musique, animation, dans l'esprit d'un montage « aura farming »), puis un tableau récapitulatif pour les deux. Drôle, jamais enfantin (confirmé le 2026-10-04). *Première version le 2026-10-12, demandée par l'utilisateur : le robot du gagnant en gros plan à gauche, « Untel a gagné ! » et le tableau des scores à droite (§ 14). Un nouveau match repart ensuite, ou l'on quitte la partie. Revue le même jour après essai : le robot célèbre **dans l'arène**, à un endroit fixe choisi pour le cadrage (comme les meilleurs joueurs de Call of Duty), **sans arme ni gant**, en enchaînant **au hasard** les célébrations fournies (jamais deux fois la même de suite), les mêmes au même moment sur les deux écrans. Restent la musique et le mouvement de caméra.*
+
+**Revanche ou retour au salon** (le principe le 2026-10-25, les règles de l'utilisateur le 2026-10-26) : sur l'écran de fin, chaque duelliste choisit « Revanche » ou « Retour au salon ».
+- La revanche demande les voix **des deux** duellistes.
+- **Une seule voix pour le salon y ramène tout le monde aussitôt** : « c'est plus un choix qu'un vote ».
+- Sans les deux voix au bout de **15 secondes**, retour au salon.
+- Au salon, l'hôte retrouve les réglages de la partie (manches, places, organisation des duels, interventions) et la relance ; les autres l'attendent dans le salon.
+- En roi de la colline, quand quelqu'un attend dans la file, la revanche devient « **Match suivant** » : le perdant cède sa place.
+- Après un forfait (§ 4), pas de choix : le match suivant démarre à la fin de l'écran.
+- « Quitter la partie » ramène toujours au menu.
 
 ## 6. Combat et armes
 
@@ -101,25 +112,27 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 - **Fusil d'assaut** (touche 1) : automatique, 7 coups/s, 30 balles, 6 balles au buste.
 - **Sniper** (touche 2) : à verrou, tue d'une balle au buste et à la tête, deux aux jambes. 5 balles.
 - **Fusil à pompe** (touche 3) : 8 plombs en motif fixe, tue de près, plus du tout à 25 m. 6 cartouches glissées une à une ; tirer interrompt le rechargement.
-- **Raygun** (touche 4) : la classe « pistolet », coup par coup, rayon instantané, 4 tirs au buste. 12 coups.
+- **Pistolet** (touche 4 ; appelé « Raygun » jusqu'au 2026-10-25) : coup par coup, rayon instantané, 4 tirs au buste. 12 coups. **Son rayon devient rouge** (2026-10-25) : la couleur de l'énergie, celle de la lueur des armes laser et des arcs du gant, qu'aucun robot ne porte. Il était vert, une couleur de robot.
 
 **Des armes laser, une par classe** (demandé le 2026-10-15, précisé le même jour) : en plus des quatre armes à balles, quatre prototypes qui tirent des lasers au lieu de munitions, aux formes franchement futuristes (référence : les armes à énergie d'*Apex Legends*). Ce sont des modèles à part, pas des variantes des armes à balles, qui restent telles quelles. Chacun garde les points de prise des armes de sa classe (poignée, chargeur, levier, garde-main), donc les mêmes animations, rechargement compris : une cellule d'énergie dans le puits du chargeur, ou des charges glissées une à une au fusil à dispersion. En partie, ce sont des modèles au choix des quatre armes, qui tirent comme l'arme de leur classe (voir *Trois modèles par arme*).
 
 **La série 30, quatre armes à balles de plus** (demandé le 2026-10-15, sur des références d'*Apex Legends* fournies par l'utilisateur : le R-301, le Wingman, un fusil à pompe à dissipateurs, puis le 30-30 Repeater pour « un sniper type Winchester », refait d'après l'image d'une carabine à levier tactique) : un fusil d'assaut FA-30, un fusil de précision à levier FP-30, un fusil à pompe FAP-30 et un revolver RV-30 (classe pistolet), aux formes modernes et anguleuses, toujours low poly et dans la DA du jeu. Ils gardent les points de prise des armes de leur classe, donc les mêmes animations ; le FP-30, refait sans chargeur à la demande de l'utilisateur, se charge par une porte sous la boîte de culasse, comme le fusil à pompe. En partie, ce sont aussi des modèles au choix des quatre armes (voir *Trois modèles par arme*).
 
-**Trois modèles par arme, au choix de l'armurerie** (tranché par l'utilisateur le 2026-10-15) : la panoplie reste de quatre armes, et ce sont elles qui font les règles : dégâts, cadence, chargeur, rechargement, sortie, poids, traçant et sons. Chacune se montre, au choix du joueur, sous le modèle du stock (FA-07, FP-12, FAP-03, PA-05), celui de la série 30 (FA-30, FP-30, FAP-30, RV-30) ou son prototype laser (FX-1, FX-2, FX-3, FX-4), dans l'une des six finitions. **Par défaut**, pour qui n'a rien choisi, c'est le modèle du stock, sauf pour le **raygun, qui se montre en pistolet laser (FX-4)** et garde son rayon vert et ses sons de plasma (tranché par l'utilisateur le 2026-10-15) ; le PA-05 et le revolver RV-30 restent au choix. Comme la finition, **le modèle est purement cosmétique** : un FX-1 tire, se recharge et s'entend comme le fusil d'assaut, et le FP-30 recharge ses 5 balles en 3 s, d'un geste, comme le sniper ; le son dit toujours quelle arme tire (§ 8). Il se voit en partie, par tous les joueurs et les spectateurs. Tous au choix pendant le prototype. Les armes que lancent les spectateurs se montrent, pour l'instant, sous le modèle par défaut de leur classe.
+**Trois modèles par arme, au choix de l'armurerie** (tranché par l'utilisateur le 2026-10-15) : la panoplie reste de quatre armes, et ce sont elles qui font les règles : dégâts, cadence, chargeur, rechargement, sortie, poids, traçant et sons. Chacune se montre, au choix du joueur, sous le modèle du stock (FA-07, FP-12, FAP-03, PA-05), celui de la série 30 (FA-30, FP-30, FAP-30, RV-30) ou son prototype laser (FX-1, FX-2, FX-3, FX-4), dans l'une des six finitions. **Par défaut**, pour qui n'a rien choisi, c'est le modèle du stock, sauf pour le **raygun, qui se montre en pistolet laser (FX-4)** et garde son rayon (vert jusqu'au 2026-10-25, rouge ensuite) et ses sons de plasma (tranché par l'utilisateur le 2026-10-15) ; le PA-05 et le revolver RV-30 restent au choix. Comme la finition, **le modèle est purement cosmétique** : un FX-1 tire, se recharge et s'entend comme le fusil d'assaut, et le FP-30 recharge ses 5 balles en 3 s, d'un geste, comme le sniper ; le son dit toujours quelle arme tire (§ 8). Il se voit en partie, par tous les joueurs et les spectateurs. Tous au choix pendant le prototype. Les armes que lancent les spectateurs se montrent, pour l'instant, sous le modèle par défaut de leur classe.
 
-**Changer d'arme** : touches 1 à 4, **seulement pendant la préparation** (§ 5) ou en attendant un adversaire, plus jamais pendant la manche (tranché le 2026-10-12). Seule exception : ramasser une arme lancée par un spectateur (§ 9, 2026-10-13). L'arme met un temps à sortir (0,4 s au raygun, 0,8 s au sniper), pendant lequel on ne tire pas. Changer annule le rechargement en cours ; chaque arme garde son chargeur.
+**La refonte des armes** (annoncée par l'utilisateur le 2026-10-25, sa priorité avec le compte rendu de son premier essai) : les trois modèles de chaque classe, aujourd'hui de simples apparences aux mêmes dégâts, deviendront **des armes uniques et différentes**, chacune avec ses propres caractéristiques. Les détails se décideront d'abord en discussion (choisi le 2026-10-25) ; d'ici là, les règles ci-dessus restent celles du jeu. Le principe est déjà tranché : **le tir et le son suivent l'arme** (une arme laser tire un rayon, une arme à balles crache une flamme), et **chaque classe garde un son reconnaissable**, pour que le son dise toujours ce qui tire (§ 8). Aujourd'hui, c'est la classe qui décide : le fusil laser FX-1 crache une flamme avec un bruit de balle, et le revolver RV-30 tire le rayon du pistolet laser. La refonte est aussi l'occasion de faire sentir les familles d'armes de la bible (§ 12 de la bible), que le prototype ne montre pas encore. **Un éditeur** (demandé le 2026-10-25) permettra à l'utilisateur de régler simplement les armes, leurs accessoires et leurs motifs de recul : ajouter, retirer ou modifier un effet, sans toucher au code.
+
+**Changer d'arme** : touches 1 à 4, **seulement pendant la préparation** (§ 5) ou en attendant un adversaire, plus jamais pendant la manche (tranché le 2026-10-12). Seule exception : ramasser une arme lancée par un spectateur (§ 9, 2026-10-13). L'arme met un temps à sortir (0,4 s au raygun, 0,8 s au sniper), pendant lequel on ne tire pas. Changer annule le rechargement en cours ; chaque arme garde son chargeur. **Les touches 1 à 4 disparaîtront, et l'inventaire ne comptera qu'une arme** (2026-10-25). L'utilisateur : « elles ne font pas partie des jeux », et « dans un duel, on peut n'avoir qu'une seule arme dans son inventaire ». C'est déjà le cas pendant la manche, puisqu'on garde l'arme choisie ; ramasser une arme lancée la remplace. Comment on la choisit parmi les armes de la refonte se décidera avec elle.
 
 **Le choix de l'arme** (tranché le 2026-10-12) : **chaque joueur choisit librement la sienne avant chaque manche**, pendant la préparation (§ 5), et la garde toute la manche. On arrive en partie avec la première arme de la panoplie : le menu ne choisit plus d'arme de départ (retiré le 2026-10-16, demandé par l'utilisateur).
 
-**L'identité « insolite »** : des armes qui jouent sur le décalage entre leur apparence et leur effet. Exemples cités : un énorme pistolet bionique démesuré qui tire un minuscule rayon paralysant (ralentit beaucoup, blesse peu), ou à l'inverse un petit pistolet qui tire un énorme trou noir.
+**L'identité « insolite »** : des armes qui jouent sur le décalage entre leur apparence et leur effet. Exemples cités : un énorme pistolet bionique démesuré qui tire un minuscule rayon paralysant (ralentit beaucoup, blesse peu), ou à l'inverse un petit pistolet qui tire un énorme trou noir. **Ce sont les armes qu'on n'obtient que des spectateurs**, ou, dans une partie sans spectateurs, des **power-ups d'arène** (tranché le 2026-10-25) : elles restent hors du duel pur.
 
 **Les armes bricolées sont un style visuel**, pas une mécanique : elles fonctionnent comme les autres, sans défaut ni enrayement (tranché le 2026-10-04).
 
 **Pas de pouvoirs propres aux personnages.** Seulement des power-ups, ramassés dans l'arène (tranché le 2026-10-04).
 
-**Obtenir son arme** : pour le prototype, le choix libre pendant la préparation (ci-dessus, 2026-10-12). D'autres règles restent possibles pour d'autres modes : un tirage à pile ou face désigne un joueur, qui choisit une **classe d'arme** (sniper, fusil d'assaut, pompe, pistolet…) et l'**impose aussi à l'adversaire**, le perdant choisissant à la manche suivante (risque : la frustration de jouer une arme qu'on n'a pas choisie) ; ou les spectateurs, selon les réglages, votent l'arme ou en lancent une dans l'arène.
+**Obtenir son arme** (tranché le 2026-10-25) : **le choix libre pendant la préparation, dans tous les modes**. **Le pile ou face a son propre mode**, nommé « Pile ou face » (§ 11) : un tirage désigne un joueur, qui choisit une **classe d'arme** (sniper, fusil d'assaut, pompe, pistolet…) et l'**impose aussi à l'adversaire** ; le perdant de la manche choisit à la suivante. Les spectateurs, selon les réglages, votent l'arme (§ 9) ou en lancent une dans l'arène.
 
 **Headshots** : nécessaires pour certaines armes. Punitifs sur le papier, mais très satisfaisants en jeu. **Façon *Call of Duty*, propres à chaque arme** (tranché le 2026-10-11) : ×1,4 au fusil d'assaut, ×1,5 au raygun et au sniper, aucun bonus au pompe ; les jambes ×0,6 au sniper, qui ne tue donc pas d'une balle aux jambes. À rejuger en jouant.
 
@@ -127,15 +140,25 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Visée (ADS)** : ralentit le déplacement. Viser en courant **coupe le sprint** et lance la visée. On ne tire pas en sprintant.
 
-**Viseurs** : de vrais viseurs (point rouge, holographique…), dont la réticule reste sur la cible quand on vise. **Chaque joueur choisit le sien avant la partie**, dans un menu « armurerie » : son style **et** son grossissement. Tous les viseurs sont accessibles à tous, c'est ce qui garde l'équité (tranché le 2026-10-09). Le premier en jeu est le viseur intégré au fusil d'assaut ; son nouveau modèle (2026-10-15) a une mire métallique précise, et ce viseur numérique deviendra un viseur de l'armurerie. **Le sniper vise en lunette plein écran**, façon *Call of Duty* (×4, sensibilité réduite d'autant, tranché le 2026-10-11). Les dix viseurs sans grossissement de *Rainbow Six* arrivent avec les accessoires (2026-10-16, ci-dessous).
+**Viseurs** : de vrais viseurs (point rouge, holographique…), dont la réticule reste sur la cible quand on vise. **Chaque joueur choisit le sien avant la partie**, dans un menu « armurerie » : son style **et** son grossissement. Tous les viseurs sont accessibles à tous, c'est ce qui garde l'équité (tranché le 2026-10-09). Le premier en jeu est le viseur intégré au fusil d'assaut ; son nouveau modèle (2026-10-15) a une mire métallique précise, et ce viseur numérique deviendra un viseur de l'armurerie. **Le sniper vise en lunette plein écran**, façon *Call of Duty* (×4, sensibilité réduite d'autant, tranché le 2026-10-11). Les dix viseurs sans grossissement de *Rainbow Six* arrivent avec les accessoires (2026-10-16, ci-dessous). **Des viseurs grossissants viendront aussi**, de ×1,5 à ×2,5 comme dans *Rainbow Six*, sur certaines armes : l'utilisateur dira lesquels (confirmé le 2026-10-25).
 
 **Les accessoires de l'armurerie** (liste de l'utilisateur du 2026-10-16, appelée à évoluer), façon création de classe de *Call of Duty* et de *Rainbow Six* : **ils changent l'arme qui les porte** (tranché par l'utilisateur le 2026-10-16 ; ils étaient cosmétiques depuis le 2026-10-12). **Tous sont ouverts à tous dès le départ**, comme les viseurs : un choix de configuration, jamais un avantage débloqué (§ 14). Ils se choisissent arme par arme, dans l'armurerie, et se voient sur l'arme tenue, par tous les joueurs et les spectateurs. Valeurs provisoires, à juger en jouant :
-- **Viseurs** : les dix viseurs sans grossissement de *Rainbow Six* (points rouges A, B et C ; holographiques A, B, C et D ; réflex A, B et C), ou la mire de l'arme. Ils ne changent que l'image de visée. *Propositions de Claude, appliquées en attendant l'avis de l'utilisateur :* le sniper garde sa lunette ; les pistolets ne prennent que les trois réflex, les seuls qui tiennent sur une glissière.
+- **Viseurs** : les dix viseurs sans grossissement de *Rainbow Six* (points rouges A, B et C ; holographiques A, B, C et D ; réflex A, B et C), ou la mire de l'arme. Ils ne changent que l'image de visée. Le sniper garde sa lunette ; les pistolets ne prennent que les trois réflex, les seuls qui tiennent sur une glissière (propositions de Claude, validées le 2026-10-25).
 - **Laser tactique** : toujours allumé, son faisceau et son point se voient de partout, il **trahit sa position**. En échange, il **aide le tir au juger** : il resserre la dispersion à la hanche (×0,75, le cône comme la gerbe du pompe, comme dans *Rainbow Six* jusqu'en 2024), et son point montre où pointe l'arme, utile au sniper, qui n'a pas de réticule à la hanche (2026-10-16 ; avant, il réduisait le recul à la hanche). **C'est un vrai laser** (demandé par l'utilisateur le 2026-10-16) : son faisceau sort de l'émetteur droit dans l'axe du canon et suit l'arme, pendant le rechargement, le sprint ou la sortie de l'arme comme en visée.
 - **Poignées**, une seule sous le garde-main, pas sur les pistolets : la **verticale** retient le recul (20 % de recul vertical en moins), l'**inclinée** fait viser plus vite (épaulement ×0,8), comme dans *Rainbow Six*.
-- **Chargeur grande capacité** : la moitié de balles en plus (45 au fusil d'assaut, 8 au sniper, 9 au pompe, 18 au raygun). *Proposition de Claude, appliquée en attendant l'avis de l'utilisateur :* en contrepartie, un rechargement plus long de 15 % (le pompe, qui charge cartouche par cartouche, a seulement plus de cartouches à glisser).
+- **Chargeur grande capacité** : la moitié de balles en plus (45 au fusil d'assaut, 8 au sniper, 9 au pompe, 18 au pistolet). En contrepartie, un rechargement plus long de 15 % (le pompe, qui charge cartouche par cartouche, a seulement plus de cartouches à glisser). Proposition de Claude, validée le 2026-10-25.
+- **Pas de silencieux** (tranché le 2026-10-25) : le son est une information de jeu, aucun accessoire n'y touche.
 
-**La crosse** (2026-10-15) attend sa liste. Les armes sont modélisées nues, avec leurs rails et leurs points d'accroche.
+Un accessoire monté prend la finition de son arme (validé le 2026-10-25). **D'autres accessoires viendront**, choisis le 2026-10-25 parmi les propositions de Claude (valeurs de départ, réglables dans l'éditeur des armes) :
+- **crosse légère** : épaulement 15 % plus rapide, recul 10 % plus fort ;
+- **crosse lourde** : recul 15 % plus faible, épaulement 15 % plus lent ;
+- **compensateur** : recul horizontal 30 % plus faible, recul vertical 10 % plus fort ;
+- **frein de bouche** : premiers coups 25 % plus stables, flamme de bouche plus grande (on voit mieux le tireur) ;
+- **canon long** : dégâts qui baissent 30 % plus loin, arme 10 % plus lente à sortir et à épauler ;
+- **canon court** : arme 10 % plus rapide à sortir et à épauler, dégâts qui baissent plus tôt ;
+- **chargeur rapide** : rechargement 25 % plus rapide, 20 % de balles en moins.
+
+Écartés : le cache-flamme et la bretelle. Comme les premiers, ils sont ouverts à tous, et chacun se paie d'une contrepartie ; la refonte des armes dira lesquels chaque arme accepte. Les armes sont modélisées nues, avec leurs rails et leurs points d'accroche.
 
 **Les finitions de l'armurerie** (adoptées le 2026-10-15) : chaque arme se choisit aussi dans une **finition d'usure**, qui raconte depuis combien de temps elle sert et comment on l'a réparée : *d'origine*, *repeinte* (couche après couche, l'apprêt rouge au bord des éclats), *rouillée*, *dépareillée* (des pièces prises sur d'autres armes), *polie par les mains* (la peinture partie là où on la tient), *encrassée* (huile et poussière). Comme les accessoires, elles sont **purement cosmétiques** : aucun effet de jeu, ni sur la silhouette, les hitbox ou le son (§ 8). Le choix se fait arme par arme, dans l'armurerie. **Elles se voient en partie**, sur l'arme tenue, par tous les joueurs et les spectateurs, comme la peinture du robot. Les six existent pour les trois familles d'armes (le stock, la série 30, les armes laser). Comment on les obtient : § 14.
 
@@ -143,13 +166,13 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Dégâts selon la distance** : constants par défaut, à définir arme par arme. Au 2026-10-11 : le pompe perd ses dégâts de 8 à 20 m (jusqu'à ×0,3), le raygun de 15 à 35 m (jusqu'à ×0,75) ; le fusil d'assaut et le sniper n'en perdent pas.
 
-**Matériaux traversables** : aucun pour l'instant, à voir selon les arènes.
+**Matériaux traversables** : **aucun, jamais** (tranché le 2026-10-25). Une vitre ou un grillage arrêtent une balle comme un mur.
 
-**Utilitaires** : des grenades, soit cachées dans l'arène, soit données par les spectateurs.
+**Grenades** (tranché le 2026-10-25) : un **power-up**, à un emplacement de l'arène (§ 10). Ni dans la panoplie, ni chez les spectateurs.
 
-**Mêlée** : un **taser** plutôt qu'un couteau, plus logique contre des robots (tranché le 2026-10-05). **Mort instantanée**, pour l'instant. C'est une **action brève, au choix du joueur**, comme le coup de couteau rapide de *Call of Duty* : on le déclenche, il frappe, on reprend son arme (tranché le 2026-10-08). Il ne sort plus automatiquement quand l'arme est vide. **C'est un gant à décharge électrique** (modèle de l'utilisateur, référence *Fallout*, 2026-10-11), porté sur l'avant-bras gauche : le coup est un direct du poing gauche. Les autres le voient toujours au bras du robot ; en vue subjective, il n'apparaît que pendant le coup, comme le couteau de *Call of Duty*, pour ne jamais masquer l'arme.
+**Mêlée** : un **taser** plutôt qu'un couteau, plus logique contre des robots (tranché le 2026-10-05). **Mort instantanée**, comme le couteau de *Call of Duty* (confirmé le 2026-10-25). C'est une **action brève, au choix du joueur**, comme le coup de couteau rapide de *Call of Duty* : on le déclenche, il frappe, on reprend son arme (tranché le 2026-10-08). Il ne sort plus automatiquement quand l'arme est vide. **C'est un gant à décharge électrique** (modèle de l'utilisateur, référence *Fallout*, 2026-10-11), porté sur l'avant-bras gauche : le coup est un direct du poing gauche. Les autres le voient toujours au bras du robot ; en vue subjective, il n'apparaît que pendant le coup, comme le couteau de *Call of Duty*, pour ne jamais masquer l'arme.
 
-**Recul** — référence de sensation : la R-301 d'Apex. **Les rafales longues doivent être viables et agréables** : pas de jeu qui force les rafales courtes, sauf pour une DMR au coup par coup. Le recul est stylisé et lisible : montée rapide sur les premiers tirs puis plafonnement, avec un pattern horizontal en « S » quand la rafale s'allonge. Il est modulé par la posture, le déplacement et la visée.
+**Recul** — référence de sensation : la R-301 d'Apex. **Les rafales longues doivent être viables et agréables** : pas de jeu qui force les rafales courtes, sauf pour une DMR au coup par coup. Le recul est stylisé et lisible : montée rapide sur les premiers tirs puis plafonnement, avec un pattern horizontal en « S » quand la rafale s'allonge. Il est modulé par la posture, le déplacement et la visée. *Retour de l'utilisateur (2026-10-25) : les motifs de recul propres à chaque arme ne sont pas du tout au point dans le prototype. À refaire avec la refonte, dans l'éditeur des armes.*
 
 **Le tir se voit à l'arme** (demandé par l'utilisateur le 2026-10-16) : une arme à balles n'a pas de traçant, mais une flamme de bouche ; seul le rayon d'une arme laser se voit en l'air (le raygun).
 
@@ -158,6 +181,8 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 **Recevoir une balle** : des **parasites et des interférences** à l'écran (un robot ne saigne pas), un son d'impact, et un **très léger** sursaut de caméra. Rien d'exagéré : le sursaut punit déjà le joueur touché en premier.
 
 **La mort** : le châssis vole en pièces (ragdoll, pas de gore), un son signature, et un **replay instantané exagéré au ralenti**, dans l'esprit de la killcam de *Sniper Elite* ou des finish de *Mortal Kombat*. *Première étape le 2026-10-12 : le robot tombe en ragdoll, poussé par le coup qui l'a tué (plus fort au sniper et au pompe), et les tirs du gagnant font encore bouger l'épave ; le joueur mort la regarde de l'extérieur. Calmée le même jour (« violent » au pompe et au taser, retour de l'utilisateur) : l'épave recule d'un pas et tombe, elle ne vole pas ; tué en courant, le robot roule un peu, sans glisser au loin. Les pièces qui volent, le son et le replay restent à faire. Le 2026-10-16, l'utilisateur veut « un réel effet de puissance » : **le pompe à bout portant et le taser projettent l'épave** dans le sens du coup, un peu soulevée (de 2,5 à 3,5 m en arrière ; le pompe de loin, moins) ; les autres armes la poussent toujours d'un pas.*
+
+**Le replay du coup mortel** (tranché le 2026-10-25) : au ralenti, vu par tous. C'est le seul replay du jeu : ni killcam pour le mort, ni enregistrement de matchs entiers.
 
 ## 7. Mouvement
 
@@ -175,7 +200,7 @@ Ce sont les contraintes qui arbitrent tous les arbitrages. Si une décision les 
 
 **Postures** Debout / Accroupi / Prone, chacune avec sa vitesse, sa hauteur de vue et son empreinte. Se relever est bloqué s'il n'y a pas la place. **On peut tirer en rampant.**
 
-**Allongé, on rampe lentement et seulement vers l'avant ou l'arrière** (2026-10-10, conséquence de « les pieds ne glissent jamais ») : environ 0,43 m/s à l'allure de marche, la vitesse de l'animation de reptation (1,25 m/s jusque-là, où le corps glissait trois fois plus vite que ses mains et ses genoux), et pas de déplacement de côté, faute d'animation. À rouvrir avec une reptation plus rapide et une reptation latérale.
+**Allongé, on rampe lentement et seulement vers l'avant ou l'arrière** (2026-10-10, conséquence de « les pieds ne glissent jamais ») : environ 0,43 m/s à l'allure de marche, la vitesse de l'animation de reptation (1,25 m/s jusque-là, où le corps glissait trois fois plus vite que ses mains et ses genoux), et pas de déplacement de côté, faute d'animation. À rouvrir avec une reptation plus rapide et une reptation latérale. *Retour de l'utilisateur après un premier essai (2026-10-25) : la lenteur passe, mais ne pas pouvoir se déplacer de côté est frustrant. L'utilisateur cherche une animation de reptation de côté ; sur Mixamo, il n'y a qu'une roulade latérale, qui ne lui convient pas du tout. Autre piste : que Claude l'anime dans Blender.*
 
 **Changer de posture prend du temps**, même pour un robot : environ 0,3 s entre debout et accroupi, 0,65 s entre accroupi et allongé, 0,9 s entre debout et allongé. Pendant ce temps, le corps, la vue, la vitesse et l'endroit où l'on peut être touché passent progressivement d'une posture à l'autre ; on ne franchit pas d'obstacle à moitié relevé. Un plongeon au sol n'est donc pas une esquive instantanée. Valeurs de départ, à régler en jouant (2026-10-06).
 
@@ -189,19 +214,23 @@ Contrairement à Rainbow Six, **le lean reste possible en position allongée**, 
 
 **Pas de mouvement à momentum** (bhop, slide, air-strafe) : ça favorise l'exécution mécanique sur la lecture, et ça rend le hit registration beaucoup plus dur à rendre honnête.
 
+*Le 2026-10-25, l'utilisateur envisage une **glissade** : s'accroupir en sprintant ferait glisser le robot, « pour ajouter plus de fluidité et de nervosité ». Elle contredit la règle ci-dessus, qui vient du premier questionnaire : à trancher (§ 17). D'ici là, la règle reste.*
+
 ## 8. Le son
 
 Un adversaire proche doit pouvoir **entendre** les pas, le ramper, les changements de posture, le lean et les tirs — en 3D, localisable. C'est la moitié de l'information disponible dans un duel.
 
 **Portée par allure** (ordre d'idée, à régler en jouant) : la course s'entend de partout, la marche à peu près à moitié de cette distance, le sneak à peine. Le sneak et le ramper sont **très faibles, mais audibles** : jamais totalement muets (confirmé le 2026-10-05).
 
-**Pas de musique pendant la manche.** La musique vit dans les menus, entre les manches et sur l'écran de victoire. Pendant le combat : quelques sons d'ambiance, et ceux des spectateurs.
+**Pas de musique pendant la manche.** La musique vit dans les menus, entre les manches et sur l'écran de victoire. Pendant le combat : quelques sons d'ambiance, et ceux des spectateurs. *Le 2026-10-25, l'utilisateur trouve que les morceaux actuels ne collent pas au jeu, et surtout les bruitages de l'interface : à remplacer, mais « c'est vraiment secondaire ».*
 
 **Les spectateurs font du bruit, et c'est voulu.** Leur chat vocal parvient faiblement aux duellistes (si la partie l'active). Leurs cailloux font du bruit en tombant, et **peuvent tromper** les duellistes : un caillou est un leurre sonore. Le son reste une information, mais une information qu'on peut falsifier.
 
-**Chat vocal entre duellistes** : possible, si la partie l'active.
+**Chat vocal entre duellistes** : possible, si la partie l'active. **Voulu dans le jeu**, avec la discussion écrite du salon ; s'il faut payer un service, ce sera pour plus tard (2026-10-25).
 
-**La voix de l'IA** : pendant une manche, elle peut parler, mais **rarement, brièvement, et jamais fort** : juste assez pour que les deux joueurs l'entendent (tranché le 2026-10-04). Les deux l'entendent donc au même volume, quelle que soit leur position. Le reste (présentation, résultats, piques) vit avant et après la manche.
+**La voix de l'IA** : pendant une manche, elle peut parler, mais **rarement, brièvement, et jamais fort** : juste assez pour que les deux joueurs l'entendent (tranché le 2026-10-04). Les deux l'entendent donc au même volume, quelle que soit leur position. Le reste (présentation, résultats, piques) vit avant et après la manche. **Elle écrit toujours à l'écran, et ne parle à voix haute que pour les moments forts** (2026-10-25).
+
+**Pas de silencieux** (2026-10-25) : aucun accessoire n'étouffe un tir.
 
 **Tous les robots font exactement les mêmes bruits.** Les cosmétiques changent la peinture et la forme, jamais le son : un robot plus discret qu'un autre serait un avantage (tranché le 2026-10-04).
 
@@ -215,23 +244,23 @@ Les sons forts (tirs, explosions) formeront un **canal séparé** des sons de co
 
 C'est le système qui fait l'identité du jeu : **personne n'attend sans rien faire.**
 
-**Qui** : les joueurs du lobby qui attendent leur tour. Leur nombre dépend du mode, deux pour le prototype (§ 4). **Toutes leurs actions se règlent avant la partie**, et le classé n'en a aucune. L'intégration Twitch est abandonnée pour l'instant : un bonus possible, pas un besoin (tranché le 2026-10-04).
+**Qui** : les joueurs du lobby qui attendent leur tour. Leur nombre dépend du mode, quatre au plus pour l'instant (six places, § 4). **Toutes leurs actions se règlent avant la partie**, et le classé n'en a aucune. L'intégration Twitch est abandonnée pour l'instant : un bonus possible, pas un besoin (tranché le 2026-10-04).
 
 **Où** : une **tribune physique**, une plateforme circulaire fermée et surélevée qui fait le tour de l'arène, comme au goulag de CoD (confirmé le 2026-10-04). Chaque spectateur y est **incarné** par un robot, **à mains nues**.
 
 **Ce qu'ils font** — un petit jeu à eux, conçu pour les occuper sans dicter le duel. Ils agissent **pendant les manches**, si le mode et les réglages de la partie le permettent :
-- **Dons de matériel.** Du matériel (armes, grenades, accessoires) tombe au hasard sur leurs plateformes. Il faut **courir** pour le ramasser, puis le **lancer** à un duelliste. Un mauvais lancer peut l'envoyer au mauvais duelliste. On peut aussi le garder, sans pouvoir s'en servir, pour en priver les autres.
+- **Dons de matériel.** Du matériel (des armes, voir ci-dessous ; les grenades sont des power-ups d'arène, § 6) tombe au hasard sur leurs plateformes. Il faut **courir** pour le ramasser, puis le **lancer** à un duelliste. Un mauvais lancer peut l'envoyer au mauvais duelliste. On peut aussi le garder, sans pouvoir s'en servir, pour en priver les autres.
 - **Jets de cailloux.** Il faut d'abord **casser** un morceau de la plateforme pour en récupérer un, ce qui prend du temps. Un caillou se lance sur un duelliste, pour le déstabiliser, ou sur un autre spectateur.
 - **Bagarre.** Les spectateurs peuvent se frapper à coups de poing (ou se lancer des cailloux) pour s'étourdir, et voler le matériel que tient un autre.
-- **Chat vocal**, faiblement audible des duellistes.
-- **Votes entre les manches**, si la partie le permet : l'arme, les power-ups de la manche suivante.
+- **Chat vocal**, faiblement audible des duellistes (voulu ; plus tard s'il faut payer un service, § 8).
+- **Votes entre les manches**, **si l'hôte les active en créant la partie** (2026-10-25) : l'arme, les power-ups de la manche suivante.
 
 **Les règles du prototype** (2026-10-13, à la demande de l'utilisateur ; valeurs provisoires, à juger en jouant) :
 - **Sur la passerelle**, on marche, on court et on s'accroupit. On ne vise pas, on ne tire pas, on ne se penche pas, on ne se couche pas et on ne franchit rien : le garde-corps retient les spectateurs au-dessus de l'arène.
 - **Les cailloux** viennent de blocs fissurés, le long du mur de la tribune : un bloc cède au quatrième coup de poing et lâche un caillou, puis se reforme en 8 secondes. On lance en maintenant le clic, plus ou moins fort selon l'élan pris. Un caillou lancé se brise sur ce qu'il touche, et son bruit peut tromper (§ 8).
 - **Un caillou sur un duelliste** : aucun dégât, une **secousse de visée**. Le regard saute de quelques degrés, du côté où va le caillou : aucun hasard (§ 3). Sur un spectateur, il l'étourdit.
 - **La bagarre** : un coup de poing étourdit un autre spectateur 2,5 secondes (1,5 au caillou). L'étourdi ne bouge plus et lâche ce qu'il tient : c'est ainsi qu'on vole le matériel. Après un étourdissement, un court répit, pour que personne ne reste au sol.
-- **Le matériel, ce sont des armes** (tranché le 2026-10-13). Il tombe au hasard sur la passerelle pendant les manches, une arme toutes les 12 à 20 secondes, deux au plus à la fois. Un spectateur la ramasse, ne peut pas s'en servir, et la lance dans l'arène. **Le duelliste qui ramasse une arme lancée l'a en main avec un chargeur plein, même en pleine manche.** Pour l'instant, ce sont les armes de l'arsenal ; à terme, **potentiellement de meilleures armes**, qu'on n'obtient que des spectateurs.
+- **Le matériel, ce sont des armes** (tranché le 2026-10-13). Il tombe au hasard sur la passerelle pendant les manches, une arme toutes les 12 à 20 secondes, deux au plus à la fois. Un spectateur la ramasse, ne peut pas s'en servir, et la lance dans l'arène. **Le duelliste qui ramasse une arme lancée l'a en main avec un chargeur plein, même en pleine manche.** Pour l'instant, ce sont les armes de l'arsenal ; à terme, **les armes insolites**, qu'on n'obtient que des spectateurs (§ 6, 2026-10-25).
 - On lance pendant la manche et pendant que le gagnant garde la main, jamais pendant la préparation ni le décompte. Chaque nouvelle manche repart d'une arène vide.
 - Tout cela se coupe à l'hébergement (« interventions des spectateurs ») ; les spectateurs regardent alors sans agir.
 
@@ -247,13 +276,21 @@ C'est le système qui fait l'identité du jeu : **personne n'attend sans rien fa
 
 **Plusieurs arènes**, une seule par partie. Symétriques ou asymétriques selon l'arène. Ce sont d'anciennes salles du complexe souterrain ; leurs typologies (salle de test balistique, hangar de maintenance…) sont dans la bible.
 
+**La première vraie arène sera un centre d'entraînement rapproché** (bible § 13 : modules de murs, couloirs et angles serrés ; choisi le 2026-10-25). Les tests des deux prochaines semaines se font sur le blocking ; le vrai playtest viendra ensuite, sur cette nouvelle arène (2026-10-25). Les cinq types de salles de la bible serviront au jeu fini.
+
 Taille intermédiaire, comparable au goulag de CoD, avec des zones pour les trois distances de combat : close, medium, long. **Un niveau de hauteur** au-dessus du sol, et l'avantage de la hauteur est **voulu**.
 
-**Power-ups d'arène** — à des **emplacements prédéfinis**, **annoncés avant la manche** avec un compte à rebours avant leur apparition. Aucun hasard : c'est un objectif de contrôle de l'arène, pas une loterie.
+**Power-ups d'arène** — à des **emplacements prédéfinis**, **annoncés avant la manche** avec un compte à rebours avant leur apparition. Aucun hasard : c'est un objectif de contrôle de l'arène, pas une loterie. On y trouvera **les grenades** et, dans une partie sans spectateurs, **les armes insolites** (§ 6), ainsi que les power-ups choisis le 2026-10-25 parmi les propositions de Claude (valeurs de départ) :
+- **plaque de blindage** : 25 points de bouclier jusqu'à la fin de la manche, visibles sur le robot ;
+- **réparation** : rend 50 points de vie d'un coup (c'est elle qui change le plus le temps pour tuer : à essayer avec prudence) ;
+- **balise** : l'adversaire émet un bip toutes les 2 s pendant 8 s ;
+- **servomoteurs** : 20 % de vitesse en plus pendant 10 s, et des pas plus bruyants.
+
+Écartés : les munitions et la surcharge du gant. **Un éditeur** permettra à l'utilisateur de changer facilement les power-ups et leurs caractéristiques, comme les accessoires (§ 6, demandé le 2026-10-25).
 
 **Éléments dynamiques** : les lumières (déjà au cœur de la transition entre manches).
 
-**L'événement légendaire.** Une surprise qui ne tombe presque jamais, dans l'esprit de la légende de Herobrine dans Minecraft : pendant une manche, au hasard, toutes les lumières s'éteignent, une musique étrange se lance avec des bruits terrifiants, et une créature mystérieuse traverse l'arène pour effrayer les joueurs (sa nature reste à définir, dans la bible). **Uniquement dans les modes arcade**, jamais en classé : c'est du hasard, assumé parce qu'il est rare et qu'il ne touche pas au compétitif.
+**L'événement légendaire.** Une surprise qui ne tombe presque jamais, dans l'esprit de la légende de Herobrine dans Minecraft : pendant une manche, au hasard, toutes les lumières s'éteignent, une musique étrange se lance avec des bruits terrifiants, et une créature mystérieuse traverse l'arène pour effrayer les joueurs : **un prototype abandonné ou défectueux** du complexe (bible § 13, 2026-10-25). **Uniquement dans les modes arcade**, jamais en classé : c'est du hasard, assumé parce qu'il est rare et qu'il ne touche pas au compétitif. **Ce n'est pas un mode** : sa carte quitte le menu (2026-10-25).
 
 Pas de destruction totale — la lisibilité prime.
 
@@ -261,7 +298,9 @@ Le layout se valide par playtest avant de recevoir son habillage visuel définit
 
 ## 11. Modes de jeu
 
-Le **classique** est le cœur, et le seul du premier prototype. Les autres sont des pistes, sans engagement.
+Le **classique** est le cœur, et le seul du premier prototype.
+
+**Les modes de la sortie** (choisis le 2026-10-25) : Classique, Roi de la colline et Spectateurs, avec ses deux variantes du menu, Dons d'armes et Cailloux (gardées telles quelles) ; plus Tournoi, Tag Team, Golden Gun, Gun Game, Zone et Pile ou face (§ 6). Le classé suit, après la sortie. **Gardés pour plus tard**, après la sortie (2026-10-25) : Arène dans le noir, Until Death, Hack & Defend, le respawn continu, Capture. Les autres ci-dessous restent des pistes, sans engagement.
 
 **Les deux familles** : les modes **arcade** (spectateurs, power-ups, événements, réglages libres) et le **classé** (duel pur, sans spectateurs, serveur dédié), qui arrivera après la sortie.
 
@@ -273,7 +312,10 @@ Le **classique** est le cœur, et le seul du premier prototype. Les autres sont 
 - **Tag Team** — un 2v2 façon catch : quand un joueur meurt, son coéquipier prend sa place. Communication entre coéquipiers ouverte ou fermée (fermée se contourne facilement par Discord). Victoire au plus de kills en temps donné, ou au premier à 100 points.
 - **Golden Gun** — une seule arme, une balle tue, munitions illimitées. En temps donné ou à un objectif de points.
 - **Gun Game** — chaque kill fait passer à l'arme suivante, dans un ordre fixe. Se faire tuer au taser fait redescendre d'un cran. Le premier à tuer avec la dernière arme gagne.
-- **Capture** et **Zone** — deux modes annoncés dans le menu principal, encore à définir (adoptés tels quels le 2026-10-12).
+- **Zone** — **capturer une zone fixe** (défini le 2026-10-25). Le reste est à préciser : comment se gagne la manche, et ce qui distingue ce mode de Capture et de Hack & Defend.
+- **Capture** — annoncé dans le menu principal, adopté tel quel le 2026-10-12 et jamais défini ; gardé pour plus tard.
+
+*Le 2026-10-17, l'écran Jouer du menu prend les neuf cartes de la maquette de l'utilisateur : Classique, Roi de la colline et Spectateurs jouables ; Dons d'armes et Cailloux, déjà compris dans Spectateurs ; Tournoi, Arène dans le noir, Événement légendaire et Classé verrouillés. Capture et Zone n'y figurent plus.* *Le 2026-10-25 : la carte Événement légendaire doit quitter le menu (c'est une surprise rare, § 10 ; retirée le 2026-10-26, il reste huit cartes), et Zone revient parmi les modes de la sortie.*
 - *Coop Zombie* — deux joueurs contre des vagues de zombies, comme dans Call of Duty. Noté pour mémoire : ce n'est pas du duel, donc hors de l'identité du jeu.
 
 ## 12. Univers et ton
@@ -282,9 +324,11 @@ Le **classique** est le cœur, et le seul du premier prototype. Les autres sont 
 
 **Pourquoi ils se battent** : ils n'ont plus de mission militaire. Les duels sont devenus une activité auto-organisée : défi, divertissement, reconnaissance, entretien des compétences. Il n'y a pas de « dernière directive ».
 
-**La voix des matchs** est l'ancienne IA de supervision : froide, au vocabulaire militaire, mais elle a évolué comme les robots et glisse de petites piques. **Elle ne se trompe jamais**, ses informations de jeu sont toujours exactes. Elle remplace le présentateur façon *The Finals* envisagé avant la bible.
+**La voix des matchs** est l'ancienne IA de supervision : froide, au vocabulaire militaire, mais elle a évolué comme les robots et glisse de petites piques. **Elle ne se trompe jamais**, ses informations de jeu sont toujours exactes. Elle remplace le présentateur façon *The Finals* envisagé avant la bible. Son nom reste à trouver : les propositions de Claude du 2026-10-25 n'ont pas convaincu. Ses répliques s'écrivent à deux, l'utilisateur et Claude (2026-10-25).
 
-**Les combattants** sont tous bâtis sur le **même châssis**, pour que les hitbox restent équitables. Ils se distinguent par leur peinture et leurs formes cosmétiques, jamais par le son (§ 8).
+**Les combattants** partagent tous **la même silhouette et les mêmes zones touchables**, pour que les hitbox restent équitables. **Plusieurs designs de robot sont possibles** (souhaité par l'utilisateur le 2026-10-25), à condition de tenir dans cette silhouette : c'est faisable, puisque les zones touchables se calculent à partir de la posture et du lean, pas du modèle. **Chaque design couvre autant de ses zones touchables que le CT-01** (68 % de face, 62 % de profil ; demandé par l'utilisateur le 2026-10-26) : un robot plus fin serait plus dur à voir et à viser pour la même surface touchable. Les robots se distinguent par leur design, leur peinture et leurs formes cosmétiques, jamais par le son (§ 8).
+
+**Un robot reconstruit se souvient de tout** : la défaite ne lui coûte que des pièces (bible § 7, 2026-10-25).
 
 **Ton** : sérieux dans le ton et le thème, drôle quand même, jamais enfantin. La bizarrerie vit dans le contexte, les armes, les annonces de l'IA, les réactions du public et l'événement légendaire. Le gameplay, lui, reste nerveux, cadré, sérieux.
 
@@ -292,13 +336,13 @@ Le **classique** est le cœur, et le seul du premier prototype. Les autres sont 
 
 *Résumé. La référence est la bible (§ 10 et suivants de la bible).*
 
-**Industrielle dystopique stylisée**, en low-poly propre ou en cel-shading discret (à prototyper). La piste « cartoon et fantasy » est abandonnée (tranché le 2026-10-04).
+**Industrielle dystopique stylisée**, en low-poly propre ou en cel-shading discret (à prototyper). La piste « cartoon et fantasy » est abandonnée (tranché le 2026-10-04). **Un essai des deux rendus, bien distincts, sur le robot**, pour choisir en les voyant (demandé le 2026-10-25, fait le 2026-10-26 : le Y Bot actuel, lisse, à côté de ses versions low poly propre et cel-shading ; puis le **CT-01**, un robot inspiré de KAY/O de *Valorant*, demandé par l'utilisateur, en trois styles : low poly propre, cel-shading, et les deux mêlés). Le choix du rendu, et du robot, revient à l'utilisateur. Les armes, elles, sont déjà en low poly propre, avec une usure peinte dans le matériau.
 
 **Le principe directeur** : **transformer les contraintes techniques, budgétaires et d'animation en choix artistiques assumés.** Le jeu est développé par une seule personne. Des robots aux pièces rigides rendent naturels un lean qui ne fait pivoter que le buste, ou un mouvement légèrement saccadé.
 
-**La lisibilité des joueurs** (tranché le 2026-10-04) : un décor **sombre et terne**, presque sans jaune, et des robots de **couleur vive**. **Chaque robot a sa propre couleur**, pour que les spectateurs reconnaissent vite chaque duelliste, même après l'avoir perdu de vue. C'est la peinture qui l'identifie. Les réparations (plaques rapportées) sont de couleur libre.
+**La lisibilité des joueurs** (tranché le 2026-10-04) : un décor **sombre et terne**, presque sans jaune, et des robots de **couleur vive**. **Chaque robot a sa propre couleur**, pour que les spectateurs reconnaissent vite chaque duelliste, même après l'avoir perdu de vue. C'est la peinture qui l'identifie. Les réparations (plaques rapportées) peuvent être de couleur terne, **sur de petites pièces seulement** (tranché le 2026-10-25), pour que personne ne se camoufle.
 
-**Les peintures sont limitées à des couleurs vives**, pour que personne ne puisse se camoufler dans le décor (tranché le 2026-10-04). **Chaque joueur choisit la sienne** dans le menu Personnalisation, parmi les couleurs de la palette (demandé par l'utilisateur le 2026-10-16) : le serveur la lui donne si aucun autre joueur présent ne la porte, sinon la première couleur libre. Deux robots n'ont donc jamais la même couleur. Le reste de la personnalisation du robot viendra après le prototype.
+**Les peintures sont limitées à des couleurs vives**, pour que personne ne puisse se camoufler dans le décor (tranché le 2026-10-04). **Chaque joueur choisit la sienne** dans le menu Personnalisation, parmi les couleurs de la palette (demandé par l'utilisateur le 2026-10-16) : le serveur la lui donne si aucun autre joueur présent ne la porte, sinon la première couleur libre. Deux robots n'ont donc jamais la même couleur. **Le châssis se choisit aussi** dans Personnalisation (2026-10-26, demandé par l'utilisateur) : le CT-01, le robot du jeu, le prototype (le robot des premiers essais) ou l'OS-02, l'« Ossature », tous à la même silhouette. Le reste de la personnalisation du robot viendra après le prototype : **les marquages** (numéros, bandes, logos peints) et **les accessoires** (antennes, plaques, casques, dans la silhouette). **Pas d'effets** : la rubrique du menu disparaît (2026-10-25).
 
 Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touches d'exagération, animations réactives (peu d'anticipation, gameplay d'abord), impacts et feedbacks exagérés.
 
@@ -306,38 +350,52 @@ Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touch
 
 ## 14. Progression et méta
 
-**Progression** : rangs, niveaux, et cosmétiques à débloquer. Jamais d'avantage de jeu.
+**Progression** (précisée le 2026-10-25) : **le niveau montre l'expérience et rapporte de la monnaie de pièces détachées** ; il ne débloque rien par lui-même. **Les rangs sont ceux du classé**, après la sortie. Les cosmétiques se débloquent par la monnaie et par les défis. Jamais d'avantage de jeu.
 
-**Les finitions d'arme** (§ 6, 2026-10-15) : toutes au choix pendant le prototype. Ensuite, elles se débloquent **en jouant avec l'arme**, comme les camouflages de *Call of Duty* : chaque finition récompense un défi propre à cette arme.
+**Les finitions d'arme** (§ 6, 2026-10-15) : toutes au choix pendant le prototype. Ensuite, elles se débloquent **en jouant avec l'arme**, comme les camouflages de *Call of Duty*. La finition d'origine est acquise d'emblée ; chaque défi suit l'histoire de sa finition. Les défis choisis le 2026-10-25 parmi les propositions de Claude (valeurs de départ) :
+- **encrassée** : 25 éliminations avec l'arme (jamais nettoyée) ;
+- **rouillée** : 30 éliminations accroupi ou allongé (l'arme a traîné au sol) ;
+- **repeinte** : 25 manches gagnées après avoir été touché (repeinte après chaque éraflure) ;
+- **dépareillée** : 10 matchs gagnés avec l'arme (une pièce prise au vaincu à chaque victoire) ;
+- **polie par les mains** : 100 éliminations (la peinture partie là où on la tient) ;
+- et **un défi propre à chaque arme** pour la dernière finition : 50 tirs à la tête au sniper, 50 éliminations à moins de 5 m au pompe…
+
+*À préciser : les cinq finitions ont déjà leur défi, et la proposition ne disait pas laquelle est « la dernière » (§ 17).*
 
 **Une monnaie de pièces détachées** sert à embellir son robot, de façon purement esthétique. Le rafistolage devient ainsi la progression visible : un robot porte la trace de ses parties. **Pour l'instant, elle se gagne seulement en jouant.** La vendre contre de l'argent réel reste une possibilité, à décider plus tard (2026-10-04).
 
 **Statistiques de fin de match** : précision, headshots, manches gagnées et perdues, manche la plus courte (avec son chrono). *Premier tableau le 2026-10-12 : manches gagnées, précision, tirs à la tête, dégâts infligés et manche gagnée la plus rapide de chaque joueur, comptés pendant les manches seulement.* Chaque joueur reçoit un **profil de combat** établi par l'IA selon son style (par exemple un profil de tireur de précision pour celui qui a beaucoup visé la tête, un profil d'assaut pour celui qui a fait beaucoup de kills au fusil à pompe).
 
-**Replays** de duels : oui.
+**Replays** : seulement celui du coup mortel, à chaque fin de manche (§ 6, 2026-10-25). Pas d'enregistrement de matchs entiers.
 
-**Classements** : oui, pour les tournois et les modes où des spectateurs prennent la place des duellistes.
+**Classement** (tranché le 2026-10-25) : **le tableau de la soirée**, dans le salon : qui a gagné quoi depuis l'ouverture de la partie. Pas de classement mondial.
 
 ## 15. Interface et prise en main
 
 **HUD** : PV en chiffre **et en jauge**, munitions, temps écoulé dans la manche, et les manches du match sous forme de cercles (vert pour une manche gagnée, rouge pour une perdue). *En place le 2026-10-12, avec le pseudo de chaque joueur à côté de ses cercles. La jauge, demandée par l'utilisateur le même jour, est celle de Rainbow Six : en bas à gauche, la part perdue reste rouge un instant avant de se vider ; rouge à 30 PV et moins.*
 
-**Le pseudo** (2026-10-12) : chaque joueur choisit le sien sur l'écran Jouer, 16 caractères au plus. Il apparaît au score, dans les phrases de fin de manche et sur l'écran de fin. Sans pseudo, « Joueur 1 », « Joueur 2 » ; deux pseudos identiques sont numérotés.
+**Le pseudo** (2026-10-12) : chaque joueur choisit le sien, 16 caractères au plus ; depuis le 2026-10-17, dans la carte du joueur, en haut à droite des écrans du menu. Il apparaît au score, dans les phrases de fin de manche et sur l'écran de fin. Sans pseudo, « Joueur 1 », « Joueur 2 » ; deux pseudos identiques sont numérotés.
 
 **Le menu d'Échap** en partie : reprendre, options (les mêmes que le menu principal), quitter la partie. La partie continue pendant qu'il est ouvert (tranché le 2026-10-12 : pas de « quitter le jeu » ici).
 
 **Apprentissage** : un tutoriel, sous la forme d'une arène avec des cibles en carton et des étapes scriptées, plus un stand de tir.
 
+*Le stand de tir existe depuis le 2026-10-16 (mannequins à plusieurs distances, fenêtre des armes et des accessoires), avec **la Fosse**, demandée par l'utilisateur sur le modèle de « The Pit » de Modern Warfare 2 : un parcours chronométré où des cibles se lèvent sur le trajet, hostiles à neutraliser et civils à épargner. Comme l'original : +2 s par hostile manqué, +2 s par civil touché, 0,05 s de moins par point de précision, un record par arme. Les cibles ont la vie d'un robot (le parcours est aussi un essai des armes) ; « une touche suffit » les rend fragiles comme le carton.*
+
 **Réglages** : les classiques d'un FPS — touches personnalisables, sensibilité, FOV, réticule personnalisable, graphismes, son.
 
-**Le flow des écrans** : écran titre → menu (jouer, paramètres…) → choix du mode, avec ses réglages à côté → lobby → duel → écran de victoire et résultats → retour au lobby ou au menu.
+**Le flow des écrans** : écran titre → menu (jouer, paramètres…) → choix du mode, avec ses réglages à côté → lobby → duel → écran de victoire et résultats, où les duellistes choisissent **la revanche ou le retour au salon** (§ 5).
+
+**Le salon** aura une discussion écrite (voulue le 2026-10-25 ; plus tard s'il faut payer un service).
+
+**L'IA dans l'armurerie** reste factuelle : chiffres et nombre de tirs pour neutraliser un robot, sans pique (2026-10-25).
 
 ## 16. Le produit
 
 - **Sortie Steam payante, autour de 5 €** (prix indicatif). Modèle « payé une fois » : pas de free-to-play.
 - **PC, clavier-souris uniquement.** Aide à la visée minimale, comme sur Rainbow Six.
 - **Cible de performance** : 60 fps.
-- **Langues** : français et anglais au minimum, le plus possible à terme.
+- **Langues** : français et anglais au minimum, le plus possible à terme. L'anglais viendra plus tard (2026-10-25).
 - **Réseau** : à la sortie, mode hôte (Relay), avec des lobbys privés à code seulement. Après la sortie, serveur dédié pour le classé ; budget serveur à évaluer selon les tarifs à ce moment-là.
 - **Anti-triche côté client** : avec le classé, après la sortie. Entre amis, l'autorité serveur suffit.
 - **Twitch** : abandonné pour l'instant, un bonus possible plus tard.
@@ -346,31 +404,40 @@ Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touch
 
 **Playtest.** Le premier jalon : un mini prototype fini, testé par un groupe de 5 ou 6 amis qui travaillent tous dans le jeu vidéo.
 
+**Où on en est** (2026-10-25) : un premier essai de quelques minutes, en réseau local contre un vrai adversaire, aux retours très encourageants ; l'utilisateur en fera un compte rendu détaillé. Des tests plus poussés viendront d'ici une à deux semaines, **sur le blocking**, précédés d'un essai à deux par le code, pour mesurer les connexions. **Le vrai playtest viendra ensuite, sur la première vraie arène** (§ 10). Ce qu'il dira décidera de la suite.
+
 **Le périmètre de ce prototype** (validé le 2026-10-02) : le mode classique, la rotation roi de la colline, une tribune où les spectateurs regardent, et un lobby privé avec code. Quatre joueurs à la fois : deux duellistes, deux spectateurs. Si le groupe de testeurs est plus grand, les autres attendent leur tour hors du jeu (2026-10-04). Les interactions des spectateurs (cailloux, dons, bagarre) devaient arriver après ce premier test, qui doit d'abord dire si le duel lui-même tient. *Avancées le 2026-10-13 à la demande de l'utilisateur : elles sont en place, et l'hôte peut les couper.* Objectif : remonter les bugs techniques, et faire naître d'autres idées de règles. Leurs avis seront recueillis en discussion libre, avec prise de notes. Plus tard, avec plus de monde : un Discord, et des questionnaires.
 
 **Public cible** : des groupes d'amis qui veulent tester leur skill et passer une soirée ensemble ; amateurs de FPS skill-based et de duels rapides. Le jeu ne cherche pas nécessairement à devenir une discipline esport : le classé est une extension, après la sortie (2026-10-04).
 
 ## 17. Questions encore ouvertes
 
-*Les trois tensions relevées dans le questionnaire ont été tranchées le 2026-10-02 : la gerbe à motif fixe (§ 3), les spectateurs qui agissent pendant les manches (§ 9), le ghosting accepté comme un risque (§ 9).*
+*Déjà tranché : les tensions du premier questionnaire (2026-10-02), les arbitrages entre la bible et le GDD et les points en suspens (2026-10-04), puis la revue du 2026-10-25 et sa suite, dont chaque décision porte sa date dans ce document.*
+
+**En attente de l'utilisateur** :
+- **La refonte des armes** (§ 6), à discuter d'abord (choisi le 2026-10-25) : la liste des armes, leurs caractéristiques, et comment on choisit son arme, maintenant que l'inventaire n'en compte qu'une et que les touches 1 à 4 disparaissent.
+- **Le compte rendu du premier essai** (§ 16).
+- **Les viseurs grossissants** : sur quelles armes (§ 6).
+- **Une animation de reptation de côté** (§ 7) : l'utilisateur la cherche ; Claude peut essayer de la faire dans Blender.
+
+**Claude propose, l'utilisateur choisit** :
+- **Le nom du jeu** : « Last Unit Standing » a de l'idée, « mais c'est pas encore ça » (2026-10-25).
+- **Le nom de l'IA** : les huit propositions du 2026-10-25 n'ont pas convaincu (SENTINELLE cochée, mais « je n'aime pas trop les propositions »).
+- **Le rendu** (§ 13) : les essais sont prêts (2026-10-26), sur le Y Bot et sur le CT-01 ; l'utilisateur choisit le style. Le robot est choisi : le CT-01, avec le prototype et l'OS-02 au choix du joueur (2026-10-26).
+
+**À trancher** (relevé le 2026-10-25) :
+- **La glissade** (§ 7) : envisagée par l'utilisateur pour la fluidité et la nervosité, elle contredit « pas de mouvement à momentum ».
+
+**À préciser** (relevé le 2026-10-25) :
+- **Le mode Zone** (§ 11) : capturer une zone fixe. Comment se gagne la manche, et qu'est-ce qui le distingue de Capture (même idée dans le nom, jamais défini) et de Hack & Defend (un point à prendre) ?
+- **Le défi propre à chaque arme** (§ 14) : il devait débloquer « la dernière » finition, mais les cinq ont déjà leur défi. Remplace-t-il celui de la dernière de la série, ou débloque-t-il une septième finition, de maîtrise, comme l'or de *Call of Duty* ?
 
 **À observer en playtest** :
 - **Les manches passives**, maintenant qu'il n'y a plus de limite de temps (§ 5).
 
-*Les 29 arbitrages entre la bible et le GDD ont été tranchés le 2026-10-04 ; les deux documents en tiennent compte.*
-
-*Les points en suspens relevés ensuite ont été tranchés le même jour : peintures limitées à des couleurs vives (§ 13), lobbys privés seulement à la sortie (§ 4), quatre places pour le prototype (§ 16), monnaie gagnée en jouant (§ 14), voix de l'IA rare et discrète pendant la manche (§ 8).*
-
-**À garder en tête pour la personnalisation** (après le prototype) :
-- ~~**Deux duellistes de la même couleur.**~~ Réglé le 2026-10-16 avec le choix de la couleur (§ 13) : le serveur ne donne jamais une couleur déjà portée.
-- **Les réparations de couleur libre** : suivent-elles la même limite que les peintures ? Un robot couvert de plaques grises se camouflerait autant qu'un robot peint en gris.
-
-*Ce que lancent les spectateurs (relevé le 2026-10-05) a été tranché le 2026-10-13 : ce sont des armes (§ 9), distinctes des power-ups d'arène, à emplacements fixes (§ 10).*
-
 **Toujours ouvert** :
-- Les multiplicateurs des headshots (posés arme par arme le 2026-10-11, façon *Call of Duty*), et le TTK qui en découle : à juger en jouant.
-- Les power-ups d'arène (§ 10) : lesquels, et leurs effets. Et les armes qu'on n'obtiendra que des spectateurs (§ 9) : lesquelles.
+- Les multiplicateurs des headshots (posés arme par arme le 2026-10-11, façon *Call of Duty*), et le TTK qui en découle : à juger en jouant, et à revoir avec la refonte des armes.
 - Le tir à la hanche façon *Rainbow Six* (§ 6, 2026-10-16) : la taille des cônes, l'ouverture en rafale et en mouvement, à juger en jouant.
-- Les finitions d'arme (§ 6 et 14, 2026-10-15) : les défis qui débloquent chacune, arme par arme ; et si un accessoire prend la finition de son arme ou garde la sienne (en attendant, celle de son arme : 2026-10-16).
-- L'ordre de priorité entre les modes, au-delà du classique.
-- Ce qui relève du lore et reste ouvert est listé dans la bible (§ 18 de la bible) : la créature de l'événement légendaire, le nom de l'IA, le style de rendu final.
+- L'ordre dans lequel faire les modes de la sortie.
+- La musique et les bruitages de l'interface, à remplacer (§ 8, secondaire).
+- Ce qui relève du lore et reste ouvert est listé dans la bible (§ 18 de la bible) : le degré d'autonomie des robots, ce qu'ils ressentent, le niveau de dégradation, le style de rendu final.

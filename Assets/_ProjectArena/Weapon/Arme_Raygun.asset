@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe33acf964d9c684b81db736a07bf7db, type: 3}
   m_Name: Arme_Raygun
   m_EditorClassIdentifier: DuelArena.Runtime::WeaponData
-  weaponName: Raygun
+  weaponName: Pistolet
   modelPrefab: {fileID: 3746240396287458209, guid: e5a13d63b05ea6644b3bf65ea869b612, type: 3}
   otherModels:
   - {fileID: 976176385625153909, guid: 5445effcb65019746a842194260f2846, type: 3}
@@ -45,7 +45,7 @@ MonoBehaviour:
   scopeMagnification: 1
   hipCrosshair: 1
   shotIsBeam: 1
-  tracerColor: {r: 0.35, g: 1, b: 0.35, a: 1}
+  tracerColor: {r: 1, g: 0.101960786, b: 0.05490196, a: 1}
   worldMask:
     serializedVersion: 2
     m_Bits: 1

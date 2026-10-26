@@ -31,6 +31,7 @@ Material:
     - _Intensite: 1.6
     - _Rayon: 57
     - _Reflet: 0.35
+    - _Trait: 4.275
     m_Colors:
     - _CouleurReticule: {r: 1, g: 0.13333334, b: 0.09411765, a: 1}
     - _CouleurVitre: {r: 0.5176471, g: 0.6745098, b: 0.8392157, a: 0.12}

@@ -381,6 +381,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c424e664b54d33a44ad59e4acf2194b6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: DuelArena.Runtime::ArenaFallbackCamera
+  keepCamera: 0
 --- !u!1 &25550601
 GameObject:
   m_ObjectHideFlags: 0
@@ -48697,6 +48698,7 @@ GameObject:
   - component: {fileID: 1609593141}
   - component: {fileID: 1609593140}
   - component: {fileID: 1609593139}
+  - component: {fileID: 1609593142}
   m_Layer: 0
   m_Name: GameUI
   m_TagString: Untagged
@@ -48875,6 +48877,19 @@ MonoBehaviour:
   sounds: {fileID: 11400000, guid: 32a2e0f11f6ff4f43a15437da980471c, type: 2}
   playMenuMusicOnStart: 0
   fadeTime: 1.2
+--- !u!114 &1609593142
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1609593130}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8cbfc2b705727e34cb0a3911baa27256, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::SalonPanel
+  document: {fileID: 1609593136}
 --- !u!1 &1609759661
 GameObject:
   m_ObjectHideFlags: 0
@@ -65552,11 +65567,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RoundManager
   ShowTopMostFoldoutHeaderGroup: 1
-  roundsToWin: 3
   preparationDuration: 20
   startingDuration: 3
   roundOverDuration: 5
-  endScreenDuration: 12
+  endScreenDuration: 15
+  decisionTail: 1
   roundTimeLimit: 0
 --- !u!43 &2004658222
 Mesh:

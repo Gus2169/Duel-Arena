@@ -20,7 +20,7 @@ Il ne constitue pas une vérité immuable : les éléments présentés comme « 
 | Proposition recommandée | Solution de conception suggérée pour combler un besoin de cohérence. |
 | À définir | Question ouverte qui peut être tranchée plus tard, après prototype ou playtests. |
 
-*Le PDF définissait ces statuts sans les appliquer (vérifié dans le fichier : aucun tableau ni passage n'en porte, les fonds bleu pâle des tableaux sont un simple zébrage une ligne sur deux). Ils sont désormais indiqués sous chaque titre de section : **Fondation retenue** quand l'utilisateur l'a confirmé ou corrigé, **Proposition recommandée** quand le contenu n'a pas encore été discuté. L'utilisateur relira une par une les sections encore en proposition (arbitrage R5). Une capture d'écran du tableau des piliers, envoyée par l'utilisateur, confirme ce que montrait le fichier : deux couleurs de ligne en alternance, aucune mention de statut (arbitrage R4, clos).*
+*Le PDF définissait ces statuts sans les appliquer (vérifié dans le fichier : aucun tableau ni passage n'en porte, les fonds bleu pâle des tableaux sont un simple zébrage une ligne sur deux). Ils sont désormais indiqués sous chaque titre de section : **Fondation retenue** quand l'utilisateur l'a confirmé ou corrigé, **Proposition recommandée** quand le contenu n'a pas encore été discuté. L'utilisateur relira une par une les sections encore en proposition (arbitrage R5). Une capture d'écran du tableau des piliers, envoyée par l'utilisateur, confirme ce que montrait le fichier : deux couleurs de ligne en alternance, aucune mention de statut (arbitrage R4, clos). Relecture faite le 2026-10-25 : § 6, § 8 et § 13 validés, § 12 à reprendre, § 15 retiré.*
 
 ## 2. Identité du jeu et piliers
 
@@ -74,17 +74,18 @@ Le détail de la guerre, la raison de la disparition des humains du complexe et 
 
 ## 5. Les combattants
 
-*Statut : Fondation retenue (arbitrages H3, L1, L2, L3, L4).*
+*Statut : Fondation retenue (arbitrages H3, L1, L2, L3, L4 ; revue du 2026-10-25, C5 et C7).*
 
 Les protagonistes sont des **prototypes de soldats robotisés**, conçus pour être évalués : précision, réflexes, résistance. Leur apparence emprunte aux mannequins de crash-test et d'entraînement. Cette origine fonctionnelle justifie des proportions standardisées, des articulations visibles et des animations moins organiques que celles d'un humain.
 
 **Apparence générale**
 
-- Châssis humanoïde commun, proportions maîtrisées et gabarit identique entre combattants.
+- Châssis humanoïde, proportions maîtrisées et **même silhouette pour tous**. Plusieurs designs de robot sont possibles, à condition de tenir dans cette silhouette : les zones touchables, calculées à partir de la posture et du lean, restent les mêmes pour tous (souhaité par l'utilisateur le 2026-10-25). Le robot du jeu est le **CT-01** (2026-10-26), un mannequin d'essai blindé à visière (inspiré de l'archétype de KAY/O) ; le robot des premiers essais (le Y Bot) reste au choix du joueur, le châssis « prototype », comme l'**OS-02**, l'« Ossature », un endosquelette d'acier au crâne d'homme compact, sans peinture (inspiré de l'archétype du T-800), aux mêmes tailles, et épaissi pour montrer autant de sa silhouette que le CT-01 (68 % de sa surface touchable de face, 62 % de profil) : un robot plus fin serait plus dur à voir et à viser. Tous portent la couleur du joueur sur leurs plaques.
+- **Hors service** : à la mort d'un robot à visière, l'écran de son visage grésille et affiche FATAL ERROR sous un triangle d'alerte rouge, et ses lueurs s'éteignent (demandé par l'utilisateur le 2026-10-26, d'après une image de référence).
 - Articulations mécaniques lisibles, pièces segmentées et surfaces simples.
 - Marquages de test, motifs géométriques, numéros d'identification et aplats de couleurs.
-- **Une couleur vive, qui tranche avec un décor sombre et terne. Chaque robot a la sienne**, pour que les spectateurs reconnaissent vite chaque duelliste, même après l'avoir perdu de vue. C'est la peinture qui identifie chaque combattant. Quand la personnalisation arrivera (après le prototype), les peintures seront limitées à des couleurs vives, pour que personne ne se camoufle dans le décor.
-- Aspect usé, réparé et rafistolé : plaques rapportées, boulons, soudures, câbles visibles, peinture écaillée, impacts et pièces dépareillées. Les réparations sont de couleur libre.
+- **Une couleur vive, qui tranche avec un décor sombre et terne. Chaque robot a la sienne**, pour que les spectateurs reconnaissent vite chaque duelliste, même après l'avoir perdu de vue. C'est la peinture qui identifie chaque combattant. Chaque joueur choisit la sienne parmi les couleurs vives de la palette, pour que personne ne se camoufle dans le décor, et deux robots n'ont jamais la même (2026-10-16).
+- Aspect usé, réparé et rafistolé : plaques rapportées, boulons, soudures, câbles visibles, peinture écaillée, impacts et pièces dépareillées. Les réparations peuvent être de couleur terne, **sur de petites pièces seulement** (2026-10-25).
 - Personnalité exprimée par la posture, l'équipement, les mouvements et les détails visuels plutôt que par des visages complexes.
 
 **Le rafistolage comme récit visuel**
@@ -103,7 +104,7 @@ Les réparations sont principalement cosmétiques. Elles ne doivent pas modifier
 
 ## 6. Psychologie, relations et culture
 
-*Statut : Proposition recommandée (pas encore discutée).*
+*Statut : Fondation retenue (validée à la relecture du 2026-10-25).*
 
 Les robots n'ont pas besoin d'être humains pour adopter des comportements qui ressemblent à ceux des humains. Ils ont pu côtoyer des chercheurs, techniciens, militaires et opérateurs, observer leurs échanges et apprendre de leurs comportements. Après leur disparition, les robots reproduisent, adaptent ou détournent certaines pratiques.
 
@@ -120,7 +121,7 @@ Ces comportements doivent rester lisibles et servir le jeu. Il n'est pas nécess
 
 ## 7. Les duels et leur raison d'être
 
-*Statut : Fondation retenue (arbitrages H1, H6).*
+*Statut : Fondation retenue (arbitrages H1, H6 ; revue du 2026-10-25, L1).*
 
 Les robots n'ont plus de mission militaire. Les combats sont devenus une activité auto-organisée qui remplit plusieurs fonctions : défi, divertissement, reconnaissance, entretien des compétences et structuration du quotidien.
 
@@ -137,13 +138,13 @@ La recommandation est de combiner ces motivations, sans imposer un objectif uniq
 
 **Destruction et reconstruction**
 
-La défaite est présentée comme une destruction du châssis : pièces mécaniques dispersées, ragdoll et effets d'impact non gore. La reconstruction entre les manches permet de conserver le format de match et d'expliquer le retour des combattants. **On l'entend pendant le fondu au noir** qui sépare deux manches : perceuses, servomoteurs. La mémoire après destruction et la nature exacte de la restauration restent à définir.
+La défaite est présentée comme une destruction du châssis : pièces mécaniques dispersées, ragdoll et effets d'impact non gore. La reconstruction entre les manches permet de conserver le format de match et d'expliquer le retour des combattants. **On l'entend pendant le fondu au noir** qui sépare deux manches : perceuses, servomoteurs. **Un robot reconstruit se souvient de tout** : la défaite ne lui coûte que des pièces (2026-10-25). La nature exacte de la restauration reste ouverte.
 
 ## 8. Spectateurs et interventions
 
-*Statut : Fondation retenue pour le nombre et l'espace (arbitrages T1, T2). Proposition recommandée pour les justifications fictionnelles.*
+*Statut : Fondation retenue (arbitrages T1, T2 ; justifications fictionnelles validées à la relecture du 2026-10-25).*
 
-Le nombre de spectateurs dépend du mode : **deux pour le prototype**, peut-être jusqu'à six plus tard. Il ne s'agit donc pas d'un grand stade ou d'un événement de masse, mais d'une communauté restreinte, clandestine et familière. Les spectateurs peuvent être des combattants en attente, des proches, des rivaux ou de simples observateurs.
+Le nombre de spectateurs dépend du mode : **quatre au plus pour l'instant** (six places), peut-être davantage plus tard (2026-10-25). Il ne s'agit donc pas d'un grand stade ou d'un événement de masse, mais d'une communauté restreinte, clandestine et familière. Les spectateurs peuvent être des combattants en attente, des proches, des rivaux ou de simples observateurs.
 
 **Justification fictionnelle des actions**
 
@@ -177,12 +178,14 @@ L'ancienne IA supervisait les entraînements et communiquait les résultats aux 
 - Annonces de début et de fin de manche, résultats, événements, alertes et informations de gameplay. Pendant une manche, elle parle rarement, brièvement, et jamais fort : juste assez pour que les deux joueurs l'entendent.
 - **Elle a évolué, comme les robots** : elle glisse de petites piques, avec un peu d'humour.
 - **Elle ne se trompe jamais.** Ses informations de jeu sont toujours exactes.
+- **Elle écrit toujours à l'écran ; sa voix ne sert qu'aux moments forts** (2026-10-25).
+- Ses répliques s'écrivent à deux, l'utilisateur et Claude. Dans l'armurerie, elle reste factuelle : des chiffres, sans pique (2026-10-25).
 
 L'IA ne doit pas devenir un personnage comique qui plaisante constamment. Son humour naît surtout du décalage entre ses protocoles rigides et les usages désormais absurdes de l'installation.
 
 ## 10. Direction artistique générale
 
-*Statut : Fondation retenue (arbitrages A3, L1, M2). Le style de rendu final reste à définir (section 18).*
+*Statut : Fondation retenue (arbitrages A3, L1, M2). Le style de rendu final reste à définir (section 18) : l'utilisateur veut voir un essai des deux rendus, bien distincts, sur le robot (2026-10-25). L'essai est prêt depuis le 2026-10-26, sur le robot actuel (le Y Bot, lisse, à côté de ses versions low poly propre et cel-shading) et sur le CT-01, un robot inspiré de KAY/O de *Valorant* demandé par l'utilisateur, en trois styles (low poly propre, cel-shading, les deux mêlés). Le choix du style revient à l'utilisateur ; le robot est choisi : le CT-01, avec le prototype et l'OS-02 au choix du joueur (section 5).*
 
 **Intention**
 
@@ -225,7 +228,7 @@ Les différences entre combattants peuvent être exprimées par la posture de re
 
 ## 12. Armes et équipements
 
-*Statut : Fondation retenue pour les armes bricolées et les équipements spéciaux (arbitrages A1, A4). Proposition recommandée pour le reste des familles.*
+*Statut : **À reprendre** (relecture du 2026-10-25). L'utilisateur ne ressent pas encore cette vision dans le prototype, et veut l'accentuer. Elle sera revue avec la refonte des armes, où les modèles de chaque classe deviendront des armes distinctes (GDD § 6). Restent acquis : les armes bricolées sont un style visuel (A1), les équipements spéciaux se ramassent dans l'arène (A4), les armes absurdes ne s'obtiennent que des spectateurs ou en power-up (2026-10-25), et l'énergie est rouge.*
 
 Les armes peuvent être issues du programme militaire, de prototypes jamais finalisés ou de modifications bricolées par les robots. Elles doivent être visuellement insolites tout en conservant une fonction compréhensible et une lecture claire en combat.
 
@@ -238,6 +241,10 @@ Les armes peuvent être issues du programme militaire, de prototypes jamais fina
 | Équipements spéciaux | Power-ups ou modificateurs d'arène, ramassés dans l'arène. | Feedback visuel et sonore clair, durée et portée prévisibles. |
 
 **Les armes bricolées sont un style visuel** : elles fonctionnent exactement comme les autres, sans défaut ni enrayement.
+
+**Les armes absurdes** (le pistolet bionique géant au minuscule rayon paralysant, le petit pistolet qui tire un trou noir) **ne s'obtiennent que des spectateurs**, ou en power-up d'arène dans une partie sans spectateurs (2026-10-25). Elles restent hors du duel pur.
+
+**L'énergie est rouge, partout** (2026-10-25) : la lueur des armes laser, les arcs du gant et le rayon du pistolet (appelé « raygun » jusque-là), qui était vert, une couleur de robot.
 
 **Le programme d'essai a ses armes laser** (demandé par l'utilisateur, 2026-10-15) : quatre prototypes, un par classe d'arme (fusil FX-1, précision FX-2, dispersion FX-3, pistolet FX-4), qui sont des armes à part, aux formes franchement futuristes, dans l'esprit des armes à énergie d'*Apex Legends*. Les armes à balles du stock restent telles quelles. Une arme laser garde les points de prise de sa classe (la poignée, le chargeur devenu cellule d'énergie, le levier), donc ses gestes. *Propositions de Claude, appliquées aux modèles :*
 - des volumes en coin, épais et anguleux, en deux tons : peinture anthracite et céramique blanc cassé ;
@@ -276,7 +283,7 @@ La variété doit soutenir le fun sans détruire le skill. Chaque arme ou power-
 
 ## 13. Arènes et environnement
 
-*Statut : Fondation retenue pour le cadre et l'espace des spectateurs (arbitrages H4, T1). Proposition recommandée pour les typologies d'arènes.*
+*Statut : Fondation retenue (arbitrages H4, T1 ; typologies validées à la relecture du 2026-10-25).*
 
 Le cadre est un complexe militaire secret et souterrain, désaffecté et fermé, réutilisé par une petite communauté de robots. Les lieux doivent évoquer une activité ancienne, une maintenance improvisée et une occupation prolongée.
 
@@ -288,6 +295,10 @@ Le cadre est un complexe militaire secret et souterrain, désaffecté et fermé,
 - **Laboratoire expérimental** : vitrages, équipements de mesure, câbles et éclairages ciblés.
 - **Zone de simulation** : éclairage contrôlable, panneaux et modules de configuration.
 
+**La première vraie arène sera un centre d'entraînement rapproché** (choisi le 2026-10-25). Le vrai playtest se fera sur une arène réussie ; les cinq types serviront au jeu fini.
+
+**La créature de l'événement légendaire** (GDD § 10) est **un prototype abandonné ou défectueux** du complexe (2026-10-25).
+
 **Principes de level design**
 
 - Arènes compactes, avec possibilités de combat courte, moyenne et longue portée.
@@ -296,7 +307,7 @@ Le cadre est un complexe militaire secret et souterrain, désaffecté et fermé,
 - Matériaux et couleurs qui séparent clairement les joueurs de l'arrière-plan.
 - Décors usés, mais sans bruit visuel excessif ni camouflage involontaire.
 - Une tribune qui fait le tour de l'arène, proche du terrain, à la taille d'un petit groupe.
-- Les surfaces traversables par les balles doivent être visuellement distinguables des couvertures pleines, si cette mécanique est conservée.
+- Aucune surface ne laisse passer les balles (2026-10-25) : une vitre ou un grillage arrêtent un tir comme un mur.
 
 L'environnement raconte la durée : les arènes ne semblent pas neuves. Elles ont été réparées, adaptées et détournées plusieurs fois. Une même base modulaire peut être transformée par la lumière, les accessoires et les dommages.
 
@@ -311,21 +322,9 @@ La cible tonale est « sérieux mais bizarre », autour d'un niveau de bizarreri
 - Utiliser l'environnement pour montrer l'histoire : anciennes consignes, numéros de test, zones condamnées, réparations et matériel détourné.
 - Ne pas exiger que le joueur connaisse le lore pour comprendre les règles du match.
 
-## 15. Traduction du lore en gameplay
+## 15. Section retirée
 
-*Statut : Proposition recommandée (cohérente avec le GDD, pas encore discutée ligne à ligne).*
-
-| Mécanique | Ancrage narratif | Point de vigilance |
-|---|---|---|
-| Duel 1v1 | Exercice de combat détourné en duel réglementaire. | Le mode standard doit rester équitable et lisible. |
-| Best-of-5 / premier à 3 manches | Série de tests ou affrontements permettant de départager les unités. | Annonces courtes et rythme soutenu. |
-| Reconstruction | Atelier de maintenance et restauration du châssis entre les manches. | Ne pas interrompre inutilement le match. |
-| Spectateurs | Communauté restreinte de robots observant les combats. | Actions optionnelles, limitées et équilibrées. |
-| Cailloux et débris | Anciennes perturbations de test devenues tradition. | Éviter le contrôle excessif ou la frustration. |
-| Power-ups | Équipement expérimental ou matériel récupéré. | Feedback clair et contre-jeu possible. |
-| Modificateurs | Protocoles d'essai ou anomalies de l'installation. | Règles expliquées avant le match. |
-| IA speaker | Ancien système de supervision reconverti. | Voix informative, concise et identifiable. |
-| Modes compétitifs stricts | Protocoles de duel sans perturbations externes. | Préserver le skill pur. |
+*La traduction du lore en gameplay a été retirée à la relecture du 2026-10-25, à la demande de l'utilisateur. Le numéro reste vide pour que les renvois vers les sections suivantes restent justes.*
 
 ## 16. Principes de production solo
 
@@ -362,13 +361,10 @@ La direction artistique ne doit jamais prendre le dessus sur la lecture du comba
 |---|---|
 | Degré d'autonomie des robots | Apprentissage et adaptation progressifs ; nature de leur conscience laissée ambiguë. |
 | Ressenti des robots | Ne pas affirmer qu'ils éprouvent exactement les émotions humaines. |
-| Pourquoi les duels sont-ils à mort ? | Destruction du châssis et reconstruction, qu'on entend pendant le fondu au noir ; préciser le rapport à la mémoire et au risque. |
-| Ressources et récompenses | Une monnaie de pièces détachées, pour embellir son robot, purement esthétique. Pour l'instant, elle se gagne seulement en jouant ; la vendre contre de l'argent réel reste une possibilité, à décider plus tard. |
-| Statut du meilleur combattant | Reconnaissance sociale informelle ou classement intégré au jeu, à décider. |
+| Ressources et récompenses | Une monnaie de pièces détachées, pour embellir son robot, purement esthétique, gagnée en jouant et à chaque niveau (2026-10-25). La vendre contre de l'argent réel reste une possibilité, à décider plus tard. |
 | Présence de robots hors arène | Communauté plus large que les spectateurs d'une partie, à suggérer par l'environnement. |
-| Personnalité de l'IA | Speaker froid, qui a évolué comme les robots et glisse de petites piques ; ne se trompe jamais. Nom à définir. |
-| La créature de l'événement légendaire | Ce qui traverse l'arène, très rarement, dans le noir (modes arcade seulement). À définir. |
-| Style de rendu final | Low-poly propre, cel-shading discret ou combinaison des deux, à prototyper. |
+| Nom de l'IA | Huit propositions de Claude le 2026-10-25 (VERDICT, SUPERVISEUR S-07, ÉTALON, ARBITRE, SENTINELLE, CONTRÔLE, PROTOCOLE, MIRE) : aucune n'a convaincu l'utilisateur, qui a coché SENTINELLE sans s'y tenir. La recherche continue. |
+| Style de rendu final | Low-poly propre, cel-shading discret ou combinaison des deux : les essais sont prêts (2026-10-26), sur le Y Bot et sur le CT-01, robot inspiré de KAY/O ; l'utilisateur choisit le style (le robot est le CT-01, section 5). |
 | Niveau de dégradation | Aspect rafistolé important ; quantité de pièces détachées et d'usure à standardiser. |
 
 ## 19. Pitchs de référence
@@ -460,3 +456,38 @@ Cette bible constitue une base de travail. Les décisions finales devront être 
 | 12 | Les accessoires : les dix viseurs sans grossissement de *Rainbow Six Siege*, un laser tactique, deux poignées et des chargeurs grande capacité, du même stock que les armes. Leurs couleurs, leurs vitres, leurs réparations et le faisceau rouge sont des propositions de Claude. | Demande de l'utilisateur, 2026-10-16 |
 | 12 | Le gant à décharge refait dans la DA (le GD-1), avec moins de triangles que le modèle fourni (3 729 contre 28 404) : la forme, les couleurs et les réparations sont des propositions de Claude, dans l'esprit des gantelets de *Fallout*. | Demande de l'utilisateur, 2026-10-16 |
 | 12 | De vrais arcs électriques à la place des étincelles du gant : leur forme (charge, puis éclairs vers la cible) et leurs couleurs (cœur blanc, halo rouge) sont des propositions de Claude. | Demande de l'utilisateur, 2026-10-16 |
+
+**2026-10-25 — revue du GDD et de la bible**
+
+*Les codes renvoient à la page « Revue GDD et bible ».*
+
+| Section | Ce qui a changé | Décision |
+|---|---|---|
+| 1 | La relecture des sections en proposition est faite. | B1 à B5 |
+| 5 | Même silhouette pour tous, mais plusieurs designs de robot possibles dans cette silhouette ; réparations ternes sur de petites pièces seulement ; la couleur, choisie par le joueur depuis le 2026-10-16, n'attend plus la personnalisation. | C5, C7 |
+| 6 | Validée. | B1 |
+| 7, 18 | Un robot reconstruit se souvient de tout : la défaite ne coûte que des pièces. La question quitte la liste des éléments à décider. | L1 |
+| 8 | Justifications validées ; quatre spectateurs au plus pour l'instant. | B2, S1 |
+| 9 | L'IA écrit toujours et ne parle que pour les moments forts ; répliques écrites à deux ; armurerie factuelle. | I2, I3, I4 |
+| 10, 18 | Essai des deux rendus sur le robot. | V2 |
+| 12 | À reprendre avec la refonte des armes ; armes absurdes réservées aux spectateurs et aux power-ups ; l'énergie est rouge, rayon du pistolet compris. | B3, W1, W2, W4 |
+| 13, 18 | Typologies validées ; première vraie arène : un centre d'entraînement rapproché ; aucune surface ne laisse passer les balles ; la créature est un prototype abandonné ou défectueux. | B4, V3, V4, L2 |
+| 15 | Section retirée. | B5 |
+| 18 | Le statut du meilleur combattant est le tableau de la soirée (GDD § 14) ; ligne retirée, comme celles de la mémoire et de la créature. La monnaie se gagne aussi à chaque niveau. | C1, C3 |
+
+**2026-10-25 — suite de la revue**
+
+*Les codes renvoient à la page « Suite de la revue ».*
+
+| Section | Ce qui a changé | Décision |
+|---|---|---|
+| 9, 18 | Aucun des huit noms proposés pour l'IA n'a convaincu ; la recherche continue. | N1 |
+| 12 | Sept accessoires de plus, choisis parmi les propositions de Claude (crosses légère et lourde, compensateur, frein de bouche, canons long et court, chargeur rapide) ; leur apparence reste à dessiner. | X1 |
+| 13 | Quatre power-ups d'arène de plus (plaque de blindage, réparation, balise, servomoteurs) ; leur apparence reste à dessiner, et la plaque se voit sur le robot. | U1 |
+
+**2026-10-26 — essais du robot**
+
+| Section | Ce qui a changé | Décision |
+|---|---|---|
+| 5 | Le CT-01 devient le robot du jeu ; le Y Bot (le châssis « prototype ») et l'OS-02, l'« Ossature » (l'archétype du T-800, épaissi pour montrer autant de sa silhouette que le CT-01), restent au choix du joueur, dans Personnalisation. | Demandes de l'utilisateur, 2026-10-26 |
+| 10, 18 | L'essai des rendus est prêt, sur le Y Bot et sur le CT-01, un robot inspiré de KAY/O (*Valorant*) : visage d'écran à deux yeux en barres, plaques peintes de la couleur du joueur sur une ossature sombre, articulations en tambours, unité d'énergie dans le dos, mires de crash-test aux tempes et aux épaulières, numéro 07, une soudure et une petite plaque d'apprêt en réparations. Pièces rigides dans la silhouette commune. Le style et le robot restent à choisir. | Demande de l'utilisateur, 2026-10-26 |

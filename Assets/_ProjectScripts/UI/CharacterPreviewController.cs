@@ -35,13 +35,12 @@ public class CharacterPreviewController : MonoBehaviour
     [SerializeField] private PreviewStage stage;
     [SerializeField] private UIDocument document;
 
-    private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
-
     private Image viewport;
-    private MaterialPropertyBlock propertyBlock;
     private Renderer[] paintedRenderers = System.Array.Empty<Renderer>();
     private bool built;
     private Color32? paint;
+    private GameObject modelInstance;
+    private ChassisId chassis = ChassisId.CT01;
 
     private PlayableGraph idleGraph;
     private AnimationClipPlayable idlePlayable;
@@ -107,15 +106,14 @@ public class CharacterPreviewController : MonoBehaviour
     public void SetPaint(Color32 color)
     {
         paint = color;
-        if (paintedRenderers.Length == 0) return;
-        propertyBlock ??= new MaterialPropertyBlock();
-        foreach (Renderer r in paintedRenderers)
-        {
-            if (r == null) continue;
-            r.GetPropertyBlock(propertyBlock);
-            propertyBlock.SetColor(BaseColorId, color);
-            r.SetPropertyBlock(propertyBlock);
-        }
+        RobotAppearance.Paint(paintedRenderers, color);
+    }
+
+    /// <summary>Le châssis montré (RobotChassis), retenu de même.</summary>
+    public void SetChassis(ChassisId id)
+    {
+        chassis = id;
+        if (modelInstance != null) RobotChassis.Apply(modelInstance.transform, id);
     }
 
     private void BuildOnce()
@@ -126,22 +124,11 @@ public class CharacterPreviewController : MonoBehaviour
         Transform assetModel = playerPrefab.transform.Find("Model");
         if (assetModel == null) return;
 
-        GameObject modelInstance = RobotAppearance.Copy(assetModel.gameObject, stage.CharacterPivot, "RobotPersonnalisation");
+        modelInstance = RobotAppearance.Copy(assetModel.gameObject, stage.CharacterPivot, "RobotPersonnalisation");
+        RobotChassis.Apply(modelInstance.transform, chassis);
         PlayIdle(modelInstance.GetComponent<Animator>());
 
-        PlayerPaint assetPaint = playerPrefab.GetComponent<PlayerPaint>();
-        if (assetPaint != null)
-        {
-            var found = new List<Renderer>();
-            foreach (Renderer assetRenderer in assetPaint.PaintedRenderers)
-            {
-                if (assetRenderer == null) continue;
-                Transform match = ResolveRelative(assetModel, assetRenderer.transform, modelInstance.transform);
-                Renderer r = match != null ? match.GetComponent<Renderer>() : null;
-                if (r != null) found.Add(r);
-            }
-            paintedRenderers = found.ToArray();
-        }
+        paintedRenderers = RobotAppearance.PaintedParts(playerPrefab, assetModel, modelInstance);
 
         // La couleur initiale (préférence sauvegardée ou défaut) vient d'ArmoryController, qui
         // seul connaît la palette : arrivée avant la construction, elle a été retenue.
@@ -163,20 +150,6 @@ public class CharacterPreviewController : MonoBehaviour
         idlePlayable = AnimationClipPlayable.Create(idleGraph, idleClip);
         output.SetSourcePlayable(idlePlayable);
         idleGraph.Play();
-    }
-
-    /// <summary>Retrouve, sous `instanceRoot`, l'équivalent de `target` (un descendant de
-    /// `assetRoot`) — les deux hiérarchies sont identiques, `instanceRoot` venant de copier
-    /// `assetRoot` tel quel.</summary>
-    private static Transform ResolveRelative(Transform assetRoot, Transform target, Transform instanceRoot)
-    {
-        if (target == assetRoot) return instanceRoot;
-
-        var segments = new List<string>();
-        for (Transform t = target; t != null && t != assetRoot; t = t.parent) segments.Add(t.name);
-        segments.Reverse();
-
-        return instanceRoot.Find(string.Join("/", segments));
     }
 
     internal static void SetLayerRecursively(GameObject go, int layer)

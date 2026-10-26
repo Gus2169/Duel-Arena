@@ -29,8 +29,9 @@ Material:
     - _Douceur: 0.2
     - _Forme: 6
     - _Intensite: 1.6
-    - _Rayon: 36
+    - _Rayon: 5.52
     - _Reflet: 0.35
+    - _Trait: 0.414
     m_Colors:
     - _CouleurReticule: {r: 0.27450982, g: 1, b: 0.3764706, a: 1}
     - _CouleurVitre: {r: 0.72156864, g: 0.76862746, b: 0.78431374, a: 0.12}

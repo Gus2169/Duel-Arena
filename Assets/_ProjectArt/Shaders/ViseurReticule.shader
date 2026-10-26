@@ -17,6 +17,9 @@
 // rayon du cercle du réticule, ou sa demi-largeur) :
 //   0 point, 1 cercle et point, 2 cercle et chevron, 3 losange et point, 4 tirets et point,
 //   5 cercle et croix, 6 triangle, 7 tirets et chevron.
+// Les traits ont l'épaisseur _Trait, quelle que soit la taille du réticule. Le chevron et le
+// triangle visent par leur pointe, posée au centre exact (2026-10-26 : la pointe du chevron était
+// au-dessus du point visé, le triangle centré sur lui).
 //
 // Unités : milliradians (1 mrad = 1 cm à 10 m). Purement visuel, catégorie C.
 Shader "DuelArena/ViseurReticule"
@@ -28,6 +31,7 @@ Shader "DuelArena/ViseurReticule"
         _Intensite ("Intensité de la réticule", Float) = 4
         _Forme ("Forme (0 à 7, voir l'en-tête)", Float) = 0
         _Rayon ("Rayon du réticule (mrad) : son cercle, ou sa demi-largeur", Float) = 40
+        _Trait ("Épaisseur des traits (mrad)", Float) = 3
         _Douceur ("Douceur minimale du bord (mrad)", Float) = 0.2
         _Reflet ("Reflet sur les bords de la vitre", Range(0, 1)) = 0.35
         [Toggle] _AxeCamera ("Réticule sur l'axe de la caméra (vue subjective)", Float) = 0
@@ -58,6 +62,7 @@ Shader "DuelArena/ViseurReticule"
                 float _Intensite;
                 float _Forme;
                 float _Rayon;
+                float _Trait;
                 float _Douceur;
                 float _Reflet;
                 float _AxeCamera;
@@ -123,12 +128,17 @@ Shader "DuelArena/ViseurReticule"
                 return -sqrt(d.x) * sign(d.y);
             }
 
-            // Le chevron : deux traits qui se rejoignent au-dessus du centre.
-            float Chevron(float2 p, float k, float demiLargeur)
+            // Le chevron (commun_accessoires.chevron) : un « ^ » dont la pointe est le point visé, en
+            // (0, 0). Ses branches descendent de `chute` en s'écartant de `demi`, d'épaisseur `ep` ; leur
+            // face extérieure passe par la pointe, leurs bouts sont coupés d'équerre.
+            float Chevron(float2 p, float demi, float chute, float ep)
             {
-                float2 sommet = float2(0.0, k * 0.15);
-                return min(Trait(p, float2(-k, -k * 0.75), sommet, demiLargeur),
-                           Trait(p, sommet, float2(k, -k * 0.75), demiLargeur));
+                float2 q = float2(abs(p.x), p.y);                  // la branche droite, par symétrie
+                float longueur = length(float2(demi, chute));
+                float2 le_long = float2(demi, -chute) / longueur;  // de la pointe vers le bout
+                float2 normale = float2(chute, demi) / longueur;   // vers l'extérieur du « ^ »
+                float s = dot(q, normale);                         // 0 sur la face extérieure
+                return max(max(s, -ep - s), dot(q, le_long) - longueur);
             }
 
             float Tirets(float2 p, float demiLargeur)
@@ -137,9 +147,9 @@ Shader "DuelArena/ViseurReticule"
                            Trait(p, float2(-0.32, 0.0), float2(-0.95, 0.0), demiLargeur));
             }
 
-            float Reticule(float2 p, int forme)
+            // `ep` : l'épaisseur des traits, dans les unités du réticule (_Trait / _Rayon).
+            float Reticule(float2 p, int forme, float ep)
             {
-                const float ep = 0.075;   // l'épaisseur des traits (commun_accessoires.reticule)
                 float d = 1e5;
                 if (forme == 0) d = Disque(p, 0.13);
                 if (forme == 1 || forme == 3 || forme == 4 || forme == 5) d = Disque(p, 0.07);
@@ -156,9 +166,11 @@ Shader "DuelArena/ViseurReticule"
                     d = min(d, Trait(q, float2(0.0, 0.75), float2(0.75, 0.0), ep * 0.5));
                 }
                 if (forme == 4 || forme == 7) d = min(d, Tirets(p, ep * 1.3 * 0.5));
-                if (forme == 2) d = min(d, Chevron(p, 0.42, ep * 1.2 * 0.5));
-                if (forme == 7) d = min(d, Chevron(p, 0.30, ep * 1.2 * 0.5));
-                if (forme == 6) d = Triangle(p, float2(-0.30, -0.22), float2(0.30, -0.22), float2(0.0, 0.30));
+                // Les chevrons, aux proportions de commun_accessoires.CHEVRONS.
+                if (forme == 2) d = min(d, Chevron(p, 0.22, 0.18, ep));
+                if (forme == 7) d = min(d, Chevron(p, 0.20, 0.16, ep));
+                // Plein, sa pointe en haut au point visé ; _Rayon est sa demi-largeur.
+                if (forme == 6) d = Triangle(p, float2(0.0, 0.0), float2(-1.0, -1.6), float2(1.0, -1.6));
                 return d;
             }
 
@@ -187,7 +199,7 @@ Shader "DuelArena/ViseurReticule"
                 float profondeur = dot(regard, avant);
                 float2 ecart = float2(dot(regard, droite), dot(regard, haut)) / max(profondeur, 1e-3) * 1000.0;
                 float rayon = max(_Rayon, 1e-3);
-                float d = Reticule(ecart / rayon, (int)round(_Forme)) * rayon;
+                float d = Reticule(ecart / rayon, (int)round(_Forme), max(_Trait, 1e-3) / rayon) * rayon;
                 float douceur = max(_Douceur, fwidth(d));
                 float reticule = (1.0 - smoothstep(-douceur, douceur, d)) * step(0.0, profondeur);
 

@@ -11,6 +11,7 @@
   "reticule": "cercle_chevron",
   "couleurReticule": "rouge",
   "rayonReticule": 0.007,
+  "traitReticule": 0.0004,
   "hauteurAxe": 0.049
  },
  "triangles": 1474,

@@ -17,7 +17,10 @@ using UnityEngine;
 ///
 /// Seules les pièces listées dans `paintedRenderers` sont peintes : les articulations gardent leur
 /// matériau, pour rester visibles comme le veut la bible. La couleur passe par un
-/// MaterialPropertyBlock, sans dupliquer de matériau (donc rien à détruire au départ du joueur).
+/// MaterialPropertyBlock, sans dupliquer de matériau (donc rien à détruire au départ du joueur). Sur une
+/// pièce à plusieurs matériaux (le CT-01, 2026-10-26), seuls ses emplacements de peinture la prennent, et
+/// ses lueurs la rendent en émission (PaintPart). La liste porte les pièces de tous les châssis
+/// (RobotChassis) : peindre une pièce éteinte ne coûte rien.
 /// </summary>
 public class PlayerPaint : NetworkBehaviour
 {
@@ -43,6 +46,18 @@ public class PlayerPaint : NetworkBehaviour
 
     private static readonly List<PlayerPaint> spawnedPaints = new List<PlayerPaint>();
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+    private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+
+    /// <summary>Le nom que porte un matériau de peinture, sur une pièce à plusieurs matériaux (CT01_Peinture).</summary>
+    public const string PaintSlot = "Peinture";
+
+    /// <summary>Le nom que porte un matériau de lueur (les yeux, les fentes : CT01_Lueur), que la couleur du
+    /// joueur allume, et que l'écran de la mort éteint (RobotFaceScreen).</summary>
+    public const string GlowSlot = "Lueur";
+
+    /// <summary>L'éclat des lueurs : la couleur du joueur, multipliée (le jeu n'a pas de bloom ; la valeur des
+    /// matériaux de l'essai des rendus, RobotChassisBuilder).</summary>
+    public const float GlowIntensity = 2.6f;
 
     private MaterialPropertyBlock propertyBlock;
 
@@ -97,12 +112,13 @@ public class PlayerPaint : NetworkBehaviour
 
     /// <summary>Peint cette pièce de la couleur actuelle, une seule fois, sans la retenir : l'épave
     /// d'un robot tué (RobotCorpse) ne vit que le temps d'une mort, et la couleur ne change pas
-    /// pendant un match.</summary>
+    /// pendant un match. Ses lueurs restent comme elles sont : celles d'une épave sont éteintes
+    /// (RobotFaceScreen.ShowDeath).</summary>
     public void PaintOnce(Renderer r)
     {
         if (r == null || networkPaint.Value.a == 0) return;
         propertyBlock ??= new MaterialPropertyBlock();
-        PaintRenderer(r, networkPaint.Value);
+        PaintPart(r, networkPaint.Value, propertyBlock, false);
     }
 
     private void ApplyPaint(Color32 paint)
@@ -118,12 +134,36 @@ public class PlayerPaint : NetworkBehaviour
 #endif
     }
 
-    private void PaintRenderer(Renderer r, Color32 paint)
+    private void PaintRenderer(Renderer r, Color32 paint) => PaintPart(r, paint, propertyBlock, true);
+
+    /// <summary>
+    /// Peint une pièce du robot de la couleur `paint`. Sur une pièce à plusieurs matériaux (le CT-01), les seuls
+    /// emplacements de peinture (un matériau dont le nom contient PaintSlot) et, si `glows`, les lueurs (GlowSlot),
+    /// qui prennent la couleur en émission ; sur une pièce sans emplacement nommé (le corps du Y Bot), toute la
+    /// pièce. Le reste garde son matériau. Partagée par le jeu et les copies des menus (RobotAppearance). Testée.
+    /// </summary>
+    public static void PaintPart(Renderer r, Color32 paint, MaterialPropertyBlock block, bool glows)
     {
         if (r == null) return;
-        r.GetPropertyBlock(propertyBlock);
-        propertyBlock.SetColor(BaseColorId, paint);
-        r.SetPropertyBlock(propertyBlock);
+        Material[] materials = r.sharedMaterials;
+        bool slots = false;
+        for (int i = 0; i < materials.Length; i++)
+        {
+            string name = materials[i] != null ? materials[i].name : "";
+            bool painted = name.Contains(PaintSlot);
+            bool glow = !painted && name.Contains(GlowSlot);
+            if (!painted && !glow) continue;
+            slots = true;
+            if (glow && !glows) continue;
+            r.GetPropertyBlock(block, i);
+            if (painted) block.SetColor(BaseColorId, paint);
+            else block.SetColor(EmissionColorId, (Color)paint * GlowIntensity);
+            r.SetPropertyBlock(block, i);
+        }
+        if (slots) return;
+        r.GetPropertyBlock(block);
+        block.SetColor(BaseColorId, paint);
+        r.SetPropertyBlock(block);
     }
 
     /// <summary>

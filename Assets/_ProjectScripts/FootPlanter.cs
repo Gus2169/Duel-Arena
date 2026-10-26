@@ -305,41 +305,13 @@ public class FootPlanter
     private static Vector3 Horizontal(Vector3 v) => new Vector3(v.x, 0f, v.z);
 
     /// <summary>
-    /// IK analytique à deux os : amène `end` sur `target` en pliant `upper` et `lower`, dans le plan
-    /// où la jambe est déjà pliée (le genou garde sa direction). La rotation de `end` dans le monde
-    /// est conservée : le pied reste à plat. Hors de portée, la jambe se tend vers la cible.
-    /// Fonction pure sur des transforms, testée.
+    /// IK analytique à deux os, sortie d'ici le 2026-10-17 dans TwoBoneIK (elle sert aussi aux bras) :
+    /// amène `end` sur `target` en pliant `upper` et `lower`, dans le plan où la jambe est déjà pliée
+    /// (le genou garde sa direction). La rotation de `end` dans le monde est conservée : le pied reste
+    /// à plat. Hors de portée, la jambe se tend vers la cible, et OutOfReach le compte.
     /// </summary>
     public static void SolveTwoBone(Transform upper, Transform lower, Transform end, Vector3 target)
     {
-        Quaternion endRotation = end.rotation;
-        Vector3 a = upper.position, b = lower.position, c = end.position;
-        float lab = Vector3.Distance(a, b);
-        float lcb = Vector3.Distance(b, c);
-        float wanted = Vector3.Distance(a, target);
-        float lat = Mathf.Clamp(wanted, Mathf.Abs(lab - lcb) + 1e-3f, lab + lcb - 1e-3f);
-        if (wanted - lat > 0.005f) OutOfReach++;
-
-        float acab0 = AngleBetween(c - a, b - a);
-        float babc0 = AngleBetween(a - b, c - b);
-        float acab1 = Mathf.Acos(Mathf.Clamp((lcb * lcb - lab * lab - lat * lat) / (-2f * lab * lat), -1f, 1f));
-        float babc1 = Mathf.Acos(Mathf.Clamp((lat * lat - lab * lab - lcb * lcb) / (-2f * lab * lcb), -1f, 1f));
-
-        Vector3 axis = Vector3.Cross(c - a, b - a);
-        if (axis.sqrMagnitude < 1e-10f) axis = Vector3.Cross(c - a, upper.forward);
-        axis.Normalize();
-
-        upper.rotation = Quaternion.AngleAxis((acab1 - acab0) * Mathf.Rad2Deg, axis) * upper.rotation;
-        lower.rotation = Quaternion.AngleAxis((babc1 - babc0) * Mathf.Rad2Deg, axis) * lower.rotation;
-
-        a = upper.position;
-        c = end.position;
-        upper.rotation = Quaternion.FromToRotation(c - a, target - a) * upper.rotation;
-        end.rotation = endRotation;
-    }
-
-    private static float AngleBetween(Vector3 u, Vector3 v)
-    {
-        return Mathf.Acos(Mathf.Clamp(Vector3.Dot(u.normalized, v.normalized), -1f, 1f));
+        if (!TwoBoneIK.Solve(upper, lower, end, target)) OutOfReach++;
     }
 }

@@ -53,4 +53,54 @@ public static class RobotAppearance
         else Object.DestroyImmediate(holder);
         return copy;
     }
+
+    /// <summary>Les pièces de la copie que PlayerPaint peint (`paintedRenderers`, lues sur l'asset du préfab
+    /// joueur et retrouvées par leur chemin sous « Model »), une seule source pour « quoi peindre ».</summary>
+    public static Renderer[] PaintedParts(GameObject playerPrefab, Transform assetModel, GameObject copy)
+    {
+        PlayerPaint assetPaint = playerPrefab != null ? playerPrefab.GetComponent<PlayerPaint>() : null;
+        if (assetPaint == null || assetModel == null || copy == null) return System.Array.Empty<Renderer>();
+        var found = new System.Collections.Generic.List<Renderer>();
+        foreach (Renderer assetRenderer in assetPaint.PaintedRenderers)
+        {
+            if (assetRenderer == null) continue;
+            string path = RelativePath(assetModel, assetRenderer.transform);
+            Transform match = path == null ? null : path.Length == 0 ? copy.transform : copy.transform.Find(path);
+            Renderer r = match != null ? match.GetComponent<Renderer>() : null;
+            if (r != null) found.Add(r);
+        }
+        return found.ToArray();
+    }
+
+    /// <summary>Peint la copie comme PlayerPaint peint le robot en jeu (PlayerPaint.PaintPart, les mêmes
+    /// pièces). Renvoie les pièces peintes, pour la repeindre.</summary>
+    public static Renderer[] Paint(GameObject playerPrefab, Transform assetModel, GameObject copy, Color32 paint)
+    {
+        Renderer[] parts = PaintedParts(playerPrefab, assetModel, copy);
+        Paint(parts, paint);
+        return parts;
+    }
+
+    /// <summary>Repeint des pièces déjà trouvées.</summary>
+    public static void Paint(Renderer[] parts, Color32 paint)
+    {
+        var block = new MaterialPropertyBlock();
+        foreach (Renderer r in parts) PlayerPaint.PaintPart(r, paint, block, true);
+    }
+
+    // Le chemin de `target` sous `root` (« Armature/Corps »), vide pour la racine elle-même, null hors de lui.
+    private static string RelativePath(Transform root, Transform target)
+    {
+        var segments = new System.Collections.Generic.List<string>();
+        for (Transform t = target; t != null; t = t.parent)
+        {
+            if (t == root)
+            {
+                segments.Reverse();
+                return string.Join("/", segments);
+            }
+            segments.Add(t.name);
+        }
+        return null;
+    }
 }

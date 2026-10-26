@@ -37,21 +37,31 @@ public struct MatchRules : INetworkSerializeByMemcpy
     /// plus tard »). La palette de PlayerPaint en compte sept.</summary>
     public const int MaxCapacity = 6;
 
+    /// <summary>Un match en BO3 : deux manches gagnées. Et en BO5, le format par défaut du GDD : trois.</summary>
+    public const int Bo3RoundsToWin = 2, Bo5RoundsToWin = 3;
+
     /// <summary>Joueurs dans la partie, hôte compris.</summary>
     public byte capacity;
     public DuelOrganization organization;
     /// <summary>Les spectateurs peuvent-ils agir (cailloux, dons de matériel, bagarre) ? Le classé
     /// n'en aura aucune (GDD § 9).</summary>
     public bool spectatorInterventions;
+    /// <summary>Manches à gagner pour remporter le match : un BO5 ou un BO3, au choix de l'hôte au salon
+    /// (GDD § 5, 2026-10-25). Toute autre valeur (0 : des réglages d'avant ce choix) vaut un BO5.</summary>
+    public byte roundsToWin;
 
     /// <summary>Le prototype du GDD (§ 16) : quatre places (deux duellistes, deux spectateurs), roi de
-    /// la colline, interventions des spectateurs permises.</summary>
+    /// la colline, interventions des spectateurs permises, en BO5.</summary>
     public static MatchRules Default => new MatchRules
     {
         capacity = 4,
         organization = DuelOrganization.KingOfTheHill,
         spectatorInterventions = true,
+        roundsToWin = Bo5RoundsToWin,
     };
+
+    /// <summary>Le format en toutes lettres : « BO5 » ou « BO3 ».</summary>
+    public string Format => $"BO{Sanitized().roundsToWin * 2 - 1}";
 
     /// <summary>Les mêmes réglages, ramenés dans leurs bornes (un réglage enregistré peut venir d'une
     /// ancienne version). Fonction pure, testée.</summary>
@@ -61,6 +71,7 @@ public struct MatchRules : INetworkSerializeByMemcpy
         if (r.capacity < MinCapacity) r.capacity = MinCapacity;
         if (r.capacity > MaxCapacity) r.capacity = MaxCapacity;
         if (r.organization > DuelOrganization.FixedDuelists) r.organization = DuelOrganization.KingOfTheHill;
+        if (r.roundsToWin != Bo3RoundsToWin && r.roundsToWin != Bo5RoundsToWin) r.roundsToWin = Bo5RoundsToWin;
         return r;
     }
 }
@@ -73,8 +84,8 @@ public struct MatchRules : INetworkSerializeByMemcpy
 ///   dans l'ordre d'arrivée.
 /// - En fin de match, au roi de la colline, le gagnant reste, le perdant passe au bout de la file et
 ///   le premier de la file prend sa place (GDD § 4).
-/// - Un duelliste qui part laisse sa place au premier de la file ; le match en cours s'arrête (le
-///   forfait du GDD, dette n° 58, attend encore son écran).
+/// - Un duelliste qui part en plein match perd par forfait : l'autre gagne le match, et le premier de
+///   la file prend la place libre à la fin de l'écran de fin (GDD § 4, 2026-10-25 ; RoundManager).
 /// </summary>
 public static class DuelRoster
 {
@@ -91,8 +102,11 @@ public static class DuelRoster
         => Sync(present, duelists, queue, DuelistSlots, out duelistLeft);
 
     /// <summary>Sync, avec `slots` places de duelliste (deux en jeu ; une seule pour le banc de test
-    /// à deux instances, RoundManager.DebugSoloDuel, qui fait du second joueur un spectateur).</summary>
-    public static bool Sync(IReadOnlyList<ulong> present, List<ulong> duelists, List<ulong> queue, int slots, out bool duelistLeft)
+    /// à deux instances, RoundManager.DebugSoloDuel, qui fait du second joueur un spectateur).
+    /// `admitNewcomers` faux : un nouveau venu passe par la file même si une place est libre (celle d'un
+    /// duelliste parti en plein match, qui attend la fin de l'écran de fin du forfait).</summary>
+    public static bool Sync(IReadOnlyList<ulong> present, List<ulong> duelists, List<ulong> queue, int slots, out bool duelistLeft,
+                            bool admitNewcomers = true)
     {
         duelistLeft = false;
         bool changed = false;
@@ -113,7 +127,7 @@ public static class DuelRoster
             if (duelists.Contains(id) || queue.Contains(id)) continue;
             // Une place libre revient d'abord à ceux qui attendent déjà (FillFromQueue) : un nouveau
             // venu n'entre directement que si personne n'attend.
-            if (duelists.Count < slots && queue.Count == 0)
+            if (admitNewcomers && duelists.Count < slots && queue.Count == 0)
             {
                 duelists.Add(id);
                 changed = true;

@@ -1464,6 +1464,7 @@ public class WeaponController : NetworkBehaviour
             // Chaque plomb (ou la balle) est résolu seul ; les dégâts s'additionnent par cible et
             // tombent en une fois.
             int count = data.PelletCount;
+            ServerShotFired?.Invoke(this, count);
             var ends = new Vector3[count];
             var normals = new Vector3[count];
             int hitMask = 0;
@@ -1594,6 +1595,10 @@ public class WeaponController : NetworkBehaviour
     /// distance (2026-10-16). Le stand de tir en montre les chiffres (ShootingRangeHud) ; rien du jeu ne
     /// s'y fie.</summary>
     public static event System.Action<Health, HitboxZoneType, float, float> ServerHitRegistered;
+
+    /// <summary>Serveur : un tir accepté, et ses balles ou plombs (2026-10-16). La Fosse en tire la
+    /// précision (ShootingCourse) ; rien du jeu ne s'y fie.</summary>
+    public static event System.Action<WeaponController, int> ServerShotFired;
 
     /// <summary>Ajoute les dégâts d'un impact à sa cible : zone touchée (tête, buste, jambes) et
     /// distance (WeaponData.DamageAt).</summary>

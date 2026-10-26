@@ -107,8 +107,8 @@ public class GameHud : MonoBehaviour
         RoundManager rm = RoundManager.Instance;
         NetworkObject local = LocalPlayerObject;
         bool inGame = local != null && rm != null && rm.IsSpawned;
-        // L'écran de fin a toute la place : ni score, ni vie par-dessus le gagnant.
-        bool endScreen = MatchEndScreen.IsShown;
+        // L'écran de fin a toute la place : ni score, ni vie par-dessus le gagnant ; le salon non plus.
+        bool endScreen = MatchEndScreen.IsShown || SalonPanel.IsShown;
 
         SetVisible(scoreBar, inGame && !endScreen);
         SetVisible(healthPanel, inGame && !endScreen);
@@ -127,7 +127,7 @@ public class GameHud : MonoBehaviour
         SetFade(black);
 
         // L'arbitre du curseur et des commandes.
-        bool menu = PauseMenu.IsOpen || MatchEndScreen.IsShown;
+        bool menu = PauseMenu.IsOpen || MatchEndScreen.IsShown || SalonPanel.IsShown;
         bool choosing = LoadoutPanel.IsShown;
         bool cursorFree = menu || choosing;
         if (local.TryGetComponent(out PlayerInputReader input))
@@ -320,9 +320,11 @@ public class GameHud : MonoBehaviour
         public int wins;
         public bool spectator;
         public bool endScreen;
+        public bool forfeit;
 
         public bool Equals(CenterKey o) => phase == o.phase && value == o.value && round == o.round && winner == o.winner
-                                           && wins == o.wins && spectator == o.spectator && endScreen == o.endScreen;
+                                           && wins == o.wins && spectator == o.spectator && endScreen == o.endScreen
+                                           && forfeit == o.forfeit;
     }
 
     private CenterKey shownCenter;
@@ -343,6 +345,7 @@ public class GameHud : MonoBehaviour
             wins = wins,
             spectator = LocalIsSpectator,
             endScreen = MatchEndScreen.IsShown,
+            forfeit = rm.WonByForfeit,
         };
         if (centerShownOnce && key.Equals(shownCenter)) return;
         centerShownOnce = true;
@@ -378,6 +381,13 @@ public class GameHud : MonoBehaviour
             case RoundManager.Phase.MatchOver:
                 if (MatchEndScreen.IsShown) break;
                 sentence = true;
+                if (rm.WonByForfeit)
+                {
+                    // L'adversaire a quitté la partie (GDD § 4, 2026-10-25).
+                    big = $"{PlayerMatchState.NameOf(rm.LastRoundWinner)} remporte le match par forfait";
+                    small = "Son adversaire a quitté la partie.";
+                    break;
+                }
                 big = $"{PlayerMatchState.NameOf(rm.LastRoundWinner)} remporte le match !";
                 small = ScoreLine(rm);
                 break;
@@ -455,6 +465,8 @@ public class GameHud : MonoBehaviour
                 float lightComing = 1f - Mathf.Clamp01((sinceEndScreen - fadeHold) / Mathf.Max(0.01f, fadeInTime));
                 return Mathf.Max(lightComing, FadeOut(rm.PhaseTimeRemaining));
             case RoundManager.Phase.Preparation:
+            case RoundManager.Phase.Salon:
+                // La lumière revient sur la préparation, et sur le salon après le noir de l'écran de fin.
                 return 1f - Mathf.Clamp01((rm.PhaseElapsed - fadeHold) / Mathf.Max(0.01f, fadeInTime));
             default:
                 return 0f;

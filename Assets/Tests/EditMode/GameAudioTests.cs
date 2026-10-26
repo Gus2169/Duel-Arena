@@ -248,12 +248,13 @@ public class GameAudioTests
         Assert.AreEqual(UiSounds.Kind.Back, UiSounds.KindOf(WithClass(new Button(), "back-button")));
         Assert.AreEqual(UiSounds.Kind.Back, UiSounds.KindOf(WithClass(new Button(), "menu-button--quit")), "Quitter revient en arrière.");
         Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "loadout-card")), "Une arme choisie en préparation.");
-        Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "custom-weapon-row")), "Une arme de Personnalisation.");
-        Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new VisualElement(), "color-swatch")));
-        Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "gunsmith-tab")), "Une arme de l'armurerie.");
-        Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "gunsmith-tile")), "Une tuile de l'armurerie.");
-        Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "gunsmith-choice")), "Un choix équipé.");
-        Assert.AreEqual(UiSounds.Kind.Click, UiSounds.KindOf(WithClass(new Button(), "gunsmith-arrow")), "Les flèches de la bande défilent.");
+        // Le menu refait le 2026-10-17 : des classes qui ne servent qu'au son.
+        Assert.AreEqual(UiSounds.Kind.Confirm, UiSounds.KindOf(WithClass(new Button(), "ui-confirm")), "Jouer, Créer une partie, Lancer.");
+        Assert.AreEqual(UiSounds.Kind.Back, UiSounds.KindOf(WithClass(new Button(), "ui-back")), "Échap Retour, Quitter, Annuler.");
+        Assert.AreEqual(UiSounds.Kind.Select, UiSounds.KindOf(WithClass(new Button(), "ui-select")), "Une carte de mode, une couleur, une arme, un accessoire.");
+        Assert.AreEqual(UiSounds.Kind.Back, UiSounds.KindOf(WithClass(WithClass(new Button(), "ui-back"), "ui-select")), "Revenir l'emporte.");
+        Assert.AreEqual(UiSounds.Kind.Click, UiSounds.KindOf(WithClass(new Button(), "strip-arrow")), "Les flèches de la bande défilent.");
+        Assert.AreEqual(UiSounds.Kind.Click, UiSounds.KindOf(WithClass(new Button(), "da-tab")), "Un onglet.");
     }
 
     private static VisualElement WithClass(VisualElement element, string ussClass)

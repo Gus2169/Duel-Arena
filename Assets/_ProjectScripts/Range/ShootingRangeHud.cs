@@ -125,7 +125,7 @@ public class ShootingRangeHud : MonoBehaviour
         if (range == null) return;
         foreach (TrainingDummy dummy in range.Dummies)
         {
-            if (dummy == null || dummy.Health == null) continue;
+            if (dummy == null || dummy.Health == null || !dummy.Regenerates) continue;
             DummyState state = StateOf(dummy);
             float current = dummy.Health.Current;
             float max = dummy.Health.Max;
@@ -191,7 +191,7 @@ public class ShootingRangeHud : MonoBehaviour
         // La fenêtre des armes ouverte, rien ne se dessine par-dessus.
         if (ShootingRangePanel.IsOpen) return;
 
-        Shadowed(new Rect(16f, 16f, 900f, 24f), "STAND DE TIR   ·   B : armes et accessoires   ·   Échap : menu du stand", helpStyle, Color.white);
+        Shadowed(new Rect(16f, 16f, 1400f, 24f), "STAND DE TIR   ·   B : armes et accessoires   ·   Échap : menu du stand   ·   la Fosse : porte à droite du poste", helpStyle, Color.white);
 
         // Les mannequins à l'écran, par priorité : celui qu'on vise, puis ceux qu'on vient de toucher,
         // puis les autres, du plus proche au plus loin. Alignés dans l'axe du stand, leurs étiquettes se
@@ -204,8 +204,13 @@ public class ShootingRangeHud : MonoBehaviour
         float aimedAngle = AimedAngle;
         foreach (TrainingDummy dummy in range.Dummies)
         {
-            if (dummy == null || dummy.Health == null) continue;
+            // Les cibles de la Fosse n'ont ni barre ni étiquette (le parcours a son chrono) ; leurs
+            // chiffres de dégâts restent.
+            if (dummy == null || dummy.Health == null || !dummy.Regenerates) continue;
             if (!OnScreen(cam, dummy.LabelPoint, out Vector2 p)) continue;
+            // Un mannequin caché par un mur n'a pas d'étiquette : depuis la Fosse, on voyait celles du
+            // stand à travers la cloison.
+            if (Physics.Linecast(eye, dummy.HeadPoint, 1, QueryTriggerInteraction.Ignore)) continue;
             DummyState state = StateOf(dummy);
             float angle = Vector3.Angle(forward, dummy.HeadPoint - Vector3.up * 0.4f - eye);
             if (angle < aimedAngle) { aimedAngle = angle; aimed = entries.Count; }

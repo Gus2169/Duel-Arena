@@ -11,6 +11,7 @@
   "reticule": "tirets_point",
   "couleurReticule": "rouge",
   "rayonReticule": 0.012,
+  "traitReticule": 0.0009,
   "hauteurAxe": 0.0438
  },
  "triangles": 598,
