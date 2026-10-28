@@ -13,9 +13,10 @@ using UnityEngine.UIElements;
 ///   de sombre sous un grand cadenas, elles ne se choisissent pas (2026-10-27, demandé par l'utilisateur :
 ///   on les voyait trop, on croyait pouvoir les choisir).
 /// - SALONS : rejoindre un salon par son code, ou une partie du réseau local (MainMenuController).
-/// - ENTRAÎNEMENT (demandé par l'utilisateur : le stand de tir y vit) : une carte, le stand de tir et la
-///   Fosse, qui sont dans la même scène, derrière une porte l'un de l'autre (MainMenuController.
-///   StartShootingRange). Deux cartes y menaient au même endroit ; depuis le 2026-10-27, une seule.
+/// - ENTRAÎNEMENT (demandé par l'utilisateur : le stand de tir y vit) : une carte, le stand de tir, la
+///   Fosse et la salle de précision, qui sont dans la même scène, la Fosse et la salle de part et d'autre
+///   du poste de tir (MainMenuController.StartShootingRange). Deux cartes y menaient au même endroit ;
+///   depuis le 2026-10-27, une seule.
 /// - CLASSEMENT : verrouillé, il viendra avec le classé, après la sortie (GDD § 14).
 ///
 /// Les images des cartes : l'arène (MenuArtwork) et, devant, le robot dans une pose et une couleur propres à
@@ -398,12 +399,12 @@ public class PlayScreenController : MonoBehaviour
             default:
             {
                 SetDetail("ico-target", "STAND DE TIR ET FOSSE",
-                    "Essaie chaque arme et ses accessoires sur des mannequins à 5, 10, 15, 25, 35 et 50 m, puis passe la porte à droite du poste de tir : la Fosse, le parcours chronométré, où des cibles se lèvent sur ton passage, hostiles à neutraliser, civils à épargner. B ouvre la fenêtre des armes, Échap la pause et les Options.",
+                    "Essaie chaque arme et ses accessoires sur quatorze mannequins, de 5 à 60 m, d'un mur à l'autre du stand. À droite du poste de tir, la Fosse, le parcours chronométré, où des cibles se lèvent sur ton passage, hostiles à neutraliser, civils à épargner ; à gauche, la salle de précision, une grande cible ronde que son pupitre envoie de 5 à 50 m. B ouvre la fenêtre des armes, Échap la pause et les Options.",
                     artwork != null ? artwork.rangeImage : null);
                 AddFact("JOUEURS", "Seul, hors ligne");
-                AddFact("ARMES", "Toutes, avec leurs accessoires");
-                AddFact("MANNEQUINS", "Tombent, puis se relèvent en 3 s");
-                AddFact("LA FOSSE", "20 hostiles, 8 civils");
+                AddFact("MANNEQUINS", "14, de 5 à 60 m");
+                AddFact("LA FOSSE", "33 hostiles, 14 civils, 12 sections");
+                AddFact("PRÉCISION", "Une cible, de 5 à 50 m");
                 float best = BestCourseTime();
                 AddFact("TON RECORD", best > 0f ? $"{WeaponStatSheet.Number(best)} s" : "Aucun");
                 SetButton(true, "LANCER", !busy && (mainMenu == null || !mainMenu.Busy));

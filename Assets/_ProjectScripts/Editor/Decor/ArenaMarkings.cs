@@ -120,7 +120,7 @@ public static class ArenaMarkings
 
     /// <summary>La peinture d'un marquage : la couleur donnée, usée par plaques (le support se voit à travers), sans
     /// ombre ni profondeur à elle (elle est collée à sa surface) ni contour.</summary>
-    private static Material MarkingMaterial(string name, Color color, float wear)
+    internal static Material MarkingMaterial(string name, Color color, float wear)
     {
         var material = new Material(Shader.Find("DuelArena/Decor"));
         material.SetFloat("_Espace", 0f);
@@ -167,7 +167,7 @@ public static class ArenaMarkings
     }
 
     /// <summary>Une bande peinte au sol, de x0 à x1 à la profondeur z, large de `width`.</summary>
-    private static void FloorStripe(DecorMeshes.Builder b, float x0, float x1, float z, float width)
+    internal static void FloorStripe(DecorMeshes.Builder b, float x0, float x1, float z, float width)
     {
         const float y = 0.003f;
         b.Quad(new Vector3(x0, y, z - width * 0.5f), new Vector3(x1, y, z - width * 0.5f), new Vector3(x1, y, z + width * 0.5f),
@@ -175,7 +175,7 @@ public static class ArenaMarkings
     }
 
     /// <summary>Un texte peint au sol, lisible de qui regarde vers `readerUp` (son haut), de `cap` m de capitale.</summary>
-    private static bool FloorText(Transform parent, string key, Vector3 position, float cap, Vector3 readerUp, Material material)
+    internal static bool FloorText(Transform parent, string key, Vector3 position, float cap, Vector3 readerUp, Material material)
     {
         Mesh mesh = DecorImporter.MeshOf("MQ1", key);
         if (mesh == null) return false;
@@ -187,7 +187,7 @@ public static class ArenaMarkings
     }
 
     /// <summary>Un texte peint sur un mur dont la face regarde vers `normal`, centré sur `position`.</summary>
-    private static bool WallText(Transform parent, string key, Vector3 position, Vector3 normal, float cap, Material material)
+    internal static bool WallText(Transform parent, string key, Vector3 position, Vector3 normal, float cap, Material material)
     {
         Mesh mesh = DecorImporter.MeshOf("MQ1", key);
         if (mesh == null) return false;
@@ -197,7 +197,7 @@ public static class ArenaMarkings
         return true;
     }
 
-    private static GameObject Flat(Transform parent, string name, Mesh mesh, Material material)
+    internal static GameObject Flat(Transform parent, string name, Mesh mesh, Material material)
     {
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);

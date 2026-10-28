@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Les meilleurs temps de la Fosse (2026-10-16), par arme : la place de la panoplie (0 à 3) avec
+/// Les meilleurs temps de la Fosse (2026-10-16), par arme : la place de la panoplie (0 à 11) avec
 /// laquelle le parcours a été couru, ou -1 pour une course où l'on a changé d'arme. Gardés sur la machine
 /// (PlayerPrefs), comme les réglages : le stand tourne chez le joueur, seul.
 ///
@@ -14,7 +14,9 @@ public static class CourseRecords
     /// <summary>La clé d'une course où l'on a changé d'arme.</summary>
     public const int MixedLoadout = -1;
 
-    private const string Prefix = "LaFosse.Record.";
+    // La Fosse refaite le 2026-10-28 (douze sections, plus longue) a ses propres records : ceux de la première, sous
+    // « LaFosse.Record. », ne se battraient plus et ne sont plus lus.
+    private const string Prefix = "LaFosse2.Record.";
     private static readonly Dictionary<int, float> cache = new Dictionary<int, float>();
 
     /// <summary>Un record vient de tomber (le tableau du départ se réécrit).</summary>

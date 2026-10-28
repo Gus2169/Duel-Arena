@@ -263,7 +263,7 @@ public static class ArenaLighting
 
     /// <summary>Les réglages de la cuisson de la scène (un asset à côté d'elle) : la lumière indirecte seulement (les
     /// lumières restent en temps réel pour l'éclairage direct et les ombres), le lightmapper du GPU, 3 texels par mètre.</summary>
-    private static LightingSettings LightingSettingsAsset(Scene scene)
+    internal static LightingSettings LightingSettingsAsset(Scene scene)
     {
         string folder = string.IsNullOrEmpty(scene.path) ? "Assets" : System.IO.Path.GetDirectoryName(scene.path).Replace('\\', '/');
         string path = $"{folder}/{scene.name}_Lumiere.lighting";
@@ -306,7 +306,7 @@ public static class ArenaLighting
         return $"{dir}/ReflectionProbe-0.exr";
     }
 
-    private static Light NewLight(Transform parent, string name, LightType type)
+    internal static Light NewLight(Transform parent, string name, LightType type)
     {
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);
@@ -320,14 +320,14 @@ public static class ArenaLighting
     /// <summary>Les calques de rendu qu'une lumière éclaire. URP les lit dans sa UniversalAdditionalLightData (pas dans
     /// Light.renderingLayerMask, qu'il réécrit pour les ombres) : une lumière réglée seulement sur la seconde n'éclairait
     /// rien d'autre que le calque par défaut.</summary>
-    private static void SetLayers(Light light, uint mask)
+    internal static void SetLayers(Light light, uint mask)
     {
         var data = light.GetComponent<UniversalAdditionalLightData>();
         data.renderingLayers = mask;
         light.renderingLayerMask = (int)mask;
     }
 
-    private static void AddSpot(Transform parent, Vector3 position, float angle, float range, float intensity)
+    internal static void AddSpot(Transform parent, Vector3 position, float angle, float range, float intensity)
     {
         Light spot = NewLight(parent, "Projecteur", LightType.Spot);
         spot.transform.SetPositionAndRotation(position, Quaternion.LookRotation(Vector3.down, Vector3.forward));
@@ -352,7 +352,7 @@ public static class ArenaLighting
     }
 
     /// <summary>La rampe de Blender (PR1), tangente à la couronne, et ses deux suspentes jusqu'au point d'accroche.</summary>
-    private static void PlaceRig(Transform parent, DecorMeshes.Builder rods, GameObject prefab, Vector3 anchor, float height, Vector3 radial,
+    internal static void PlaceRig(Transform parent, DecorMeshes.Builder rods, GameObject prefab, Vector3 anchor, float height, Vector3 radial,
                                  List<Vector3> lenses)
     {
         radial.y = 0f;
@@ -430,6 +430,11 @@ public static class ArenaLighting
     /// maillage (normales radiales, uv.y de 0 au verre à 1 au bout : DuelArena/FaisceauProjecteur). Ni ombre, ni sonde,
     /// ni lumière cuite (il n'est pas statique : la cuisson le prendrait pour un écran).</summary>
     private static int AddBeams(Transform parent, List<Vector3> lenses, ArenaDecorBuilder.HallGeometry hall, DecorMeshes.Bank bank)
+        => AddBeams(parent, lenses, p => Inside(hall.rail, p), BeamBottom, bank);
+
+    /// <summary>Les faisceaux sous les verres `lenses` dont le pied (x, z) est `inside`, jusqu'à `bottom` (m) : la même
+    /// construction pour l'arène et le stand de tir.</summary>
+    internal static int AddBeams(Transform parent, List<Vector3> lenses, System.Func<Vector2, bool> inside, float bottom, DecorMeshes.Bank bank)
     {
         const int sides = 16;
         var vertices = new List<Vector3>();
@@ -440,15 +445,15 @@ public static class ArenaLighting
         int count = 0;
         foreach (Vector3 lens in lenses)
         {
-            float length = lens.y - BeamBottom;
-            if (length < 1f || !Inside(hall.rail, new Vector2(lens.x, lens.z))) continue;
+            float length = lens.y - bottom;
+            if (length < 1f || !inside(new Vector2(lens.x, lens.z))) continue;
             int start = vertices.Count;
             for (int i = 0; i <= sides; i++)
             {
                 float a = i * Mathf.PI * 2f / sides;
                 var radial = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
                 vertices.Add(lens + radial * BeamRadius);
-                vertices.Add(new Vector3(lens.x, BeamBottom, lens.z) + radial * (BeamRadius + length * spread));
+                vertices.Add(new Vector3(lens.x, bottom, lens.z) + radial * (BeamRadius + length * spread));
                 normals.Add(radial);
                 normals.Add(radial);
                 uvs.Add(new Vector2(i / (float)sides, 0f));
@@ -522,7 +527,7 @@ public static class ArenaLighting
     }
 
     /// <summary>Une applique : un boîtier contre le mur, sa face qui luit vers le bas (sous-maillage 1).</summary>
-    private static void AddSconce(DecorMeshes.Builder b, Vector3 position, Vector3 inward)
+    internal static void AddSconce(DecorMeshes.Builder b, Vector3 position, Vector3 inward)
     {
         Vector3 along = Vector3.Cross(Vector3.up, inward);
         DecorMeshes.OrientedBox(b, position, along, Vector3.up, inward, new Vector3(0.3f, 0.07f, 0.16f));

@@ -312,6 +312,12 @@ Le cadre est un complexe militaire secret et souterrain, désaffecté et fermé,
 
 Le rendu de cette arène a été essayé dans les trois rendus encore ouverts (section 18), robots compris.
 
+**Le stand de tir, la Fosse et la salle de précision sont trois salles du même complexe** (2026-10-28, demandé par l'utilisateur : « la même ambiance que l'arène »), sous la même lumière. *Propositions de Claude, appliquées :*
+- **la salle B-02, le stand de tir** : cinq postes à cloisons de feutre gris sous un auvent bas et ses dalles lumineuses (le stand a été resserré le même jour, l'utilisateur : « trop de pas de tir »), quatorze mannequins d'un mur à l'autre, la ligne de tir et les distances peintes tous les 5 m, un pare-balles d'acier noirci à lames au fond, des déflecteurs inclinés au plafond, des panneaux acoustiques ; dans le coin d'attente, un établi (une arme démontée, un rouleau de ruban) et une étagère (les pièces de rechange du CT-01) ;
+- **la salle B-03, la Fosse**, un centre d'entraînement rapproché : des modules de murs d'acier peint, une cour d'essai, un quai et ses conteneurs, un atelier, une réserve, des bureaux sous un toit, une passerelle ;
+- **la salle B-04, la salle de précision** (demandée par l'utilisateur d'après le « shooting range » de Rainbow Six) : une longue salle basse et nue, béton et feutre, des dalles froides au plafond, un comptoir d'acier et son pupitre (des boutons rétroéclairés), et derrière lui un écran holographique, une télé de lumière froide, blanc bleuté, qui montre la cible de près ; une grande cible ronde, presque aussi large que la salle (3,8 m), de papier blanc cassé et noir, sur un chariot qui roule sur un rail, ses impacts marqués en rouge ;
+- les textes, à relire par l'utilisateur : « LES MANNEQUINS NE RIPOSTENT PAS », « RAMASSEZ VOS DOUILLES », « ATTENTION À LA TÊTE » (sur la gaine qu'on passe accroupi), « CIVILS : NE PAS TIRER », « QUAI 3 », « ZONE D'ENTRAÎNEMENT RAPPROCHÉ », « ATELIER 02 » (sur la caisse à outils), « SALLE DE PRÉCISION », « TOUT IMPACT EST CONSIGNÉ » (au mur du coin d'attente de la salle de précision).
+
 **La créature de l'événement légendaire** (GDD § 10) est **un prototype abandonné ou défectueux** du complexe (2026-10-25).
 
 **Principes de level design**

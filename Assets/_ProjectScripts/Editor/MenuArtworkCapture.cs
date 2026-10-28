@@ -270,6 +270,9 @@ public static class MenuArtworkCapture
             Transform[] parts =
             {
                 root.name == ArenaDecorBuilder.DecorRootName ? root.transform.Find("Salle/Charpente") : null,
+                // Le stand de tir habillé (2026-10-28) : ses poutres et les déflecteurs au-dessus du pas de tir.
+                root.name == ArenaDecorBuilder.DecorRootName ? root.transform.Find("Salle/Poutres") : null,
+                root.name == ArenaDecorBuilder.DecorRootName ? root.transform.Find("Salle/Déflecteurs") : null,
                 root.name == ArenaLighting.RootName ? root.transform.Find("Rampes de projecteurs") : null,
                 root.name == ArenaLighting.RootName ? root.transform.Find("Appliques") : null,
             };
@@ -461,9 +464,13 @@ public static class MenuArtworkCapture
         SceneManager.MoveGameObjectToScene(temp, range);
         var graphs = new List<PlayableGraph>();
         NightMood mood = null;
+        var hidden = new List<Renderer>();
         try
         {
             SceneManager.SetActiveScene(range);
+            Physics.SyncTransforms();
+            // Le stand habillé (2026-10-28) a sa lumière, comme l'arène : la nuit de secours n'est que pour le blocking.
+            bool dressed = HasRoot(range, ArenaLighting.RootName);
 
             // Les mannequins ne se montrent qu'en jeu (TrainingDummy.Awake) : on construit leur apparence ici.
             var buildAppearance = typeof(TrainingDummy).GetMethod("BuildAppearance", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -483,15 +490,18 @@ public static class MenuArtworkCapture
                 .Find(p => p.gameObject.scene == range);
             Transform[] posts = points != null ? TransformArray(points, "spawnPoints") : new Transform[0];
             Camera cam = NewCamera(temp.transform);
-            mood = new NightMood(range);
+            if (!dressed) mood = new NightMood(range);
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = NightMood.Sky;
             if (posts.Length > 0 && posts[0] != null)
             {
                 Transform post = posts[0];
-                foreach (float along in new[] { 7f, 22f, 40f })
-                    mood.AddSpot(temp.transform, post.position + post.forward * along + Vector3.up * 13f, Vector3.down + post.forward * 0.25f, 72f, 40f, 240f, along < 10f);
-                Vector3 eye = post.position + Vector3.up * 1.75f - post.forward * 1.2f + post.right * 0.6f;
+                if (mood != null)
+                    foreach (float along in new[] { 7f, 22f, 40f })
+                        mood.AddSpot(temp.transform, post.position + post.forward * along + Vector3.up * 13f, Vector3.down + post.forward * 0.25f, 72f, 40f, 240f, along < 10f);
+                // À la ligne de tir, entre les cloisons du poste (2026-10-28) : de derrière le poste, elles prenaient le tiers
+                // de l'image ; d'ici, on voit les mannequins d'un mur à l'autre.
+                Vector3 eye = post.position + Vector3.up * 1.75f + post.forward * 1.6f + post.right * 0.6f;
                 cam.fieldOfView = 50f;
                 cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation((post.forward * 30f - Vector3.up * 1.2f).normalized, Vector3.up));
                 artwork.rangeImage = SaveRender(cam, 1280, 720, "Menu_Stand.png", report);
@@ -506,10 +516,15 @@ public static class MenuArtworkCapture
                 foreach (ShootingCourse.Section section in course.Sections) bounds.Encapsulate(section.bounds);
                 Vector3 c = bounds.center;
                 float size = Mathf.Max(bounds.size.x, bounds.size.z);
-                mood.ClearSpots();
-                mood.AddSpot(temp.transform, c + new Vector3(0f, 24f, 0f), Vector3.down, 80f, 60f, 520f, true);
-                mood.AddSpot(temp.transform, c + new Vector3(-bounds.size.x * 0.3f, 20f, -bounds.size.z * 0.3f), Vector3.down, 70f, 50f, 300f, false);
-                mood.AddSpot(temp.transform, c + new Vector3(bounds.size.x * 0.3f, 20f, bounds.size.z * 0.3f), Vector3.down, 70f, 50f, 300f, false);
+                if (mood != null)
+                {
+                    mood.ClearSpots();
+                    mood.AddSpot(temp.transform, c + new Vector3(0f, 24f, 0f), Vector3.down, 80f, 60f, 520f, true);
+                    mood.AddSpot(temp.transform, c + new Vector3(-bounds.size.x * 0.3f, 20f, -bounds.size.z * 0.3f), Vector3.down, 70f, 50f, 300f, false);
+                    mood.AddSpot(temp.transform, c + new Vector3(bounds.size.x * 0.3f, 20f, bounds.size.z * 0.3f), Vector3.down, 70f, 50f, 300f, false);
+                }
+                // Vue d'en haut, au-dessus du plafond (qu'on ne voit que d'en dessous) : ce qui pend dessous cacherait la Fosse.
+                if (dressed) hidden = HideHallTop(range);
                 Vector3 eye = c + new Vector3(-size * 0.45f, size * 0.55f, -size * 0.55f);
                 cam.fieldOfView = 44f;
                 cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation((c - eye).normalized, Vector3.up));
@@ -519,6 +534,7 @@ public static class MenuArtworkCapture
         }
         finally
         {
+            foreach (Renderer r in hidden) if (r != null) r.enabled = true;
             foreach (PlayableGraph graph in graphs)
             {
                 if (graph.IsValid()) graph.Destroy();

@@ -1,0 +1,109 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: RA1_Caoutchouc
+  m_Shader: {fileID: 4800000, guid: c4d48037bfe0a234e899673a0d3818d1, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _MarquageTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Occlusion:
+        m_Texture: {fileID: 2800000, guid: 5b0d6547837ede24fa60802a5f307d2f, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _ACouche: 0
+    - _ADessous: 0
+    - _Bords: 0.5
+    - _Coat: 0
+    - _Contour: 2
+    - _ContourLisse: 1
+    - _Decoupe: 0
+    - _Delavage: 0
+    - _EchelleEclats: 42
+    - _EchelleNuages: 0.7
+    - _Eclats: 0
+    - _EclatsArchi: 0.4
+    - _Espace: 1
+    - _ForceEmission: 0
+    - _Huile: 0
+    - _Huiles: 0
+    - _Metal: 0
+    - _MetalDessous: 1
+    - _Motif: 0
+    - _Nuages: 0.08
+    - _Poussiere: 0
+    - _Rayures: 0
+    - _Retouches: 0
+    - _Rouille: 0
+    - _Rug: 0.9
+    - _RugCouche: 0
+    - _RugDessous: 0.35
+    - _Salete: 0.3
+    - _UsureMarquage: 0.4
+    - _Variation: 0.03
+    - _VariationPanneau: 0.05
+    m_Colors:
+    - _Base: {r: 0.09411762, g: 0.09411762, b: 0.09803919, a: 1}
+    - _Couche: {r: 0, g: 0, b: 0, a: 1}
+    - _CouleurContour: {r: 0.03, g: 0.03, b: 0.044999972, a: 1}
+    - _CouleurEclats: {r: 0.62, g: 0.61, b: 0.58, a: 0}
+    - _CouleurHachures: {r: 0.059999965, g: 0.059999965, b: 0.06999998, a: 1}
+    - _CouleurLisere: {r: 0.72, g: 0.71, b: 0.67, a: 1}
+    - _CouleurMarquage: {r: 0.78, g: 0.77, b: 0.72, a: 1}
+    - _CouleurSoubassement: {r: 0.10999996, g: 0.11499997, b: 0.12499998, a: 1}
+    - _Crasse: {r: 0.45, g: 0.35, b: 0, a: 0}
+    - _DecBords: {r: 0, g: 0, b: 0, a: 0}
+    - _DecCloques: {r: 0, g: 0, b: 0, a: 0}
+    - _DecCoulures: {r: 0, g: 0, b: 0, a: 0}
+    - _DecDelavage: {r: 0, g: 0, b: 0, a: 0}
+    - _DecEclats: {r: 0, g: 0, b: 0, a: 0}
+    - _DecHuile: {r: 0, g: 0, b: 0, a: 0}
+    - _DecHuileDetail: {r: 0, g: 0, b: 0, a: 0}
+    - _DecPoussiere: {r: 0, g: 0, b: 0, a: 0}
+    - _DecRayures1: {r: 0, g: 0, b: 0, a: 0}
+    - _DecRayures2: {r: 0, g: 0, b: 0, a: 0}
+    - _DecRetouches: {r: 0, g: 0, b: 0, a: 0}
+    - _DecRouille: {r: 0, g: 0, b: 0, a: 0}
+    - _DecSuie: {r: 0, g: 0, b: 0, a: 0}
+    - _DecVariation: {r: 46.524216, g: -48.83453, b: 23.599161, a: 0}
+    - _DecZoneCloques: {r: 0, g: 0, b: 0, a: 0}
+    - _DecZoneCoulures: {r: 0, g: 0, b: 0, a: 0}
+    - _DecZoneEclats: {r: 0, g: 0, b: 0, a: 0}
+    - _DecZoneRayures: {r: 0, g: 0, b: 0, a: 0}
+    - _Dessous: {r: 0, g: 0, b: 0, a: 1}
+    - _EmissionCouleur: {r: 0, g: 0, b: 0, a: 1}
+    - _ForcesZones: {r: 0, g: 0, b: 0, a: 0}
+    - _Hachures: {r: 0, g: 0, b: 0, a: 0}
+    - _Impacts: {r: 0, g: 0, b: 0, a: 0}
+    - _Panneau: {r: 2.4, g: 1.2, b: 0.012, a: 0.35}
+    - _Soubassement: {r: 0, g: 0, b: 0, a: 0}
+    - _Suie: {r: 0, g: 0, b: 0, a: 0}
+    - _TeinteRetouches: {r: 0, g: 0, b: 0, a: 1}
+    - _TeinteRouille: {r: 0, g: 0, b: 0, a: 1}
+    - _Trous: {r: 2, g: 2, b: 0.014, a: 0.7}
+    - _Zone0: {r: 0, g: 0, b: 0, a: 0}
+    - _Zone1: {r: 0, g: 0, b: 0, a: 0}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

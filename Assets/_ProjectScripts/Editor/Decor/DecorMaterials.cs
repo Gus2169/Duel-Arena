@@ -164,6 +164,41 @@ public static class DecorMaterials
                 crasse = new Vector4(0.4f, 0.5f, 0.1f, 0.5f), impacts = new Vector4(0.3f, 0.1f, 0.02f, 2.5f),
                 couleurEclats = AcierNu, eclats = 0.6f,
             },
+            // Le stand de tir et la Fosse (2026-10-28). Le pare-balles du fond du stand : des lames d'acier noirci, criblées
+            // d'impacts sur toute leur hauteur.
+            new Recette
+            {
+                nom = "Decor_PareBalles", couleur = new Color(0.085f, 0.088f, 0.095f), rug = 0.7f, metal = 0.25f,
+                motif = 2, panneau = new Vector4(2.0f, 0.5f, 0.006f, 0.3f), variationPanneau = 0.02f,
+                crasse = new Vector4(0.4f, 0.4f, 0.15f, 0.5f), impacts = new Vector4(0.22f, 0.6f, 0.03f, 6.5f),
+                couleurEclats = AcierNu, eclats = 0.5f,
+            },
+            // Les panneaux acoustiques des murs et des cloisons des postes du stand : un feutre gris en dalles, sans trous de
+            // banche (plus clair que le béton : à l'ombre de l'auvent, un feutre sombre se lisait comme du noir).
+            new Recette
+            {
+                nom = "Decor_Acoustique", couleur = new Color(0.3f, 0.305f, 0.315f), rug = 0.97f,
+                motif = 1, panneau = new Vector4(1.2f, 0.6f, 0.01f, 0.5f), trous = Vector4.zero, variationPanneau = 0.06f,
+                nuages = 0.05f, crasse = new Vector4(0.01f, 0f, 0f, 0.2f), impacts = new Vector4(0.45f, 0.08f, 0.03f, 4f), eclats = 0f,
+            },
+            // Les modules de murs de la Fosse (bible § 13, « centre d'entraînement rapproché ») : des panneaux d'acier peint
+            // gris, un soubassement noir et son liseré. Gris moyen : plus sombres, les pièces de l'atelier étaient noires.
+            new Recette
+            {
+                nom = "Decor_Module", couleur = new Color(0.37f, 0.38f, 0.395f), rug = 0.66f,
+                motif = 2, panneau = new Vector4(1.2f, 3.0f, 0.006f, 0.4f), variationPanneau = 0.04f,
+                soubassement = new Vector4(0.35f, 0.35f, 0.4f, 0.4f), couleurSoubassement = Noir,
+                crasse = new Vector4(0.5f, 0.45f, 0.15f, 0.3f), impacts = new Vector4(0.35f, 0.25f, 0.025f, 2.8f),
+                couleurEclats = AcierNu, eclats = 0.5f,
+            },
+            // La gaine qu'on passe accroupi, dans l'allée de la Fosse : de l'acier gris barré de hachures noires.
+            new Recette
+            {
+                nom = "Decor_Gaine", couleur = new Color(0.5f, 0.5f, 0.49f), rug = 0.6f, metal = 0.3f,
+                motif = 2, panneau = new Vector4(1.2f, 0.6f, 0.005f, 0.35f),
+                hachures = new Vector4(1.4f, 2.1f, 0.4f, 0.3f), couleurHachures = Noir,
+                crasse = new Vector4(0.01f, 0f, 0.1f, 0.3f), couleurEclats = AcierNu, eclats = 0.5f,
+            },
             // Les lampes : une face blanche qui éclaire (la lumière du jeu vient de Lights à côté).
             new Recette
             {

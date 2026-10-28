@@ -191,7 +191,7 @@ public class ShootingRangeHud : MonoBehaviour
         // La fenêtre des armes ouverte, rien ne se dessine par-dessus.
         if (ShootingRangePanel.IsOpen || PauseMenu.IsOpen) return;
 
-        Shadowed(new Rect(16f, 16f, 1400f, 24f), "STAND DE TIR   ·   B : armes et accessoires   ·   Échap : menu du stand   ·   la Fosse : porte à droite du poste", helpStyle, Color.white);
+        Shadowed(new Rect(16f, 16f, 1400f, 24f), "STAND DE TIR   ·   B : armes et accessoires   ·   Échap : menu du stand   ·   la Fosse : porte à droite du poste   ·   la salle de précision : porte à gauche", helpStyle, Color.white);
 
         // Les mannequins à l'écran, par priorité : celui qu'on vise, puis ceux qu'on vient de toucher,
         // puis les autres, du plus proche au plus loin. Alignés dans l'axe du stand, leurs étiquettes se

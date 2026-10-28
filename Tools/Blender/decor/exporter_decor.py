@@ -28,7 +28,7 @@ import commun_decor as cd  # noqa: E402
 import exporter_armes as ea  # noqa: E402
 
 kit = cd.kit
-SCRIPTS = ["caisses.py", "projecteurs.py", "balises.py", "marquages.py"]
+SCRIPTS = ["caisses.py", "projecteurs.py", "balises.py", "marquages.py", "mobilier.py"]
 
 
 def arguments():

@@ -1,7 +1,10 @@
+using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Le stand de tir (2026-10-16) : des mannequins qui se relèvent quand on cesse de tirer, qui ont la
@@ -9,7 +12,7 @@ using UnityEngine;
 ///
 /// Ce qui casse ici ne lève aucune erreur : un mannequin qui ne se relève jamais (ou pendant qu'on le
 /// mitraille), un mannequin plus gros ou plus petit qu'un robot (les essais d'armes y mentiraient), un
-/// stand absent de la Build (le bouton du menu ne mène nulle part).
+/// stand absent de la Build (le bouton du menu ne mène nulle part), un mannequin caché derrière un autre.
 /// </summary>
 public class ShootingRangeTests
 {
@@ -99,6 +102,78 @@ public class ShootingRangeTests
             .Cast<System.Text.RegularExpressions.Match>().Select(m => m.Groups[1].Value));
         Assert.GreaterOrEqual(ids.Count, 8, "Garde : les identifiants des mannequins et du stand sont lus.");
         Assert.AreEqual(ids.Count, ids.Distinct().Count(), $"Deux objets réseau du stand partagent un identifiant : {string.Join(", ", ids)}.");
+    }
+
+    /// <summary>
+    /// Les mannequins du stand (2026-10-28 : dispersés d'un mur à l'autre, demandé par l'utilisateur : « ils sont tous au
+    /// centre, un peu en ligne ») se voient tous du poste du milieu, à la ligne de tir : le buste de chaque mannequin à
+    /// découvert, sans mur, cloison, pilier ni barricade devant, et sans un autre mannequin à moins d'un mètre de la ligne
+    /// de visée ; ceux des barricades, la tête seule. Ils occupent toute la largeur du stand, chacun à sa distance, et
+    /// tiennent debout hors des murs.
+    /// </summary>
+    [Test]
+    public void LesMannequinsDuStand_SeVoientTousDuPosteDuMilieu_EtOccupentSaLargeur()
+    {
+        Scene scene = SceneManager.GetSceneByPath(ScenePath);
+        bool opened = !scene.isLoaded;
+        if (opened) scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Additive);
+        try
+        {
+            Physics.SyncTransforms();
+            List<TrainingDummy> dummies = scene.GetRootGameObjects().SelectMany(g => g.GetComponentsInChildren<TrainingDummy>(true))
+                .Where(d => d.Regenerates).ToList();
+            Assert.AreEqual(ShootingRangeBuilder.OpenDummies.Length + ShootingRangeBuilder.CoveredDummies.Length, dummies.Count, "Les mannequins du stand.");
+            int world = LayerMask.GetMask("Default");
+            Vector3 eye = new Vector3(ShootingRangeBuilder.FiringPost.x, 1.65f, -0.4f);
+            int covered = 0;
+            foreach (TrainingDummy dummy in dummies)
+            {
+                Vector3 feet = dummy.transform.position;
+                bool behindCover = ShootingRangeBuilder.CoveredDummies.Any(c => Vector2.Distance(c, new Vector2(feet.x, feet.z)) < 0.01f);
+                Vector3 torso = feet + Vector3.up * 1.2f, head = feet + Vector3.up * 1.62f;
+                bool torsoSeen = !Physics.Linecast(eye, torso, world, QueryTriggerInteraction.Ignore);
+                if (behindCover)
+                {
+                    covered++;
+                    Assert.IsFalse(torsoSeen, $"{dummy.name} : la barricade cache son buste.");
+                    Assert.IsFalse(Physics.Linecast(eye, head, world, QueryTriggerInteraction.Ignore), $"{dummy.name} : sa tête dépasse de la barricade.");
+                }
+                else Assert.IsTrue(torsoSeen, $"{dummy.name} : son buste se voit du poste du milieu.");
+                Vector3 aim = behindCover ? head : torso;
+                foreach (TrainingDummy other in dummies)
+                {
+                    if (other != dummy)
+                        Assert.Greater(LineClearance(eye, aim, other.transform.position), 1f, $"{other.name} est devant {dummy.name}.");
+                }
+                // Tourné vers le poste de tir, debout hors des murs.
+                Vector3 toPost = ShootingRangeBuilder.FiringPost - feet;
+                Assert.Less(Vector3.Angle(dummy.transform.forward, new Vector3(toPost.x, 0f, toPost.z)), 1f, $"{dummy.name} regarde le poste de tir.");
+                Assert.IsFalse(Physics.CheckCapsule(feet + Vector3.up * 0.35f, feet + Vector3.up * 1.45f, 0.3f, world, QueryTriggerInteraction.Ignore),
+                               $"{dummy.name} tient debout hors des murs.");
+            }
+            Assert.AreEqual(ShootingRangeBuilder.CoveredDummies.Length, covered, "Garde : les mannequins couverts sont trouvés.");
+
+            // Dispersés : ils vont d'un mur à l'autre, chacun à sa distance.
+            Rect stand = StandDecorBuilder.StandRoom;
+            Assert.GreaterOrEqual(dummies.Count(d => d.transform.position.x < stand.xMin + 7f), 4, "Des mannequins à gauche.");
+            Assert.GreaterOrEqual(dummies.Count(d => d.transform.position.x > stand.xMax - 7f), 4, "Des mannequins à droite.");
+            Assert.AreEqual(dummies.Count, dummies.Select(d => Mathf.RoundToInt(d.transform.position.z)).Distinct().Count(), "Chaque mannequin à sa distance.");
+        }
+        finally
+        {
+            if (opened) EditorSceneManager.CloseScene(scene, true);
+        }
+    }
+
+    /// <summary>De combien la ligne de visée de `eye` à `target` passe loin (à plat) de l'axe d'un mannequin debout en
+    /// `feet`, là où elle le croise plus bas que le haut de sa tête (1,85 m) ; l'infini si elle ne le croise pas entre l'œil
+    /// et la cible.</summary>
+    private static float LineClearance(Vector3 eye, Vector3 target, Vector3 feet)
+    {
+        Vector2 a = new(eye.x, eye.z), ab = new Vector2(target.x, target.z) - a, c = new(feet.x, feet.z);
+        float t = Vector2.Dot(c - a, ab) / ab.sqrMagnitude;
+        if (t <= 0f || t >= 0.98f || Mathf.Lerp(eye.y, target.y, t) >= feet.y + 1.85f) return float.PositiveInfinity;
+        return Vector2.Distance(a + ab * t, c);
     }
 
     private static string ScriptGuid(string type) => AssetDatabase.FindAssets($"{type} t:MonoScript")

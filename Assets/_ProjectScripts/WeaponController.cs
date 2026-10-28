@@ -1700,6 +1700,7 @@ public class WeaponController : NetworkBehaviour
 #if UNITY_EDITOR
                 if (i == 0) diagHitWithRewind = bodyHit != null;
 #endif
+                if (hitSomething && bodyHit == null) ServerWorldImpact?.Invoke(ends[i], normals[i]);
                 if (bodyHit == null) continue;
                 Health target = bodyHit.GetComponentInParent<Health>();
                 if (target == null)
@@ -1816,6 +1817,10 @@ public class WeaponController : NetworkBehaviour
     /// <summary>Serveur : un tir accepté, et ses balles ou plombs (2026-10-16). La Fosse en tire la
     /// précision (ShootingCourse) ; rien du jeu ne s'y fie.</summary>
     public static event System.Action<WeaponController, int> ServerShotFired;
+
+    /// <summary>Serveur : chaque balle (ou plomb) arrêtée par le décor, au point et à la normale de l'impact (2026-10-28).
+    /// La cible de la salle de précision du stand y marque ses impacts (AimRange) ; rien du jeu ne s'y fie.</summary>
+    public static event System.Action<Vector3, Vector3> ServerWorldImpact;
 
     /// <summary>Ajoute les dégâts d'un impact à sa cible : zone touchée (tête, buste, jambes), distance
     /// et charge du tir (WeaponData.DamageAt).</summary>

@@ -207,7 +207,7 @@ public static class ArenaDecorBuilder
     /// vient de sa place : le même à chaque reconstruction. Faux si la taille n'a pas de modèle (ou s'il n'est pas
     /// importé) : le bloc est alors habillé comme les autres.
     /// </summary>
-    private static bool PlaceCrate(Transform parent, Transform block, Bounds bounds)
+    internal static bool PlaceCrate(Transform parent, Transform block, Bounds bounds)
     {
         Vector3 size = bounds.size;
         bool cube = Mathf.Abs(size.x - size.y) < 0.02f && Mathf.Abs(size.x - size.z) < 0.02f;

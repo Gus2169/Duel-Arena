@@ -13,6 +13,7 @@ dans l'humour sec de la bible (§ 14 : anciennes consignes, numéros de test).
 import os
 import sys
 
+import bpy
 from mathutils import Vector
 
 sys.dont_write_bytecode = True
@@ -35,16 +36,69 @@ TEXTES = [
     ("Essai", "ESSAI N° 4471"),
     ("Casque", "CASQUE ANTIBRUIT OBLIGATOIRE"),
     ("Cible", "CIBLE"),
-] + [(f"M{d}", f"{d} M") for d in (10, 20, 30, 40, 50, 60)]
+    # Le stand de tir et la Fosse (2026-10-28) : la salle B-02, ses postes et ses vieilles consignes ; la Fosse, salle
+    # B-03, ses consignes de parcours et le nom de ses pièces.
+    ("B02", "B-02"),
+    ("StandDeTir", "STAND DE TIR"),
+    ("LigneDeTir", "LIGNE DE TIR"),
+    ("PareBalles", "PARE-BALLES"),
+    ("Riposte", "LES MANNEQUINS NE RIPOSTENT PAS"),
+    ("Douilles", "RAMASSEZ VOS DOUILLES"),
+    ("Condamne", "ACCÈS CONDAMNÉ"),
+    ("LaFosse", "LA FOSSE"),
+    ("B03", "B-03"),
+    ("Entrainement", "ZONE D'ENTRAÎNEMENT RAPPROCHÉ"),
+    ("Depart", "DÉPART"),
+    ("Arrivee", "ARRIVÉE"),
+    ("Franchir", "FRANCHIR"),
+    ("Accroupi", "ACCROUPI"),
+    ("Tete", "ATTENTION À LA TÊTE"),
+    ("Civils", "CIVILS : NE PAS TIRER"),
+    ("Quai", "QUAI 3"),
+    ("Atelier", "ATELIER"),
+    ("Reserve", "RÉSERVE"),
+    ("Bureaux", "BUREAUX"),
+    # La salle de précision (2026-10-28) : la salle B-04, sa consigne, le bouton qui efface la cible.
+    ("B04", "B-04"),
+    ("SallePrecision", "SALLE DE PRÉCISION"),
+    ("Precision", "PRÉCISION"),
+    ("Consigne", "TOUT IMPACT EST CONSIGNÉ"),
+    ("Effacer", "EFFACER"),
+    # Les distances, chaque mètre de 5 à 60 : les lignes du stand, les mannequins, les boutons du pupitre.
+] + [(f"M{d}", f"{d} M") for d in range(5, 61)] + [(f"N{n}", f"{n}") for n in range(1, 10)]
+
+
+def hauteur_boite(contenu, police, scene):
+    """La hauteur (m) de la boîte d'un texte de taille 1 : kit.texte met cette boîte à la hauteur demandée."""
+    cu = bpy.data.curves.new("tmp_mesure", "FONT")
+    cu.body = contenu
+    cu.font = police
+    cu.size = 1.0
+    ob = bpy.data.objects.new("tmp_mesure", cu)
+    scene.collection.objects.link(ob)
+    dg = scene.view_layers[0].depsgraph
+    dg.update()
+    ev = ob.evaluated_get(dg)
+    me = ev.to_mesh()
+    ys = [v.co.y for v in me.vertices]
+    h = max(ys) - min(ys)
+    ev.to_mesh_clear()
+    bpy.data.objects.remove(ob)
+    bpy.data.curves.remove(cu)
+    return h
 
 
 def marquages(scene):
     at = cd.AtelierDecor(scene, "MQ1", "Marquages peints", cd.materiaux())
     at.sans_occlusion = True
     pochoir = cd.police(cd.POLICE_POCHOIR)
+    # kit.texte met la boîte du texte à la hauteur demandée : un accent (DÉPART) ou une jambe (le Q de QUAI) la
+    # grandissent, et le texte rapetissait. Ici, chaque texte a la hauteur de capitale de son « H » à 1 m (2026-10-28).
+    capitale = hauteur_boite("H", pochoir, at.scene)
     for nom, texte in TEXTES:
         pc = at.piece(nom, "MarquageBlanc")
-        kit.texte(pc, texte, pochoir, 1.0, Vector((0, 0, 0)), X, Z, mat="MarquageBlanc", decalage=0.0, scene=at.scene)
+        hauteur = hauteur_boite(texte, pochoir, at.scene) / capitale
+        kit.texte(pc, texte, pochoir, hauteur, Vector((0, 0, 0)), X, Z, mat="MarquageBlanc", decalage=0.0, scene=at.scene)
         at.objet(pc, angle=None)
     # une flèche, la pointe vers +X (la droite du lecteur), 1 m de haut
     pc = at.piece("Fleche", "MarquageBlanc")
