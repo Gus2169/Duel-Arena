@@ -391,14 +391,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 927221606
+  GlobalObjectIdHash: 1803437822
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
   Ownership: 1
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
-  m_InScenePlaced: 1
+  m_InScenePlaced: 0
   ActiveSceneSynchronization: 0
   SceneMigrationSynchronization: 0
   SpawnWithObservers: 1
@@ -526,6 +526,7 @@ MonoBehaviour:
   shatterFx: {fileID: 3370525683774390053}
   restHover: 0.3
   restSpinSpeed: 90
+  trajectoryMaterial: {fileID: 2100000, guid: b7448b618f880a64f813e190a73c36a1, type: 2}
   gravity: -14
   rockRadius: 0.09
   powerUpRadius: 0.16

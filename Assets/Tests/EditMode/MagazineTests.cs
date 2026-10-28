@@ -47,6 +47,21 @@ public class MagazineTests
         Assert.AreEqual(12, m.ammo);
     }
 
+    /// <summary>Le rechargement automatique (2026-10-27, demandé par l'utilisateur) : la gâchette pressée
+    /// chargeur vide recharge ; une arme automatique, dès la dernière balle, tant qu'on tient la gâchette.</summary>
+    [Test]
+    public void AVide_LaGachetteRecharge_CommeDansLesFPSClassiques()
+    {
+        Assert.IsTrue(WeaponController.AutoReloadWanted(true, true, false, false, 0, false), "Une arme au coup par coup : l'appui à vide recharge.");
+        Assert.IsTrue(WeaponController.AutoReloadWanted(false, true, true, false, 0, false), "Une arme automatique : la gâchette tenue sur la dernière balle.");
+        Assert.IsFalse(WeaponController.AutoReloadWanted(false, true, false, false, 0, false),
+            "Au coup par coup, la gâchette restée enfoncée depuis le dernier tir ne recharge pas : il faut un appui.");
+        Assert.IsFalse(WeaponController.AutoReloadWanted(true, true, true, false, 1, false), "Une balle reste : on tire.");
+        Assert.IsFalse(WeaponController.AutoReloadWanted(true, true, true, false, 0, true), "Déjà en train de recharger.");
+        Assert.IsFalse(WeaponController.AutoReloadWanted(true, true, true, true, 0, false), "Une arme laser se vide d'elle-même.");
+        Assert.IsFalse(WeaponController.AutoReloadWanted(false, false, true, false, 0, false), "Sans la gâchette, rien.");
+    }
+
     [Test]
     public void ChargeurPlein_LeRechargementEstRefuse()
     {

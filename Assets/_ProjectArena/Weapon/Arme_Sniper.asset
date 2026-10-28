@@ -12,11 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe33acf964d9c684b81db736a07bf7db, type: 3}
   m_Name: Arme_Sniper
   m_EditorClassIdentifier: DuelArena.Runtime::WeaponData
-  weaponName: Sniper
+  weaponName: FP-12
+  family: 1
+  role: "\xE0 verrou, lunette \xD74, la r\xE9f\xE9rence"
   modelPrefab: {fileID: 2057814579988173868, guid: cfd87888a032a4143b13a715a7a5016b, type: 3}
-  otherModels:
-  - {fileID: 3395265809683361253, guid: 307ff8850836d6a4b9b7daad2dea6a76, type: 3}
-  - {fileID: 548841584845377886, guid: 7531b2aea3090224bbf22386d9b8b2d6, type: 3}
   acceptedAttachments: 14
   acceptedSights: 7
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
@@ -72,55 +71,17 @@ MonoBehaviour:
   reloadEndSounds: []
   reloadEndDelay: 0.3
   reloadVolume: 0.8
+  heatPerShot: 0
+  heatCoolDelay: 0.3
+  heatCoolTime: 2.5
+  overheatVentDuration: 2.5
+  chargeTime: 0
+  unchargedDamage: 0.3
+  chargeSound: {fileID: 0}
+  chargeVolume: 0.7
   sprintToFireTime: 0.45
-  verticalRecoilPattern:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 12
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  horizontalRecoilPattern:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0.15
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 12
-      value: 0.15
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
+  recoilPattern:
+  - {x: 0.15, y: 1}
   recoilPerShotDegrees: 6
   recoilRecoverySpeed: 9
   recoilResetDelay: 0.35

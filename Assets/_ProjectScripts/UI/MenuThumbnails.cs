@@ -7,7 +7,8 @@ using UnityEngine.Rendering;
 
 /// <summary>
 /// Les vignettes du menu (2026-10-17, pour les maquettes de l'utilisateur, toutes faites d'images) : le robot
-/// dans chaque couleur, dans une pose, en pied ou en buste ; chaque arme et chaque accessoire, de profil.
+/// dans chaque couleur, dans une pose, en pied ou en buste ; chaque arme et chaque accessoire, de profil ; et
+/// ce qu'on voit en visée (2026-10-27) : l'arme vue de l'œil qui vise, le réticule de son viseur allumé.
 ///
 /// Rendues dans le menu, à partir des vrais préfabs (le robot du préfab joueur, les armes de la panoplie,
 /// les accessoires du catalogue), jamais cuites à la main : elles suivent le jour où un modèle change. Une
@@ -17,6 +18,9 @@ using UnityEngine.Rendering;
 /// Rendues à la demande, deux par image au plus (le menu ne saccade pas quand un écran en demande vingt),
 /// puis gardées : une même vignette demandée deux fois ne se rend qu'une fois. Chaque rendu passe par une
 /// texture à anticrénelage, recopiée dans une texture simple, la seule gardée.
+///
+/// Les portraits des armes (WeaponPortraits, 2026-10-27), eux, sont rendus tous d'un coup à l'ouverture du
+/// menu, et lui survivent : la préparation d'une manche et la fenêtre du stand les montrent.
 /// </summary>
 public class MenuThumbnails : MonoBehaviour
 {
@@ -59,6 +63,17 @@ public class MenuThumbnails : MonoBehaviour
     private static readonly Color32 SilhouettePaint = new Color32(46, 52, 60, 255);
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
+    /// <summary>Le champ de la caméra des vignettes de profil (degrés, vertical).</summary>
+    private const float ShotFieldOfView = 22f;
+    /// <summary>En visée, la part du cadre que prend la vitre du viseur : assez de son corps autour pour le
+    /// reconnaître, assez grande pour lire le réticule.</summary>
+    private const float LensFill = 0.55f;
+    /// <summary>Sans viseur, la part du cadre que prennent la hausse et le guidon.</summary>
+    private const float IronSightsFill = 0.8f;
+    /// <summary>Sans viseur, le demi-champ au plus (tangente) : la hausse d'un fusil est si près de l'œil que sa
+    /// boîte ouvrirait le cadre à 55°, le guidon s'y perdrait.</summary>
+    private const float IronSightsMaxTangent = 0.21f;
+
     private sealed class Job
     {
         public string key;
@@ -84,12 +99,19 @@ public class MenuThumbnails : MonoBehaviour
             Destroy(texture);
         }
         cache.Clear();
-        if (work != null)
-        {
-            work.Release();
-            Destroy(work);
-        }
+        ReleaseWork();
     }
+
+    private void ReleaseWork()
+    {
+        if (work == null) return;
+        work.Release();
+        if (Application.isPlaying) Destroy(work);
+        else DestroyImmediate(work);
+        work = null;
+    }
+
+    private void Start() => PrepareWeaponPortraits();
 
     private void Update()
     {
@@ -114,18 +136,19 @@ public class MenuThumbnails : MonoBehaviour
     {
         AnimationClip pose = shot.pose != null ? shot.pose : idleClip;
         Color32 paint = shot.silhouette ? SilhouettePaint : shot.paint;
-        string key = $"robot/{(int)shot.chassis}/{paint.r},{paint.g},{paint.b}/{(pose != null ? pose.name : "-")}/{shot.time:0.00}/{shot.yaw:0}/{shot.framing}/{shot.width}x{shot.height}";
+        // Le rendu (RenderStyle) est dans la clé : une vignette faite avant un changement de rendu ne sert plus.
+        string key = $"robot/{(int)RenderStyle.Current}/{(int)shot.chassis}/{paint.r},{paint.g},{paint.b}/{(pose != null ? pose.name : "-")}/{shot.time:0.00}/{shot.yaw:0}/{shot.framing}/{shot.width}x{shot.height}";
         Request(key, () => RenderRobot(shot, pose, paint), ready);
     }
 
-    /// <summary>L'arme `data`, dans son modèle `model` et sa finition, avec les accessoires choisis pour la
-    /// place `slot` (aucun si `attachments` vaut WeaponAttachments.None), de profil.</summary>
-    public void Weapon(WeaponData data, int model, WeaponFinish finish, WeaponAttachments attachments, int slot, int width, int height, Action<Texture> ready)
+    /// <summary>L'arme `data`, dans sa finition, avec les accessoires choisis pour la place `slot` (aucun
+    /// si `attachments` vaut WeaponAttachments.None), de profil.</summary>
+    public void Weapon(WeaponData data, WeaponFinish finish, WeaponAttachments attachments, int slot, int width, int height, Action<Texture> ready)
     {
         if (data == null) { ready?.Invoke(null); return; }
         string fitted = $"{attachments.Sight(slot)}.{(int)attachments.Grip(slot)}.{(attachments.Laser(slot) ? 1 : 0)}.{(attachments.ExtendedMagazine(slot) ? 1 : 0)}";
-        string key = $"arme/{data.name}/{model}/{(int)finish}/{fitted}/{width}x{height}";
-        Request(key, () => RenderWeapon(data, model, finish, attachments, slot, width, height), ready);
+        string key = $"arme/{data.name}/{(int)finish}/{fitted}/{width}x{height}";
+        Request(key, () => RenderWeapon(data, finish, attachments, slot, width, height), ready);
     }
 
     /// <summary>Un accessoire seul, dans la finition de l'arme qui le porte, de profil.</summary>
@@ -134,6 +157,106 @@ public class MenuThumbnails : MonoBehaviour
         if (prefab == null) { ready?.Invoke(null); return; }
         string key = $"accessoire/{prefab.name}/{(int)finish}/{width}x{height}";
         Request(key, () => RenderProp(prefab, finish, width, height), ready);
+    }
+
+    /// <summary>
+    /// Ce qu'on voit en visée (2026-10-27, demandé par l'utilisateur, « comme dans Rainbow Six ») : l'arme
+    /// `data` dans sa finition, avec le viseur choisi pour la place `slot` (sa mire à elle sans viseur), vue de
+    /// l'œil qui vise. L'œil est là où la vue subjective le met (AttachmentMount.SightOf : derrière la mire du
+    /// viseur, à sa distance de l'œil, ou derrière la hausse ; un pistolet à bout de bras), et regarde dans l'axe.
+    /// Le réticule est celui du jeu, dessiné à l'infini par la vitre (DuelArena/ViseurReticule) : il tombe au
+    /// centre, à sa vraie taille par rapport à la fenêtre. Seuls le viseur et le laser (sur le flanc) peuvent se
+    /// voir de l'œil : la poignée et le chargeur, sous l'arme, ne comptent pas.
+    ///
+    /// Rendue sur `background`, le fond de ce qui la montre : la vitre, teintée et à peine opaque, s'y compose
+    /// comme en jeu. Sur un fond transparent, l'interface (qui ne lit pas l'alpha prémultiplié) perdait la
+    /// teinte des vitres et amincissait le bord du réticule.
+    /// </summary>
+    public void SightPicture(WeaponData data, WeaponFinish finish, WeaponAttachments attachments, int slot, int width, int height,
+                             Color32 background, Action<Texture> ready)
+    {
+        if (data == null) { ready?.Invoke(null); return; }
+        WeaponAttachments seen = SeenFromTheEye(attachments, slot);
+        string key = $"visee/{data.name}/{(int)finish}/{seen.Sight(slot)}.{(seen.Laser(slot) ? 1 : 0)}"
+                     + $"/{background.r},{background.g},{background.b},{background.a}/{width}x{height}";
+        Request(key, () => RenderSightPicture(data, finish, seen, slot, width, height, background), ready);
+    }
+
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+    /// <summary>Tests : ce qu'on voit en visée, rendu tout de suite sur un fond transparent, hors de la file et du
+    /// cache. La texture rendue est à détruire par l'appelant.</summary>
+    public RenderTexture RenderSightPictureNow(WeaponData data, WeaponFinish finish, WeaponAttachments attachments, int slot, int width, int height)
+    {
+        try { return data != null ? RenderSightPicture(data, finish, SeenFromTheEye(attachments, slot), slot, width, height, Color.clear) : null; }
+        finally { ReleaseWork(); }
+    }
+#endif
+
+    private static WeaponAttachments SeenFromTheEye(WeaponAttachments attachments, int slot)
+        => WeaponAttachments.None.WithSight(slot, attachments.Sight(slot)).WithLaser(slot, attachments.Laser(slot));
+
+    /// <summary>
+    /// Les portraits des armes de la panoplie (WeaponPortraits, 2026-10-27, demandés par l'utilisateur) :
+    /// chacune de profil, sans accessoire, dans sa finition d'origine. Rendus tout de suite, hors de la file : le
+    /// stand ouvert dans l'Editor quitte le menu dès sa première image (ShootingRangeBootstrap). Une arme déjà
+    /// portraiturée ne se rend plus : une fois par lancement du jeu.
+    /// </summary>
+    public void PrepareWeaponPortraits()
+    {
+        WeaponController arms = playerPrefab != null ? playerPrefab.GetComponentInChildren<WeaponController>(true) : null;
+        if (arms == null) return;
+        try
+        {
+            IReadOnlyList<WeaponData> loadout = arms.Loadout;
+            for (int slot = 0; slot < loadout.Count; slot++)
+            {
+                WeaponData data = loadout[slot];
+                if (data == null || WeaponPortraits.Of(data) != null) continue;
+                RenderTexture rendered = null;
+                try
+                {
+                    rendered = RenderWeapon(data, WeaponFinish.Origine, WeaponAttachments.None, slot, WeaponPortraits.Width, WeaponPortraits.Height, whole: true);
+                    if (rendered != null) WeaponPortraits.Keep(data, ToTexture(rendered, $"Portrait {data.weaponName}"));
+                }
+                catch (Exception e) { Debug.LogWarning($"[Menu] Portrait de {data.weaponName} : {e}", this); }
+                finally
+                {
+                    if (rendered != null)
+                    {
+                        // Graphics.Blit (Capture) l'a laissée active.
+                        if (RenderTexture.active == rendered) RenderTexture.active = null;
+                        rendered.Release();
+                        if (Application.isPlaying) Destroy(rendered);
+                        else DestroyImmediate(rendered);
+                    }
+                }
+            }
+        }
+        finally { ReleaseWork(); }
+    }
+
+    /// <summary>Une copie de `rendered` en mémoire : elle passe d'une scène à l'autre, et se dessine aussi bien
+    /// dans l'interface que dans OnGUI.</summary>
+    private static Texture2D ToTexture(RenderTexture rendered, string name)
+    {
+        var texture = new Texture2D(rendered.width, rendered.height, TextureFormat.RGBA32, false)
+        {
+            name = name,
+            wrapMode = TextureWrapMode.Clamp,
+            hideFlags = HideFlags.HideAndDontSave,
+        };
+        RenderTexture previous = RenderTexture.active;
+        try
+        {
+            RenderTexture.active = rendered;
+            texture.ReadPixels(new Rect(0, 0, rendered.width, rendered.height), 0, 0, false);
+            texture.Apply(false);
+        }
+        finally
+        {
+            RenderTexture.active = previous;
+        }
+        return texture;
     }
 
     private void Request(string key, Func<RenderTexture> render, Action<Texture> ready)
@@ -205,9 +328,12 @@ public class MenuThumbnails : MonoBehaviour
         }
     }
 
-    private RenderTexture RenderWeapon(WeaponData data, int model, WeaponFinish finish, WeaponAttachments attachments, int slot, int width, int height)
+    /// <summary>L'arme de profil. Les vignettes de l'armurerie la serrent (ses bouts peuvent toucher le cadre) ;
+    /// `whole` la montre entière, avec sa marge : les portraits (WeaponPortraits).</summary>
+    private RenderTexture RenderWeapon(WeaponData data, WeaponFinish finish, WeaponAttachments attachments, int slot, int width, int height,
+                                       bool whole = false)
     {
-        GameObject prefab = data.ModelPrefabFor(model);
+        GameObject prefab = data.modelPrefab;
         if (prefab == null) return null;
         EnsureRig();
         GameObject weapon = Instantiate(prefab, stage, false);
@@ -217,8 +343,9 @@ public class MenuThumbnails : MonoBehaviour
             if (weapon.TryGetComponent(out WeaponFinishes finishes)) finishes.Apply(finish);
             AttachmentMount.Apply(weapon.transform, data, attachments, slot, finish);
             Bounds bounds = RendererBounds(weapon);
-            return Shoot(bounds.center, bounds.extents.y, new Vector2(bounds.extents.x, bounds.extents.z).magnitude * 0.82f,
-                new Vector3(1f, 0.08f, 0f), width, height, 1.04f);
+            // Vue de côté, la longueur de l'arme (le long du canon, +Z) est sa largeur à l'écran.
+            float radius = whole ? bounds.extents.z : new Vector2(bounds.extents.x, bounds.extents.z).magnitude * 0.82f;
+            return Shoot(bounds.center, bounds.extents.y, radius, new Vector3(1f, 0.08f, 0f), width, height, whole ? 1.06f : 1.04f);
         }
         finally
         {
@@ -242,6 +369,92 @@ public class MenuThumbnails : MonoBehaviour
         {
             DestroyImmediate(prop);
         }
+    }
+
+    private RenderTexture RenderSightPicture(WeaponData data, WeaponFinish finish, WeaponAttachments attachments, int slot, int width, int height,
+                                             Color background)
+    {
+        GameObject prefab = data.modelPrefab;
+        if (prefab == null) return null;
+        EnsureRig();
+        ClampSize(ref width, ref height);
+        GameObject weapon = Instantiate(prefab, stage, false);
+        try
+        {
+            Prepare(weapon);
+            if (weapon.TryGetComponent(out WeaponFinishes finishes)) finishes.Apply(finish);
+            AttachmentMount.Apply(weapon.transform, data, attachments, slot, finish);
+
+            Transform sight = AttachmentMount.SightOf(weapon.GetComponent<WeaponModel>(), out float eyeDistance);
+            if (sight == null) return null;
+            Transform eye = shotCamera.transform;
+            eye.SetPositionAndRotation(sight.position - sight.forward * eyeDistance, Quaternion.LookRotation(sight.forward, sight.up));
+
+            // Cadrée sur la fenêtre du viseur ; sans viseur, sur ce qu'un viseur cache : la hausse et le guidon.
+            float aspect = (float)width / height;
+            WeaponAttachment mounted = AttachmentMount.Mounted(weapon.transform, AttachmentCategory.Sight);
+            float tangent;
+            if (mounted != null && mounted.Lens != null)
+            {
+                tangent = FrameTangent(new[] { mounted.Lens }, eye.worldToLocalMatrix, aspect, LensFill);
+            }
+            else
+            {
+                tangent = FrameTangent(IronSights(weapon.transform, data), eye.worldToLocalMatrix, aspect, IronSightsFill);
+                tangent = tangent > 0f ? Mathf.Min(tangent, IronSightsMaxTangent) : IronSightsMaxTangent;
+            }
+            if (tangent <= 0f) return null;
+
+            shotCamera.fieldOfView = 2f * Mathf.Atan(tangent) * Mathf.Rad2Deg;
+            shotCamera.aspect = aspect;
+            shotCamera.nearClipPlane = 0.005f;
+            shotCamera.farClipPlane = 4f;
+            shotCamera.backgroundColor = background;
+            return Capture(width, height);
+        }
+        finally
+        {
+            shotCamera.backgroundColor = Color.clear;
+            DestroyImmediate(weapon);
+        }
+    }
+
+    /// <summary>Les pièces de l'arme qu'un viseur cache (WeaponAttachment.Hides) : sa hausse et son guidon.</summary>
+    private static List<Renderer> IronSights(Transform weapon, WeaponData data)
+    {
+        var renderers = new List<Renderer>();
+        GameObject anySight = data.attachmentCatalog != null ? data.attachmentCatalog.SightPrefab(1) : null;
+        if (anySight == null || !anySight.TryGetComponent(out WeaponAttachment sight)) return renderers;
+        foreach (string part in sight.Hides)
+        {
+            Transform piece = weapon.Find(part);
+            if (piece != null) renderers.AddRange(piece.GetComponentsInChildren<Renderer>());
+        }
+        return renderers;
+    }
+
+    /// <summary>
+    /// La tangente du demi-champ vertical d'une caméra (de repère `worldToView`, de rapport `aspect`) qui fait
+    /// tenir `framed` sur la part `fill` du cadre, l'axe au centre : la plus forte pente, verticale ou
+    /// horizontale, des coins de leurs boîtes devant elle. 0 s'il n'y a rien devant elle.
+    /// </summary>
+    private static float FrameTangent(IEnumerable<Renderer> framed, Matrix4x4 worldToView, float aspect, float fill)
+    {
+        float right = 0f, up = 0f;
+        foreach (Renderer r in framed)
+        {
+            Bounds local = r.localBounds;
+            Matrix4x4 toView = worldToView * r.localToWorldMatrix;
+            for (int corner = 0; corner < 8; corner++)
+            {
+                Vector3 p = toView.MultiplyPoint3x4(local.center + Vector3.Scale(local.extents, new Vector3(
+                    (corner & 1) == 0 ? -1f : 1f, (corner & 2) == 0 ? -1f : 1f, (corner & 4) == 0 ? -1f : 1f)));
+                if (p.z < 0.01f) continue;
+                right = Mathf.Max(right, Mathf.Abs(p.x / p.z));
+                up = Mathf.Max(up, Mathf.Abs(p.y / p.z));
+            }
+        }
+        return Mathf.Max(up, right / aspect) / fill;
     }
 
     /// <summary>Un préfab d'arme ou d'accessoire posé sur le plateau : sur le layer `Preview`, ses ombres
@@ -274,13 +487,13 @@ public class MenuThumbnails : MonoBehaviour
     /// dans la texture de travail, et en garde une copie.</summary>
     private RenderTexture Shoot(Vector3 center, float halfHeight, float radius, Vector3 direction, int width, int height, float margin)
     {
-        width = Mathf.Clamp(width, 16, 2048);
-        height = Mathf.Clamp(height, 16, 2048);
+        ClampSize(ref width, ref height);
         halfHeight = Mathf.Max(halfHeight, 0.01f);
         radius = Mathf.Max(radius, 0.01f);
 
         float aspect = (float)width / height;
-        float tanV = Mathf.Tan(shotCamera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+        shotCamera.fieldOfView = ShotFieldOfView;
+        float tanV = Mathf.Tan(ShotFieldOfView * 0.5f * Mathf.Deg2Rad);
         float tanH = tanV * aspect;
         float distance = Mathf.Max(halfHeight / tanV, radius / tanH) * margin + radius * 0.3f;
         Vector3 dir = direction.normalized;
@@ -289,10 +502,22 @@ public class MenuThumbnails : MonoBehaviour
         shotCamera.aspect = aspect;
         shotCamera.nearClipPlane = Mathf.Max(0.01f, distance - radius * 3f);
         shotCamera.farClipPlane = distance + radius * 3f + 1f;
+        return Capture(width, height);
+    }
 
+    private static void ClampSize(ref int width, ref int height)
+    {
+        width = Mathf.Clamp(width, 16, 2048);
+        height = Mathf.Clamp(height, 16, 2048);
+    }
+
+    /// <summary>Rend la caméra des vignettes, telle qu'elle est posée, dans la texture de travail, et en garde
+    /// une copie.</summary>
+    private RenderTexture Capture(int width, int height)
+    {
         if (work == null || work.width != width || work.height != height)
         {
-            if (work != null) { work.Release(); Destroy(work); }
+            ReleaseWork();
             work = new RenderTexture(width, height, 24) { name = "Vignette (travail)", antiAliasing = 4 };
             work.Create();
         }
@@ -331,10 +556,10 @@ public class MenuThumbnails : MonoBehaviour
         shotCamera.enabled = false;
         shotCamera.cullingMask = 1 << PreviewLayer.Index;
         shotCamera.clearFlags = CameraClearFlags.SolidColor;
-        shotCamera.backgroundColor = new Color(0f, 0f, 0f, 0f);
+        shotCamera.backgroundColor = Color.clear;
         // Sans HDR, URP garde la couche alpha jusqu'à la texture (voir PreviewStage).
         shotCamera.allowHDR = false;
         shotCamera.allowMSAA = true;
-        shotCamera.fieldOfView = 22f;
+        shotCamera.fieldOfView = ShotFieldOfView;
     }
 }

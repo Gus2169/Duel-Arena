@@ -233,6 +233,16 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
                     ""priority"": 0
                 },
                 {
+                    ""name"": ""SwapItem"",
+                    ""type"": ""Button"",
+                    ""id"": ""ad26ddea-db1a-46bd-9f46-a216d6cbd8a0"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false,
+                    ""priority"": 0
+                },
+                {
                     ""name"": ""Weapon1"",
                     ""type"": ""Button"",
                     ""id"": ""95ac448b-27d8-4a2b-9dc1-f3cb6695f0a4"",
@@ -474,6 +484,28 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
                 },
                 {
                     ""name"": """",
+                    ""id"": ""e2daf387-27ce-405a-bc55-c775cc36f8dd"",
+                    ""path"": ""<Mouse>/scroll/up"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""SwapItem"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""e9f6bdbf-54b8-45c0-b647-1ef4abe888db"",
+                    ""path"": ""<Mouse>/scroll/down"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""SwapItem"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
                     ""id"": ""32ea9705-909a-49a6-92dc-22258913530f"",
                     ""path"": ""<Keyboard>/1"",
                     ""interactions"": """",
@@ -537,6 +569,7 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
         m_Gameplay_Reload = m_Gameplay.FindAction("Reload", throwIfNotFound: true);
         m_Gameplay_Melee = m_Gameplay.FindAction("Melee", throwIfNotFound: true);
         m_Gameplay_Interact = m_Gameplay.FindAction("Interact", throwIfNotFound: true);
+        m_Gameplay_SwapItem = m_Gameplay.FindAction("SwapItem", throwIfNotFound: true);
         m_Gameplay_Weapon1 = m_Gameplay.FindAction("Weapon1", throwIfNotFound: true);
         m_Gameplay_Weapon2 = m_Gameplay.FindAction("Weapon2", throwIfNotFound: true);
         m_Gameplay_Weapon3 = m_Gameplay.FindAction("Weapon3", throwIfNotFound: true);
@@ -635,6 +668,7 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
     private readonly InputAction m_Gameplay_Reload;
     private readonly InputAction m_Gameplay_Melee;
     private readonly InputAction m_Gameplay_Interact;
+    private readonly InputAction m_Gameplay_SwapItem;
     private readonly InputAction m_Gameplay_Weapon1;
     private readonly InputAction m_Gameplay_Weapon2;
     private readonly InputAction m_Gameplay_Weapon3;
@@ -706,6 +740,10 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "Gameplay/Interact".
         /// </summary>
         public InputAction @Interact => m_Wrapper.m_Gameplay_Interact;
+        /// <summary>
+        /// Provides access to the underlying input action "Gameplay/SwapItem".
+        /// </summary>
+        public InputAction @SwapItem => m_Wrapper.m_Gameplay_SwapItem;
         /// <summary>
         /// Provides access to the underlying input action "Gameplay/Weapon1".
         /// </summary>
@@ -790,6 +828,9 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
             @Interact.started += instance.OnInteract;
             @Interact.performed += instance.OnInteract;
             @Interact.canceled += instance.OnInteract;
+            @SwapItem.started += instance.OnSwapItem;
+            @SwapItem.performed += instance.OnSwapItem;
+            @SwapItem.canceled += instance.OnSwapItem;
             @Weapon1.started += instance.OnWeapon1;
             @Weapon1.performed += instance.OnWeapon1;
             @Weapon1.canceled += instance.OnWeapon1;
@@ -855,6 +896,9 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
             @Interact.started -= instance.OnInteract;
             @Interact.performed -= instance.OnInteract;
             @Interact.canceled -= instance.OnInteract;
+            @SwapItem.started -= instance.OnSwapItem;
+            @SwapItem.performed -= instance.OnSwapItem;
+            @SwapItem.canceled -= instance.OnSwapItem;
             @Weapon1.started -= instance.OnWeapon1;
             @Weapon1.performed -= instance.OnWeapon1;
             @Weapon1.canceled -= instance.OnWeapon1;
@@ -1005,6 +1049,13 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnInteract(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "SwapItem" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnSwapItem(InputAction.CallbackContext context);
         /// <summary>
         /// Method invoked when associated input action "Weapon1" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
         /// </summary>

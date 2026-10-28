@@ -57,6 +57,9 @@ public class MainMenuController : MonoBehaviour
     [Tooltip("L'écran Jouer : les modes, l'entraînement (sur le même GameObject si vide).")]
     [SerializeField] private PlayScreenController playScreen;
 
+    [Tooltip("Le panneau des Options (sur le même GameObject si vide).")]
+    [SerializeField] private OptionsController options;
+
     [Tooltip("Les images du menu (le fond de l'écran titre), cuites par Duel Arena > Menu > Capturer les images du menu.")]
     [SerializeField] private MenuArtwork artwork;
 
@@ -100,6 +103,7 @@ public class MainMenuController : MonoBehaviour
         if (weaponCustomization == null) weaponCustomization = GetComponent<WeaponCustomizationController>();
         if (playScreen == null) playScreen = GetComponent<PlayScreenController>();
         if (characterPreview == null) characterPreview = GetComponent<CharacterPreviewController>();
+        if (options == null) options = GetComponent<OptionsController>();
         root = document.rootVisualElement;
 
         // De retour d'une partie, la souris était encore verrouillée au centre de l'écran, invisible
@@ -181,7 +185,15 @@ public class MainMenuController : MonoBehaviour
 
         root.Q<Button>("playBackButton").clicked += () => ShowScreenByName(TitleScreen);
         root.Q<Button>("customBackButton").clicked += GoBack;
-        root.Q<Button>("optionsBackButton").clicked += () => ShowScreenByName(TitleScreen);
+        root.Q<Button>("optionsBackButton").clicked += LeaveOptions;
+    }
+
+    /// <summary>Quitte les Options pour l'écran titre ; des réglages non appliqués font d'abord proposer de les
+    /// appliquer (OptionsController.RequestLeave, 2026-10-27).</summary>
+    private void LeaveOptions()
+    {
+        if (options != null) options.RequestLeave(() => ShowScreenByName(TitleScreen));
+        else ShowScreenByName(TitleScreen);
     }
 
     /// <summary>Affiche l'écran demandé, masque les autres. Public : le salon (LobbyController) s'ouvre et
@@ -203,6 +215,7 @@ public class MainMenuController : MonoBehaviour
             else armory.OnHidden();
         }
         if (screenName == PlayScreen) OnPlayScreenShown();
+        if (screenName == OptionsScreen && options != null) options.OnShown();
         RefreshPlayerCards();
     }
 
@@ -258,6 +271,13 @@ public class MainMenuController : MonoBehaviour
         string shown = CurrentScreen;
         if (shown == CustomizeScreen && weaponCustomization != null && weaponCustomization.CloseStrip()) return;
         if (shown == TitleScreen) { OpenQuit(); return; }
+        if (shown == OptionsScreen)
+        {
+            // La fenêtre « Appliquer les réglages ? » se referme d'abord : on reste dans les Options.
+            if (options != null && options.CloseLeaveModal()) return;
+            LeaveOptions();
+            return;
+        }
         string target = BackTarget(shown, false);
         if (target != null) ShowScreenByName(target);
     }

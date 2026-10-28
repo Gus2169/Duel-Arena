@@ -8,11 +8,14 @@ using UnityEngine.UIElements;
 /// cartes, et à droite le détail de la carte choisie avec son action. Posé sur MainMenuUI, à côté de
 /// MainMenuController, qui lui montre l'écran.
 ///
-/// - MODES DE JEU : les neuf cartes de GameModeCatalog. Une carte jouable ouvre un salon privé avec les
-///   réglages de son mode (LobbyController.Create) ; les autres disent où le jeu va.
+/// - MODES DE JEU : les cartes de GameModeCatalog. Une carte jouable ouvre un salon privé avec les
+///   réglages de son mode (LobbyController.Create) ; les autres disent où le jeu va, verrouillées : voilées
+///   de sombre sous un grand cadenas, elles ne se choisissent pas (2026-10-27, demandé par l'utilisateur :
+///   on les voyait trop, on croyait pouvoir les choisir).
 /// - SALONS : rejoindre un salon par son code, ou une partie du réseau local (MainMenuController).
-/// - ENTRAÎNEMENT (demandé par l'utilisateur : le stand de tir y vit) : le stand de tir et la Fosse, dans
-///   la même scène (MainMenuController.StartShootingRange).
+/// - ENTRAÎNEMENT (demandé par l'utilisateur : le stand de tir y vit) : une carte, le stand de tir et la
+///   Fosse, qui sont dans la même scène, derrière une porte l'un de l'autre (MainMenuController.
+///   StartShootingRange). Deux cartes y menaient au même endroit ; depuis le 2026-10-27, une seule.
 /// - CLASSEMENT : verrouillé, il viendra avec le classé, après la sortie (GDD § 14).
 ///
 /// Les images des cartes : l'arène (MenuArtwork) et, devant, le robot dans une pose et une couleur propres à
@@ -39,8 +42,6 @@ public class PlayScreenController : MonoBehaviour
 
     private enum Tab { Modes, Lobbies, Training }
 
-    private enum Training { Range, Course }
-
     [SerializeField] private UIDocument document;
     [SerializeField] private MainMenuController mainMenu;
     [SerializeField] private LobbyController lobby;
@@ -58,11 +59,10 @@ public class PlayScreenController : MonoBehaviour
     private string detailIconClass;
 
     private readonly List<(GameModeId id, Button card)> modeCards = new();
-    private readonly List<(Training id, Button card)> trainingCards = new();
+    private Button trainingCard;
 
     private Tab tab = Tab.Modes;
     private GameModeId selectedMode = GameModeId.Classic;
-    private Training selectedTraining = Training.Range;
     private bool busy;
     private VisualElement wiredScreen;   // l'écran sur lequel les cartes sont construites (voir OnEnable)
 
@@ -156,34 +156,44 @@ public class PlayScreenController : MonoBehaviour
             for (int i = start; i < Mathf.Min(start + columns, modes.Count); i++)
             {
                 GameMode mode = modes[i];
+                bool locked = !mode.CanCreate;
+                // Une rangée incomplète se termine par des places vides (Spacer) : la dernière carte n'en est pas le bout.
                 Button card = NewCard(mode.title, mode.subtitle, mode.icon, GameModeCatalog.Badge(mode.availability),
-                    mode.availability == GameModeAvailability.InSpectators, !mode.CanCreate, i == start + columns - 1 || i == modes.Count - 1);
+                    mode.availability == GameModeAvailability.InClassic, locked, i == start + columns - 1);
                 GameModeId id = mode.id;
                 card.clicked += () => SelectMode(id);
+                // Un mode verrouillé ne se choisit pas : ni survol, ni clic.
+                if (locked) card.SetEnabled(false);
                 row.Add(card);
                 modeCards.Add((id, card));
             }
+            // Une rangée incomplète garde des cartes de la taille des autres.
+            for (int i = modes.Count; i < start + columns; i++) row.Add(Spacer(i == start + columns - 1));
             modeGrid.Add(row);
         }
         RefreshCards();
     }
 
+    /// <summary>La place d'une carte absente, pour que les cartes d'une rangée incomplète gardent leur taille.</summary>
+    private static VisualElement Spacer(bool rowEnd)
+    {
+        var spacer = new VisualElement { pickingMode = PickingMode.Ignore };
+        spacer.AddToClassList("mode-card");
+        spacer.AddToClassList("mode-card--spacer");
+        if (rowEnd) spacer.AddToClassList("mode-card--row-end");
+        return spacer;
+    }
+
     private void BuildTrainingCards()
     {
         trainingGrid.Clear();
-        trainingCards.Clear();
         VisualElement row = NewRow(true);
-        Button range = NewCard("STAND DE TIR", "SEUL · HORS LIGNE", "ico-target", "", false, false, false);
-        range.clicked += () => SelectTraining(Training.Range);
-        Button course = NewCard("LA FOSSE", "PARCOURS CHRONOMÉTRÉ", "ico-stopwatch", "", false, false, true);
-        course.clicked += () => SelectTraining(Training.Course);
-        row.Add(range);
-        row.Add(course);
+        trainingCard = NewCard("STAND DE TIR ET FOSSE", "SEUL · HORS LIGNE", "ico-target", "", false, false, false);
+        row.Add(trainingCard);
+        row.Add(Spacer(true));
         trainingGrid.Add(row);
         // Une seule rangée : elle prend la moitié de la hauteur, comme deux grandes cartes.
         trainingGrid.Add(NewRow(true));
-        trainingCards.Add((Training.Range, range));
-        trainingCards.Add((Training.Course, course));
         RefreshCards();
     }
 
@@ -253,17 +263,10 @@ public class PlayScreenController : MonoBehaviour
         RefreshDetail();
     }
 
-    private void SelectTraining(Training id)
-    {
-        selectedTraining = id;
-        RefreshCards();
-        RefreshDetail();
-    }
-
     private void RefreshCards()
     {
         foreach ((GameModeId id, Button card) in modeCards) card.EnableInClassList("mode-card--selected", id == selectedMode);
-        foreach ((Training id, Button card) in trainingCards) card.EnableInClassList("mode-card--selected", id == selectedTraining);
+        trainingCard?.AddToClassList("mode-card--selected");
     }
 
     // ------------------------------------------------------------------
@@ -297,11 +300,7 @@ public class PlayScreenController : MonoBehaviour
                 AddRobot(card, art.pose, art.time, art.paint, art.yaw, "mode-card__robot--center");
             }
         }
-        foreach ((Training id, Button card) in trainingCards)
-        {
-            Texture2D image = artwork == null ? null : id == Training.Range ? artwork.rangeImage : artwork.courseImage;
-            SetBackground(card.Q<VisualElement>(className: "mode-card__art"), image);
-        }
+        if (trainingCard != null) SetBackground(trainingCard.Q<VisualElement>(className: "mode-card__art"), artwork != null ? artwork.rangeImage : null);
     }
 
     private ModeArt ArtFor(GameModeId id, out bool found)
@@ -373,8 +372,8 @@ public class PlayScreenController : MonoBehaviour
                 if (mode.CanCreate)
                 {
                     MatchRules rules = GameModeCatalog.RulesFor(mode.id);
-                    AddFact("PLACES", rules.capacity.ToString());
-                    AddFact("DUELS", rules.organization == DuelOrganization.KingOfTheHill ? "Roi de la colline" : "Duellistes fixes");
+                    AddFact("PLACES", rules.capacity <= MatchRules.MinCapacity ? $"{rules.capacity}, jusqu'à {MatchRules.MaxCapacity} au salon" : rules.capacity.ToString());
+                    AddFact("ROI DE LA COLLINE", rules.organization == DuelOrganization.KingOfTheHill ? "Oui" : "Non, au choix du salon");
                     AddFact("SPECTATEURS", rules.capacity <= DuelRoster.DuelistSlots ? "Aucun"
                         : rules.spectatorInterventions ? "Interviennent" : "Regardent");
                     AddFact("MANCHES", $"{rules.Format} ou BO3, au salon");
@@ -397,27 +396,19 @@ public class PlayScreenController : MonoBehaviour
                 SetButton(false, "", false);
                 break;
             default:
-                if (selectedTraining == Training.Range)
-                {
-                    SetDetail("ico-target", "STAND DE TIR",
-                        "Essaie chaque arme et ses accessoires sur des mannequins à 5, 10, 15, 25, 35 et 50 m. La fenêtre des armes s'ouvre avec B ou Échap.",
-                        artwork != null ? artwork.rangeImage : null);
-                    AddFact("JOUEURS", "Seul, hors ligne");
-                    AddFact("ARMES", "Toutes, avec leurs accessoires");
-                    AddFact("MANNEQUINS", "Se relèvent en 3 s");
-                }
-                else
-                {
-                    SetDetail("ico-stopwatch", "LA FOSSE",
-                        "Le parcours chronométré : des cibles se lèvent sur ton passage, hostiles à neutraliser, civils à épargner. Sa porte est à droite du poste de tir.",
-                        artwork != null ? artwork.courseImage : null);
-                    AddFact("CIBLES", "20 hostiles, 8 civils");
-                    AddFact("PÉNALITÉS", "+2 s par cible manquée ou civil touché");
-                    float best = BestCourseTime();
-                    AddFact("TON RECORD", best > 0f ? $"{WeaponStatSheet.Number(best)} s" : "Aucun");
-                }
+            {
+                SetDetail("ico-target", "STAND DE TIR ET FOSSE",
+                    "Essaie chaque arme et ses accessoires sur des mannequins à 5, 10, 15, 25, 35 et 50 m, puis passe la porte à droite du poste de tir : la Fosse, le parcours chronométré, où des cibles se lèvent sur ton passage, hostiles à neutraliser, civils à épargner. B ouvre la fenêtre des armes, Échap la pause et les Options.",
+                    artwork != null ? artwork.rangeImage : null);
+                AddFact("JOUEURS", "Seul, hors ligne");
+                AddFact("ARMES", "Toutes, avec leurs accessoires");
+                AddFact("MANNEQUINS", "Tombent, puis se relèvent en 3 s");
+                AddFact("LA FOSSE", "20 hostiles, 8 civils");
+                float best = BestCourseTime();
+                AddFact("TON RECORD", best > 0f ? $"{WeaponStatSheet.Number(best)} s" : "Aucun");
                 SetButton(true, "LANCER", !busy && (mainMenu == null || !mainMenu.Busy));
                 break;
+            }
         }
     }
 

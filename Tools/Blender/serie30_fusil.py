@@ -143,7 +143,9 @@ def garde_main(a):
 
     pc = a.piece("Rails", "Polymere")
     ca.rail(pc, -0.082, 0.548, P(-0.082, 0.169), "haut", mat="Polymere")
-    ca.rail(pc, 0.380, 0.490, P(0.380, 0.0655), "bas", mat="Polymere")
+    # dessous, reculé vers la main gauche : une poignée verticale montée à 0,435 m, 10,5 cm devant la main, la
+    # manquait d'un centimètre, bras tendu (2026-10-27)
+    ca.rail(pc, 0.330, 0.440, P(0.330, 0.0655), "bas", mat="Polymere")
     ca.rail(pc, 0.553, 0.589, P(0.553, 0.122, -0.0268), "droite", mat="Polymere")
     f = kit.boite(pc, 0.496, 0.506, 0.050, 0.068, -0.0075, 0.0075, "Polymere")   # arrêt de main
     kit.chanfreiner(pc, 0.0010, f)
@@ -227,7 +229,7 @@ def construire(a):
     a.accroches({
         "Viseur": P(0.100, H_RAIL),                 # rail du dessus, au-dessus de la carcasse
         "Laser": P(0.571, 0.122, -0.0388),          # petit rail à droite, devant la ferme
-        "Poignee": P(0.435, 0.0535),                # rail du dessous
+        "Poignee": P(0.385, 0.0535),                # rail du dessous, 5,5 cm devant la main gauche
         "Chargeur": P(0.2145, 0.034),               # haut du chargeur, dans le puits
         "Crosse": P(-0.095, 0.140),
     })

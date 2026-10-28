@@ -4,12 +4,13 @@ using UnityEngine.UIElements;
 
 /// <summary>
 /// Ce que le HUD montre de la tribune (2026-10-13), à côté de GameHud sur /GameUI :
-/// - chez un SPECTATEUR : sa place dans la file (« prochain duel : toi »), ce qu'il tient, ses
-///   commandes, l'élan de son lancer, l'invite pour ramasser ce qu'il vise, et l'étourdissement ;
+/// - chez un SPECTATEUR : sa place dans la file (« prochain duel : toi »), ce qu'il a en main (ses
+///   poings, ou l'objet tenu, rangé ou non), ses commandes, l'invite pour ramasser ce qu'il vise, et
+///   l'étourdissement (la trajectoire d'un lancer qu'il vise se dessine dans le monde : ThrowArcPreview) ;
 /// - chez un DUELLISTE : l'invite pour prendre une arme lancée par un spectateur, à ses pieds.
 ///
 /// Catégorie C pure : il lit l'état publié par le serveur (rôle, objet tenu, étourdissement) et la
-/// prédiction du joueur (élan, objet visé), et ne décide rien. Les touches affichées sont celles du
+/// prédiction du joueur (objet visé), et ne décide rien. Les touches affichées sont celles du
 /// joueur, remappage compris.
 /// </summary>
 [DisallowMultipleComponent]
@@ -18,8 +19,6 @@ public class SpectatorHud : MonoBehaviour
     [SerializeField] private UIDocument document;
 
     private Label interactPrompt;
-    private VisualElement chargeBar;
-    private VisualElement chargeFill;
     private VisualElement spectatorPanel;
     private Label roleLabel;
     private Label carryLabel;
@@ -32,8 +31,6 @@ public class SpectatorHud : MonoBehaviour
         if (document == null) document = GetComponent<UIDocument>();
         VisualElement root = document.rootVisualElement;
         interactPrompt = root.Q<Label>("interactPrompt");
-        chargeBar = root.Q<VisualElement>("chargeBar");
-        chargeFill = root.Q<VisualElement>("chargeFill");
         spectatorPanel = root.Q<VisualElement>("spectatorPanel");
         roleLabel = root.Q<Label>("spectatorRole");
         carryLabel = root.Q<Label>("spectatorCarry");
@@ -64,7 +61,6 @@ public class SpectatorHud : MonoBehaviour
     private void HideAll()
     {
         SetVisible(interactPrompt, false);
-        SetVisible(chargeBar, false);
         SetVisible(spectatorPanel, false);
         SetVisible(stunOverlay, false);
     }
@@ -75,7 +71,6 @@ public class SpectatorHud : MonoBehaviour
 
     private void ShowDuelist(PlayerInputReader input, WeaponController weapon)
     {
-        SetVisible(chargeBar, false);
         SetVisible(spectatorPanel, false);
         SetVisible(stunOverlay, false);
         ArenaItem candidate = weapon != null ? weapon.PowerUpCandidate : null;
@@ -105,25 +100,34 @@ public class SpectatorHud : MonoBehaviour
             carryLabel.text = "";
             hintsLabel.text = "Regarde le duel : ton tour viendra.";
             SetVisible(interactPrompt, false);
-            SetVisible(chargeBar, false);
             SetVisible(stunOverlay, false);
             return;
         }
 
-        string punch = $"{input.KeyFor("Melee")} : coup de poing";
         string fire = input.KeyFor("Fire");
+        string aim = input.KeyFor("Aim");
+        string swap = input.KeyFor("SwapItem");
+        string fight = $"{fire} : coups de poing (gauche, droite)  ·  {aim} : garde";
         ArenaItemKind carried = spectator.ShownCarried;
         if (carried == ArenaItemKind.None)
         {
-            carryLabel.text = "Mains nues";
-            hintsLabel.text = $"{fire} ou {punch}  ·  {input.KeyFor("Interact")} : ramasser  ·  frappe un bloc fissuré pour en arracher un caillou";
+            carryLabel.text = "Poings";
+            hintsLabel.text = $"{fight}  ·  {input.KeyFor("Interact")} : ramasser  ·  frappe un bloc fissuré pour en arracher un caillou";
+        }
+        else if (spectator.FistsOut)
+        {
+            // L'objet rangé (la molette, 2026-10-27) : les poings sont sortis.
+            carryLabel.text = $"Poings  ·  rangé : {CarriedName(carried, spectator.CarriedVariant)}";
+            hintsLabel.text = $"{fight}  ·  {swap} : sortir {ShortName(carried)}";
         }
         else
         {
             carryLabel.text = $"En main : {CarriedName(carried, spectator.CarriedVariant)}";
-            hintsLabel.text = SpectatorController.ThrowPhaseAllowed
-                ? $"Maintenir {fire} : élan, relâcher : lancer  ·  {input.KeyFor("Aim")} : annuler  ·  {punch}"
-                : $"On lance pendant la manche  ·  {punch}";
+            hintsLabel.text = !SpectatorController.ThrowPhaseAllowed
+                ? $"On lance pendant la manche  ·  {swap} : les poings"
+                : spectator.IsAimingThrow
+                    ? $"{fire} : lancer  ·  relâcher {aim} : renoncer"
+                    : $"Maintenir {aim} : viser (la trajectoire s'affiche), puis {fire} : lancer  ·  {swap} : les poings";
         }
 
         // L'objet visé, à ramasser.
@@ -131,11 +135,6 @@ public class SpectatorHud : MonoBehaviour
         bool prompt = !hidden && candidate != null && carried == ArenaItemKind.None;
         SetVisible(interactPrompt, prompt);
         if (prompt) interactPrompt.text = $"{input.KeyFor("Interact")} : ramasser {ItemName(candidate)}";
-
-        // L'élan du lancer.
-        bool charging = !hidden && spectator.IsCharging;
-        SetVisible(chargeBar, charging);
-        if (charging) chargeFill.style.width = Length.Percent(100f * spectator.ChargeProgress);
 
         // Étourdi : l'écran se voile, le mot clignote, les secondes restantes.
         bool stunned = spectator.IsStunnedNow;
@@ -153,6 +152,8 @@ public class SpectatorHud : MonoBehaviour
         if (item.Kind == ArenaItemKind.Rock) return "le caillou";
         return item.Catalog != null ? $"le {item.Catalog.NameOf(item.Variant)}" : "l'arme";
     }
+
+    private static string ShortName(ArenaItemKind kind) => kind == ArenaItemKind.Rock ? "le caillou" : "l'arme";
 
     private static string CarriedName(ArenaItemKind kind, int variant)
     {

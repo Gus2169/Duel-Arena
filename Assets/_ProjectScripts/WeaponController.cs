@@ -19,21 +19,25 @@ using UnityEngine;
 /// Le serveur valide chaque tir contre la pose PASSÉE des adversaires, celle que le tireur avait
 /// à l'écran (compensation de latence, voir ServerFire).
 ///
-/// LA PANOPLIE (2026-10-11) : une arme par touche, de 1 à 4 (fusil d'assaut, sniper, pompe,
-/// raygun), chacune avec son chargeur, comme un loadout de Call of Duty. Le choix d'arme est libre
-/// pour chaque joueur en attendant le pile ou face du GDD (§ 6). Changer d'arme prend le temps de la
-/// sortir (WeaponData.raiseTime) et annule un rechargement.
+/// L'ARSENAL (refonte du 2026-10-26, GDD § 6) : douze armes en quatre familles, une seule en main.
+/// Le joueur choisit la sienne pendant la préparation et la garde toute la manche ; seule une arme
+/// lancée par un spectateur la remplace. Une « place » est le rang d'une arme dans l'arsenal. Changer
+/// d'arme prend le temps de la sortir (WeaponData.raiseTime), annule un rechargement, et la nouvelle
+/// arme arrive pleine : l'inventaire ne garde pas les balles des autres.
 ///
 /// Le CHARGEUR et l'arme en main sont tenus par le serveur (MagazineState) et prédits par le
 /// tireur, qui tire, recharge et change d'arme sans attendre de réponse (voir « Chargeur » plus bas).
+/// Une arme laser n'a pas de chargeur mais une chaleur (WeaponData.heatPerShot), tenue et prédite de
+/// la même façon (voir « La chaleur des armes laser »).
 /// </summary>
 [RequireComponent(typeof(Transform))]
 public class WeaponController : NetworkBehaviour
 {
-    /// <summary>Places de la panoplie (touches 1 à 4). Le chargeur réseauté en garde une par arme.</summary>
-    public const int MaxSlots = 4;
+    /// <summary>Places de l'arsenal : le rang d'une arme, qui voyage sur un octet (l'arme en main, celle
+    /// de chaque input). L'apparence et les accessoires en gardent une par arme.</summary>
+    public const int MaxSlots = 12;
 
-    [Tooltip("La panoplie du joueur, une arme par touche (1 à 4, dans cet ordre). Chacune garde son chargeur quand on en change, comme dans Call of Duty. Au plus 4.")]
+    [Tooltip("L'arsenal : les douze armes, dans cet ordre (le rang d'une arme voyage sur le réseau et dans les réglages du joueur : ne pas réordonner, ajouter à la fin). Les quatre premières sont celles d'avant la refonte : FA-07, FP-12, FAP-03, FX-4 ; puis FA-30, FX-1, FP-30, FX-2, FAP-30, FX-3, PA-05, RV-30.")]
     [SerializeField] private WeaponData[] loadout = new WeaponData[0];
     [SerializeField] private Camera aimCamera;
     [SerializeField] private PlayerCameraLook cameraLook;
@@ -118,7 +122,8 @@ public class WeaponController : NetworkBehaviour
     private Health ownHealth; // un robot mort ne tire plus (voir ServerFire)
     private PlayerMatchState matchState; // prêt pour la manche (choix de l'arme fermé), statistiques
 
-    // Arme demandée par le panneau de préparation (GameHud), prise comme un appui sur 1 à 4.
+    // Arme demandée par le panneau de préparation (LoadoutPanel) ou la fenêtre du stand de tir, prise
+    // à l'image suivante (HandleSwitchInput).
     private int requestedSlot = -1;
 
     private float cooldown;
@@ -129,14 +134,17 @@ public class WeaponController : NetworkBehaviour
     /// peu avant la fin de l'intervalle de tir tire dès qu'il est écoulé, au lieu d'être perdu.</summary>
     private const float FirePressBuffer = 0.1f;
     private float firePressBufferedUntil = float.NegativeInfinity;
+    // Le tir chargé (le FX-2) : la gâchette était tenue à l'image d'avant (la lâcher tire).
+    private bool chargeTriggerHeld;
 
     // Garde-fou anti-triche (voir ServerFire et TryAcceptShotRate) : crédit de temps du tireur,
     // côté serveur, pour faire respecter data.shotsPerSecond quoi que le client prétende faire.
     private double serverFireCredit;
     private double serverLastFireCheck = double.NegativeInfinity;
 
-    private float verticalRecoilAccumulated;
-    private float horizontalRecoilAccumulated;
+    // Le recul que porte encore la caméra (degrés : x à droite, y en haut), que le retour du regard
+    // ramène vers l'axe (RecoilPattern.Recovery).
+    private Vector2 recoilAccumulated;
 
     // Le tir à la hanche (HipFireSpread, 2026-10-16) : ce que la rafale a ouvert du cône, et l'horloge
     // des inputs du dernier tir, chez le tireur et sur le serveur. Les deux se suivent sans se recaler :
@@ -158,8 +166,8 @@ public class WeaponController : NetworkBehaviour
     /// <summary>
     /// État du chargeur et de l'arme en main, écrit par le serveur seul et publié à tous (les
     /// spectateurs voient l'arme et entendent le rechargement, le futur HUD de tribune pourra montrer
-    /// les munitions des duellistes). Un chargeur par place de la panoplie : changer d'arme garde
-    /// les balles de l'autre.
+    /// les munitions des duellistes). Un seul chargeur, celui de l'arme en main (2026-10-26 : une
+    /// seule arme dans l'inventaire) ; une arme laser y tient sa chaleur.
     ///
     /// `actionsProcessed` compte les demandes du propriétaire (tirs, rechargements, changements
     /// d'arme) que le serveur a traitées, acceptées ou refusées : quand il égale le nombre de
@@ -179,29 +187,17 @@ public class WeaponController : NetworkBehaviour
         /// hasard de son tir à la hanche (HipFireSpread), le même chez le tireur, qui le prédit, et sur
         /// le serveur. Un client ne l'avance qu'en tirant vraiment.</summary>
         public ushort shotsFired;
-        /// <summary>Place de l'arme en main (0 à 3).</summary>
+        /// <summary>Place de l'arme en main dans l'arsenal.</summary>
         public byte equipped;
-        public byte ammo0, ammo1, ammo2, ammo3;
-
-        /// <summary>Balles de l'arme en main.</summary>
-        public byte ammo
-        {
-            get => AmmoOf(equipped);
-            set => SetAmmo(equipped, value);
-        }
-
-        public byte AmmoOf(int slot) => slot switch { 0 => ammo0, 1 => ammo1, 2 => ammo2, 3 => ammo3, _ => (byte)0 };
-
-        public void SetAmmo(int slot, byte value)
-        {
-            switch (slot)
-            {
-                case 0: ammo0 = value; break;
-                case 1: ammo1 = value; break;
-                case 2: ammo2 = value; break;
-                case 3: ammo3 = value; break;
-            }
-        }
+        /// <summary>Balles de l'arme en main (une arme laser n'en compte pas).</summary>
+        public byte ammo;
+        /// <summary>Arme laser surchauffée : elle ne tire plus tant qu'elle n'est pas vidée ou tout à
+        /// fait refroidie (HeatAt).</summary>
+        public bool overheated;
+        /// <summary>Arme laser : sa chaleur (0 à 1) à l'instant serveur `heatAt`, celui de son dernier
+        /// tir ou de sa dernière vidange ; elle refroidit ensuite seule (HeatAt).</summary>
+        public float heat;
+        public double heatAt;
     }
 
     private readonly NetworkVariable<MagazineState> networkMagazine = new NetworkVariable<MagazineState>(
@@ -307,6 +303,112 @@ public class WeaponController : NetworkBehaviour
         return AttachmentCatalog.AimTime(data, Attachments.Grip(slot), data != null ? data.attachmentCatalog : null);
     }
 
+    /// <summary>La chaleur d'une arme laser (WeaponData.heatPerShot), accessoires compris (HeatRulesOf) :
+    /// ce qu'ajoute un tir (1 = la surchauffe), le refroidissement, les vidanges. `perShot` nul : une
+    /// arme à chargeur.</summary>
+    public struct HeatRules
+    {
+        public float perShot, coolDelay, coolTime, vent, overheatVent;
+        public bool Active => perShot > 0f;
+    }
+
+    /// <summary>La chaleur de l'arme laser de la place `slot`, accessoires compris : la cellule grande
+    /// capacité (le chargeur grande capacité d'une arme laser) lui donne la moitié de chaleur en plus
+    /// avant la surchauffe, et la vide 15 % plus lentement, comme un grand chargeur se recharge
+    /// (GDD § 6). Rien pour une arme à chargeur. Le joueur et le serveur la lisent sur les mêmes
+    /// accessoires publiés.</summary>
+    public HeatRules HeatRulesOf(int slot) => HeatRulesFor(DataOf(slot), Attachments.ExtendedMagazine(slot));
+
+    /// <summary>La chaleur d'une arme laser, avec ou sans la cellule grande capacité. Fonction pure.</summary>
+    public static HeatRules HeatRulesFor(WeaponData data, bool extended)
+    {
+        if (data == null || !data.UsesHeat) return default;
+        AttachmentCatalog catalog = data.attachmentCatalog;
+        bool big = extended && catalog != null;
+        return new HeatRules
+        {
+            perShot = data.heatPerShot / (big ? catalog.extendedMagazineCapacity : 1f),
+            coolDelay = data.heatCoolDelay,
+            coolTime = data.heatCoolTime,
+            vent = AttachmentCatalog.ReloadDuration(data, extended, catalog),
+            overheatVent = data.overheatVentDuration * (big ? catalog.extendedMagazineReload : 1f),
+        };
+    }
+
+    /// <summary>L'arme en main est-elle une arme laser, qui chauffe au lieu de compter des balles ?</summary>
+    public bool DisplayedUsesHeat => Data != null && Data.UsesHeat;
+
+    /// <summary>La chaleur de l'arme laser en main (0 à 1), telle que cette machine doit la montrer :
+    /// pendant une vidange, elle descend jusqu'à 0 à sa fin. 0 pour une arme à chargeur.</summary>
+    public float DisplayedHeat
+    {
+        get
+        {
+            HeatRules rules = HeatRulesOf(DataSlot(DisplayedSlot));
+            if (!rules.Active) return 0f;
+            MagazineState m = ShownMagazine;
+            double now = ShownClock;
+            float heat = HeatAt(m, now, rules);
+            if (m.reloadEndsAt <= 0.0) return heat;
+            float duration = Mathf.Max(0.01f, m.overheated ? rules.overheatVent : rules.vent);
+            return heat * Mathf.Clamp01((float)((m.reloadEndsAt - now) / duration));
+        }
+    }
+
+    /// <summary>L'arme laser en main est-elle surchauffée ? (le HUD le dit)</summary>
+    public bool DisplayedOverheated
+    {
+        get
+        {
+            HeatRules rules = HeatRulesOf(DataSlot(DisplayedSlot));
+            return rules.Active && IsOverheated(ShownMagazine, ShownClock, rules);
+        }
+    }
+
+    // Le chargeur de la place `slot` pour les fonctions pures : des balles, ou la chaleur d'une arme
+    // laser. Les mêmes chez le joueur, qui prédit, et sur le serveur, qui fait foi.
+    private bool ConsumeShot(ref MagazineState m, int slot, double now, double tolerance)
+    {
+        HeatRules heat = HeatRulesOf(slot);
+        if (heat.Active) return TryFireHot(ref m, now, heat, tolerance);
+        WeaponData data = DataOf(slot);
+        return TryConsumeRound(ref m, now, MagazineSizeOf(slot), data != null && data.reloadPerRound, ReloadDurationOf(slot), tolerance);
+    }
+
+    private bool StartReload(ref MagazineState m, int slot, double now)
+    {
+        HeatRules heat = HeatRulesOf(slot);
+        if (heat.Active) return TryStartVent(ref m, now, heat);
+        return TryStartReload(ref m, now, MagazineSizeOf(slot), ReloadDurationOf(slot));
+    }
+
+    private bool CompleteIfDue(ref MagazineState m, int slot, double now)
+    {
+        if (HeatRulesOf(slot).Active) return CompleteVentIfDue(ref m, now);
+        WeaponData data = DataOf(slot);
+        return CompleteReloadIfDue(ref m, now, MagazineSizeOf(slot), data != null && data.reloadPerRound, ReloadDurationOf(slot));
+    }
+
+    /// <summary>L'arme de la place `slot` peut-elle tirer d'après ce chargeur ? Sortie, balles (ou
+    /// chaleur d'une arme laser), pas de rechargement complet en cours. Le confort du joueur : le
+    /// serveur refait le compte (ConsumeShot).</summary>
+    private bool CanFire(in MagazineState m, int slot, double now)
+    {
+        if (now < m.readyAt) return false;
+        HeatRules heat = HeatRulesOf(slot);
+        if (heat.Active) return m.reloadEndsAt <= 0.0 && !IsOverheated(m, now, heat);
+        WeaponData data = DataOf(slot);
+        return m.ammo > 0 && (m.reloadEndsAt <= 0.0 || (data != null && data.reloadPerRound));
+    }
+
+    /// <summary>Y a-t-il de quoi recharger ? Des balles manquantes, ou de la chaleur à vider.</summary>
+    private bool ReloadUseful(in MagazineState m, int slot, double now)
+    {
+        HeatRules heat = HeatRulesOf(slot);
+        if (heat.Active) return m.overheated || HeatAt(m, now, heat) > 0f;
+        return m.ammo < MagazineSizeOf(slot);
+    }
+
     // La place que désignent Data, LocalData et ServerData : la leur, ou la première si elle est vide.
     private int DataSlot(int slot) => DataOf(slot) != null ? slot : 0;
 
@@ -362,6 +464,55 @@ public class WeaponController : NetworkBehaviour
         }
     }
 
+    // ------------------------------------------------------------------
+    // Le tir chargé (le FX-2, 2026-10-26, GDD § 6) : la gâchette tenue charge, la lâcher tire. La charge
+    // se compte sur les inputs (PlayerLocomotion.TrackCharge), chez le tireur comme sur le serveur, et
+    // seulement pendant les inputs où l'arme pourrait tirer : la règle est ici.
+    // ------------------------------------------------------------------
+
+    /// <summary>Chez le propriétaire : le temps de charge de l'arme en main (0 : elle ne se charge pas).</summary>
+    public float LocalChargeTime => LocalData != null ? LocalData.chargeTime : 0f;
+
+    /// <summary>Serveur : le temps de charge de l'arme qu'il sait en main.</summary>
+    public float ServerChargeTime => ServerData != null ? ServerData.chargeTime : 0f;
+
+    /// <summary>Chez le propriétaire, à chaque input qu'il produit : sa gâchette tenue charge-t-elle
+    /// l'arme ? Seulement si elle pourrait tirer : sortie, ni vidange ni surchauffe, la sortie de sprint
+    /// faite, la manche lancée, vivant.</summary>
+    public bool LocalChargeAllowed(bool fireHeld)
+    {
+        WeaponData data = LocalData;
+        if (!fireHeld || data == null || IsSpectatorRole) return false;
+        if (!RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead)) return false;
+        if (locomotion != null && locomotion.TimeSinceSprint < data.sprintToFireTime) return false;
+        return CanFireBy(localMagazine, DataSlot(localMagazine.equipped), MagazineClock);
+    }
+
+    /// <summary>Serveur, à chaque input reçu du joueur : la même règle, sur son chargeur, avec la marge
+    /// qu'il accorde à la fin d'un rechargement. Elle profite au tireur : la charge que le serveur compte
+    /// n'est jamais plus courte que celle que le joueur voit, à la gigue du réseau près.</summary>
+    public bool ServerChargeAllowed(bool fireHeld)
+    {
+        WeaponData data = ServerData;
+        if (!fireHeld || data == null || IsSpectatorRole) return false;
+        if (!RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead)) return false;
+        if (locomotion != null && locomotion.ServerTimeSinceSprint < data.sprintToFireTime - SprintOutTolerance) return false;
+        MagazineState magazine = networkMagazine.Value;
+        double now = IsNetworked ? NetworkManager.ServerTime.Time : Time.timeAsDouble;
+        return CanFireBy(magazine, DataSlot(magazine.equipped), now + ReloadCompletionTolerance);
+    }
+
+    /// <summary>L'arme pourrait-elle tirer à `now`, son rechargement (ou sa vidange) terminé s'il est dû ?</summary>
+    private bool CanFireBy(MagazineState magazine, int slot, double now)
+    {
+        CompleteIfDue(ref magazine, slot, now);
+        return CanFire(magazine, slot, now);
+    }
+
+    /// <summary>La charge (0 à 1) du tir de l'arme en main, à montrer : la jauge du HUD, l'éclat au canon,
+    /// le son. 0 sans charge en cours.</summary>
+    public float DisplayedCharge => locomotion != null ? locomotion.DisplayCharge : 0f;
+
     /// <summary>De 0 (en plein sprint) à 1 (arme remontée), pour la vue subjective.</summary>
     public float SprintRecovery
     {
@@ -382,7 +533,9 @@ public class WeaponController : NetworkBehaviour
             WeaponData data = Data;
             MagazineState m = ShownMagazine;
             int slot = DataSlot(DisplayedSlot);
-            float duration = ReloadDurationOf(slot);
+            HeatRules heat = HeatRulesOf(slot);
+            // La vidange forcée d'une arme laser surchauffée dure plus longtemps que la vidange voulue.
+            float duration = heat.Active && m.overheated ? heat.overheatVent : ReloadDurationOf(slot);
             if (m.reloadEndsAt <= 0.0 || data == null || duration <= 0f) return 0f;
             if (data.reloadPerRound) return Mathf.Clamp01((float)m.ammo / Mathf.Max(1, MagazineSizeOf(slot)));
             return Mathf.Clamp01(1f - (float)((m.reloadEndsAt - ShownClock) / duration));
@@ -533,6 +686,36 @@ public class WeaponController : NetworkBehaviour
         HearLocalMagazine();
     }
 
+    /// <summary>
+    /// La charge du tir (le FX-2), sur toutes les machines : l'éclat à la bouche de l'arme que chacune
+    /// montre (les bras du tireur, le corps chez les autres) et la montée en charge, entendue de tous.
+    /// L'adversaire voit et entend venir le tir (GDD § 6). Après l'animation et la prise de l'arme, qui
+    /// placent la bouche.
+    /// </summary>
+    private void LateUpdate()
+    {
+        WeaponData data = Data;
+        float charge = data != null && data.UsesCharge && !IsSpectatorRole ? DisplayedCharge : 0f;
+        if (weaponAudio != null) weaponAudio.HearCharge(data, charge);
+        if (visualFeedback == null) return;
+        Transform muzzle = charge > 0f ? DisplayedMuzzle() : null;
+        Material material = data != null && data.attachmentCatalog != null ? data.attachmentCatalog.dotMaterial : null;
+        visualFeedback.ShowCharge(muzzle, charge, material, data != null ? data.tracerColor : Color.red);
+    }
+
+    /// <summary>La bouche de l'arme que cette machine montre pour ce joueur : celle de ses bras chez le
+    /// tireur (rien dans la lunette), celle de son corps chez les autres.</summary>
+    private Transform DisplayedMuzzle()
+    {
+        if (!IsNetworked || IsOwner)
+        {
+            WeaponModel view = firstPersonView != null ? firstPersonView.ViewWeapon : null;
+            return view != null ? view.Muzzle : null;
+        }
+        WeaponModel held = BodyWeapon();
+        return held != null ? held.Muzzle : null;
+    }
+
     /// <summary>Chez le propriétaire : fait entendre ce que ses actions et le recalage ont changé au
     /// chargeur prédit depuis la dernière fois (rechargement commencé, interrompu, cartouche glissée).
     /// Les autres l'entendent par le chargeur publié (HandleMagazineChanged).</summary>
@@ -580,10 +763,7 @@ public class WeaponController : NetworkBehaviour
         int slot = SlotOfPowerUp(PowerUpCandidate);
         if (slot < 0) return;
 
-        WeaponData current = LocalData;
-        int currentSlot = DataSlot(localMagazine.equipped);
-        CompleteReloadIfDue(ref localMagazine, MagazineClock, MagazineSizeOf(currentSlot), current.reloadPerRound,
-                            ReloadDurationOf(currentSlot));
+        CompleteIfDue(ref localMagazine, DataSlot(localMagazine.equipped), MagazineClock);
         ApplyPowerUp(ref localMagazine, slot, MagazineClock, DataOf(slot).raiseTime, MagazineSizeOf(slot));
         reloadPending = false;
         cooldown = 0f;
@@ -630,14 +810,16 @@ public class WeaponController : NetworkBehaviour
     }
 
     /// <summary>
-    /// L'arme d'un power-up en main, chargeur plein : on la sort (raiseTime) si ce n'était pas celle
-    /// qu'on tenait, et le rechargement en cours est abandonné. Fonction pure, testée.
+    /// L'arme d'un power-up en main, chargeur plein (et froide, pour une arme laser) : on la sort
+    /// (raiseTime) si ce n'était pas celle qu'on tenait, et le rechargement en cours est abandonné.
+    /// Fonction pure, testée.
     /// </summary>
     public static void ApplyPowerUp(ref MagazineState magazine, int slot, double now, float raiseTime, int magazineSize)
     {
         if (slot < 0 || slot >= MaxSlots) return;
-        if (!TrySwitchWeapon(ref magazine, slot, now, raiseTime)) magazine.reloadEndsAt = 0.0;
-        magazine.SetAmmo(slot, ClampAmmo(magazineSize));
+        if (TrySwitchWeapon(ref magazine, slot, now, raiseTime, magazineSize)) return;
+        magazine.reloadEndsAt = 0.0;
+        Refill(ref magazine, magazineSize);
     }
 
     /// <summary>Le duelliste prend l'arme posée `itemReference`. Jugé à l'arrivée (le premier arrivé la
@@ -688,9 +870,7 @@ public class WeaponController : NetworkBehaviour
         WeaponData current = ServerData;
         if (!action.refused && next != null && current != null)
         {
-            int currentSlot = DataSlot(magazine.equipped);
-            CompleteReloadIfDue(ref magazine, action.serverTime + ReloadCompletionTolerance, MagazineSizeOf(currentSlot),
-                                current.reloadPerRound, ReloadDurationOf(currentSlot));
+            CompleteIfDue(ref magazine, DataSlot(magazine.equipped), action.serverTime + ReloadCompletionTolerance);
             bool switching = action.slot != magazine.equipped;
             ApplyPowerUp(ref magazine, action.slot, action.serverTime, next.raiseTime, MagazineSizeOf(action.slot));
             if (switching) ResetShotRateOnSwitch(ref serverLastFireCheck);
@@ -699,7 +879,8 @@ public class WeaponController : NetworkBehaviour
     }
 
     // ------------------------------------------------------------------
-    // Changer d'arme (touches 1 à 4, 2026-10-11)
+    // Changer d'arme (2026-10-11 ; dans le panneau de préparation seulement depuis le 2026-10-26 :
+    // les touches 1 à 4 ont disparu avec la refonte des armes)
     // ------------------------------------------------------------------
 
     /// <summary>
@@ -709,8 +890,8 @@ public class WeaponController : NetworkBehaviour
     /// </summary>
     public bool CanChooseWeapon => !IsSpectatorRole && RoundManager.WeaponSwitchAllowedFor(matchState != null && matchState.ReadyOrRequested);
 
-    /// <summary>Le panneau de préparation demande l'arme de la place `slot`, comme un appui sur les
-    /// touches 1 à 4 (même chemin, mêmes contrôles du serveur).</summary>
+    /// <summary>Le panneau de préparation (ou la fenêtre du stand de tir) demande l'arme de la place
+    /// `slot` : prédite chez le joueur, puis contrôlée par le serveur.</summary>
     public void RequestWeapon(int slot)
     {
         if (slot >= 0 && slot < SlotCount) requestedSlot = slot;
@@ -718,8 +899,7 @@ public class WeaponController : NetworkBehaviour
 
     private void HandleSwitchInput()
     {
-        int wanted = input.WeaponSlotPressedThisFrame;
-        if (wanted < 0 && requestedSlot >= 0) wanted = requestedSlot;
+        int wanted = requestedSlot;
         requestedSlot = -1;
 #if UNITY_EDITOR
         if (AutopilotWeaponSlot >= 0 && AutopilotWeaponSlot != localMagazine.equipped) wanted = AutopilotWeaponSlot;
@@ -733,12 +913,10 @@ public class WeaponController : NetworkBehaviour
         if (!CanChooseWeapon) return;
 
         // Prédit : l'arme change tout de suite chez le joueur, et le serveur la changera à réception,
-        // à l'instant que MagazineClock annonce. Un rechargement en cours ou en attente est annulé.
-        WeaponData current = LocalData;
-        int currentSlot = DataSlot(localMagazine.equipped);
-        CompleteReloadIfDue(ref localMagazine, MagazineClock, MagazineSizeOf(currentSlot), current.reloadPerRound,
-                            ReloadDurationOf(currentSlot));
-        TrySwitchWeapon(ref localMagazine, wanted, MagazineClock, DataOf(wanted).raiseTime);
+        // à l'instant que MagazineClock annonce. Un rechargement en cours ou en attente est annulé ; la
+        // nouvelle arme arrive pleine.
+        CompleteIfDue(ref localMagazine, DataSlot(localMagazine.equipped), MagazineClock);
+        TrySwitchWeapon(ref localMagazine, wanted, MagazineClock, DataOf(wanted).raiseTime, MagazineSizeOf(wanted));
         reloadPending = false;
         cooldown = 0f;
         shotIndexInBurst = 0;
@@ -759,7 +937,18 @@ public class WeaponController : NetworkBehaviour
     {
         WeaponData data = LocalData;
         bool wantsToFire;
-        if (data.isAutomatic)
+        if (data.UsesCharge)
+        {
+            // Le tir chargé (le FX-2) : la gâchette tenue charge, la lâcher tire. Une lâche pendant la
+            // cadence attend son moment, comme un appui ; reprendre la gâchette l'oublie (le serveur
+            // compterait alors la nouvelle charge, pas celle qu'on a lâchée).
+            bool held = input.FireHeld;
+            if (chargeTriggerHeld && !held) firePressBufferedUntil = Time.time + FirePressBuffer;
+            if (held) firePressBufferedUntil = float.NegativeInfinity;
+            chargeTriggerHeld = held;
+            wantsToFire = Time.time <= firePressBufferedUntil;
+        }
+        else if (data.isAutomatic)
         {
             wantsToFire = input.FireHeld;
         }
@@ -772,9 +961,12 @@ public class WeaponController : NetworkBehaviour
 #endif
         }
 
-        // La gâchette pressée chargeur vide claque une fois par appui (2026-10-13) : le tireur sait
-        // qu'il doit recharger. Rien n'est envoyé au serveur.
-        bool emptyTrigger = input.FireHeld && localMagazine.ammo == 0 && localMagazine.reloadEndsAt <= 0.0
+        // La gâchette pressée chargeur vide (ou arme laser surchauffée) claque une fois par appui
+        // (2026-10-13) : le tireur sait qu'il doit recharger. Rien n'est envoyé au serveur.
+        int slot = DataSlot(localMagazine.equipped);
+        HeatRules heat = HeatRulesOf(slot);
+        bool dry = heat.Active ? IsOverheated(localMagazine, MagazineClock, heat) : localMagazine.ammo == 0;
+        bool emptyTrigger = input.FireHeld && dry && localMagazine.reloadEndsAt <= 0.0
                             && RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead);
         if (emptyTrigger && !emptyTriggerHeard && weaponAudio != null) weaponAudio.PlayDryFire(data);
         emptyTriggerHeard = emptyTrigger;
@@ -783,8 +975,7 @@ public class WeaponController : NetworkBehaviour
         // jamais en sprint ni en franchissant un obstacle (2026-10-11), ni avant que l'arme soit
         // sortie. Confort local : on ne déclenche même pas le recul ni le son hors manche. Le vrai
         // verrou est côté serveur dans ServerFire — celui-ci n'est qu'une convention client.
-        bool armed = MagazineClock >= localMagazine.readyAt && localMagazine.ammo > 0
-                     && (localMagazine.reloadEndsAt <= 0.0 || data.reloadPerRound);
+        bool armed = CanFire(localMagazine, slot, MagazineClock);
         bool vaulting = locomotion.IsVaulting;
 #if UNITY_EDITOR
         if (PlayerLocomotion.DebugVaultIgnoresRules) vaulting = false; // client tricheur simulé
@@ -811,7 +1002,17 @@ public class WeaponController : NetworkBehaviour
 #endif
         // Prédit, sans la marge du serveur : le joueur ne tire jamais avant ce qu'il voit.
         int firedSlot = DataSlot(localMagazine.equipped);
-        TryConsumeRound(ref localMagazine, MagazineClock, MagazineSizeOf(firedSlot), data.reloadPerRound, ReloadDurationOf(firedSlot), 0.0);
+        ConsumeShot(ref localMagazine, firedSlot, MagazineClock, 0.0);
+        // Le tir chargé emporte sa charge : celle des inputs déjà envoyés, que le serveur a comptée de même.
+        float charge = 1f;
+        if (data.UsesCharge && locomotion != null)
+        {
+            charge = data.ChargeFraction(locomotion.LocalChargeSeconds);
+            locomotion.ConsumeLocalCharge();
+#if UNITY_EDITOR
+            Debug.Log($"[DIAG-CHARGE] tireur j{OwnerClientId} : tir n°{localMagazine.shotsFired} charge={charge:F4} ({locomotion.LocalChargeSeconds:F3} s restantes)");
+#endif
+        }
         timeSinceLastShot = 0f;
         OnShotFired?.Invoke();
         PlayFireSound(data);
@@ -864,8 +1065,9 @@ public class WeaponController : NetworkBehaviour
                 Debug.DrawLine(origin, end, hitSomething ? Color.red : Color.gray, 0.5f);
                 if (visualFeedback != null)
                 {
-                    // Le rayon du raygun se voit ; une arme à balles n'a que sa flamme de bouche.
-                    if (data.shotIsBeam) visualFeedback.SpawnTracer(origin, end, data.tracerColor);
+                    // Le rayon des armes laser se voit (plus épais chargé) ; une arme à balles n'a que sa
+                    // flamme de bouche.
+                    if (data.shotIsBeam) visualFeedback.SpawnTracer(origin, end, data.tracerColor, BeamWeight(data, charge));
                     if (hitSomething) visualFeedback.SpawnImpact(end, localNormal);
                 }
                 if (hitSomething) impacts.Add(end, onBody);
@@ -907,7 +1109,7 @@ public class WeaponController : NetworkBehaviour
                 {
                     Vector3 pellet = PelletDirection(shot, data.PelletOffset(i, aiming, hipScale));
                     ResolveShot(data, origin, pellet, out _, out _, out Collider body, out float distance);
-                    AddDamage(damage, data, body, distance);
+                    AddDamage(damage, data, body, distance, charge);
                 }
             }
             finally
@@ -1087,6 +1289,9 @@ public class WeaponController : NetworkBehaviour
         public ArmsActionKind kind;
         /// <summary>Dernier input reçu avant la demande : l'état du joueur qui compte.</summary>
         public int inputSequence;
+        /// <summary>L'input que le joueur a annoncé, avant la borne du serveur : la charge d'un tir chargé
+        /// est la sienne (ChargeTracker.SecondsFor).</summary>
+        public int claimedInput;
         /// <summary>Horloge du serveur à l'arrivée (chargeur, rewind).</summary>
         public double serverTime;
         /// <summary>Temps réel à l'arrivée (cadence de tir).</summary>
@@ -1119,6 +1324,7 @@ public class WeaponController : NetworkBehaviour
     {
         kind = kind,
         inputSequence = locomotion != null ? locomotion.ServerReferenceInput(claimedInput) : -1,
+        claimedInput = claimedInput,
         serverTime = NetworkManager.ServerTime.Time,
         realTime = Time.timeAsDouble,
     };
@@ -1345,8 +1551,7 @@ public class WeaponController : NetworkBehaviour
         // qui fait foi, à l'instant d'arrivée.
         magazine = networkMagazine.Value;
         int firedSlot = DataSlot(magazine.equipped);
-        bool roundConsumed = TryConsumeRound(ref magazine, action.serverTime, MagazineSizeOf(firedSlot), data.reloadPerRound,
-                                             ReloadDurationOf(firedSlot), ReloadCompletionTolerance);
+        bool roundConsumed = ConsumeShot(ref magazine, firedSlot, action.serverTime, ReloadCompletionTolerance);
         networkMagazine.Value = magazine; // même refusé : le tir a pu terminer un rechargement
         if (!roundConsumed)
         {
@@ -1355,6 +1560,18 @@ public class WeaponController : NetworkBehaviour
             DiagReportIfDue();
 #endif
             return;
+        }
+
+        // Le tir chargé (le FX-2) : la charge que le serveur a comptée lui-même sur les inputs du joueur,
+        // jusqu'à l'input que le tir annonce, jamais une charge que le client annoncerait. Le tir l'emporte.
+        float charge = 1f;
+        if (data.UsesCharge && locomotion != null)
+        {
+            charge = data.ChargeFraction(locomotion.ServerChargeSecondsFor(action.claimedInput, action.inputSequence));
+            locomotion.ServerConsumeCharge(action.claimedInput, action.inputSequence);
+#if UNITY_EDITOR
+            Debug.Log($"[DIAG-CHARGE] serveur j{OwnerClientId} : tir n°{magazine.shotsFired} charge={charge:F4} dégâts au buste={data.DamageAt(HitboxZoneType.Torso, 0f, charge):F1}");
+#endif
         }
 
         // Garde-fou anti-triche : une direction nulle (ou non fournie) ferait un Raycast dans une
@@ -1493,14 +1710,14 @@ public class WeaponController : NetworkBehaviour
                     Debug.LogWarning($"[Serveur] {bodyHit.name} est sur le layer Hitbox mais n'a aucun Health parent — aucun dégât appliqué.", bodyHit);
                     continue;
                 }
-                AddDamage(damage, data, bodyHit, distance);
+                AddDamage(damage, data, bodyHit, distance, charge);
                 if (!firstHitPoint.ContainsKey(target)) firstHitPoint[target] = ends[i];
                 PlayerHitboxZone zone = bodyHit.GetComponent<PlayerHitboxZone>();
                 if (zone != null && zone.Zone == HitboxZoneType.Head) headHit = true;
                 if (ServerHitRegistered != null)
                 {
                     HitboxZoneType zoneType = zone != null ? zone.Zone : HitboxZoneType.Torso;
-                    ServerHitRegistered(target, zoneType, data.DamageAt(zoneType, distance), distance);
+                    ServerHitRegistered(target, zoneType, data.DamageAt(zoneType, distance, charge), distance);
                 }
                 zones.Append(zone != null ? zone.Zone.ToString() : "?").Append(' ');
             }
@@ -1534,7 +1751,7 @@ public class WeaponController : NetworkBehaviour
             // Le retour de touche (GDD § 6) : décidé ici, entendu par le tireur seul.
             if (damage.Count > 0) ServerConfirmHit(ClassifyHit(headHit, killed));
 
-            BroadcastShotClientRpc(origin, ends, normals, hitMask, bodyMask, magazine.equipped);
+            BroadcastShotClientRpc(origin, ends, normals, hitMask, bodyMask, magazine.equipped, (byte)Mathf.RoundToInt(charge * 255f));
         }
         finally
         {
@@ -1600,26 +1817,44 @@ public class WeaponController : NetworkBehaviour
     /// précision (ShootingCourse) ; rien du jeu ne s'y fie.</summary>
     public static event System.Action<WeaponController, int> ServerShotFired;
 
-    /// <summary>Ajoute les dégâts d'un impact à sa cible : zone touchée (tête, buste, jambes) et
-    /// distance (WeaponData.DamageAt).</summary>
-    private static void AddDamage(Dictionary<Health, float> damage, WeaponData data, Collider body, float distance)
+    /// <summary>Ajoute les dégâts d'un impact à sa cible : zone touchée (tête, buste, jambes), distance
+    /// et charge du tir (WeaponData.DamageAt).</summary>
+    private static void AddDamage(Dictionary<Health, float> damage, WeaponData data, Collider body, float distance, float charge)
     {
         if (body == null) return;
         Health target = body.GetComponentInParent<Health>();
         if (target == null) return;
         PlayerHitboxZone zone = body.GetComponent<PlayerHitboxZone>();
-        float amount = data.DamageAt(zone != null ? zone.Zone : HitboxZoneType.Torso, distance);
+        float amount = data.DamageAt(zone != null ? zone.Zone : HitboxZoneType.Torso, distance, charge);
         damage[target] = (damage.TryGetValue(target, out float sum) ? sum : 0f) + amount;
     }
+
+    /// <summary>L'épaisseur relative du rayon d'une arme laser : celui d'un tir chargé à fond se voit
+    /// trois fois plus épais (cosmétique).</summary>
+    private static float BeamWeight(WeaponData data, float charge) => data != null && data.UsesCharge ? 1f + 2f * Mathf.Clamp01(charge) : 1f;
 
     // ------------------------------------------------------------------
     // Chargeur
     // ------------------------------------------------------------------
 
+    /// <summary>
+    /// Le rechargement automatique (2026-10-27, demandé par l'utilisateur, comme dans les FPS classiques) : la
+    /// gâchette pressée chargeur vide recharge, et une arme automatique dont on tient la gâchette sur sa
+    /// dernière balle recharge aussitôt. Pas une arme laser, dont la surchauffe se vide d'elle-même, ni pendant
+    /// un rechargement. La demande suit ensuite le chemin de la touche de rechargement (sortie de sprint,
+    /// franchissement, arme pas encore sortie : elle attend). Fonction pure, testée.
+    /// </summary>
+    public static bool AutoReloadWanted(bool firePressed, bool fireHeld, bool automatic, bool usesHeat, int ammo, bool reloading)
+        => !usesHeat && ammo <= 0 && !reloading && (firePressed || (automatic && fireHeld));
+
     private void HandleReloadInput()
     {
         WeaponData data = LocalData;
         bool wantsReload = input.ReloadPressedThisFrame;
+        if (AutoReloadWanted(input.FireWasPressedThisFrame, input.FireHeld, data.isAutomatic,
+                             HeatRulesOf(DataSlot(localMagazine.equipped)).Active, localMagazine.ammo, localMagazine.reloadEndsAt > 0.0)
+            && RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead))
+            wantsReload = true;
 #if UNITY_EDITOR
         // Le banc de tir automatique garde la gâchette enfoncée : il recharge à vide.
         if (PlayerInputReader.AutopilotFire && localMagazine.ammo == 0) wantsReload = true;
@@ -1633,7 +1868,7 @@ public class WeaponController : NetworkBehaviour
             return;
         }
         int reloadSlot = DataSlot(localMagazine.equipped);
-        if (localMagazine.reloadEndsAt > 0.0 || localMagazine.ammo >= MagazineSizeOf(reloadSlot))
+        if (localMagazine.reloadEndsAt > 0.0 || !ReloadUseful(localMagazine, reloadSlot, MagazineClock))
         {
             reloadPending = false;
             return;
@@ -1647,7 +1882,7 @@ public class WeaponController : NetworkBehaviour
         // Prédit : le rechargement commence tout de suite chez le tireur (il l'entend à la fin de
         // l'image, HearLocalMagazine), et le serveur le commencera à réception, à l'instant que
         // MagazineClock annonce.
-        TryStartReload(ref localMagazine, MagazineClock, MagazineSizeOf(reloadSlot), ReloadDurationOf(reloadSlot));
+        StartReload(ref localMagazine, reloadSlot, MagazineClock);
 #if UNITY_EDITOR
         Debug.Log($"[DIAG-CHARGEUR] rechargement à {localMagazine.ammo} balles ({data.weaponName})" +
                   (locomotion != null && locomotion.TimeSinceSprint < 1f ? $", {locomotion.TimeSinceSprint * 1000f:F0} ms après le sprint" : ""));
@@ -1662,9 +1897,7 @@ public class WeaponController : NetworkBehaviour
 
     private void UpdateLocalMagazine()
     {
-        WeaponData data = LocalData;
-        int slot = DataSlot(localMagazine.equipped);
-        CompleteReloadIfDue(ref localMagazine, MagazineClock, MagazineSizeOf(slot), data.reloadPerRound, ReloadDurationOf(slot));
+        CompleteIfDue(ref localMagazine, DataSlot(localMagazine.equipped), MagazineClock);
 
         if (!IsNetworked) return;
 #if UNITY_EDITOR
@@ -1725,8 +1958,7 @@ public class WeaponController : NetworkBehaviour
             return;
         }
         if (data != null && action.serverTime + ReloadCompletionTolerance >= magazine.readyAt
-            && TryStartReload(ref magazine, action.serverTime, MagazineSizeOf(DataSlot(magazine.equipped)),
-                              ReloadDurationOf(DataSlot(magazine.equipped))))
+            && StartReload(ref magazine, DataSlot(magazine.equipped), action.serverTime))
         {
             serverReloadFirstInput = action.inputSequence + 1;
         }
@@ -1750,10 +1982,8 @@ public class WeaponController : NetworkBehaviour
         WeaponData current = ServerData;
         if (next != null && current != null)
         {
-            int currentSlot = DataSlot(magazine.equipped);
-            CompleteReloadIfDue(ref magazine, action.serverTime + ReloadCompletionTolerance, MagazineSizeOf(currentSlot),
-                                current.reloadPerRound, ReloadDurationOf(currentSlot));
-            if (TrySwitchWeapon(ref magazine, action.slot, action.serverTime, next.raiseTime))
+            CompleteIfDue(ref magazine, DataSlot(magazine.equipped), action.serverTime + ReloadCompletionTolerance);
+            if (TrySwitchWeapon(ref magazine, action.slot, action.serverTime, next.raiseTime, MagazineSizeOf(action.slot)))
                 ResetShotRateOnSwitch(ref serverLastFireCheck);
         }
         else
@@ -1773,9 +2003,7 @@ public class WeaponController : NetworkBehaviour
         MagazineState magazine = networkMagazine.Value;
         WeaponData data = ServerData;
         if (data == null) return;
-        int slot = DataSlot(magazine.equipped);
-        if (CompleteReloadIfDue(ref magazine, NetworkManager.ServerTime.Time, MagazineSizeOf(slot), data.reloadPerRound,
-                                ReloadDurationOf(slot)))
+        if (CompleteIfDue(ref magazine, DataSlot(magazine.equipped), NetworkManager.ServerTime.Time))
         {
             networkMagazine.Value = magazine;
             if (magazine.reloadEndsAt <= 0.0) return;
@@ -1802,9 +2030,9 @@ public class WeaponController : NetworkBehaviour
         }
     }
 
-    /// <summary>Tous les chargeurs pleins et rechargement annulé. Serveur uniquement : à
-    /// l'apparition, et au début de chaque manche (RoundManager.BeginRound) — on ne reprend pas une
-    /// manche avec les chargeurs de la précédente. L'arme en main ne change pas.</summary>
+    /// <summary>Le chargeur plein (une arme laser froide) et le rechargement annulé. Serveur
+    /// uniquement : à l'apparition, et au début de chaque manche (RoundManager.BeginRound) — on ne
+    /// reprend pas une manche avec le chargeur de la précédente. L'arme en main ne change pas.</summary>
     public void ServerRefillMagazine()
     {
         if (!IsServer) return;
@@ -1816,12 +2044,18 @@ public class WeaponController : NetworkBehaviour
 
     private void RefillAll(ref MagazineState magazine)
     {
-        for (int slot = 0; slot < SlotCount; slot++)
-        {
-            if (loadout[slot] != null) magazine.SetAmmo(slot, ClampAmmo(MagazineSizeOf(slot)));
-        }
+        Refill(ref magazine, MagazineSizeOf(DataSlot(magazine.equipped)));
         magazine.reloadEndsAt = 0.0;
         magazine.readyAt = 0.0;
+    }
+
+    /// <summary>Le chargeur de l'arme en main plein, et sa chaleur à froid. Fonction pure.</summary>
+    public static void Refill(ref MagazineState magazine, int magazineSize)
+    {
+        magazine.ammo = ClampAmmo(magazineSize);
+        magazine.heat = 0f;
+        magazine.heatAt = 0.0;
+        magazine.overheated = false;
     }
 
     /// <summary>Le taser annule le rechargement en cours, comme le couteau de Call of Duty, et se
@@ -1830,12 +2064,7 @@ public class WeaponController : NetworkBehaviour
     /// cartouches déjà glissées restent.</summary>
     public void CancelLocalReload()
     {
-        WeaponData data = LocalData;
-        if (data != null)
-        {
-            int slot = DataSlot(localMagazine.equipped);
-            CompleteReloadIfDue(ref localMagazine, MagazineClock, MagazineSizeOf(slot), data.reloadPerRound, ReloadDurationOf(slot));
-        }
+        if (LocalData != null) CompleteIfDue(ref localMagazine, DataSlot(localMagazine.equipped), MagazineClock);
         localMagazine.reloadEndsAt = 0.0;
         reloadPending = false;
     }
@@ -1849,9 +2078,7 @@ public class WeaponController : NetworkBehaviour
         MagazineState magazine = networkMagazine.Value;
         WeaponData data = ServerData;
         if (magazine.reloadEndsAt <= 0.0 || data == null) return;
-        int slot = DataSlot(magazine.equipped);
-        CompleteReloadIfDue(ref magazine, NetworkManager.ServerTime.Time + ReloadCompletionTolerance, MagazineSizeOf(slot),
-                            data.reloadPerRound, ReloadDurationOf(slot));
+        CompleteIfDue(ref magazine, DataSlot(magazine.equipped), NetworkManager.ServerTime.Time + ReloadCompletionTolerance);
         magazine.reloadEndsAt = 0.0;
         networkMagazine.Value = magazine;
     }
@@ -1978,15 +2205,118 @@ public class WeaponController : NetworkBehaviour
         return true;
     }
 
-    /// <summary>Prend l'arme de la place `slot` : elle sort en `raiseTime` à partir de `now`, et le
-    /// rechargement en cours est abandonné. Refusé pour l'arme déjà en main ou une place hors de la
-    /// panoplie. Fonction pure, testée.</summary>
-    public static bool TrySwitchWeapon(ref MagazineState magazine, int slot, double now, float raiseTime)
+    /// <summary>Prend l'arme de la place `slot` : elle sort en `raiseTime` à partir de `now`, pleine
+    /// (`magazineSize` balles, ou froide pour une arme laser : l'inventaire ne garde qu'une arme), et
+    /// le rechargement en cours est abandonné. Refusé pour l'arme déjà en main ou une place hors de
+    /// l'arsenal. Fonction pure, testée.</summary>
+    public static bool TrySwitchWeapon(ref MagazineState magazine, int slot, double now, float raiseTime, int magazineSize)
     {
         if (slot < 0 || slot >= MaxSlots || slot == magazine.equipped) return false;
         magazine.equipped = (byte)slot;
         magazine.reloadEndsAt = 0.0;
         magazine.readyAt = now + Mathf.Max(0f, raiseTime);
+        Refill(ref magazine, magazineSize);
+        return true;
+    }
+
+    // ------------------------------------------------------------------
+    // La chaleur des armes laser (2026-10-26, GDD § 6). Fonctions pures, testées.
+    //
+    // Une arme laser n'a pas de chargeur : chaque tir la chauffe (HeatRules.perShot ; 1 = la
+    // surchauffe), et elle refroidit seule après un court délai sans tirer. Le tir qui la remplit part,
+    // puis elle surchauffe : elle ne tire plus et se vide d'elle-même par le geste du rechargement
+    // (la vidange forcée, plus longue). La touche de rechargement la vide à tout moment. Comme un
+    // rechargement, une vidange s'interrompt (sprint, taser, franchissement) : une arme surchauffée
+    // reste alors surchauffée jusqu'à ce qu'elle soit vidée ou tout à fait refroidie. Tout se compte
+    // sur l'état publié et l'instant considéré : le joueur prédit, le serveur fait foi, et le recalage
+    // du chargeur vaut pour la chaleur.
+    // ------------------------------------------------------------------
+
+    /// <summary>Ce qui manque à une chaleur cumulée pour compter comme pleine : la somme des tirs n'a
+    /// pas à tomber pile sur 1 en virgule flottante (22 × 1/22).</summary>
+    public const float OverheatEpsilon = 1e-4f;
+
+    /// <summary>La chaleur (0 à 1) à l'instant `now` : celle de `heatAt`, refroidie de ce qui s'est
+    /// écoulé au-delà du délai.</summary>
+    public static float HeatAt(in MagazineState magazine, double now, in HeatRules rules)
+    {
+        if (magazine.heat <= 0f) return 0f;
+        double idle = now - magazine.heatAt - rules.coolDelay;
+        if (idle <= 0.0) return magazine.heat;
+        return Mathf.Max(0f, magazine.heat - (float)(idle / Mathf.Max(0.01f, rules.coolTime)));
+    }
+
+    /// <summary>Surchauffée : ni vidée, ni tout à fait refroidie depuis.</summary>
+    public static bool IsOverheated(in MagazineState magazine, double now, in HeatRules rules)
+        => magazine.overheated && HeatAt(magazine, now, rules) > 0f;
+
+    /// <summary>
+    /// Un tir d'arme laser arrivé à `now`, avec `tolerance` de marge (celle du serveur, ou 0 chez le
+    /// tireur) : refusé avant la sortie de l'arme, pendant une vidange et surchauffée. Le tir qui la
+    /// remplit part, puis la vidange forcée commence. La marge profite au tireur (la fin d'une vidange,
+    /// la fin de la surchauffe) ; la chaleur, elle, se compte à l'instant exact, pour que le joueur et
+    /// le serveur tombent sur la même.
+    /// </summary>
+    public static bool TryFireHot(ref MagazineState magazine, double now, in HeatRules rules, double tolerance)
+    {
+        CompleteVentIfDue(ref magazine, now + tolerance);
+        if (now + tolerance < magazine.readyAt) return false;
+        if (magazine.reloadEndsAt > 0.0) return false;
+        if (magazine.overheated)
+        {
+            if (IsOverheated(magazine, now + tolerance, rules)) return false;
+            magazine.overheated = false;
+        }
+        float heat = HeatAt(magazine, now, rules) + rules.perShot;
+        magazine.heatAt = now;
+        unchecked { magazine.shotsFired++; }
+        if (heat < 1f - OverheatEpsilon)
+        {
+            magazine.heat = heat;
+            return true;
+        }
+        magazine.heat = 1f;
+        magazine.overheated = true;
+        magazine.reloadEndsAt = now + Mathf.Max(0.01f, rules.overheatVent);
+        return true;
+    }
+
+    /// <summary>La vidange voulue (la touche de rechargement), ou celle d'une arme restée surchauffée
+    /// (plus longue). Refusée pendant une vidange, et quand il n'y a rien à vider.</summary>
+    public static bool TryStartVent(ref MagazineState magazine, double now, in HeatRules rules)
+    {
+        if (magazine.reloadEndsAt > 0.0) return false;
+        bool overheated = IsOverheated(magazine, now, rules);
+        if (!overheated && HeatAt(magazine, now, rules) <= 0f) return false;
+        magazine.overheated = overheated;
+        magazine.reloadEndsAt = now + Mathf.Max(0.01f, overheated ? rules.overheatVent : rules.vent);
+        return true;
+    }
+
+    /// <summary>Les tirs d'affilée, à la cadence la plus haute, avant la surchauffe (le dernier la
+    /// déclenche) : ce que la préparation et l'armurerie annoncent, compté par la règle même du tir.
+    /// Fonction pure, testée.</summary>
+    public static int ShotsBeforeOverheat(in HeatRules rules, float shotsPerSecond)
+    {
+        if (!rules.Active) return 0;
+        var magazine = new MagazineState();
+        double interval = 1.0 / Mathf.Max(0.01f, shotsPerSecond);
+        for (int shot = 1; shot <= 1000; shot++)
+        {
+            TryFireHot(ref magazine, shot * interval, rules, 0.0);
+            if (magazine.overheated) return shot;
+        }
+        return 1000;
+    }
+
+    /// <summary>Termine la vidange si son heure est passée : l'arme est froide.</summary>
+    public static bool CompleteVentIfDue(ref MagazineState magazine, double now)
+    {
+        if (magazine.reloadEndsAt <= 0.0 || now < magazine.reloadEndsAt) return false;
+        magazine.heat = 0f;
+        magazine.heatAt = magazine.reloadEndsAt;
+        magazine.overheated = false;
+        magazine.reloadEndsAt = 0.0;
         return true;
     }
 
@@ -2052,10 +2382,11 @@ public class WeaponController : NetworkBehaviour
 
     /// <summary>Rediffuse à tout le monde (sauf au tireur, déjà servi localement dans Fire()) les
     /// traçants, impacts et le son de tir, tels que DÉCIDÉS PAR LE SERVEUR dans ServerFire : un
-    /// point d'arrivée par plomb (ou par balle), un bit par plomb qui a touché quelque chose, et un
-    /// bit par plomb arrêté par un robot (le son de l'impact n'est pas le même, 2026-10-13).</summary>
+    /// point d'arrivée par plomb (ou par balle), un bit par plomb qui a touché quelque chose, un bit
+    /// par plomb arrêté par un robot (le son de l'impact n'est pas le même, 2026-10-13), et la charge
+    /// du tir (0 à 255 : le rayon d'un tir chargé se voit plus épais).</summary>
     [ClientRpc]
-    private void BroadcastShotClientRpc(Vector3 origin, Vector3[] ends, Vector3[] normals, int hitMask, int bodyMask, byte slot)
+    private void BroadcastShotClientRpc(Vector3 origin, Vector3[] ends, Vector3[] normals, int hitMask, int bodyMask, byte slot, byte charge)
     {
         if (IsOwner) return; // déjà joué/affiché localement par le tireur, dans Fire()
 
@@ -2084,7 +2415,7 @@ public class WeaponController : NetworkBehaviour
             }
             if (visualFeedback != null)
             {
-                if (data == null || data.shotIsBeam) visualFeedback.SpawnTracer(origin, end, data != null ? data.tracerColor : Color.yellow);
+                if (data == null || data.shotIsBeam) visualFeedback.SpawnTracer(origin, end, data != null ? data.tracerColor : Color.yellow, BeamWeight(data, charge / 255f));
                 if (hit) visualFeedback.SpawnImpact(end, normal);
             }
             if (hit) impacts.Add(end, onBody);
@@ -2106,14 +2437,20 @@ public class WeaponController : NetworkBehaviour
     /// <summary>Chez les autres : la flamme à la bouche de l'arme que tient son corps.</summary>
     private void SpawnBodyMuzzleFlash()
     {
+        WeaponModel held = BodyWeapon();
+        if (held != null) visualFeedback.SpawnMuzzleFlash(held.Muzzle, held.transform.forward);
+    }
+
+    /// <summary>L'arme que tient le corps de ce joueur (celle que voient les autres).</summary>
+    private WeaponModel BodyWeapon()
+    {
         if (bodyRightHand == null && locomotion != null)
         {
             Transform model = locomotion.transform.Find("Model");
             Animator animator = model != null ? model.GetComponent<Animator>() : null;
             bodyRightHand = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightHand) : null;
         }
-        WeaponModel held = HeldWeapons.Visible(bodyRightHand);
-        if (held != null) visualFeedback.SpawnMuzzleFlash(held.Muzzle, held.transform.forward);
+        return HeldWeapons.Visible(bodyRightHand);
     }
 
     // ------------------------------------------------------------------
@@ -2245,6 +2582,8 @@ public class WeaponController : NetworkBehaviour
         return RobotCorpse.KnockbackImpulse(direction, data.killKnockback * power, data.killKnockbackLift * power);
     }
 
+    /// <summary>La poussée du coup qui vient de partir, selon le motif de l'arme (RecoilPattern) : elle
+    /// déplace le regard du coup suivant.</summary>
     private void ApplyRecoilKick(WeaponData data)
     {
         float recoilMultiplier = GetRecoilMultiplier();
@@ -2252,36 +2591,37 @@ public class WeaponController : NetworkBehaviour
         // resserre le cône à la hanche : HipFireSpread)
         AttachmentCatalog.RecoilFactors(data.attachmentCatalog, Attachments, DataSlot(localMagazine.equipped),
                                         out float verticalFactor, out float horizontalFactor);
-        float verticalKick = data.verticalRecoilPattern.Evaluate(shotIndexInBurst) * data.recoilPerShotDegrees * recoilMultiplier
-                             * verticalFactor;
-        float horizontalKick = data.horizontalRecoilPattern.Evaluate(shotIndexInBurst) * data.recoilPerShotDegrees * recoilMultiplier
-                               * horizontalFactor;
+        Vector2 kick = Vector2.Scale(RecoilPattern.Kick(data, shotIndexInBurst), new Vector2(horizontalFactor, verticalFactor))
+                       * recoilMultiplier;
 
-        cameraLook.AddInstantRotation(verticalKick, horizontalKick);
-
-        verticalRecoilAccumulated += verticalKick;
-        horizontalRecoilAccumulated += horizontalKick;
+        cameraLook.AddInstantRotation(kick.y, kick.x);
+        recoilAccumulated += kick;
     }
 
     /// <summary>Pourcentage (0-1) du recul de base à appliquer, selon la posture actuelle du
     /// joueur et son état de déplacement (statique / sneak / marche-course) au moment du tir,
-    /// puis encore réduit si le joueur vise (ADS) — comme le sneak, viser stabilise l'arme quelle
-    /// que soit la posture/le déplacement en cours, donc appliqué en dernier par-dessus le reste.</summary>
+    /// puis encore réduit si le joueur vise (ADS).</summary>
     private float GetRecoilMultiplier()
+        => RecoilMultiplier(locomotion.CurrentStance, locomotion.IsMoving, locomotion.IsSneaking, locomotion.IsAiming);
+
+    /// <summary>La part (0-1) du recul de l'arme qu'un coup donne dans une posture, à l'arrêt, en sneak
+    /// ou en marche, épaulé ou non : viser stabilise toujours l'arme, par-dessus le reste. Lue aussi
+    /// par l'éditeur des armes sur le préfab, pour montrer la rafale telle qu'elle partira.</summary>
+    public float RecoilMultiplier(PlayerLocomotion.Stance stance, bool moving, bool sneaking, bool aiming)
     {
         float percent;
-        if (!locomotion.IsMoving)
+        if (!moving)
         {
-            percent = locomotion.CurrentStance switch
+            percent = stance switch
             {
                 PlayerLocomotion.Stance.Crouching => recoilPercentCrouchingStatic,
                 PlayerLocomotion.Stance.Prone => recoilPercentProneStatic,
                 _ => recoilPercentStandingStatic,
             };
         }
-        else if (locomotion.IsSneaking)
+        else if (sneaking)
         {
-            percent = locomotion.CurrentStance switch
+            percent = stance switch
             {
                 PlayerLocomotion.Stance.Crouching => recoilPercentCrouchingSneaking,
                 PlayerLocomotion.Stance.Prone => recoilPercentProneSneaking,
@@ -2290,7 +2630,7 @@ public class WeaponController : NetworkBehaviour
         }
         else
         {
-            percent = locomotion.CurrentStance switch
+            percent = stance switch
             {
                 PlayerLocomotion.Stance.Crouching => recoilPercentCrouchingMoving,
                 PlayerLocomotion.Stance.Prone => recoilPercentProneMoving,
@@ -2298,31 +2638,16 @@ public class WeaponController : NetworkBehaviour
             };
         }
 
-        if (locomotion.IsAiming)
-        {
-            percent = percent * recoilPercentWhileAiming / 100f;
-        }
-
+        if (aiming) percent = percent * recoilPercentWhileAiming / 100f;
         return percent / 100f;
     }
 
+    /// <summary>Le regard revient vers l'axe à chaque image, sur chaque axe (RecoilPattern.Recovery).</summary>
     private void ApplyRecoilRecovery(WeaponData data)
     {
-        float step = data.recoilRecoverySpeed * Time.deltaTime;
-
-        float verticalRecovery = Mathf.Min(step, verticalRecoilAccumulated);
-        if (verticalRecovery > 0f)
-        {
-            cameraLook.AddInstantRotation(-verticalRecovery, 0f);
-            verticalRecoilAccumulated -= verticalRecovery;
-        }
-
-        float horizontalMagnitude = Mathf.Abs(horizontalRecoilAccumulated);
-        float horizontalRecovery = Mathf.Min(step, horizontalMagnitude) * Mathf.Sign(horizontalRecoilAccumulated);
-        if (Mathf.Abs(horizontalRecovery) > 0f)
-        {
-            cameraLook.AddInstantRotation(0f, -horizontalRecovery);
-            horizontalRecoilAccumulated -= horizontalRecovery;
-        }
+        Vector2 back = RecoilPattern.Recovery(recoilAccumulated, data.recoilRecoverySpeed, Time.deltaTime);
+        if (back.x == 0f && back.y == 0f) return;
+        cameraLook.AddInstantRotation(-back.y, -back.x);
+        recoilAccumulated -= back;
     }
 }

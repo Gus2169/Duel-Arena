@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Les armes tenues en main droite (2026-10-11) : une copie du modèle de chaque arme de la panoplie,
+/// Les armes tenues en main droite (2026-10-11) : une copie du modèle de chaque arme de l'arsenal,
 /// toutes accrochées au même point, une seule visible à la fois.
 ///
 /// Le point est le repère « PriseArme » posé dans le préfab joueur sous la main droite, avec le
@@ -10,11 +10,9 @@ using UnityEngine;
 /// Les modèles sont créés au lancement à partir de lui : leurs préfabs ont tous la poignée à l'origine
 /// et le canon vers +Z (WeaponModel). Fait AVANT que la vue subjective ne copie le modèle, pour que
 /// ses bras aient les mêmes armes, puis refait sur le corps et sur les bras quand l'apparence choisie
-/// à l'armurerie arrive du serveur (PlayerWeaponLooks, 2026-10-15) : le modèle de chaque place (le
-/// stock, la série 30, la version laser) et sa finition.
+/// à l'armurerie arrive du serveur (PlayerWeaponLooks, 2026-10-15) : la finition de chaque arme.
 ///
-/// Chaque copie porte le nom de sa place (« Arme1 » à « Arme4 »), quel que soit le modèle choisi :
-/// c'est par lui qu'on la retrouve. Elle porte les accessoires choisis pour sa place
+/// Chaque copie porte le nom de sa place (« Arme1 » à « Arme12 ») : c'est par lui qu'on la retrouve. Elle porte les accessoires choisis pour sa place
 /// (PlayerWeaponAttachments, 2026-10-16), montés par AttachmentMount.
 ///
 /// Catégorie C pure. Sans état, testé.
@@ -24,13 +22,12 @@ public static class HeldWeapons
     /// <summary>Le repère du préfab joueur, sous la main droite, où se tient la poignée des armes.</summary>
     public const string GripAnchorName = "PriseArme";
 
-    /// <summary>Le nom de la copie de l'arme d'une place de la panoplie.</summary>
+    /// <summary>Le nom de la copie de l'arme d'une place de l'arsenal.</summary>
     public static string SlotName(int slot) => "Arme" + (slot + 1);
 
     /// <summary>
-    /// Met sous la main le modèle choisi pour chaque place, avec sa finition : crée ce qui manque,
-    /// remplace un modèle qui n'est plus le bon (en gardant sa visibilité), et ne touche pas aux
-    /// autres. `renderLike` donne les ombres des nouvelles pièces (celles du corps qui les porte :
+    /// Met sous la main le modèle de chaque arme, avec sa finition : crée ce qui manque, remplace un
+    /// modèle qui n'est plus le bon (en gardant sa visibilité), et ne touche pas aux autres. `renderLike` donne les ombres des nouvelles pièces (celles du corps qui les porte :
     /// ombre seule chez le propriétaire, aucune sur les bras de la vue subjective) ; sans lui, elles
     /// gardent celles du préfab.
     /// </summary>
@@ -49,7 +46,7 @@ public static class HeldWeapons
         for (int slot = 0; slot < loadout.Count; slot++)
         {
             WeaponData data = loadout[slot];
-            GameObject prefab = data != null ? data.ModelPrefabFor(looks.Model(slot)) : null;
+            GameObject prefab = data != null ? data.modelPrefab : null;
             if (prefab == null) continue;
 
             Transform existing = rightHand.Find(SlotName(slot));
@@ -102,8 +99,8 @@ public static class HeldWeapons
         return a.Designation == b.Designation;
     }
 
-    /// <summary>Montre l'arme de `data` et cache les autres armes de la panoplie. Renvoie le modèle
-    /// montré (null s'il n'existe pas sous cette main, ou si `data` n'est pas de la panoplie : rien
+    /// <summary>Montre l'arme de `data` et cache les autres armes de l'arsenal. Renvoie le modèle
+    /// montré (null s'il n'existe pas sous cette main, ou si `data` n'est pas de l'arsenal : rien
     /// n'est montré).</summary>
     public static WeaponModel Show(Transform rightHand, IReadOnlyList<WeaponData> loadout, WeaponData data)
     {

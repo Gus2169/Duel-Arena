@@ -27,6 +27,25 @@ public class ShootingRangeTests
         Assert.IsFalse(TrainingDummy.RegenDue(40f, 100f, double.NaN, 13.0, 3f), "Un instant invalide ne soigne rien.");
     }
 
+    /// <summary>Neutralisé, un mannequin tombe en arrière, raide, et se relève quand il retrouve sa vie
+    /// (2026-10-27, demandé par l'utilisateur).</summary>
+    [Test]
+    public void UnMannequinNeutralise_TombeEnArriere_PuisSeReleve()
+    {
+        Assert.AreEqual(0f, TrainingDummy.FallAngle(false, 10f), "Debout, il ne penche pas.");
+        Assert.AreEqual(0f, TrainingDummy.FallAngle(true, 0f), "La chute part de debout.");
+        Assert.Less(TrainingDummy.FallAngle(true, TrainingDummy.FallTime * 0.5f), 45f, "Elle accélère : à mi-temps, moins de la moitié du chemin.");
+        Assert.AreEqual(90f, TrainingDummy.FallAngle(true, TrainingDummy.FallTime), 1e-3f, "Couché au sol au bout de la chute.");
+        float bounce = TrainingDummy.FallAngle(true, TrainingDummy.FallTime + TrainingDummy.BounceTime * 0.5f);
+        Assert.Less(bounce, 90f, "Il rebondit un peu sur le sol...");
+        Assert.Greater(bounce, 90f - TrainingDummy.BounceAngle - 0.01f, "... à peine.");
+        Assert.AreEqual(90f, TrainingDummy.FallAngle(true, 3f), 1e-3f, "Puis il reste à terre.");
+
+        Assert.AreEqual(90f, TrainingDummy.FallAngle(false, 0f), 1e-3f, "Le relevé part du sol.");
+        Assert.AreEqual(0f, TrainingDummy.FallAngle(false, TrainingDummy.RiseTime), 1e-3f, "Debout au bout du relevé.");
+        Assert.AreEqual(0f, TrainingDummy.FallAngle(true, float.NaN), "Un instant invalide : comme au départ de la chute.");
+    }
+
     [Test]
     public void LeBilan_DitLeTempsEtLesImpacts_ALaFrancaise()
     {

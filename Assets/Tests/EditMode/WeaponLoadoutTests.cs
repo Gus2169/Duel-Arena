@@ -4,19 +4,21 @@ using UnityEngine;
 using MagazineState = WeaponController.MagazineState;
 
 /// <summary>
-/// La panoplie (2026-10-11) : fusil d'assaut, sniper, pompe et raygun, touches 1 à 4, réglés sur
-/// Call of Duty et Rainbow Six.
+/// L'arsenal : les douze armes de la refonte du 2026-10-26 (GDD § 6), en quatre familles de trois (le
+/// stock, la série 30, le prototype laser), réglées sur Call of Duty et Rainbow Six.
 ///
 /// Ce qui casse ici ne lève aucune erreur : un sniper qui ne tue plus d'une balle au buste, une gerbe
 /// qui change d'un tir à l'autre (le GDD § 3 interdit le hasard), un pompe qui recharge tout d'un
-/// coup, une arme qu'on tire avant de l'avoir sortie. Les seuils de dégâts sont lus dans les VRAIS
-/// assets : ce sont eux qui tournent en jeu, pas des valeurs de test.
+/// coup, une arme qu'on tire avant de l'avoir sortie, deux armes qui portent le même modèle. Les seuils
+/// de dégâts sont lus dans les VRAIS assets : ce sont eux qui tournent en jeu, pas des valeurs de test.
 /// </summary>
 public class WeaponLoadoutTests
 {
     private const string PlayerPrefabPath = "Assets/_ProjectArena/PlayerPrefab/Player.prefab";
     private const float Health = 100f;
-    private const int RaygunSlot = 3;   // touche 4
+
+    // Les places de l'arsenal (WeaponController.loadout) : les quatre d'avant la refonte d'abord.
+    private const int FA07 = 0, FP12 = 1, FAP03 = 2, FX4 = 3, PA05 = 10;
 
     private static WeaponController PrefabWeapon()
     {
@@ -30,60 +32,70 @@ public class WeaponLoadoutTests
     private static WeaponData Slot(int slot)
     {
         WeaponData data = PrefabWeapon().DataOf(slot);
-        Assert.IsNotNull(data, $"La place {slot + 1} de la panoplie est vide.");
+        Assert.IsNotNull(data, $"La place {slot + 1} de l'arsenal est vide.");
         return data;
     }
 
     private static int ShotsToKill(float damagePerShot) => Mathf.CeilToInt(Health / damagePerShot - 1e-4f);
 
     // ------------------------------------------------------------------
-    // La panoplie du prefab
+    // L'arsenal du prefab
     // ------------------------------------------------------------------
 
-    /// <summary>Les modèles au choix d'une arme : celui par défaut, puis les deux autres.</summary>
-    private static IEnumerable<GameObject> ModelsOf(WeaponData data)
+    /// <summary>Le modèle de chaque arme de l'arsenal.</summary>
+    private static IEnumerable<GameObject> Models()
     {
-        for (int i = 0; i < data.ModelCount; i++) yield return data.ModelPrefabFor(i);
+        WeaponController weapon = PrefabWeapon();
+        for (int slot = 0; slot < weapon.SlotCount; slot++) yield return weapon.DataOf(slot).modelPrefab;
     }
 
     [Test]
-    public void LaPanoplie_ADesModelesTenusEnMain_AvecMireEtBouche()
+    public void LArsenal_DouzeArmes_TroisParFamille_ChacuneSonModele_AvecMireEtBouche()
     {
         WeaponController weapon = PrefabWeapon();
-        Assert.AreEqual(WeaponController.MaxSlots, weapon.SlotCount, "Quatre armes, une par touche (1 à 4).");
+        Assert.AreEqual(WeaponController.MaxSlots, weapon.SlotCount, "Douze armes (GDD § 6, 2026-10-26).");
+
+        // Les quatre premières places sont les armes d'avant la refonte : les réglages enregistrés et le
+        // réseau les désignent par leur rang (GameSettings.ArmsBeforeOverhaul).
+        string[] firstFour = { "FA-07", "FP-12", "FAP-03", "FX-4" };
+        for (int slot = 0; slot < firstFour.Length; slot++)
+            Assert.AreEqual(firstFour[slot], weapon.DataOf(slot).Designation, $"Place {slot + 1}.");
 
         var designations = new HashSet<string>();
         for (int slot = 0; slot < weapon.SlotCount; slot++)
         {
             WeaponData data = weapon.DataOf(slot);
-            Assert.IsNotNull(data.modelPrefab, $"{data.weaponName} n'a pas de modèle.");
-            Assert.AreEqual(3, data.ModelCount, $"{data.weaponName} : le stock, la série 30 et la version laser (GDD § 6).");
-            var families = new HashSet<WeaponModel.Family>();
-            foreach (GameObject prefab in ModelsOf(data))
+            GameObject prefab = data.modelPrefab;
+            Assert.IsNotNull(prefab, $"{data.name} n'a pas de modèle.");
+            var model = prefab.GetComponent<WeaponModel>();
+            Assert.IsNotNull(model, $"{prefab.name} n'a pas de WeaponModel.");
+            Assert.IsFalse(string.IsNullOrEmpty(model.Designation), $"{prefab.name} n'a pas de désignation.");
+            Assert.IsTrue(designations.Add(model.Designation), $"Deux armes portent le modèle {model.Designation} : HeldWeapons les confondrait.");
+            Assert.AreEqual(model.Designation, data.weaponName, $"{data.name} : une arme porte le nom de son modèle (l'importeur s'y fie).");
+            Assert.IsFalse(string.IsNullOrEmpty(data.role), $"{data.weaponName} n'a pas de rôle (GDD § 6).");
+            Assert.IsNotNull(model.Sight, $"{prefab.name} n'a pas de mire.");
+            Assert.IsNotNull(model.Muzzle, $"{prefab.name} n'a pas de bouche.");
+            Assert.Less(Quaternion.Angle(Quaternion.identity, model.Sight.localRotation), 0.01f, $"La mire de {prefab.name} doit regarder dans l'axe du canon (+Z).");
+            Assert.Greater(model.Muzzle.localPosition.z, model.Sight.localPosition.z, $"La bouche de {prefab.name} doit être devant la mire.");
+            Assert.Greater(model.Muzzle.localPosition.z, 0.1f, $"La bouche de {prefab.name} doit être devant la poignée (origine).");
+            Assert.AreEqual(Vector3.one, prefab.transform.localScale, $"{prefab.name} : à l'échelle 1, la poignée au point de prise.");
+        }
+
+        // Quatre familles de trois : le stock, la série 30, le prototype laser, chacune avec les gestes
+        // de sa famille (une arme de poing se tient à bout de bras).
+        for (int family = 0; family < Arsenal.FamilyCount; family++)
+        {
+            List<int> slots = Arsenal.SlotsOf(weapon.Loadout, (WeaponFamily)family);
+            Assert.AreEqual(3, slots.Count, $"{Arsenal.FamilyLabel((WeaponFamily)family)} : trois armes.");
+            for (int tier = 0; tier < slots.Count; tier++)
             {
-                Assert.IsNotNull(prefab, $"{data.weaponName} : un modèle manque.");
-                var model = prefab.GetComponent<WeaponModel>();
-                Assert.IsNotNull(model, $"{prefab.name} n'a pas de WeaponModel.");
-                Assert.IsFalse(string.IsNullOrEmpty(model.Designation), $"{prefab.name} n'a pas de désignation.");
-                Assert.IsTrue(designations.Add(model.Designation), $"Deux modèles s'appellent {model.Designation} : HeldWeapons les confondrait.");
-                Assert.IsTrue(families.Add(model.ModelFamily), $"{data.weaponName} a deux modèles de la famille {model.ModelFamily}.");
-                Assert.IsNotNull(model.Sight, $"{prefab.name} n'a pas de mire.");
-                Assert.IsNotNull(model.Muzzle, $"{prefab.name} n'a pas de bouche.");
-                Assert.Less(Quaternion.Angle(Quaternion.identity, model.Sight.localRotation), 0.01f, $"La mire de {prefab.name} doit regarder dans l'axe du canon (+Z).");
-                Assert.Greater(model.Muzzle.localPosition.z, model.Sight.localPosition.z, $"La bouche de {prefab.name} doit être devant la mire.");
-                Assert.Greater(model.Muzzle.localPosition.z, 0.1f, $"La bouche de {prefab.name} doit être devant la poignée (origine).");
-                Assert.AreEqual(Vector3.one, prefab.transform.localScale, $"{prefab.name} : à l'échelle 1, la poignée au point de prise.");
+                WeaponData data = weapon.DataOf(slots[tier]);
+                Assert.AreEqual((WeaponModel.Family)tier, data.Tier, $"{data.weaponName} : son rang dans la famille.");
+                Assert.AreEqual(family == (int)WeaponFamily.Pistol, data.modelPrefab.GetComponent<WeaponModel>().PistolHold,
+                    $"{data.weaponName} : tenu comme les armes de sa famille.");
+                Assert.AreEqual(data.Tier == WeaponModel.Family.Laser, data.UsesHeat, $"{data.weaponName} : seules les armes laser chauffent.");
+                Assert.AreEqual(data.Tier == WeaponModel.Family.Laser, data.shotIsBeam, $"{data.weaponName} : une arme laser tire un rayon, une arme à balles une flamme.");
             }
-            // Le modèle par défaut, celui de qui n'a rien choisi et des armes lancées par la tribune : le
-            // stock, sauf au raygun, qui se montre en pistolet laser (choix de l'utilisateur, 2026-10-15).
-            // Les deux autres suivent l'ordre des familles.
-            WeaponModel defaultModel = data.modelPrefab.GetComponent<WeaponModel>();
-            if (slot == RaygunSlot)
-                Assert.AreEqual("FX-4", defaultModel.Designation, "Le raygun se montre d'abord en pistolet laser (GDD § 6).");
-            else
-                Assert.AreEqual(WeaponModel.Family.Stock, defaultModel.ModelFamily, $"{data.weaponName} : le modèle par défaut est celui du stock.");
-            Assert.Less((int)data.ModelPrefabFor(1).GetComponent<WeaponModel>().ModelFamily, (int)data.ModelPrefabFor(2).GetComponent<WeaponModel>().ModelFamily,
-                $"{data.weaponName} : après le modèle par défaut, les deux autres dans l'ordre des familles.");
         }
 
         // Les armes se créent en main au lancement, au point de prise du préfab (HeldWeapons) : aucune
@@ -96,34 +108,13 @@ public class WeaponLoadoutTests
         Assert.IsNotNull(player.GetComponent<PlayerWeaponLooks>(), "Sans PlayerWeaponLooks, personne ne verrait les armes choisies.");
     }
 
-    /// <summary>Réimporter les armes de Blender garde le modèle par défaut de chaque classe : celui que
-    /// son WeaponData désigne déjà, s'il est des siens (le FX-4 du raygun), le stock sinon ; les deux
-    /// autres suivent l'ordre des familles. Sans ça, la prochaine importation rendrait au raygun son
-    /// pistolet à balles, sans un mot.</summary>
-    [Test]
-    public void LaReimportation_GardeLeModeleParDefautDeChaqueClasse()
-    {
-        string[] paths = { "Armes/PA05/PA05.prefab", "Armes/RV30/RV30.prefab", "Armes/FX4/FX4.prefab" };
-        Assert.AreEqual((int)WeaponModel.Family.Laser, WeaponImporter.DefaultFamily("Armes/FX4/FX4.prefab", paths), "Un choix fait dans Unity survit.");
-        Assert.AreEqual((int)WeaponModel.Family.Serie30, WeaponImporter.DefaultFamily("Armes/RV30/RV30.prefab", paths));
-        Assert.AreEqual((int)WeaponModel.Family.Stock, WeaponImporter.DefaultFamily("Raygun.prefab", paths), "Un modèle qui n'est pas de la classe (l'ancien raygun) : le stock.");
-        Assert.AreEqual((int)WeaponModel.Family.Stock, WeaponImporter.DefaultFamily(null, paths), "Premier import : le stock.");
-
-        CollectionAssert.AreEqual(new[] { 0, 1, 2 }, WeaponImporter.ModelOrder(0, 3));
-        CollectionAssert.AreEqual(new[] { 1, 0, 2 }, WeaponImporter.ModelOrder(1, 3));
-        CollectionAssert.AreEqual(new[] { 2, 0, 1 }, WeaponImporter.ModelOrder(2, 3));
-        CollectionAssert.AreEqual(new[] { 0, 1, 2 }, WeaponImporter.ModelOrder(7, 3), "Une famille hors bornes : le stock.");
-    }
-
     /// <summary>Les six finitions de chaque modèle (GDD § 6) : chaque pièce a ses matériaux dans
     /// chacune, tous du shader de l'usure, et une finition change vraiment quelque chose.</summary>
     [Test]
     public void ChaqueModele_ASesSixFinitions_DuShaderDeLUsure()
     {
-        WeaponController weapon = PrefabWeapon();
-        for (int slot = 0; slot < weapon.SlotCount; slot++)
         {
-            foreach (GameObject prefab in ModelsOf(weapon.DataOf(slot)))
+            foreach (GameObject prefab in Models())
             {
                 var finishes = prefab.GetComponent<WeaponFinishes>();
                 Assert.IsNotNull(finishes, $"{prefab.name} n'a pas de finitions.");
@@ -161,10 +152,8 @@ public class WeaponLoadoutTests
     [Test]
     public void ChaqueArme_ASesPointsDAccroche_SaufLaPoigneeDuPistolet()
     {
-        WeaponController weapon = PrefabWeapon();
-        for (int slot = 0; slot < weapon.SlotCount; slot++)
         {
-            foreach (GameObject prefab in ModelsOf(weapon.DataOf(slot)))
+            foreach (GameObject prefab in Models())
             {
                 Transform group = prefab.transform.Find(AttachmentMount.SocketGroupName);
                 Assert.IsNotNull(group, $"{prefab.name} n'a pas de groupe « {AttachmentMount.SocketGroupName} ».");
@@ -229,7 +218,7 @@ public class WeaponLoadoutTests
     [Test]
     public void LeFusilDAssaut_GardeSesSixBallesAuBuste_EtLaTeteAccelere()
     {
-        WeaponData ar = Slot(0);
+        WeaponData ar = Slot(FA07);
         Assert.AreEqual(6, ShotsToKill(ar.DamageAt(HitboxZoneType.Torso, 10f)), "TTK du GDD : 6 balles au buste.");
         Assert.Less(ShotsToKill(ar.DamageAt(HitboxZoneType.Head, 10f)), 6, "Viser la tête doit payer.");
         Assert.AreEqual(ar.DamageAt(HitboxZoneType.Torso, 1f), ar.DamageAt(HitboxZoneType.Torso, 90f), 1e-4f, "Pas de baisse de dégâts avec la distance.");
@@ -238,7 +227,7 @@ public class WeaponLoadoutTests
     [Test]
     public void LeSniper_TueDUneBalleAuBusteEtALaTete_PasAuxJambes()
     {
-        WeaponData sniper = Slot(1);
+        WeaponData sniper = Slot(FP12);
         Assert.AreEqual(1, ShotsToKill(sniper.DamageAt(HitboxZoneType.Torso, 60f)), "Au buste, à toute distance.");
         Assert.AreEqual(1, ShotsToKill(sniper.DamageAt(HitboxZoneType.Head, 60f)));
         Assert.AreEqual(2, ShotsToKill(sniper.DamageAt(HitboxZoneType.Legs, 60f)), "Aux jambes, il en faut deux.");
@@ -250,7 +239,7 @@ public class WeaponLoadoutTests
     [Test]
     public void LePompe_TueDePres_PasDeLoin_SansBonusALaTete()
     {
-        WeaponData pompe = Slot(2);
+        WeaponData pompe = Slot(FAP03);
         Assert.Greater(pompe.PelletCount, 1, "Le pompe tire des plombs.");
         float pointBlank = pompe.PelletCount * pompe.DamageAt(HitboxZoneType.Torso, 3f);
         float far = pompe.PelletCount * pompe.DamageAt(HitboxZoneType.Torso, 25f);
@@ -261,20 +250,21 @@ public class WeaponLoadoutTests
         Assert.IsTrue(pompe.reloadPerRound, "Le pompe recharge cartouche par cartouche.");
     }
 
+    /// <summary>Le PA-05 (2026-10-26) : semi-automatique, 15 coups, le plus mobile, il sort le plus vite
+    /// de tout l'arsenal.</summary>
     [Test]
-    public void LeRaygun_EstUnPistolet_QuatreTirsAuBuste()
+    public void LePA05_EstLePlusMobile_EtSortLePlusVite()
     {
-        WeaponData raygun = Slot(3);
-        Assert.IsFalse(raygun.isAutomatic, "Coup par coup.");
-        Assert.AreEqual(1, raygun.PelletCount, "Un rayon, pas une gerbe.");
-        Assert.AreEqual(4, ShotsToKill(raygun.DamageAt(HitboxZoneType.Torso, 10f)));
-        foreach (GameObject prefab in ModelsOf(raygun))
-            Assert.IsTrue(prefab.GetComponent<WeaponModel>().PistolHold, $"{prefab.name} : tenu à bout de bras en vue subjective.");
-        // Le plus léger : on le sort le plus vite et on court avec.
-        for (int slot = 0; slot < 3; slot++)
+        WeaponController weapon = PrefabWeapon();
+        WeaponData pistol = Slot(PA05);
+        Assert.IsFalse(pistol.isAutomatic, "Semi-automatique.");
+        Assert.AreEqual(1, pistol.PelletCount, "Une balle, pas une gerbe.");
+        Assert.AreEqual(15, pistol.magazineSize, "15 coups (GDD § 6).");
+        for (int slot = 0; slot < weapon.SlotCount; slot++)
         {
-            Assert.Less(raygun.raiseTime, Slot(slot).raiseTime, $"Le raygun se sort plus vite que {Slot(slot).weaponName}.");
-            Assert.GreaterOrEqual(raygun.moveSpeedMultiplier, Slot(slot).moveSpeedMultiplier);
+            if (slot == PA05) continue;
+            Assert.Less(pistol.raiseTime, Slot(slot).raiseTime, $"Le PA-05 se sort plus vite que le {Slot(slot).weaponName}.");
+            Assert.GreaterOrEqual(pistol.moveSpeedMultiplier, Slot(slot).moveSpeedMultiplier, $"Le PA-05 est au moins aussi mobile que le {Slot(slot).weaponName}.");
         }
     }
 
@@ -301,7 +291,7 @@ public class WeaponLoadoutTests
     [Test]
     public void LaGerbe_EstUnMotifFixe_DansLeRepereDuRegard()
     {
-        WeaponData pompe = Slot(2);
+        WeaponData pompe = Slot(FAP03);
         Vector3 forward = new Vector3(0.3f, -0.2f, 1f).normalized;
         Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
         Vector3 up = Vector3.Cross(forward, right);
@@ -374,38 +364,39 @@ public class WeaponLoadoutTests
             "La première cartouche à 50 ms près compte (gigue du réseau), comme pour un rechargement complet.");
     }
 
+    /// <summary>Une seule arme dans l'inventaire (2026-10-25) : la nouvelle arrive pleine (et froide, une
+    /// arme laser), le rechargement en cours s'arrête, et elle se sort avant de tirer.</summary>
     [Test]
-    public void ChangerDArme_GardeLesBallesDeChacune_EtLaNouvelleSeSortAvantDeTirer()
+    public void ChangerDArme_DonneLaNouvellePleine_QuiSeSortAvantDeTirer()
     {
-        var m = new MagazineState { equipped = 0 };
-        m.SetAmmo(0, 12);
-        m.SetAmmo(1, 5);
+        var m = new MagazineState { equipped = 0, ammo = 12, heat = 0.6f, heatAt = 0.5, overheated = true };
         WeaponController.TryStartReload(ref m, 0.0, 30, 2.2f);
 
-        Assert.IsTrue(WeaponController.TrySwitchWeapon(ref m, 1, 1.0, 0.8f));
-        Assert.AreEqual(1, m.equipped);
-        Assert.AreEqual(5, m.ammo, "Le chargeur de la nouvelle arme.");
-        Assert.AreEqual(12, m.AmmoOf(0), "Celui de l'ancienne n'a pas bougé.");
+        Assert.IsTrue(WeaponController.TrySwitchWeapon(ref m, 11, 1.0, 0.8f, 6));
+        Assert.AreEqual(11, m.equipped, "La douzième arme : l'arme en main tient sur un octet.");
+        Assert.AreEqual(6, m.ammo, "La nouvelle arme arrive pleine : l'inventaire ne garde pas les balles de l'ancienne.");
+        Assert.AreEqual(0f, m.heat, "Et froide.");
+        Assert.IsFalse(m.overheated);
         Assert.AreEqual(0.0, m.reloadEndsAt, "Changer d'arme annule le rechargement (CoD).");
 
-        Assert.IsFalse(WeaponController.TryConsumeRound(ref m, 1.5, 5, false, 0f, 0.0), "L'arme n'est pas encore sortie.");
-        Assert.IsTrue(WeaponController.TryConsumeRound(ref m, 1.81, 5, false, 0f, 0.0));
-        Assert.AreEqual(4, m.ammo);
+        Assert.IsFalse(WeaponController.TryConsumeRound(ref m, 1.5, 6, false, 0f, 0.0), "L'arme n'est pas encore sortie.");
+        Assert.IsTrue(WeaponController.TryConsumeRound(ref m, 1.81, 6, false, 0f, 0.0));
+        Assert.AreEqual(5, m.ammo);
 
-        Assert.IsFalse(WeaponController.TrySwitchWeapon(ref m, 1, 2.0, 0.8f), "Déjà en main.");
-        Assert.IsFalse(WeaponController.TrySwitchWeapon(ref m, WeaponController.MaxSlots, 2.0, 0.8f), "Hors de la panoplie.");
+        Assert.IsFalse(WeaponController.TrySwitchWeapon(ref m, 11, 2.0, 0.8f, 6), "Déjà en main.");
+        Assert.IsFalse(WeaponController.TrySwitchWeapon(ref m, WeaponController.MaxSlots, 2.0, 0.8f, 6), "Hors de l'arsenal.");
+        Assert.AreEqual(5, m.ammo, "Un changement refusé ne remplit rien.");
     }
 
     [Test]
-    public void LeRecalage_ReprendArmeEtChargeurs_UneFoisToutAccuse()
+    public void LeRecalage_ReprendArmeChargeurEtChaleur_UneFoisToutAccuse()
     {
-        var local = new MagazineState { equipped = 2, actionsProcessed = 0 };
-        local.SetAmmo(0, 30);
-        local.SetAmmo(2, 6);
+        var local = new MagazineState { equipped = 5, actionsProcessed = 0, ammo = 1, heat = 0.4f, heatAt = 3.0 };
         var server = local;
         server.actionsProcessed = 3;
         server.equipped = 0; // le serveur a refusé le changement
-        server.SetAmmo(2, 4);
+        server.ammo = 24;
+        server.heat = 0f;
 
         MagazineState before = local;
         WeaponController.ReconcileMagazine(server, 4, ref local);
@@ -413,7 +404,8 @@ public class WeaponLoadoutTests
 
         WeaponController.ReconcileMagazine(server, 3, ref local);
         Assert.AreEqual(0, local.equipped, "Tout est accusé : le serveur fait foi, arme en main comprise.");
-        Assert.AreEqual(4, local.AmmoOf(2), "Et pour le chargeur de chaque arme.");
+        Assert.AreEqual(24, local.ammo, "Et pour le chargeur.");
+        Assert.AreEqual(0f, local.heat, "Et pour la chaleur d'une arme laser.");
     }
 
     [Test]

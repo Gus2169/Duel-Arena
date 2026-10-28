@@ -78,7 +78,7 @@ public class HipFireSpreadTests
         Assert.AreNotEqual(HipFireSpread.UnitDisk(seed), HipFireSpread.UnitDisk(HipFireSpread.Seed(4ul, 41)), "Un autre joueur a son propre hasard.");
 
         // Le numéro de la balle n'avance qu'en tirant vraiment : un client ne choisit pas son hasard.
-        var magazine = new WeaponController.MagazineState { ammo0 = 2 };
+        var magazine = new WeaponController.MagazineState { ammo = 2 };
         Assert.IsTrue(WeaponController.TryConsumeRound(ref magazine, 0.0, 30));
         Assert.AreEqual(1, magazine.shotsFired, "Une balle tirée compte.");
         Assert.IsTrue(WeaponController.TryConsumeRound(ref magazine, 0.0, 30));
@@ -219,7 +219,14 @@ public class HipFireSpreadTests
     public void LaPanoplie_TireAuJugeFaconRainbowSix()
     {
         IReadOnlyList<WeaponData> loadout = Loadout();
-        Assert.AreEqual(4, loadout.Count);
+        Assert.AreEqual(WeaponController.MaxSlots, loadout.Count);
+        // Toute arme qui tire une seule balle (ou un seul rayon) a son cône à la hanche (2026-10-26 : le
+        // slug du FAP-30 compris) ; les armes à gerbe n'en ont pas.
+        foreach (WeaponData data in loadout)
+        {
+            if (data.PelletCount > 1) Assert.AreEqual(0f, data.hipSpread, $"{data.weaponName} : sa gerbe est sa dispersion.");
+            else Assert.Greater(data.hipSpread, 0f, $"{data.weaponName} : à la hanche, la balle se disperse.");
+        }
         foreach (int slot in new[] { Rifle, Sniper, Pistol })
         {
             WeaponData data = loadout[slot];

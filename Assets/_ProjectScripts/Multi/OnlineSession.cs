@@ -231,6 +231,9 @@ public static class OnlineSession
 
         await EnsureSignedInAsync();
         await LeaveAsync();
+        // La demande de connexion porte l'identifiant du joueur, connu maintenant : si la partie est lancée,
+        // Netcode se connecte pendant l'entrée dans le salon, et l'hôte y retrouve sa place (SessionFlow).
+        SessionFlow.PrepareConnectionData(NetworkManager.Singleton);
 
         var options = new JoinSessionOptions { PlayerProperties = LocalPlayerProperties() };
         ISession session = await MultiplayerService.Instance.JoinSessionByCodeAsync(normalized, options);
@@ -513,12 +516,13 @@ public static class OnlineSession
         return builder.ToString();
     }
 
-    /// <summary>Les réglages en propriété du salon : « places;organisation;interventions;manches ». Fonction
-    /// pure, testée (aller-retour avec ParseRules).</summary>
+    /// <summary>Les réglages en propriété du salon : « places;organisation;interventions;manches;tirage »
+    /// (le tirage au sort des duellistes depuis le 2026-10-27). Fonction pure, testée (aller-retour avec
+    /// ParseRules).</summary>
     public static string FormatRules(MatchRules rules)
     {
         MatchRules r = rules.Sanitized();
-        return $"{r.capacity};{(int)r.organization};{(r.spectatorInterventions ? 1 : 0)};{r.roundsToWin}";
+        return $"{r.capacity};{(int)r.organization};{(r.spectatorInterventions ? 1 : 0)};{r.roundsToWin};{(r.randomDuelists ? 1 : 0)}";
     }
 
     /// <summary>Relit les réglages publiés par l'hôte. Ce qui manque ou ne se lit pas garde sa valeur par
@@ -532,7 +536,69 @@ public static class OnlineSession
         if (parts.Length > 1 && byte.TryParse(parts[1], out byte organization)) rules.organization = (DuelOrganization)organization;
         if (parts.Length > 2) rules.spectatorInterventions = parts[2].Trim() != "0";
         if (parts.Length > 3 && byte.TryParse(parts[3], out byte rounds)) rules.roundsToWin = rounds;
+        if (parts.Length > 4) rules.randomDuelists = parts[4].Trim() == "1";
         return rules.Sanitized();
+    }
+
+    /// <summary>
+    /// L'ordre du salon au lancement (hôte) : l'hôte, puis les autres dans leur ordre d'arrivée au salon ;
+    /// avec le tirage au sort, deux d'entre eux, au hasard, en tête. L'arène en tire ses duellistes et sa file
+    /// (SessionFlow.LaunchOrder, RoundManager) : tous s'y connectent à la fois, et l'ordre d'arrivée n'y dit
+    /// plus rien (2026-10-27 : le deuxième du salon disparaissait à trois joueurs).
+    /// </summary>
+    public static List<string> LaunchOrder(bool randomDuelists, System.Random random)
+    {
+        ISession session = Current;
+        if (session == null) return new List<string>();
+        var players = new List<(string id, DateTime joined)>();
+        foreach (IReadOnlyPlayer player in session.Players) players.Add((player.Id, player.Joined));
+        List<string> order = SalonOrder(players, session.Host);
+        return randomDuelists ? DuelRoster.DrawDuelists(order, DuelRoster.DuelistSlots, random) : order;
+    }
+
+    /// <summary>Les joueurs d'un salon dans son ordre : l'hôte d'abord, puis par heure d'arrivée (et par
+    /// identifiant, à la même heure). Fonction pure, testée.</summary>
+    public static List<string> SalonOrder(IReadOnlyList<(string id, DateTime joined)> players, string hostId)
+    {
+        var ordered = new List<(string id, DateTime joined)>(players ?? Array.Empty<(string, DateTime)>());
+        ordered.Sort((a, b) =>
+        {
+            bool aHost = a.id == hostId, bHost = b.id == hostId;
+            if (aHost != bHost) return aHost ? -1 : 1;
+            int byTime = a.joined.CompareTo(b.joined);
+            return byTime != 0 ? byTime : string.CompareOrdinal(a.id, b.id);
+        });
+        var ids = new List<string>(ordered.Count);
+        foreach ((string id, DateTime _) in ordered) ids.Add(id);
+        return ids;
+    }
+
+    /// <summary>Ce joueur est-il encore dans le salon de cette machine ?</summary>
+    public static bool HasPlayer(string playerId)
+    {
+        ISession session = Current;
+        if (session == null || string.IsNullOrEmpty(playerId)) return false;
+        foreach (IReadOnlyPlayer player in session.Players)
+            if (player.Id == playerId) return true;
+        return false;
+    }
+
+    /// <summary>L'identifiant de cette machine auprès des services (son joueur anonyme), vide hors
+    /// connexion : il part dans la demande de connexion, pour que l'hôte retrouve sa place dans le salon.</summary>
+    public static string LocalPlayerId
+    {
+        get
+        {
+            try
+            {
+                if (UnityServices.State != ServicesInitializationState.Initialized) return "";
+                return AuthenticationService.Instance.IsSignedIn ? AuthenticationService.Instance.PlayerId ?? "" : "";
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
     }
 
     /// <summary>Le salon se ferme quand il est complet. Fonction pure, testée.</summary>
@@ -544,17 +610,9 @@ public static class OnlineSession
     /// </summary>
     public static List<string> PlayersBeyondCapacity(IReadOnlyList<(string id, DateTime joined)> players, string hostId, int capacity)
     {
-        var ordered = new List<(string id, DateTime joined)>(players ?? Array.Empty<(string, DateTime)>());
-        ordered.Sort((a, b) =>
-        {
-            bool aHost = a.id == hostId, bHost = b.id == hostId;
-            if (aHost != bHost) return aHost ? -1 : 1;
-            int byTime = a.joined.CompareTo(b.joined);
-            return byTime != 0 ? byTime : string.CompareOrdinal(a.id, b.id);
-        });
-
+        List<string> ordered = SalonOrder(players, hostId);
         var beyond = new List<string>();
-        for (int i = Mathf.Max(1, capacity); i < ordered.Count; i++) beyond.Add(ordered[i].id);
+        for (int i = Mathf.Max(1, capacity); i < ordered.Count; i++) beyond.Add(ordered[i]);
         return beyond;
     }
 

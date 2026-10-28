@@ -146,7 +146,9 @@ def boite(a):
     pc = a.piece("Rails", "Polymere")
     ca.rail(pc, 0.058, 0.300, P(0.058, H_DESSUS), "haut", mat="Polymere")
     ca.rail(pc, 0.420, 0.826, P(0.420, H_DESSUS), "haut", pas=0.012, mat="Polymere")
-    ca.rail(pc, 0.660, 0.760, P(0.660, 0.066), "bas", largeur=0.012, epaisseur=0.0030, dent=0.0030, pas=0.010,
+    # sous la longuesse, là où tient la main gauche : une poignée montée sous le manchon (à 0,71 m) était hors de
+    # portée du bras (2026-10-27)
+    ca.rail(pc, 0.296, 0.396, P(0.296, 0.068), "bas", largeur=0.012, epaisseur=0.0030, dent=0.0030, pas=0.010,
             longueur_dent=0.0050, mat="Polymere")
     ca.rail(pc, 0.784, 0.826, P(0.784, 0.100, -0.0200), "droite", largeur=0.012, epaisseur=0.0030, dent=0.0030,
             pas=0.008, longueur_dent=0.0040, mat="Polymere")
@@ -304,7 +306,7 @@ def construire(a):
     a.accroches({
         "Viseur": P(0.122, H_RAIL),                 # rail de la boîte de culasse
         "Laser": P(0.805, 0.100, -0.0260),          # petit rail à droite du manchon
-        "Poignee": P(0.710, 0.0600),                # rail sous le manchon
+        "Poignee": P(0.346, 0.0620),                # rail sous la longuesse, 4,6 cm devant la main gauche
         "Chargeur": P(0.842, H_TUBE),               # bout du tube : une rallonge de tube
         "Crosse": P(AV_CULASSE, 0.090),
     })

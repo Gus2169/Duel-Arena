@@ -36,9 +36,10 @@ public enum SightFamilies : byte
 }
 
 /// <summary>
-/// Les accessoires des armes d'un joueur (2026-10-16, GDD § 6) : pour chaque place de la panoplie
-/// (touches 1 à 4), le viseur (0 : la mire de l'arme ; 1 à 10 : les dix viseurs de Rainbow Six, dans
-/// l'ordre du catalogue), la poignée, le laser tactique et le chargeur grande capacité.
+/// Les accessoires des armes d'un joueur (2026-10-16, GDD § 6) : pour chaque arme de l'arsenal, le
+/// viseur (0 : la mire de l'arme ; 1 à 10 : les dix viseurs de Rainbow Six, dans l'ordre du
+/// catalogue), la poignée, le laser tactique et le chargeur grande capacité (la cellule grande capacité
+/// d'une arme laser). Chaque arme garde les siens (2026-10-26) : en match, elle arrive configurée.
 ///
 /// Contrairement à l'apparence (WeaponLooks), ils CHANGENT l'arme : le chargeur, le recul, le temps
 /// d'épaulement (AttachmentCatalog en porte les valeurs). Le joueur les annonce en se connectant
@@ -47,27 +48,67 @@ public enum SightFamilies : byte
 /// chargeur. Tous ouverts à tous dès le départ : un choix de configuration, jamais un avantage
 /// débloqué (GDD § 14).
 ///
-/// Tient sur 32 bits, 8 par arme : 4 pour le viseur, 2 pour la poignée, 1 pour le laser, 1 pour le
-/// chargeur. Fonctions pures, testées.
+/// Tient sur 96 bits, 8 par arme : 4 pour le viseur, 2 pour la poignée, 1 pour le laser, 1 pour le
+/// chargeur (les huit premières armes dans `low`, les autres dans `high`). Fonctions pures, testées.
 /// </summary>
 [Serializable]
-public struct WeaponAttachments : IEquatable<WeaponAttachments>
+public struct WeaponAttachments : IEquatable<WeaponAttachments>, Unity.Netcode.INetworkSerializeByMemcpy
 {
-    public const int Slots = 4;
+    public const int Slots = WeaponController.MaxSlots;
     /// <summary>Les viseurs du catalogue (la mire de l'arme, 0, en plus).</summary>
     public const int SightCount = 10;
     private const int BitsPerSlot = 8;
+    private const int SlotsInLow = 8;
 
-    [SerializeField] private uint packed;
+    [SerializeField] private ulong low;
+    [SerializeField] private uint high;
 
-    public WeaponAttachments(uint packed) => this.packed = packed;
+    public WeaponAttachments(ulong low, uint high)
+    {
+        this.low = low;
+        this.high = high;
+    }
 
     /// <summary>Aucun accessoire : la mire de l'arme, ni poignée, ni laser, le chargeur d'origine.</summary>
     public static WeaponAttachments None => default;
 
-    public uint Packed => packed;
+    /// <summary>En 24 chiffres hexadécimaux (la demande de connexion, les réglages du joueur).</summary>
+    public string ToHex() => high.ToString("X8") + low.ToString("X16");
 
-    private uint Bits(int slot) => slot < 0 || slot >= Slots ? 0u : (packed >> (BitsPerSlot * slot)) & 0xFFu;
+    /// <summary>Relit ToHex ; une chaîne plus courte vaut pour les premières armes (complétée de zéros à
+    /// gauche). Faux si ce n'est pas de l'hexadécimal ou si elle est trop longue.</summary>
+    public static bool TryParseHex(string text, out WeaponAttachments value)
+    {
+        value = None;
+        if (text == null) return false;
+        text = text.Trim();
+        if (text.Length == 0) return true;
+        if (text.Length > 24) return false;
+        text = text.PadLeft(24, '0');
+        if (!uint.TryParse(text.Substring(0, 8), System.Globalization.NumberStyles.HexNumber, null, out uint h)) return false;
+        if (!ulong.TryParse(text.Substring(8), System.Globalization.NumberStyles.HexNumber, null, out ulong l)) return false;
+        value = new WeaponAttachments(l, h);
+        return true;
+    }
+
+    private uint Bits(int slot)
+    {
+        if (slot < 0 || slot >= Slots) return 0u;
+        return slot < SlotsInLow ? (uint)((low >> (BitsPerSlot * slot)) & 0xFFUL)
+                                 : (high >> (BitsPerSlot * (slot - SlotsInLow))) & 0xFFu;
+    }
+
+    private WeaponAttachments WithBits(int slot, uint bits)
+    {
+        if (slot < 0 || slot >= Slots) return this;
+        if (slot < SlotsInLow)
+        {
+            int shift = BitsPerSlot * slot;
+            return new WeaponAttachments((low & ~(0xFFUL << shift)) | ((ulong)(bits & 0xFFu) << shift), high);
+        }
+        int highShift = BitsPerSlot * (slot - SlotsInLow);
+        return new WeaponAttachments(low, (high & ~(0xFFu << highShift)) | ((bits & 0xFFu) << highShift));
+    }
 
     /// <summary>Le viseur de la place `slot` : 0 la mire de l'arme, 1 à 10 un viseur du catalogue.</summary>
     public int Sight(int slot) => (int)(Bits(slot) & 0xFu);
@@ -81,11 +122,26 @@ public struct WeaponAttachments : IEquatable<WeaponAttachments>
     /// <summary>Les mêmes accessoires, avec ceux-ci pour la place `slot` (bornés à ce qui se code).</summary>
     public WeaponAttachments With(int slot, int sight, GripKind grip, bool laser, bool extendedMagazine)
     {
-        if (slot < 0 || slot >= Slots) return this;
         uint bits = (uint)Mathf.Clamp(sight, 0, 15) | ((uint)grip & 0x3u) << 4 | (laser ? 1u << 6 : 0u)
                     | (extendedMagazine ? 1u << 7 : 0u);
-        int shift = BitsPerSlot * slot;
-        return new WeaponAttachments((packed & ~(0xFFu << shift)) | (bits << shift));
+        return WithBits(slot, bits);
+    }
+
+    /// <summary>
+    /// Les accessoires enregistrés avant la refonte (2026-10-16 au 2026-10-26) : 8 bits par classe. Ceux
+    /// d'une classe passent à ses trois armes (`armsOfClass[classe]`, leurs places dans l'arsenal) ;
+    /// Sanitized fait ensuite tomber ce qu'une arme ne prend pas. Fonction pure, testée.
+    /// </summary>
+    public static WeaponAttachments FromBeforeOverhaul(uint old, int[][] armsOfClass)
+    {
+        WeaponAttachments result = None;
+        for (int weaponClass = 0; weaponClass < 4 && armsOfClass != null && weaponClass < armsOfClass.Length; weaponClass++)
+        {
+            uint bits = (old >> (8 * weaponClass)) & 0xFFu;
+            if (armsOfClass[weaponClass] == null) continue;
+            foreach (int slot in armsOfClass[weaponClass]) result = result.WithBits(slot, bits);
+        }
+        return result;
     }
 
     public WeaponAttachments WithSight(int slot, int sight) => With(slot, sight, Grip(slot), Laser(slot), ExtendedMagazine(slot));
@@ -180,10 +236,10 @@ public struct WeaponAttachments : IEquatable<WeaponAttachments>
         _ => WithMagazine(slot, variant > 0),
     };
 
-    public bool Equals(WeaponAttachments other) => packed == other.packed;
+    public bool Equals(WeaponAttachments other) => low == other.low && high == other.high;
     public override bool Equals(object obj) => obj is WeaponAttachments other && Equals(other);
-    public override int GetHashCode() => (int)packed;
-    public static bool operator ==(WeaponAttachments a, WeaponAttachments b) => a.packed == b.packed;
-    public static bool operator !=(WeaponAttachments a, WeaponAttachments b) => a.packed != b.packed;
-    public override string ToString() => packed.ToString("X8");
+    public override int GetHashCode() => low.GetHashCode() ^ (int)high;
+    public static bool operator ==(WeaponAttachments a, WeaponAttachments b) => a.Equals(b);
+    public static bool operator !=(WeaponAttachments a, WeaponAttachments b) => !a.Equals(b);
+    public override string ToString() => ToHex();
 }

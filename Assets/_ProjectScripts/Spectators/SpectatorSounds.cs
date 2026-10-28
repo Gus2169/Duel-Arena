@@ -33,6 +33,8 @@ public class SpectatorSounds : ScriptableObject
     public Sound punchSwing = new Sound();
     [Tooltip("Le poing qui touche un autre robot.")]
     public Sound punchHit = new Sound();
+    [Tooltip("Un coup de poing ou un caillou arrêté par la garde (2026-10-27) : un choc sourd, qui ne se confond pas avec le coup qui touche.")]
+    public Sound punchBlocked = new Sound();
     [Tooltip("Un robot étourdi : grésillement électrique.")]
     public Sound stunned = new Sound();
 

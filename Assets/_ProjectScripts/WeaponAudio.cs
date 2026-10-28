@@ -55,6 +55,8 @@ public class WeaponAudio : MonoBehaviour
     private int activeTail = -1;
     private AudioSource mechanicsVoice; // culasse, pompe, cartouches : jamais coupée
     private AudioSource reloadVoice;    // étapes du rechargement complet : coupée s'il est interrompu
+    private AudioSource chargeVoice;    // la montée en charge du tir chargé (le FX-2) : coupée au tir
+    private bool chargeHeard;
     private float lastShotTime = float.NegativeInfinity;
 
     private struct Fade
@@ -92,6 +94,7 @@ public class WeaponAudio : MonoBehaviour
         tailVoices = new[] { CreateVoice(holder), CreateVoice(holder) };
         mechanicsVoice = CreateVoice(holder);
         reloadVoice = CreateVoice(holder);
+        chargeVoice = CreateVoice(holder);
     }
 
     private AudioSource CreateVoice(GameObject holder)
@@ -185,6 +188,35 @@ public class WeaponAudio : MonoBehaviour
     }
 
     /// <summary>
+    /// La charge montrée de l'arme en main (0 à 1, WeaponController.DisplayedCharge), à chaque image :
+    /// la montée en charge part quand la charge commence, accordée pour finir quand elle est pleine, et
+    /// se tait en fondu quand elle retombe (le tir, la gâchette lâchée). Chez tous : l'adversaire
+    /// l'entend venir.
+    /// </summary>
+    public void HearCharge(WeaponData data, float charge)
+    {
+        bool heard = charge > 0f && data != null && data.chargeSound != null && chargeVoice != null;
+        if (heard && !chargeHeard)
+        {
+            AudioClip clip = data.chargeSound;
+            Play(chargeVoice, clip, Mathf.Clamp(clip.length / Mathf.Max(0.05f, data.chargeTime), 0.5f, 2f), data.chargeVolume);
+            // Une charge déjà commencée (un joueur qui arrive, une pose qui manquait) reprend où elle en est.
+            chargeVoice.time = Mathf.Min(Mathf.Clamp01(charge) * clip.length, Mathf.Max(0f, clip.length - 0.01f));
+#if UNITY_EDITOR
+            OneShotAudio.DebugNote("charge " + transform.root.name, clip);
+#endif
+        }
+        else if (!heard && chargeHeard && chargeVoice != null && chargeVoice.isPlaying)
+        {
+            FadeOut(chargeVoice, ChargeStopFade);
+        }
+        chargeHeard = heard;
+    }
+
+    /// <summary>Fondu (s) de la montée en charge quand le tir part ou qu'on lâche sans tirer.</summary>
+    public const float ChargeStopFade = 0.05f;
+
+    /// <summary>
     /// Ce coup ouvre-t-il une rafale ? Oui s'il suit le précédent de plus d'un intervalle et demi de
     /// l'arme. Fonction pure, testée.
     /// </summary>
@@ -204,7 +236,9 @@ public class WeaponAudio : MonoBehaviour
         if (data == null) return;
         int capacity = controller != null ? controller.MagazineSizeOf(before.equipped) : data.magazineSize;
         float duration = controller != null ? controller.ReloadDurationOf(before.equipped) : data.reloadDuration;
-        ReloadSound sound = ClassifyReload(before, after, capacity, data.reloadPerRound);
+        // La vidange forcée d'une arme laser surchauffée dure plus longtemps : ses étapes s'y calent.
+        if (data.UsesHeat && after.overheated && controller != null) duration = controller.HeatRulesOf(before.equipped).overheatVent;
+        ReloadSound sound = ClassifyReload(before, after, capacity, data.reloadPerRound, data.UsesHeat);
         if (sound == ReloadSound.None) return;
 #if UNITY_EDITOR
         // Diagnostic à deux instances : ce que cette machine fait entendre du chargeur d'un joueur.
@@ -230,6 +264,12 @@ public class WeaponAudio : MonoBehaviour
     /// </summary>
     public static ReloadSound ClassifyReload(in WeaponController.MagazineState before, in WeaponController.MagazineState after,
                                              int magazineSize, bool perRound)
+        => ClassifyReload(before, after, magazineSize, perRound, false);
+
+    /// <summary>La même chose pour une arme laser (`usesHeat`) : sa vidange va à son terme quand elle
+    /// est froide, sans compter de balles.</summary>
+    public static ReloadSound ClassifyReload(in WeaponController.MagazineState before, in WeaponController.MagazineState after,
+                                             int magazineSize, bool perRound, bool usesHeat)
     {
         bool wasReloading = before.reloadEndsAt > 0.0;
         bool isReloading = after.reloadEndsAt > 0.0;
@@ -247,7 +287,8 @@ public class WeaponAudio : MonoBehaviour
             if (!roundIn && after.reloadEndsAt != before.reloadEndsAt) sound |= ReloadSound.Interrupted | ReloadSound.Started;
             return sound;
         }
-        return sound | (after.ammo >= magazineSize ? ReloadSound.Completed : ReloadSound.Interrupted);
+        bool done = usesHeat ? after.heat <= 0f && !after.overheated : after.ammo >= magazineSize;
+        return sound | (done ? ReloadSound.Completed : ReloadSound.Interrupted);
     }
 
     private void StartReload(WeaponData data, float duration)
@@ -334,6 +375,12 @@ public class WeaponAudio : MonoBehaviour
 #if UNITY_EDITOR || UNITY_INCLUDE_TESTS
     /// <summary>Tests : la voix du rechargement complet joue-t-elle ?</summary>
     public bool TestReloadPlaying => reloadVoice != null && reloadVoice.isPlaying;
+    /// <summary>Tests : la montée en charge joue-t-elle, et à quel volume ?</summary>
+    public bool TestChargePlaying(out float volume)
+    {
+        volume = chargeVoice != null ? chargeVoice.volume : 0f;
+        return chargeVoice != null && chargeVoice.isPlaying;
+    }
     /// <summary>Tests : la voix de la mécanique (culasse, pompe, cartouches) joue-t-elle ?</summary>
     public bool TestMechanicsPlaying => mechanicsVoice != null && mechanicsVoice.isPlaying;
     /// <summary>Tests : les queues de réverbération qui jouent encore, et leur volume.</summary>

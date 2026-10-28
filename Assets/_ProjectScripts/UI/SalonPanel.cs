@@ -7,9 +7,10 @@ using UnityEngine.UIElements;
 /// <summary>
 /// Le salon de la partie (2026-10-26, demandé par l'utilisateur) : après un match sans revanche, tout le
 /// monde y revient, dans l'arène (RoundManager.Phase.Salon). L'hôte y retrouve les réglages de la partie
-/// (manches, places, duels, interventions) et la relance ; les autres l'y attendent, avec les mêmes
-/// réglages sous les yeux et qui jouera le match suivant. Le code de la partie (ou l'adresse en réseau
-/// local, chez l'hôte) reste affiché, pour inviter.
+/// (manches, places ; en cases à cocher depuis le 2026-10-27, le roi de la colline, les interventions et
+/// les duellistes tirés au sort) et la relance ; les autres l'y attendent, avec les mêmes réglages sous
+/// les yeux et qui jouera le match suivant (au tirage, personne ne le sait : il se fait au lancement). Le
+/// code de la partie (ou l'adresse en réseau local, chez l'hôte) reste affiché, pour inviter.
 ///
 /// Chez l'hôte, qui est le serveur, les réglages et la relance passent directement par RoundManager
 /// (ServerSetRules, ServerLaunchFromSalon). Catégorie C : chez les autres, il ne fait que lire l'état
@@ -23,13 +24,11 @@ public class SalonPanel : MonoBehaviour
     /// <summary>Le salon est-il affiché ? (le curseur est alors libre, voir GameHud)</summary>
     public static bool IsShown { get; private set; }
 
-    // L'ordre des choix du sélecteur des duels (GameHud.uxml).
-    private static readonly DuelOrganization[] Organizations = { DuelOrganization.KingOfTheHill, DuelOrganization.FixedDuelists };
-
     private VisualElement panel;
     private VisualElement players;
     private Label modeLabel, hintLabel, inviteLabel, statusLabel;
-    private OptionCycler roundsCycler, capacityCycler, organizationCycler, interventionsCycler;
+    private OptionCycler roundsCycler, capacityCycler;
+    private Toggle kingToggle, interventionsToggle, randomToggle;
     private Button launchButton, quitButton;
     private bool shown;
     private int shownKey = int.MinValue;
@@ -49,15 +48,17 @@ public class SalonPanel : MonoBehaviour
         statusLabel = root.Q<Label>("salonStatus");
         roundsCycler = root.Q<OptionCycler>("salonRoundsCycler");
         capacityCycler = root.Q<OptionCycler>("salonCapacityCycler");
-        organizationCycler = root.Q<OptionCycler>("salonOrganizationCycler");
-        interventionsCycler = root.Q<OptionCycler>("salonInterventionsCycler");
+        kingToggle = root.Q<Toggle>("salonKingToggle");
+        interventionsToggle = root.Q<Toggle>("salonInterventionsToggle");
+        randomToggle = root.Q<Toggle>("salonRandomToggle");
         launchButton = root.Q<Button>("salonLaunchButton");
         quitButton = root.Q<Button>("salonQuitButton");
 
         roundsCycler.RegisterValueChangedCallback(OnRoundsChanged);
         capacityCycler.RegisterValueChangedCallback(OnCapacityChanged);
-        organizationCycler.RegisterValueChangedCallback(OnOrganizationChanged);
-        interventionsCycler.RegisterValueChangedCallback(OnInterventionsChanged);
+        kingToggle.RegisterValueChangedCallback(OnKingChanged);
+        interventionsToggle.RegisterValueChangedCallback(OnInterventionsChanged);
+        randomToggle.RegisterValueChangedCallback(OnRandomChanged);
         launchButton.clicked += Launch;
         quitButton.clicked += Quit;
         shown = false;
@@ -68,8 +69,9 @@ public class SalonPanel : MonoBehaviour
     {
         if (roundsCycler != null) roundsCycler.UnregisterValueChangedCallback(OnRoundsChanged);
         if (capacityCycler != null) capacityCycler.UnregisterValueChangedCallback(OnCapacityChanged);
-        if (organizationCycler != null) organizationCycler.UnregisterValueChangedCallback(OnOrganizationChanged);
-        if (interventionsCycler != null) interventionsCycler.UnregisterValueChangedCallback(OnInterventionsChanged);
+        if (kingToggle != null) kingToggle.UnregisterValueChangedCallback(OnKingChanged);
+        if (interventionsToggle != null) interventionsToggle.UnregisterValueChangedCallback(OnInterventionsChanged);
+        if (randomToggle != null) randomToggle.UnregisterValueChangedCallback(OnRandomChanged);
         if (launchButton != null) launchButton.clicked -= Launch;
         if (quitButton != null) quitButton.clicked -= Quit;
         IsShown = false;
@@ -102,6 +104,7 @@ public class SalonPanel : MonoBehaviour
         key = key * 31 + (int)rules.organization;
         key = key * 31 + (rules.spectatorInterventions ? 1 : 0);
         key = key * 31 + rules.roundsToWin;
+        key = key * 31 + (rules.randomDuelists ? 1 : 0);
         foreach (PlayerMatchState state in PlayerMatchState.Spawned)
         {
             if (state == null) continue;
@@ -114,7 +117,7 @@ public class SalonPanel : MonoBehaviour
         shownKey = key;
 
         modeLabel.text = $"{GameModeCatalog.Describe(rules)} · {rules.Format}";
-        BuildPlayers();
+        BuildPlayers(rules.randomDuelists);
 
         roundsCycler.SetValueWithoutNotify(rules.roundsToWin == MatchRules.Bo3RoundsToWin ? 1 : 0);
         // On ne réduit pas les places sous le nombre de joueurs déjà là : les choix commencent à ce nombre.
@@ -123,12 +126,14 @@ public class SalonPanel : MonoBehaviour
         for (int c = capacityFloor; c <= MatchRules.MaxCapacity; c++) capacities.Add(c.ToString());
         capacityCycler.Choices = capacities;
         capacityCycler.SetValueWithoutNotify(Mathf.Max(0, rules.capacity - capacityFloor));
-        organizationCycler.SetValueWithoutNotify(System.Array.IndexOf(Organizations, rules.organization));
-        interventionsCycler.SetValueWithoutNotify(rules.spectatorInterventions ? 1 : 0);
+        kingToggle.SetValueWithoutNotify(rules.organization == DuelOrganization.KingOfTheHill);
+        interventionsToggle.SetValueWithoutNotify(rules.spectatorInterventions);
+        randomToggle.SetValueWithoutNotify(rules.randomDuelists);
         roundsCycler.SetEnabled(host);
         capacityCycler.SetEnabled(host);
-        organizationCycler.SetEnabled(host);
-        interventionsCycler.SetEnabled(host);
+        kingToggle.SetEnabled(host);
+        interventionsToggle.SetEnabled(host);
+        randomToggle.SetEnabled(host);
         hintLabel.text = host
             ? "Tes changements valent pour le match suivant, chez tout le monde."
             : "Seul l'hôte change les réglages.";
@@ -141,8 +146,9 @@ public class SalonPanel : MonoBehaviour
             : "Il faut deux joueurs pour lancer la partie.";
     }
 
-    /// <summary>Les joueurs : les duellistes du match suivant, puis la tribune dans l'ordre de la file.</summary>
-    private void BuildPlayers()
+    /// <summary>Les joueurs : les duellistes du match suivant, puis la tribune dans l'ordre de la file. Au tirage
+    /// au sort (`drawn`), tous sont dans le tirage, fait au lancement.</summary>
+    private void BuildPlayers(bool drawn)
     {
         ordered.Clear();
         foreach (PlayerMatchState state in PlayerMatchState.Spawned)
@@ -157,10 +163,10 @@ public class SalonPanel : MonoBehaviour
         ordered.Sort(duelists, ordered.Count - duelists, Comparer<PlayerMatchState>.Create((a, b) => a.QueuePosition.CompareTo(b.QueuePosition)));
 
         players.Clear();
-        foreach (PlayerMatchState state in ordered) players.Add(PlayerRow(state));
+        foreach (PlayerMatchState state in ordered) players.Add(PlayerRow(state, drawn));
     }
 
-    private static VisualElement PlayerRow(PlayerMatchState state)
+    private static VisualElement PlayerRow(PlayerMatchState state, bool drawn)
     {
         var row = new VisualElement();
         row.AddToClassList("salon-player");
@@ -174,7 +180,7 @@ public class SalonPanel : MonoBehaviour
         var name = new Label(hostPlayer ? $"{state.DisplayName} (hôte)" : state.DisplayName);
         name.AddToClassList("salon-player__name");
         row.Add(name);
-        var role = new Label(RoleText(state.IsDuelist, state.QueuePosition));
+        var role = new Label(drawn ? "Dans le tirage" : RoleText(state.IsDuelist, state.QueuePosition));
         role.AddToClassList("salon-player__role");
         row.Add(role);
         return row;
@@ -201,15 +207,14 @@ public class SalonPanel : MonoBehaviour
     private void OnCapacityChanged(ChangeEvent<int> evt)
         => ChangeRules(r => { r.capacity = (byte)(capacityFloor + evt.newValue); return r; });
 
-    private void OnOrganizationChanged(ChangeEvent<int> evt)
-    {
-        if (evt.newValue < 0 || evt.newValue >= Organizations.Length) return;
-        DuelOrganization chosen = Organizations[evt.newValue];
-        ChangeRules(r => { r.organization = chosen; return r; });
-    }
+    private void OnKingChanged(ChangeEvent<bool> evt)
+        => ChangeRules(r => { r.organization = evt.newValue ? DuelOrganization.KingOfTheHill : DuelOrganization.FixedDuelists; return r; });
 
-    private void OnInterventionsChanged(ChangeEvent<int> evt)
-        => ChangeRules(r => { r.spectatorInterventions = evt.newValue == 1; return r; });
+    private void OnInterventionsChanged(ChangeEvent<bool> evt)
+        => ChangeRules(r => { r.spectatorInterventions = evt.newValue; return r; });
+
+    private void OnRandomChanged(ChangeEvent<bool> evt)
+        => ChangeRules(r => { r.randomDuelists = evt.newValue; return r; });
 
     private void Launch()
     {

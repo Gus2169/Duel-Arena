@@ -28,6 +28,10 @@ public static class ShootingRangeBuilder
     private const string IdleClipPath = "Assets/_ProjectArt/Animations/MainsNues/Y Bot@Idle.fbx";
     private const string GridMaterialGuid = "c22777d6e868e4f2fb421913386b154e";   // le quadrillage de l'arène (ProBuilder)
     private const string DarkMaterialPath = "Assets/_ProjectArena/Tribune/Materiaux/Passerelle_GardeCorps.mat";
+    private const string PausePath = "Assets/_ProjectUI/Game/StandPause.uxml";
+    private const string PanelSettingsPath = "Assets/_ProjectUI/Game/GamePanelSettings.asset";
+    private const string BindRowPath = "Assets/_ProjectUI/MainMenu/KeyBindRow.uxml";
+    private const string GameSoundsPath = "Assets/_ProjectArt/Audio/GameSounds.asset";
 
     /// <summary>Les mannequins à découvert : (x, distance au poste de tir).</summary>
     public static readonly Vector2[] OpenDummies =
@@ -101,6 +105,7 @@ public static class ShootingRangeBuilder
         range.AddComponent<ShootingRangeHud>();
         range.AddComponent<ShootingRangePanel>();
         range.AddComponent<ShootingRangeBootstrap>();
+        BuildInterface();
 
         BuildCourse(coursePrefab, grid, dark);
 
@@ -394,6 +399,32 @@ public static class ShootingRangeBuilder
         light.range = 11f;
         light.intensity = 1.6f;
         light.shadows = LightShadows.None;
+    }
+
+    /// <summary>
+    /// Le menu de pause du stand (2026-10-27, demandé par l'utilisateur pour changer ses réglages au stand) :
+    /// Échap l'ouvre (PauseMenu), avec les Options du jeu (OptionsController) et la fenêtre des armes. Le
+    /// document est posé avant ses contrôleurs : ils retrouvent ses éléments en s'activant.
+    /// </summary>
+    private static void BuildInterface()
+    {
+        var ui = new GameObject("Interface");
+        var document = ui.AddComponent<UnityEngine.UIElements.UIDocument>();
+        document.panelSettings = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.PanelSettings>(PanelSettingsPath);
+        document.visualTreeAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.VisualTreeAsset>(PausePath);
+
+        var options = new SerializedObject(ui.AddComponent<OptionsController>());
+        options.FindProperty("document").objectReferenceValue = document;
+        options.FindProperty("bindRowTemplate").objectReferenceValue = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.VisualTreeAsset>(BindRowPath);
+        options.ApplyModifiedPropertiesWithoutUndo();
+
+        var pause = new SerializedObject(ui.AddComponent<PauseMenu>());
+        pause.FindProperty("document").objectReferenceValue = document;
+        pause.ApplyModifiedPropertiesWithoutUndo();
+
+        var sounds = new SerializedObject(ui.AddComponent<UiSounds>());
+        sounds.FindProperty("sounds").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameSounds>(GameSoundsPath);
+        sounds.ApplyModifiedPropertiesWithoutUndo();
     }
 
     private static void PlaceDummy(GameObject prefab, Transform parent, Vector2 p, int index)

@@ -318,6 +318,8 @@ public class GameAudioTests
             AssertWired(data.flybySounds, data.name + ".flybySounds");
             AssertWired(data.dryFireSounds, data.name + ".dryFireSounds");
             AssertWired(data.raiseSounds, data.name + ".raiseSounds");
+            // Une arme qui se charge s'entend charger : l'adversaire sait qu'un coup arrive (GDD § 6).
+            if (data.UsesCharge) Assert.IsNotNull(data.chargeSound, data.name + ".chargeSound");
         }
     }
 

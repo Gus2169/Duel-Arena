@@ -10,6 +10,11 @@
 
     <ui:VisualElement name="hudRoot" class="hud-root da-vars" picking-mode="Ignore">
 
+        <!-- Touché par un caillou (2026-10-27, piloté par HitIndicatorHud) : la zone rouge autour du réticule,
+             tournée vers le lanceur, et les arcs électriques au bord de l'écran, du même côté. Sous le reste du
+             HUD : le score et la vie restent lisibles. -->
+        <da:HitIndicatorOverlay name="hitIndicator" class="hit-indicator hidden" picking-mode="Ignore" />
+
         <!-- Barre de score : moi à gauche, l'adversaire à droite, le chrono de la manche au milieu -->
         <ui:VisualElement name="scoreBar" class="score-bar" picking-mode="Ignore">
             <ui:VisualElement class="score-side score-side--left" picking-mode="Ignore">
@@ -42,12 +47,10 @@
         </ui:VisualElement>
 
         <!-- La tribune (2026-10-13, piloté par SpectatorHud) : l'invite de la touche F (un spectateur
-             ramasse, un duelliste prend une arme lancée), l'élan d'un lancer, le panneau du spectateur
-             (sa place dans la file, ce qu'il tient, ses commandes) et l'étourdissement. -->
+             ramasse, un duelliste prend une arme lancée), le panneau du spectateur (sa place dans la file,
+             ce qu'il tient, ses commandes) et l'étourdissement. Un lancer visé montre sa trajectoire dans
+             le monde (ThrowArcPreview, 2026-10-27), plus de jauge d'élan. -->
         <ui:Label name="interactPrompt" class="interact-prompt hidden" picking-mode="Ignore" />
-        <ui:VisualElement name="chargeBar" class="charge-bar hidden" picking-mode="Ignore">
-            <ui:VisualElement name="chargeFill" class="charge-fill" picking-mode="Ignore" />
-        </ui:VisualElement>
         <ui:VisualElement name="spectatorPanel" class="spectator-panel hidden" picking-mode="Ignore">
             <ui:Label name="spectatorRole" class="spectator-role" picking-mode="Ignore" />
             <ui:Label name="spectatorCarry" class="spectator-carry" picking-mode="Ignore" />
@@ -116,13 +119,24 @@
                         <ui:Label class="salon-rule__label" text="PLACES" />
                         <da:OptionCycler name="salonCapacityCycler" class="salon-rule__cycler" />
                     </ui:VisualElement>
+                    <!-- Ce qui se dit oui ou non : des cases à cocher (2026-10-27) -->
                     <ui:VisualElement class="salon-rule">
-                        <ui:Label class="salon-rule__label" text="DUELS" />
-                        <da:OptionCycler name="salonOrganizationCycler" class="salon-rule__cycler" choices-text="Roi de la colline;Duellistes fixes" loop="true" />
+                        <ui:Label class="salon-rule__label" text="ROI DE LA COLLINE" />
+                        <ui:VisualElement class="salon-rule__check-cell">
+                            <ui:Toggle name="salonKingToggle" class="da-check" />
+                        </ui:VisualElement>
                     </ui:VisualElement>
                     <ui:VisualElement class="salon-rule">
                         <ui:Label class="salon-rule__label" text="INTERVENTIONS" />
-                        <da:OptionCycler name="salonInterventionsCycler" class="salon-rule__cycler" choices-text="Non;Oui" loop="true" />
+                        <ui:VisualElement class="salon-rule__check-cell">
+                            <ui:Toggle name="salonInterventionsToggle" class="da-check" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="salon-rule">
+                        <ui:Label class="salon-rule__label" text="DUELLISTES ALÉATOIRES" />
+                        <ui:VisualElement class="salon-rule__check-cell">
+                            <ui:Toggle name="salonRandomToggle" class="da-check" />
+                        </ui:VisualElement>
                     </ui:VisualElement>
                     <ui:Label name="salonRulesHint" class="salon-hint" />
                 </ui:VisualElement>

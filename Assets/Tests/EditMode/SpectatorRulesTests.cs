@@ -352,24 +352,27 @@ public class SpectatorRulesTests
     [Test]
     public void UneArmeLancee_ArriveEnMainChargeurPlein()
     {
-        var magazine = new WeaponController.MagazineState { equipped = 0, ammo0 = 3, ammo1 = 1, reloadEndsAt = 5.0 };
+        var magazine = new WeaponController.MagazineState { equipped = 0, ammo = 3, reloadEndsAt = 5.0 };
         WeaponController.ApplyPowerUp(ref magazine, 1, 10.0, 0.8f, 5);
-        Assert.AreEqual(1, magazine.equipped, "L'arme lancée en main, même en pleine manche.");
-        Assert.AreEqual(5, magazine.AmmoOf(1), "Chargeur plein.");
-        Assert.AreEqual(3, magazine.AmmoOf(0), "L'autre arme garde ses balles.");
+        Assert.AreEqual(1, magazine.equipped, "L'arme lancée en main, même en pleine manche : elle remplace la sienne.");
+        Assert.AreEqual(5, magazine.ammo, "Chargeur plein.");
         Assert.AreEqual(10.8, magazine.readyAt, 1e-6, "Elle met le temps de sortir.");
         Assert.AreEqual(0.0, magazine.reloadEndsAt, "Le rechargement en cours est abandonné.");
 
-        // La même arme que celle qu'on tient : un chargeur plein, sans la ressortir.
-        magazine.ammo1 = 0;
+        // La même arme que celle qu'on tient : un chargeur plein (une arme laser froide), sans la ressortir.
+        magazine.ammo = 0;
+        magazine.heat = 0.7f;
+        magazine.overheated = true;
         magazine.reloadEndsAt = 12.0;
         WeaponController.ApplyPowerUp(ref magazine, 1, 11.0, 0.8f, 5);
-        Assert.AreEqual(5, magazine.AmmoOf(1));
+        Assert.AreEqual(5, magazine.ammo);
+        Assert.AreEqual(0f, magazine.heat);
+        Assert.IsFalse(magazine.overheated);
         Assert.AreEqual(10.8, magazine.readyAt, 1e-6, "Pas de nouvelle sortie d'arme.");
         Assert.AreEqual(0.0, magazine.reloadEndsAt);
 
-        WeaponController.ApplyPowerUp(ref magazine, 7, 12.0, 0.8f, 5);
-        Assert.AreEqual(1, magazine.equipped, "Une place hors de la panoplie ne change rien.");
+        WeaponController.ApplyPowerUp(ref magazine, WeaponController.MaxSlots, 12.0, 0.8f, 5);
+        Assert.AreEqual(1, magazine.equipped, "Une place hors de l'arsenal ne change rien.");
     }
 
     // ------------------------------------------------------------------
@@ -418,15 +421,92 @@ public class SpectatorRulesTests
     // ------------------------------------------------------------------
 
     [Test]
-    public void UnSpectateur_NaNiViseeNiTirNiLeanNiFranchissement()
+    public void UnSpectateur_NaNiTirNiLeanNiFranchissement()
     {
-        bool aim = true, fire = true, firePressed = true, jump = true;
+        // Sa visée passe : c'est sa garde (2026-10-27), que le filtre ne touche plus.
+        bool fire = true, firePressed = true, jump = true;
         int lean = -1;
-        PlayerLocomotion.SpectatorInputFilter(ref aim, ref fire, ref firePressed, ref lean, ref jump);
-        Assert.IsFalse(aim);
+        PlayerLocomotion.SpectatorInputFilter(ref fire, ref firePressed, ref lean, ref jump);
         Assert.IsFalse(fire);
         Assert.IsFalse(firePressed);
         Assert.AreEqual(0, lean);
         Assert.IsFalse(jump);
+    }
+
+    // ------------------------------------------------------------------
+    // Les poings : l'enchaînement, la garde, la molette (2026-10-27)
+    // ------------------------------------------------------------------
+
+    [Test]
+    public void LesCoupsSEnchainent_GauchePuisDroite_EtRepartentDuGaucheApresUnePause()
+    {
+        const float duration = 0.45f, window = 0.35f;
+        Assert.IsFalse(SpectatorRules.NextPunchIsRight(false, double.PositiveInfinity, duration, window), "Le premier coup part du gauche.");
+        Assert.IsFalse(SpectatorRules.NextPunchIsRight(true, double.PositiveInfinity, duration, window), "Même après un droit, s'il est loin.");
+        Assert.IsTrue(SpectatorRules.NextPunchIsRight(false, 0.45, duration, window), "Relancé à la fin du gauche : le droit.");
+        Assert.IsFalse(SpectatorRules.NextPunchIsRight(true, 0.45, duration, window), "Puis le gauche : gauche, droite, gauche...");
+        Assert.IsTrue(SpectatorRules.NextPunchIsRight(false, 0.79, duration, window), "Jusqu'à la fin de la fenêtre, l'enchaînement tient.");
+        Assert.IsFalse(SpectatorRules.NextPunchIsRight(false, 0.81, duration, window), "Après une pause, il repart du gauche.");
+    }
+
+    [Test]
+    public void UnCoupDemandeEnGardeOuEnVisantUnLancer_EstPerdu_SinonIlAttendLaFinDuGeste()
+    {
+        Assert.IsTrue(SpectatorRules.PunchStillWanted(false, true, false, false), "Un appui demande un coup.");
+        Assert.IsTrue(SpectatorRules.PunchStillWanted(true, false, false, false), "Retenu pendant un coup, il attend la fin du geste.");
+        Assert.IsFalse(SpectatorRules.PunchStillWanted(false, false, false, false), "Sans appui, rien.");
+        Assert.IsFalse(SpectatorRules.PunchStillWanted(true, true, true, false), "En garde, on ne frappe pas : l'appui est perdu, rien ne part quand elle retombe.");
+        Assert.IsFalse(SpectatorRules.PunchStillWanted(false, true, false, true), "V en visant un lancer : perdu, aucun coup ne part juste après le lancer.");
+        Assert.IsFalse(SpectatorRules.PunchStillWanted(true, false, false, true), "Un coup retenu quand la visée commence est perdu aussi.");
+    }
+
+    /// <summary>Le lancer visé (2026-10-27, demandé par l'utilisateur) : le clic droit, l'objet en main, vise
+    /// et montre la trajectoire ; ni l'objet rangé, ni hors des phases où l'on lance, ni en plein coup.</summary>
+    [Test]
+    public void LeClicDroit_LObjetEnMain_ViseUnLancer()
+    {
+        Assert.IsTrue(SpectatorRules.ThrowAimHeld(true, true, true, false), "L'objet en main, le clic droit tenu : on vise.");
+        Assert.IsFalse(SpectatorRules.ThrowAimHeld(true, false, true, false), "Clic droit relâché : on renonce.");
+        Assert.IsFalse(SpectatorRules.ThrowAimHeld(false, true, true, false), "Les poings sortis (rien en main, ou l'objet rangé) : c'est la garde.");
+        Assert.IsFalse(SpectatorRules.ThrowAimHeld(true, true, false, false), "Hors des phases où l'on lance.");
+        Assert.IsFalse(SpectatorRules.ThrowAimHeld(true, true, true, true), "Pas en plein coup de poing.");
+    }
+
+    [Test]
+    public void LaGarde_ArreteCeQuiVientDeFace_PasDeCoteNiDeDosNiDAuDessus()
+    {
+        const float half = 70f;
+        Assert.IsTrue(SpectatorRules.GuardCovers(0f, new Vector3(0f, 0f, 1f), half), "De face.");
+        Assert.IsTrue(SpectatorRules.GuardCovers(0f, new Vector3(1f, 0f, 1f), half), "De trois quarts.");
+        Assert.IsTrue(SpectatorRules.GuardCovers(0f, new Vector3(0f, 0.4f, 1f), half), "Un peu au-dessus du regard.");
+        Assert.IsFalse(SpectatorRules.GuardCovers(0f, new Vector3(1f, 0f, 0f), half), "De côté : la garde ne couvre pas le flanc.");
+        Assert.IsFalse(SpectatorRules.GuardCovers(0f, new Vector3(0f, 0f, -1f), half), "Dans le dos.");
+        Assert.IsFalse(SpectatorRules.GuardCovers(0f, new Vector3(0f, 1f, 0.1f), half), "Ce qui tombe d'au-dessus de la tête.");
+        Assert.IsTrue(SpectatorRules.GuardCovers(90f, new Vector3(1f, 0f, 0f), half), "Le cap du robot compte : tourné vers +X, il pare ce qui vient de +X.");
+        Assert.IsFalse(SpectatorRules.GuardCovers(90f, new Vector3(0f, 0f, 1f), half));
+        Assert.IsFalse(SpectatorRules.GuardCovers(0f, Vector3.zero, half), "Sans direction, rien n'est paré.");
+        Assert.IsFalse(SpectatorRules.GuardCovers(0f, new Vector3(float.NaN, 0f, 1f), half), "Une valeur non finie n'est jamais parée.");
+    }
+
+    [Test]
+    public void LaGarde_NeParePasBaissee_NiUnObjetEnMain_NiEtourdi()
+    {
+        const float half = 70f;
+        Vector3 ahead = Vector3.forward;
+        Assert.IsTrue(SpectatorRules.GuardStops(true, true, false, 0f, ahead, half), "Levée, poings sortis, de face : elle pare.");
+        Assert.IsFalse(SpectatorRules.GuardStops(false, true, false, 0f, ahead, half), "Baissée.");
+        Assert.IsFalse(SpectatorRules.GuardStops(true, false, false, 0f, ahead, half), "Un objet en main (pas rangé) : rien n'est paré.");
+        Assert.IsFalse(SpectatorRules.GuardStops(true, true, true, 0f, ahead, half),
+            "Étourdi, même si sa garde n'est pas encore retombée chez le serveur : rien n'est paré.");
+        Assert.IsFalse(SpectatorRules.GuardStops(true, true, false, 0f, Vector3.back, half), "Dans le dos.");
+    }
+
+    [Test]
+    public void LesPoings_SontSortis_LesMainsVidesOuLObjetRange()
+    {
+        Assert.IsTrue(SpectatorRules.FistsOut(ArenaItemKind.None, false), "Rien en main : les poings.");
+        Assert.IsFalse(SpectatorRules.FistsOut(ArenaItemKind.Rock, false), "Un caillou en main : pas de garde.");
+        Assert.IsTrue(SpectatorRules.FistsOut(ArenaItemKind.Rock, true), "Le caillou rangé : les poings.");
+        Assert.IsTrue(SpectatorRules.FistsOut(ArenaItemKind.PowerUp, true), "Une arme rangée aussi.");
     }
 }

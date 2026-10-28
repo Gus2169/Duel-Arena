@@ -16,8 +16,8 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public class WeaponModel : MonoBehaviour
 {
-    /// <summary>Les familles de modèles. WeaponData.ModelPrefabFor commence par le modèle par défaut de
-    /// la classe, puis suit cet ordre : la famille d'un modèle se lit ici, jamais sur son indice.</summary>
+    /// <summary>Les séries d'armes (le stock, la série 30, le laser) : la série d'une arme se lit ici
+    /// (WeaponData.Tier, qui range l'armurerie), jamais sur sa place dans l'arsenal.</summary>
     public enum Family : byte { Stock = 0, Serie30 = 1, Laser = 2 }
 
     [Tooltip("La désignation de l'arme (« FA-07 »), affichée par l'armurerie. Deux modèles différents n'ont jamais la même : HeldWeapons s'en sert pour savoir si le modèle en main est le bon.")]

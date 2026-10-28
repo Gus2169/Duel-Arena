@@ -54,7 +54,7 @@ public class PlayerAnimator : MonoBehaviour
     [SerializeField] private float holdBlendTime = 0.2f;
 
     [Header("Gestes d'un spectateur (affichage)")]
-    [Tooltip("Temps (s) entre l'entrée dans le clip du coup de poing et le poing tendu. Le spectateur frappe avec le direct du gauche du taser (Taser Punch en miroir, entré à 0,10 s, poing tendu à 0,32 s) : le direct de boxe de Mixamo, en garde, hanches tournées, partait en l'air et sur le côté une fois posé sur un haut du corps aux hanches de face (2026-10-13). Le geste est lu à la vitesse qui fait tomber cet instant sur le contact (SpectatorController.PunchContactDelay).")]
+    [Tooltip("Temps (s) entre l'entrée dans le clip du coup de poing et le poing tendu. Le spectateur frappe avec le direct du taser (Taser Punch, entré à 0,10 s, poing tendu à 0,32 s) : en miroir pour le gauche, tel quel pour le droit (l'enchaînement, 2026-10-27). Les directs de boxe de Mixamo, en garde, hanches tournées, partaient sur le côté une fois posés sur un haut du corps aux hanches de face (2026-10-13, revérifié le 2026-10-27 sur Jab et Cross). Le geste est lu à la vitesse qui fait tomber cet instant sur le contact (SpectatorController.PunchContactDelay).")]
     [SerializeField] private float punchClipContactTime = 0.22f;
     [Tooltip("Temps (s) de la montée et de la descente du poids de la couche des gestes.")]
     [SerializeField] private float gestureBlendTime = 0.08f;
@@ -121,6 +121,9 @@ public class PlayerAnimator : MonoBehaviour
     // Le spectateur, à mains nues (2026-10-13).
     private static readonly int MainsNuesId = Animator.StringToHash("MainsNues");
     private static readonly int PoingId = Animator.StringToHash("Poing");
+    private static readonly int PoingDroitId = Animator.StringToHash("PoingDroit");
+    private static readonly int GardeId = Animator.StringToHash("Garde");
+    private static readonly int GardeChocId = Animator.StringToHash("GardeChoc");
     private static readonly int LancerId = Animator.StringToHash("Lancer");
     private static readonly int RamasserId = Animator.StringToHash("Ramasser");
     private static readonly int ElanId = Animator.StringToHash("Elan");
@@ -160,6 +163,7 @@ public class PlayerAnimator : MonoBehaviour
     private bool shownSpectator;
     private float gestureWeight;
     private float pickUpWeight;
+    private float punchShownUntil = float.NegativeInfinity; // la garde attend la fin d'un coup montré
     private Vector3 previousPosition;
     private Vector2 smoothedMove;
     private AnimatorRootMotionProbe rootMotion;
@@ -243,6 +247,7 @@ public class PlayerAnimator : MonoBehaviour
             spectator.OnPunch += DeclencherCoupDePoing;
             spectator.OnThrow += DeclencherLancer;
             spectator.OnPickUp += DeclencherRamasser;
+            spectator.OnGuardHit += DeclencherGardeTouchee;
         }
     }
 
@@ -257,19 +262,29 @@ public class PlayerAnimator : MonoBehaviour
             spectator.OnPunch -= DeclencherCoupDePoing;
             spectator.OnThrow -= DeclencherLancer;
             spectator.OnPickUp -= DeclencherRamasser;
+            spectator.OnGuardHit -= DeclencherGardeTouchee;
         }
     }
 
-    // Les gestes d'un spectateur (2026-10-13, sur la couche des gestes) : le direct du gauche (celui du
-    // taser), un lancer du bras droit et se pencher pour ramasser (clips Mixamo choisis ce jour-là). Par
-    // événement, comme le tir : chez le joueur à l'appui, chez les autres à la diffusion du serveur.
+    // Les gestes d'un spectateur (2026-10-13, sur la couche des gestes) : les directs (ceux du taser), un
+    // lancer du bras droit et se pencher pour ramasser (clips Mixamo choisis ce jour-là) ; la garde et le
+    // choc qu'elle encaisse (2026-10-27). Par événement, comme le tir : chez le joueur à l'appui, chez les
+    // autres à la diffusion du serveur ; la garde, elle, suit la pose publiée (DisplayGuard).
 
-    /// <summary>Le coup de poing : le poing gauche est tendu à l'instant du contact.</summary>
-    private void DeclencherCoupDePoing(float duration)
+    /// <summary>Le coup de poing : le poing (gauche, ou droit dans l'enchaînement) est tendu à l'instant
+    /// du contact.</summary>
+    private void DeclencherCoupDePoing(float duration, bool right)
     {
         if (animator == null) return;
+        punchShownUntil = Time.time + duration;
         animator.SetFloat(GesteSpeedId, PunchPlaybackSpeed);
-        animator.SetTrigger(PoingId);
+        animator.SetTrigger(right ? PoingDroitId : PoingId);
+    }
+
+    /// <summary>La garde a arrêté un coup ou un caillou : les bras encaissent, puis reprennent la garde.</summary>
+    private void DeclencherGardeTouchee()
+    {
+        if (animator != null) animator.SetTrigger(GardeChocId);
     }
 
     /// <summary>Vitesse de lecture du coup de poing : le poing tendu tombe sur le contact.</summary>
@@ -1306,9 +1321,12 @@ public class PlayerAnimator : MonoBehaviour
     private void UpdateSpectatorLayers(bool spectating, float dt)
     {
         if (animator.layerCount <= FullBodyLayer) return;
-        bool charging = spectating && spectator != null && spectator.IsCharging;
+        bool charging = spectating && spectator != null && spectator.IsAimingThrow;
         animator.SetBool(ElanId, charging);
-        animator.SetFloat(ElanLancerId, charging ? spectator.ChargeProgress : 0f);
+        animator.SetFloat(ElanLancerId, charging ? spectator.ThrowAimProgress : 0f);
+        // La garde, publiée avec la pose : elle attend la fin d'un coup montré (chez les autres, le coup
+        // arrive par sa diffusion, la garde baissée par la pose, chacun à son heure).
+        animator.SetBool(GardeId, spectating && locomotion.DisplayGuard && !charging && Time.time >= punchShownUntil);
 
         bool busy = false;
         if (spectating)

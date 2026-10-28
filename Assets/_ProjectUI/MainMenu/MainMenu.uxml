@@ -258,13 +258,24 @@
                             <ui:Label class="lobby-rule__label" text="PLACES" />
                             <da:OptionCycler name="lobbyCapacityCycler" class="lobby-rule__cycler" />
                         </ui:VisualElement>
+                        <!-- Ce qui se dit oui ou non : des cases à cocher (2026-10-27) -->
                         <ui:VisualElement class="lobby-rule">
-                            <ui:Label class="lobby-rule__label" text="DUELS" />
-                            <da:OptionCycler name="lobbyOrganizationCycler" class="lobby-rule__cycler" loop="true" />
+                            <ui:Label class="lobby-rule__label" text="ROI DE LA COLLINE" />
+                            <ui:VisualElement class="lobby-rule__check-cell">
+                                <ui:Toggle name="lobbyKingToggle" class="da-check" />
+                            </ui:VisualElement>
+                        </ui:VisualElement>
+                        <ui:VisualElement class="lobby-rule">
+                            <ui:Label class="lobby-rule__label" text="INTERVENTIONS" />
+                            <ui:VisualElement class="lobby-rule__check-cell">
+                                <ui:Toggle name="lobbyInterventionsToggle" class="da-check" />
+                            </ui:VisualElement>
                         </ui:VisualElement>
                         <ui:VisualElement class="lobby-rule lobby-rule--last">
-                            <ui:Label class="lobby-rule__label" text="INTERVENTIONS" />
-                            <da:OptionCycler name="lobbyInterventionsCycler" class="lobby-rule__cycler" choices-text="Non;Oui" loop="true" />
+                            <ui:Label class="lobby-rule__label" text="DUELLISTES ALÉATOIRES" />
+                            <ui:VisualElement class="lobby-rule__check-cell">
+                                <ui:Toggle name="lobbyRandomToggle" class="da-check" />
+                            </ui:VisualElement>
                         </ui:VisualElement>
                     </ui:VisualElement>
                     <ui:Label name="lobbyRulesHint" class="da-hint lobby-rules-hint" text="" />
@@ -419,7 +430,7 @@
                     <ui:Label class="key-hint__cap" text="ÉCHAP" picking-mode="Ignore" />
                     <ui:Label class="key-hint__label" text="RETOUR" picking-mode="Ignore" />
                 </ui:Button>
-                <ui:Label class="da-hint options-note" text="Chaque réglage s'applique aussitôt." />
+                <ui:Label class="da-hint options-note" text="Les réglages changés valent une fois appliqués." />
             </ui:VisualElement>
         </ui:VisualElement>
 

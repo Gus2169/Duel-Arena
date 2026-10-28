@@ -489,8 +489,51 @@
     --bracket-corners: 5;
 }
 
+/* Un mode verrouillé (2026-10-27, demandé par l'utilisateur : on les voyait trop, on croyait pouvoir les
+   choisir) : l'image et le robot presque éteints sous un voile sombre, un grand cadenas, les textes
+   éteints ; la carte ne réagit ni au survol ni au clic (désactivée, PlayScreenController). */
+.mode-card--locked:disabled {
+    opacity: 1;
+}
+
+.mode-card--locked > .mode-card__art,
+.mode-card--locked:hover > .mode-card__art {
+    -unity-background-image-tint-color: rgb(52, 56, 62);
+}
+
+.mode-card--locked > .mode-card__robot {
+    opacity: 0.22;
+}
+
+.mode-card--locked > .mode-card__lock {
+    background-color: rgba(5, 7, 10, 0.74);
+}
+
+.mode-card--locked .mode-card__lock-icon {
+    width: 86px;
+    height: 86px;
+    -unity-background-image-tint-color: rgba(232, 236, 240, 0.85);
+}
+
+.mode-card--locked > .mode-card__icon {
+    -unity-background-image-tint-color: rgb(96, 102, 110);
+}
+
 .mode-card--locked > .mode-card__text > .mode-card__title {
-    color: rgb(170, 178, 188);
+    color: rgb(118, 126, 136);
+}
+
+.mode-card--locked > .mode-card__text > .mode-card__subtitle {
+    color: rgb(86, 94, 104);
+}
+
+.mode-card--locked > .mode-card__edge {
+    --edge-color: rgba(150, 170, 190, 0.12);
+}
+
+/* La place d'une carte absente : rien ne se voit. */
+.mode-card--spacer {
+    background-color: rgba(0, 0, 0, 0);
 }
 
 /* Le détail */
@@ -983,6 +1026,15 @@
     width: 260px;
 }
 
+/* Une case à cocher (2026-10-27) : au milieu de la place d'un sélecteur, là où se lit sa valeur. */
+.lobby-rule__check-cell {
+    width: 260px;
+    flex-shrink: 0;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+}
+
 .lobby-rules-hint {
     margin-top: 6px;
 }
@@ -1159,6 +1211,75 @@
 .side-btn--active > .side-btn__key {
     color: var(--on-yellow);
     border-color: rgba(18, 22, 28, 0.5);
+}
+
+/* L'arsenal de l'armurerie (2026-10-26) : les douze armes, trois sous le nom de chaque famille. */
+.weapon-family {
+    margin-bottom: 14px;
+}
+
+.weapon-family__title {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    -unity-text-align: middle-left;
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin: 0 0 6px 2px;
+    padding: 0;
+}
+
+.weapon-family__row {
+    flex-direction: row;
+}
+
+.weapon-tile {
+    flex-grow: 1;
+    flex-basis: 0;
+    height: 86px;
+    margin: 0 6px 0 0;
+    padding: 6px 4px 4px 4px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.weapon-tile > .slant-bg {
+    --fill-color: rgba(12, 17, 23, 0.9);
+    --edge-color: rgba(150, 170, 190, 0.3);
+    --cut-tl: 0;
+    --cut-br: 12;
+}
+
+.weapon-tile__thumb {
+    width: 96px;
+    height: 48px;
+    flex-shrink: 0;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.weapon-tile__code {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    -unity-text-align: middle-center;
+    font-size: 14px;
+    letter-spacing: 1px;
+    color: var(--text);
+    margin: 4px 0 0 0;
+    padding: 0;
+}
+
+.weapon-tile:hover > .weapon-tile__code {
+    color: var(--yellow);
+}
+
+.weapon-tile--active > .slant-bg,
+.weapon-tile--active:hover > .slant-bg {
+    --fill-color: rgb(244, 190, 28);
+    --edge-width: 0;
+}
+
+.weapon-tile--active > .weapon-tile__code,
+.weapon-tile--active:hover > .weapon-tile__code {
+    color: var(--on-yellow);
 }
 
 .side-btn:disabled > .side-btn__text > .side-btn__title {
@@ -1509,6 +1630,12 @@
     background-color: rgb(16, 22, 29);
     justify-content: flex-end;
     flex-shrink: 0;
+}
+
+/* Un viseur se montre tel qu'on le voit en visée : une image plus grande, pour lire son réticule. */
+.choice-card--sight {
+    width: 208px;
+    height: 150px;
 }
 
 .choice-card__art {

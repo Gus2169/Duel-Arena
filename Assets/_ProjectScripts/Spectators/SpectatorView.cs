@@ -7,11 +7,14 @@ using UnityEngine.Rendering;
 /// yeux. La vue armée d'un duelliste (FirstPersonView) s'éteint sur la tribune ; celle-ci prend le
 /// relais, sur le même layer et avec la même caméra des bras.
 ///
-/// - Une copie du robot, à mains nues (ni arme, ni gant), accrochée à la caméra, tête dans l'œil : au
-///   repos, ses bras sont sous l'écran. Le coup de poing y joue le direct du gauche du corps (couche des
-///   gestes d'un spectateur, 2026-10-13), bras réorienté vers le centre de l'écran, comme le taser
-///   d'un duelliste.
-/// - L'objet tenu, en bas à droite : il recule pendant l'élan, part devant au lancer.
+/// - Une copie du robot, à mains nues (ni arme, ni gant), accrochée à la caméra, sa tête (repliée) juste
+///   derrière et sous l'œil, là où seraient ses yeux : au repos, ses bras sont sous l'écran et son buste
+///   derrière la caméra. Les coups de poing y jouent les directs du corps (couche des gestes d'un
+///   spectateur, 2026-10-13 ; le droit depuis le 2026-10-27, l'enchaînement), bras réorienté vers le
+///   centre de l'écran, comme le taser d'un duelliste. La garde y lève les deux poings en bas de
+///   l'écran, et encaisse quand elle arrête un coup.
+/// - L'objet en main, en bas à droite : il recule pendant l'élan, part devant au lancer. Rangé (la
+///   molette), il ne se voit pas.
 ///
 /// Catégorie C pure, chez le propriétaire seulement : rien ne la lit.
 /// </summary>
@@ -19,19 +22,32 @@ using UnityEngine.Rendering;
 public class SpectatorView : NetworkBehaviour
 {
     [Header("Coup de poing (ressenti)")]
-    [Tooltip("Où part le poing gauche, dans le repère de la caméra (m) : un peu à gauche et sous le centre de l'écran.")]
+    [Tooltip("Où part le poing gauche, dans le repère de la caméra (m) : un peu à gauche et sous le centre de l'écran. Le droit part à l'opposé, un peu à droite.")]
     [SerializeField] private Vector3 fistTarget = new Vector3(-0.07f, -0.11f, 0.55f);
+
+    [Header("Placement de la copie (ressenti)")]
+    [Tooltip("Où se tient la copie, par rapport à sa tête mise dans l'œil (m, repère de la caméra) : en arrière et plus bas, pour que le buste d'un châssis massif reste hors de l'écran. Tête dans l'œil, la caméra était dans le buste du CT-01 (vu le 2026-10-27 : un spectateur ne voyait plus rien).")]
+    [SerializeField] private Vector3 viewOffset = new Vector3(0f, -0.08f, -0.10f);
+
+    [Header("Garde (ressenti)")]
+    [Tooltip("Temps (s) pour lever ou baisser la garde à l'écran.")]
+    [SerializeField] private float guardBlendTime = 0.1f;
+    [Tooltip("En garde, la copie se tient là au lieu de viewOffset (m, repère de la caméra) : les poings tiennent le bas de l'écran, en V, sans boucher le centre (7 à 12 % de l'écran au CT-01, mesuré le 2026-10-27).")]
+    [SerializeField] private Vector3 guardViewOffset = new Vector3(0f, -0.15f, 0.03f);
 
     [Header("Objet tenu (ressenti)")]
     [Tooltip("Où se tient l'objet, dans le repère de la caméra (m) : en bas à droite.")]
     [SerializeField] private Vector3 holdOffset = new Vector3(0.24f, -0.21f, 0.45f);
     [SerializeField] private Vector3 holdEuler = new Vector3(8f, -25f, 4f);
-    [Tooltip("Pendant l'élan, l'objet recule et monte d'autant à pleine charge (m, repère de la caméra).")]
-    [SerializeField] private Vector3 windUpOffset = new Vector3(0.06f, 0.1f, -0.2f);
+    [Tooltip("Pendant la visée d'un lancer, l'objet recule d'autant, le bras armé derrière l'épaule (m, repère de la caméra) : il sort de l'écran et ne cache rien de la trajectoire qu'on vise (2026-10-27).")]
+    [SerializeField] private Vector3 windUpOffset = new Vector3(0.1f, 0.06f, -0.62f);
     [Tooltip("Au lancer, l'objet part devant pendant ce temps (s), puis disparaît.")]
     [SerializeField] private float throwPushTime = 0.15f;
 
     private static readonly int PoingId = Animator.StringToHash("Poing");
+    private static readonly int PoingDroitId = Animator.StringToHash("PoingDroit");
+    private static readonly int GardeId = Animator.StringToHash("Garde");
+    private static readonly int GardeChocId = Animator.StringToHash("GardeChoc");
     private static readonly int GesteSpeedId = Animator.StringToHash("GesteSpeed");
     private static readonly int MainsNuesId = Animator.StringToHash("MainsNues");
     private const int UpperBodyLayer = 1; // HautDuCorps : le fusil d'un duelliste, muet ici
@@ -45,7 +61,7 @@ public class SpectatorView : NetworkBehaviour
 
     private GameObject arms;
     private Animator armsAnimator;
-    private Transform armsHead, armsLeftUpperArm, armsFist;
+    private Transform armsHead, armsLeftUpperArm, armsFist, armsRightUpperArm, armsRightHand;
 
     private GameObject held;
     private ArenaItemKind heldKind;
@@ -53,6 +69,8 @@ public class SpectatorView : NetworkBehaviour
 
     private float punchStartedAt = float.NegativeInfinity;
     private float punchDuration = 0.45f;
+    private bool punchRight;
+    private float guardWeight;
     private float throwStartedAt = float.NegativeInfinity;
     private PlayerChassis chassis;
 
@@ -68,6 +86,7 @@ public class SpectatorView : NetworkBehaviour
         {
             spectator.OnPunch += HandlePunch;
             spectator.OnThrow += HandleThrow;
+            spectator.OnGuardHit += HandleGuardHit;
         }
         BuildArms();
         chassis = GetComponent<PlayerChassis>();
@@ -84,6 +103,7 @@ public class SpectatorView : NetworkBehaviour
         {
             spectator.OnPunch -= HandlePunch;
             spectator.OnThrow -= HandleThrow;
+            spectator.OnGuardHit -= HandleGuardHit;
         }
         if (chassis != null) chassis.Changed -= HandleChassis;
         if (arms != null) Destroy(arms);
@@ -98,16 +118,22 @@ public class SpectatorView : NetworkBehaviour
         if (arms != null) RobotChassis.Apply(arms.transform, id);
     }
 
-    private void HandlePunch(float duration)
+    private void HandlePunch(float duration, bool right)
     {
         punchStartedAt = Time.time;
         punchDuration = Mathf.Max(0.1f, duration);
+        punchRight = right;
         if (armsAnimator == null || !armsAnimator.isActiveAndEnabled) return;
         armsAnimator.SetFloat(GesteSpeedId, playerAnimator != null ? playerAnimator.PunchPlaybackSpeed : 1f);
-        armsAnimator.SetTrigger(PoingId);
+        armsAnimator.SetTrigger(right ? PoingDroitId : PoingId);
     }
 
     private void HandleThrow() => throwStartedAt = Time.time;
+
+    private void HandleGuardHit()
+    {
+        if (armsAnimator != null && armsAnimator.isActiveAndEnabled) armsAnimator.SetTrigger(GardeChocId);
+    }
 
     /// <summary>La copie du robot, à mains nues, accrochée à la caméra (comme la vue armée).</summary>
     private void BuildArms()
@@ -124,6 +150,8 @@ public class SpectatorView : NetworkBehaviour
         HeldWeapons.WearTaserGlove(armsAnimator, false);
         armsHead = armsAnimator.GetBoneTransform(HumanBodyBones.Head);
         armsLeftUpperArm = armsAnimator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+        armsRightUpperArm = armsAnimator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+        armsRightHand = armsAnimator.GetBoneTransform(HumanBodyBones.RightHand);
         Transform glove = HeldWeapons.TaserGlove(armsAnimator);
         armsFist = glove != null ? glove.Find("Poing") : null;
 
@@ -157,47 +185,72 @@ public class SpectatorView : NetworkBehaviour
         UpdateHeld();
     }
 
-    /// <summary>La tête de la copie dans l'œil, son poing gauche vers l'écran pendant le coup.</summary>
+    /// <summary>La tête de la copie dans l'œil ; pendant un coup, son poing vers l'écran ; en garde, ses
+    /// deux poings levés devant les yeux.</summary>
     private void UpdatePunch()
     {
         if (arms == null || armsAnimator == null) return;
         float t = Time.time - punchStartedAt;
         float weight = 0f;
-        if (t >= 0f && t <= punchDuration)
+        bool punching = t >= 0f && t <= punchDuration;
+        if (punching)
         {
             float rise = Mathf.Clamp01(t / 0.05f);
             float fall = Mathf.Clamp01((punchDuration - t) / 0.12f);
             weight = Mathf.Min(rise, fall);
         }
-        // À mains nues au repos (l'arbre debout des spectateurs, pas de fusil), le direct sur la couche
-        // des gestes.
+        // La garde de la simulation (celle qui part au serveur), après la fin d'un coup.
+        bool guard = locomotion != null && locomotion.DisplayGuard && !punching;
+        guardWeight = Mathf.MoveTowards(guardWeight, guard ? 1f : 0f, Time.deltaTime / Mathf.Max(0.01f, guardBlendTime));
+
+        // À mains nues au repos (l'arbre debout des spectateurs, pas de fusil), les directs et la garde sur
+        // la couche des gestes.
         armsAnimator.SetFloat(MainsNuesId, 1f);
+        armsAnimator.SetBool(GardeId, guard);
         if (armsAnimator.layerCount > PlayerAnimator.SpectatorGesturesLayer)
         {
             armsAnimator.SetLayerWeight(UpperBodyLayer, 0f);
-            armsAnimator.SetLayerWeight(PlayerAnimator.SpectatorGesturesLayer, weight);
+            armsAnimator.SetLayerWeight(PlayerAnimator.SpectatorGesturesLayer, Mathf.Max(weight, guardWeight));
         }
 
-        // La copie est enfant de la caméra : on la place pour que sa tête (repliée) soit dans l'œil.
-        Transform root = arms.transform;
-        root.localRotation = Quaternion.identity;
+        // La copie est enfant de la caméra : sa tête (repliée) près de l'œil, un peu en avant de lui pour
+        // que le buste reste hors de l'écran ; en garde, plus bas, pour que les poings tiennent le bas de
+        // l'écran.
         if (armsHead != null)
-        {
-            Vector3 head = root.InverseTransformPoint(armsHead.position);
-            root.localPosition = -head;
-        }
+            Place(arms.transform, armsHead, Vector3.Lerp(viewOffset, guardViewOffset, Mathf.SmoothStep(0f, 1f, guardWeight)));
 
+        // Le poing qui frappe vers le centre de l'écran : le gauche un peu à gauche, le droit un peu à droite.
         float dip = Mathf.SmoothStep(0f, 1f, weight);
-        if (dip > 0.01f && armsLeftUpperArm != null && armsFist != null)
+        if (dip <= 0.01f) return;
+        if (punchRight)
+        {
+            if (armsRightUpperArm != null && armsRightHand != null)
+            {
+                Vector3 target = new Vector3(-fistTarget.x, fistTarget.y, fistTarget.z);
+                FirstPersonView.AimStrike(armsRightUpperArm, armsRightHand, cameraTransform.TransformPoint(target), dip);
+            }
+        }
+        else if (armsLeftUpperArm != null && armsFist != null)
+        {
             FirstPersonView.AimStrike(armsLeftUpperArm, armsFist, cameraTransform.TransformPoint(fistTarget), dip);
+        }
     }
 
-    /// <summary>L'objet tenu, en bas à droite : il recule pendant l'élan, part devant au lancer.</summary>
+    /// <summary>Place la copie des bras (`root`, enfant de la caméra) : sa tête repliée au point de l'œil,
+    /// décalée de `offset` (repère de la caméra). Sans état, testée (SpectatorViewTests).</summary>
+    public static void Place(Transform root, Transform head, Vector3 offset)
+    {
+        root.localRotation = Quaternion.identity;
+        root.localPosition = -root.InverseTransformPoint(head.position) + offset;
+    }
+
+    /// <summary>L'objet en main, en bas à droite : il recule pendant l'élan, part devant au lancer. Rangé
+    /// (la molette), il ne se voit pas.</summary>
     private void UpdateHeld()
     {
         float sinceThrow = Time.time - throwStartedAt;
         bool pushing = sinceThrow >= 0f && sinceThrow < throwPushTime;
-        ArenaItemKind kind = spectator.ShownCarried;
+        ArenaItemKind kind = spectator.ShownInHand;
         int variant = spectator.CarriedVariant;
         if (pushing && kind == ArenaItemKind.None)
         {
@@ -208,7 +261,7 @@ public class SpectatorView : NetworkBehaviour
         ShowHeld(kind, variant);
         if (held == null) return;
 
-        Vector3 offset = holdOffset + windUpOffset * Mathf.SmoothStep(0f, 1f, spectator.ChargeProgress);
+        Vector3 offset = holdOffset + windUpOffset * Mathf.SmoothStep(0f, 1f, spectator.ThrowAimProgress);
         if (pushing) offset += new Vector3(-0.1f, 0.05f, 0.6f) * (sinceThrow / throwPushTime);
         held.transform.localPosition = offset;
         held.transform.localRotation = Quaternion.Euler(holdEuler);

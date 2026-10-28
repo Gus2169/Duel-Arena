@@ -21,54 +21,46 @@ public enum WeaponFinish : byte
 }
 
 /// <summary>
-/// L'apparence des armes d'un joueur (2026-10-15, GDD § 6) : pour chaque place de la panoplie
-/// (touches 1 à 4), le modèle choisi à l'armurerie (0 celui par défaut de la classe, 1 et 2 les deux
-/// autres : voir WeaponData.ModelPrefabFor) et sa finition.
+/// L'apparence des armes d'un joueur (2026-10-15, GDD § 6) : la finition choisie à l'armurerie pour
+/// chaque arme de l'arsenal. Depuis la refonte du 2026-10-26, chaque modèle est une arme : il n'y a
+/// plus de modèle à choisir, et chaque arme garde sa finition.
 ///
 /// Catégorie C réseautée : le joueur l'annonce en se connectant (SessionFlow, avec son pseudo), le
 /// serveur la borne et la publie (PlayerWeaponLooks), chaque machine l'affiche ; rien de la
-/// simulation ne la lit. Tient sur 32 bits, 8 par arme : 4 pour le modèle, 4 pour la finition.
+/// simulation ne la lit. Tient sur 64 bits, 4 par arme.
 /// </summary>
 [Serializable]
 public struct WeaponLooks : IEquatable<WeaponLooks>
 {
-    public const int Slots = 4;
+    public const int Slots = WeaponController.MaxSlots;
     public const int FinishCount = 6;
-    private const int BitsPerSlot = 8;
+    private const int BitsPerSlot = 4;
 
-    [SerializeField] private uint packed;
+    [SerializeField] private ulong packed;
 
-    public WeaponLooks(uint packed) => this.packed = packed;
+    public WeaponLooks(ulong packed) => this.packed = packed;
 
-    /// <summary>Les quatre armes dans leur modèle par défaut, d'origine.</summary>
+    /// <summary>Toutes les armes d'origine.</summary>
     public static WeaponLooks Default => default;
 
-    public uint Packed => packed;
+    public ulong Packed => packed;
 
-    /// <summary>Le modèle choisi pour la place `slot` (0 : celui par défaut).</summary>
-    public int Model(int slot) => slot < 0 || slot >= Slots ? 0 : (int)((packed >> (BitsPerSlot * slot)) & 0xFu);
-
-    /// <summary>La finition choisie pour la place `slot`.</summary>
+    /// <summary>La finition choisie pour l'arme de la place `slot`.</summary>
     public WeaponFinish Finish(int slot) => slot < 0 || slot >= Slots ? WeaponFinish.Origine
-        : (WeaponFinish)((packed >> (BitsPerSlot * slot + 4)) & 0xFu);
+        : (WeaponFinish)((packed >> (BitsPerSlot * slot)) & 0xFUL);
 
-    /// <summary>La même apparence, avec ce modèle et cette finition pour la place `slot` (bornés).</summary>
-    public WeaponLooks With(int slot, int model, WeaponFinish finish)
+    /// <summary>La même apparence, avec cette finition pour la place `slot` (bornée).</summary>
+    public WeaponLooks WithFinish(int slot, WeaponFinish finish)
     {
         if (slot < 0 || slot >= Slots) return this;
         int shift = BitsPerSlot * slot;
-        uint value = (uint)Mathf.Clamp(model, 0, 15) | ((uint)Mathf.Clamp((int)finish, 0, 15) << 4);
-        return new WeaponLooks((packed & ~(0xFFu << shift)) | (value << shift));
+        ulong value = (ulong)Mathf.Clamp((int)finish, 0, 15);
+        return new WeaponLooks((packed & ~(0xFUL << shift)) | (value << shift));
     }
 
-    public WeaponLooks WithModel(int slot, int model) => With(slot, model, Finish(slot));
-
-    public WeaponLooks WithFinish(int slot, WeaponFinish finish) => With(slot, Model(slot), finish);
-
     /// <summary>
-    /// Ce qu'un serveur accepte d'un client qui ne fait pas foi : un modèle que l'arme n'a pas, une
-    /// finition qui n'existe pas, redeviennent le modèle par défaut et l'origine ; les bits sans place
-    /// sont effacés.
+    /// Ce qu'un serveur accepte d'un client qui ne fait pas foi : une finition qui n'existe pas
+    /// redevient l'origine ; les bits sans place sont effacés.
     /// Plus tard, les finitions se débloqueront en jouant (GDD § 14) : c'est ici qu'on les vérifiera.
     /// Fonction pure, testée.
     /// </summary>
@@ -77,11 +69,30 @@ public struct WeaponLooks : IEquatable<WeaponLooks>
         var result = Default;
         for (int slot = 0; slot < Slots; slot++)
         {
-            WeaponData data = loadout != null && slot < loadout.Count ? loadout[slot] : null;
-            int models = data != null ? data.ModelCount : 1;
-            int model = Model(slot) < models ? Model(slot) : 0;
             WeaponFinish finish = (int)Finish(slot) < FinishCount ? Finish(slot) : WeaponFinish.Origine;
-            result = result.With(slot, model, finish);
+            result = result.WithFinish(slot, finish);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// L'apparence enregistrée avant la refonte (2026-10-15 au 2026-10-26) : 8 bits par classe, le
+    /// modèle puis la finition. La finition de chaque classe passe à l'arme du modèle qu'elle montrait
+    /// (`armsOfModels[classe][modèle]`, la place de cette arme dans l'arsenal) ; les autres armes sont
+    /// d'origine. Fonction pure, testée.
+    /// </summary>
+    public static WeaponLooks FromBeforeOverhaul(uint old, int[][] armsOfModels)
+    {
+        var result = Default;
+        for (int weaponClass = 0; weaponClass < 4; weaponClass++)
+        {
+            uint bits = (old >> (8 * weaponClass)) & 0xFFu;
+            int model = (int)(bits & 0xFu);
+            var finish = (WeaponFinish)((bits >> 4) & 0xFu);
+            if ((int)finish >= FinishCount || armsOfModels == null || weaponClass >= armsOfModels.Length) continue;
+            int[] arms = armsOfModels[weaponClass];
+            if (arms == null || model >= arms.Length) continue;
+            result = result.WithFinish(arms[model], finish);
         }
         return result;
     }
@@ -124,8 +135,8 @@ public struct WeaponLooks : IEquatable<WeaponLooks>
 
     public bool Equals(WeaponLooks other) => packed == other.packed;
     public override bool Equals(object obj) => obj is WeaponLooks other && Equals(other);
-    public override int GetHashCode() => (int)packed;
+    public override int GetHashCode() => packed.GetHashCode();
     public static bool operator ==(WeaponLooks a, WeaponLooks b) => a.packed == b.packed;
     public static bool operator !=(WeaponLooks a, WeaponLooks b) => a.packed != b.packed;
-    public override string ToString() => packed.ToString("X8");
+    public override string ToString() => packed.ToString("X12");
 }

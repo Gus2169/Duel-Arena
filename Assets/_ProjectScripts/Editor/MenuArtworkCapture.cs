@@ -22,6 +22,10 @@ using UnityEngine.SceneManagement;
 ///
 /// Les robots sont des copies du modèle du préfab joueur (RobotAppearance), peintes aux couleurs de la
 /// palette et posées par leurs clips, sur le layer Default : seule la lumière de la scène les éclaire.
+///
+/// L'arène habillée (2026-10-27, ArenaDecorBuilder) a sa propre lumière, sa salle et son plafond : la capture la
+/// garde telle quelle (pas de nuit posée par-dessus), et cache le haut de la salle (charpente, rampes, appliques)
+/// pour les vues d'en haut, qui regardent à travers le plafond.
 /// </summary>
 public static class MenuArtworkCapture
 {
@@ -92,10 +96,13 @@ public static class MenuArtworkCapture
         SceneManager.MoveGameObjectToScene(temp, arena);
         var robots = new List<PlayableGraph>();
         NightMood mood = null;
+        var hidden = new List<Renderer>();
         try
         {
             SceneManager.SetActiveScene(arena);
             Physics.SyncTransforms();
+            bool dressed = HasRoot(arena, ArenaLighting.RootName);
+            if (dressed) hidden = HideHallTop(arena);
 
             var points = Object.FindObjectsByType<PlayerSpawnPoints>(FindObjectsInactive.Include)
                 .Find(p => p.gameObject.scene == arena);
@@ -145,13 +152,17 @@ public static class MenuArtworkCapture
             artwork.walkwayRail = rail;
             report.AppendLine($"Carte : {mapRect.width:0} × {mapRect.height:0} m, {spawns.Length} points d'apparition, {tribune.RockSources.Count} blocs.");
 
-            // ---- Puis l'arène de nuit, comme une salle de spectacle : projecteurs, lampes de la tribune, brume.
-            mood = new NightMood(arena);
-            for (int i = -1; i <= 1; i++)
+            // ---- Puis l'arène de nuit, comme une salle de spectacle : projecteurs, lampes de la tribune, brume. L'arène
+            // habillée a déjà les siens.
+            if (!dressed)
             {
-                // Trois projecteurs le long du grand axe de l'arène.
-                mood.AddSpot(temp.transform, center + new Vector3(0f, 26f, i * railRect.height * 0.3f),
-                    new Vector3(0f, -1f, -i * 0.12f), 68f, 70f, 520f, i == 0);
+                mood = new NightMood(arena);
+                for (int i = -1; i <= 1; i++)
+                {
+                    // Trois projecteurs le long du grand axe de l'arène.
+                    mood.AddSpot(temp.transform, center + new Vector3(0f, 26f, i * railRect.height * 0.3f),
+                        new Vector3(0f, -1f, -i * 0.12f), 68f, 70f, 520f, i == 0);
+                }
             }
             cam.orthographic = false;
             cam.clearFlags = CameraClearFlags.SolidColor;
@@ -174,7 +185,7 @@ public static class MenuArtworkCapture
             {
                 // Des lampes jaunes sur la passerelle, une place de spectateur sur deux, loin de l'objectif.
                 if (Vector3.Distance(standSpawns[i].position, eye) < 14f) continue;
-                mood.AddLamp(temp.transform, standSpawns[i].position + Vector3.up * 2.4f, 9f, 28f);
+                mood?.AddLamp(temp.transform, standSpawns[i].position + Vector3.up * 2.4f, 9f, 28f);
             }
 
             // Deux duellistes face à face, là où la caméra les voit : ni derrière un mur, ni derrière le robot du
@@ -209,7 +220,10 @@ public static class MenuArtworkCapture
             front.y = floorTop;
             robots.Add(PlaceRobot(temp.transform, front, YawTowards(front, front + flatForward) + 18f, palette, Yellow, clips.idle, 2.2f));
             // Une lumière douce sur ses épaules, venue de derrière l'objectif.
-            mood.AddLamp(temp.transform, front - flatForward * 1.6f + flatRight * 0.4f + Vector3.up * 2.6f, 4.5f, 2.2f, new Color(1f, 0.9f, 0.75f));
+            mood?.AddLamp(temp.transform, front - flatForward * 1.6f + flatRight * 0.4f + Vector3.up * 2.6f, 4.5f, 2.2f, new Color(1f, 0.9f, 0.75f));
+
+            // Le titre se voit de la passerelle, sous le plafond : le haut de la salle y reparaît.
+            foreach (Renderer r in hidden) if (r != null) r.enabled = true;
 
             cam.fieldOfView = 54f;
             cam.transform.SetPositionAndRotation(eye, look);
@@ -217,7 +231,8 @@ public static class MenuArtworkCapture
             cam.farClipPlane = 400f;
             artwork.titleBackdrop = SaveRender(cam, 2560, 1440, "Menu_Titre.png", report);
 
-            // La vue d'ensemble : de haut, en biais, l'arène et sa tribune.
+            // La vue d'ensemble : de haut, en biais, l'arène et sa tribune (à travers le plafond de l'arène habillée).
+            foreach (Renderer r in hidden) if (r != null) r.enabled = false;
             Vector3 overviewEye = center + new Vector3(-railRect.width * 0.44f, railRect.height * 0.34f, -railRect.height * 0.44f);
             Vector3 overviewTarget = center + new Vector3(0f, -3f, railRect.height * 0.06f);
             cam.fieldOfView = 50f;
@@ -231,10 +246,45 @@ public static class MenuArtworkCapture
                 if (graph.IsValid()) graph.Destroy();
             }
             mood?.Restore();
+            foreach (Renderer r in hidden) if (r != null) r.enabled = true;
             Object.DestroyImmediate(temp);
             if (previous.IsValid() && previous.isLoaded) SceneManager.SetActiveScene(previous);
             if (openedHere) EditorSceneManager.CloseScene(arena, true);
         }
+    }
+
+    private static bool HasRoot(Scene scene, string name)
+    {
+        foreach (GameObject root in scene.GetRootGameObjects())
+            if (root.name == name) return true;
+        return false;
+    }
+
+    /// <summary>Éteint ce qui pend sous le plafond de l'arène habillée (charpente, rampes de projecteurs, suspentes,
+    /// appliques) : vu d'en haut, il cacherait l'arène. Rend ce qui a été éteint, à rallumer.</summary>
+    private static List<Renderer> HideHallTop(Scene scene)
+    {
+        var hidden = new List<Renderer>();
+        foreach (GameObject root in scene.GetRootGameObjects())
+        {
+            Transform[] parts =
+            {
+                root.name == ArenaDecorBuilder.DecorRootName ? root.transform.Find("Salle/Charpente") : null,
+                root.name == ArenaLighting.RootName ? root.transform.Find("Rampes de projecteurs") : null,
+                root.name == ArenaLighting.RootName ? root.transform.Find("Appliques") : null,
+            };
+            foreach (Transform part in parts)
+            {
+                if (part == null) continue;
+                foreach (Renderer r in part.GetComponentsInChildren<Renderer>(false))
+                {
+                    if (!r.enabled) continue;
+                    r.enabled = false;
+                    hidden.Add(r);
+                }
+            }
+        }
+        return hidden;
     }
 
     /// <summary>Le pan du garde-corps dont la normale sortante regarde le plus vers `direction` (x, z).</summary>

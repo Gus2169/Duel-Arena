@@ -132,9 +132,7 @@ public class GameHud : MonoBehaviour
         bool cursorFree = menu || choosing;
         if (local.TryGetComponent(out PlayerInputReader input))
         {
-            input.SetMode(menu ? PlayerInputReader.Mode.None
-                         : choosing ? PlayerInputReader.Mode.WeaponChoice
-                         : PlayerInputReader.Mode.Gameplay);
+            input.SetMode(menu || choosing ? PlayerInputReader.Mode.None : PlayerInputReader.Mode.Gameplay);
         }
         UnityEngine.Cursor.lockState = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
         UnityEngine.Cursor.visible = cursorFree;

@@ -83,6 +83,8 @@ public class ArenaItem : NetworkBehaviour
     [Tooltip("Le matériel posé flotte au-dessus du sol en tournant sur lui-même : on le repère de loin (catégorie C).")]
     [SerializeField] private float restHover = 0.3f;
     [SerializeField] private float restSpinSpeed = 90f;
+    [Tooltip("La trajectoire qu'un spectateur voit en visant un lancer (ThrowArcPreview), et le cercle de son point de chute.")]
+    [SerializeField] private Material trajectoryMaterial;
 
     [Header("Vol (simulé par le serveur, à régler en jouant)")]
     [Tooltip("Gravité des objets lancés (m/s²). Plus faible que celle des robots (-18) : un lancer porte jusqu'au centre de l'arène.")]
@@ -126,6 +128,18 @@ public class ArenaItem : NetworkBehaviour
     public Vector3 RestPosition => motion.Value.position;
 
     public PowerUpCatalog Catalog => catalog;
+
+    /// <summary>La gravité d'un objet lancé (m/s²), celle de la simulation du serveur.</summary>
+    public float Gravity => gravity;
+
+    /// <summary>Ce qui arrête un objet lancé : le décor.</summary>
+    public LayerMask WorldMask => worldMask;
+
+    /// <summary>Le rayon (m) de la sphère qui le fait toucher le décor.</summary>
+    public float RadiusFor(ArenaItemKind kind) => RadiusOf(kind);
+
+    /// <summary>Le matériau de la trajectoire montrée au lanceur (ThrowArcPreview).</summary>
+    public Material TrajectoryMaterial => trajectoryMaterial;
 
     /// <summary>Le nom à afficher (« caillou », « Sniper »).</summary>
     public string DisplayName => Kind == ArenaItemKind.Rock ? "le caillou" : (catalog != null ? catalog.NameOf(Variant) : "l'objet");
@@ -311,7 +325,9 @@ public class ArenaItem : NetworkBehaviour
     private void ServerSimulate()
     {
         Motion m = motion.Value;
-        if (m.phase != Phase.Flying || consumed) return;
+        // À la sortie d'une partie, le NetworkManager peut s'éteindre avant cet objet (un caillou en vol à
+        // l'arrêt du Play Mode, vu le 2026-10-27), comme dans DisplayTime.
+        if (m.phase != Phase.Flying || consumed || NetworkManager == null) return;
 
         double now = NetworkManager.ServerTime.Time;
         Info i = info.Value;
@@ -413,10 +429,12 @@ public class ArenaItem : NetworkBehaviour
         Motion current = motion.Value;
         if (Breaks(info.Value))
         {
+            // Un caillou lancé se brise au premier choc : il est encore sur son premier tronçon, parti du
+            // point du lancer. Le robot touché voit d'où (HitIndicatorHud).
             if (hit.duelist != null && hit.duelist.TryGetComponent(out SpectatorController duelist))
-                duelist.ServerRockHitDuelist(velocity, hit.point);
+                duelist.ServerRockHitDuelist(velocity, hit.point, current.position);
             else if (hit.spectator != null)
-                hit.spectator.ServerRockHitSpectator(velocity);
+                hit.spectator.ServerRockHitSpectator(velocity, current.position);
             ServerShatter(hit.point, time);
             return;
         }

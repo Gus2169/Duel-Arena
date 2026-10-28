@@ -24,6 +24,7 @@ public class AnimatorStateTests
     [TearDown]
     public void TearDown()
     {
+        Time.captureDeltaTime = 0f; // un test arrêté en plein geste ne laisse pas le pas de temps figé
         if (instance != null) Object.DestroyImmediate(instance);
     }
 
@@ -518,10 +519,16 @@ public class AnimatorStateTests
         int gestes = PlayerAnimator.SpectatorGesturesLayer;
         animator.SetLayerWeight(gestes, 1f); // en jeu, PlayerAnimator pilote ce poids pendant le geste
 
-        // Le coup de poing : tendu au contact, 0,15 s après l'appui (les valeurs du jeu).
+        // Le coup de poing : tendu au contact, 0,15 s après l'appui (les valeurs du jeu). Le pas de temps
+        // est figé le temps du geste : la mesure tombe au même instant de l'animation quelle que soit la
+        // charge de la machine. Au pas d'une image lente, le poing se mesurait encore en route (0,499 m,
+        // le 2026-10-27, deux joueurs virtuels ouverts).
+        Time.captureDeltaTime = 1f / 120f;
+        yield return null;
         animator.SetFloat("GesteSpeed", 0.22f / 0.15f);
         animator.SetTrigger("Poing");
         yield return new WaitForSeconds(0.15f);
+        Time.captureDeltaTime = 0f;
         AssertStateSurCouche(gestes, "Poing");
         Vector3 left = root.InverseTransformPoint(leftHand.position);
         Vector3 right = root.InverseTransformPoint(rightHand.position);
@@ -569,6 +576,79 @@ public class AnimatorStateTests
         yield return Settle(0.5f);
         AssertStateSurCouche(4, "Etourdi");
         Assert.AreEqual("Dizzy Idle", ClipDominant(4), "Étourdi, le spectateur titube (Dizzy Idle).");
+    }
+
+    /// <summary>
+    /// L'enchaînement et la garde du spectateur (2026-10-27). Le direct du DROIT (le geste du gauche,
+    /// sans miroir) est tendu au contact ; la garde lève les deux poings, FERMÉS, devant le visage (les
+    /// bras de « Standing Block Idle », les doigts du direct : le clip de Mixamo a les mains ouvertes) ;
+    /// un coup paré la secoue, puis elle revient ; baissée, la couche retourne au repos.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator UnSpectateur_FrappeDuDroit_EtLeveSaGardePoingsFermes()
+    {
+        yield return Setup();
+        // À mains nues, comme PlayerAnimator le montre : le gant du taser replie la main gauche, et le
+        // poing gauche se mesurerait fermé quoi que joue la garde.
+        HeldWeapons.WearTaserGlove(animator, false);
+        animator.SetFloat("MainsNues", 1f);
+        animator.SetLayerWeight(1, 0f);
+        int gestes = PlayerAnimator.SpectatorGesturesLayer;
+        animator.SetLayerWeight(gestes, 1f); // en jeu, PlayerAnimator pilote ce poids
+        yield return Settle(0.3f);
+
+        Transform root = animator.transform;
+        Transform leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand);
+        Transform rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
+
+        // Le direct du droit, tendu au contact (0,15 s après l'appui, comme le gauche), mesuré au même pas
+        // de temps figé.
+        Time.captureDeltaTime = 1f / 120f;
+        yield return null;
+        animator.SetFloat("GesteSpeed", 0.22f / 0.15f);
+        animator.SetTrigger("PoingDroit");
+        yield return new WaitForSeconds(0.15f);
+        Time.captureDeltaTime = 0f;
+        AssertStateSurCouche(gestes, "PoingDroit");
+        Vector3 left = root.InverseTransformPoint(leftHand.position);
+        Vector3 right = root.InverseTransformPoint(rightHand.position);
+        Debug.Log($"[SPECTATEUR] poing droit : main droite x={right.x:F2} z={right.z:F2} m, main gauche z={left.z:F2} m");
+        Assert.Greater(right.z, 0.5f, "Au contact, le poing droit n'est pas tendu.");
+        Assert.Greater(right.z, left.z + 0.15f, "Au contact, c'est la main gauche qui frappe : le direct du droit est en miroir.");
+        yield return Settle(0.6f);
+        AssertStateSurCouche(gestes, "Repos");
+
+        // La garde : les deux poings levés devant le visage, fermés.
+        animator.SetBool("Garde", true);
+        yield return Settle(0.5f);
+        AssertStateSurCouche(gestes, "Garde");
+        left = root.InverseTransformPoint(leftHand.position);
+        right = root.InverseTransformPoint(rightHand.position);
+        float leftFist = Vector3.Distance(leftHand.position, animator.GetBoneTransform(HumanBodyBones.LeftMiddleDistal).position);
+        float rightFist = Vector3.Distance(rightHand.position, animator.GetBoneTransform(HumanBodyBones.RightMiddleDistal).position);
+        Debug.Log($"[SPECTATEUR] garde : gauche ({left.x:F2} {left.y:F2} {left.z:F2}), droite ({right.x:F2} {right.y:F2} {right.z:F2}), poings {leftFist:F3} / {rightFist:F3} m");
+        foreach (Vector3 hand in new[] { left, right })
+        {
+            Assert.Greater(hand.z, 0.3f, "En garde, les poings ne sont pas devant le corps.");
+            Assert.Greater(hand.y, 1.25f, "En garde, les poings ne sont pas levés à hauteur du visage.");
+            Assert.Less(Mathf.Abs(hand.x), 0.3f, "En garde, les poings ne sont pas devant soi.");
+        }
+        // Main ouverte, 19 cm du poignet au bout du majeur ; poing serré, 10 (mesuré le 2026-10-27).
+        Assert.Greater(Mathf.Min(leftFist, rightFist), 0.05f, "Une main est repliée sur elle-même (le gant du taser) : la mesure du poing ne dit rien.");
+        Assert.Less(leftFist, 0.14f, "En garde, la main gauche est ouverte : les doigts du clip de garde n'ont pas été remplacés.");
+        Assert.Less(rightFist, 0.14f, "En garde, la main droite est ouverte.");
+
+        // Un coup paré : les bras encaissent, puis la garde revient.
+        animator.SetTrigger("GardeChoc");
+        yield return new WaitForSeconds(0.15f);
+        AssertStateSurCouche(gestes, "GardeChoc");
+        yield return Settle(1.2f);
+        AssertStateSurCouche(gestes, "Garde");
+
+        // Baissée : la couche retourne au repos.
+        animator.SetBool("Garde", false);
+        yield return Settle(0.4f);
+        AssertStateSurCouche(gestes, "Repos");
     }
 }
 #endif

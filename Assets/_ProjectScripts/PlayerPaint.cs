@@ -47,6 +47,7 @@ public class PlayerPaint : NetworkBehaviour
     private static readonly List<PlayerPaint> spawnedPaints = new List<PlayerPaint>();
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+    private static readonly int CelEmissionId = Shader.PropertyToID("_Emission");      // DuelArena/RobotCelShading
 
     /// <summary>Le nom que porte un matériau de peinture, sur une pièce à plusieurs matériaux (CT01_Peinture).</summary>
     public const string PaintSlot = "Peinture";
@@ -58,6 +59,10 @@ public class PlayerPaint : NetworkBehaviour
     /// <summary>L'éclat des lueurs : la couleur du joueur, multipliée (le jeu n'a pas de bloom ; la valeur des
     /// matériaux de l'essai des rendus, RobotChassisBuilder).</summary>
     public const float GlowIntensity = 2.6f;
+
+    /// <summary>La même lueur sous le cel-shading (le réglage du rendu, RenderStyle), plus douce : celle de l'essai des
+    /// rendus.</summary>
+    public const float CelGlowIntensity = 1.6f;
 
     private MaterialPropertyBlock propertyBlock;
 
@@ -75,6 +80,10 @@ public class PlayerPaint : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
+        // Le robot suit le rendu choisi dans les Options (RenderStyle).
+        Transform model = transform.Find("Model");
+        if (model != null) RenderStyle.TrackRobot(model.gameObject);
+
         if (IsServer)
         {
             // Les joueurs sont spawnés l'un après l'autre : chacun voit les couleurs déjà prises.
@@ -157,7 +166,12 @@ public class PlayerPaint : NetworkBehaviour
             if (glow && !glows) continue;
             r.GetPropertyBlock(block, i);
             if (painted) block.SetColor(BaseColorId, paint);
-            else block.SetColor(EmissionColorId, (Color)paint * GlowIntensity);
+            else
+            {
+                // Les deux rendus des robots : chacun lit la sienne (URP Lit, DuelArena/RobotCelShading).
+                block.SetColor(EmissionColorId, (Color)paint * GlowIntensity);
+                block.SetColor(CelEmissionId, (Color)paint * CelGlowIntensity);
+            }
             r.SetPropertyBlock(block, i);
         }
         if (slots) return;

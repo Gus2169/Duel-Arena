@@ -3,14 +3,15 @@ using NUnit.Framework;
 using UnityEngine;
 
 /// <summary>
-/// L'apparence des armes (2026-10-15, GDD § 6) : pour chacune des quatre armes, le modèle (le stock,
-/// la série 30, la version laser) et la finition choisis à l'armurerie, annoncés en se connectant,
-/// bornés par le serveur et vus par tous.
+/// L'apparence des armes (2026-10-15, GDD § 6) : pour chacune des douze armes de l'arsenal (refonte du
+/// 2026-10-26 : chaque modèle est une arme), la finition choisie à l'armurerie, annoncée en se
+/// connectant, bornée par le serveur et vue par tous.
 ///
-/// Ce qui casse ici ne lève aucune erreur : une arme qui prend la finition de sa voisine, un client
-/// modifié qui demande un modèle qui n'existe pas (et un serveur qui le publie tel quel), une ancienne
-/// build qui n'envoie pas d'apparence et qu'on lit de travers, deux instances du jeu sur un PC qui
-/// échangent leurs armes, une finition « dépareillée » qui ne change aucune pièce.
+/// Ce qui casse ici ne lève aucune erreur : une arme qui prend la finition de sa voisine, la neuvième
+/// arme qui déborde des 32 bits d'avant, un client modifié qui demande une finition qui n'existe pas
+/// (et un serveur qui la publie telle quelle), une ancienne build qu'on lit de travers, deux instances
+/// du jeu sur un PC qui échangent leurs armes, le réglage d'avant la refonte perdu, une finition
+/// « dépareillée » qui ne change aucune pièce.
 /// </summary>
 public class WeaponLooksTests
 {
@@ -20,80 +21,67 @@ public class WeaponLooksTests
         UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath).GetComponentInChildren<WeaponController>(true).Loadout;
 
     [Test]
-    public void LApparence_GardeUnModeleEtUneFinitionParArme_SansToucherAuxAutres()
+    public void LApparence_GardeUneFinitionParArme_SansToucherAuxAutres()
     {
         var looks = WeaponLooks.Default;
+        Assert.AreEqual(WeaponController.MaxSlots, WeaponLooks.Slots, "Une finition pour chaque arme de l'arsenal.");
         for (int slot = 0; slot < WeaponLooks.Slots; slot++)
-        {
-            Assert.AreEqual(0, looks.Model(slot));
-            Assert.AreEqual(WeaponFinish.Origine, looks.Finish(slot), "Sans choix : le modèle par défaut, d'origine.");
-        }
+            Assert.AreEqual(WeaponFinish.Origine, looks.Finish(slot), "Sans choix : d'origine.");
 
-        looks = looks.With(0, 2, WeaponFinish.Rouillee).With(1, 1, WeaponFinish.Encrassee).With(3, 2, WeaponFinish.Polie);
-        Assert.AreEqual(2, looks.Model(0));
-        Assert.AreEqual(WeaponFinish.Rouillee, looks.Finish(0));
-        Assert.AreEqual(1, looks.Model(1));
-        Assert.AreEqual(WeaponFinish.Encrassee, looks.Finish(1));
-        Assert.AreEqual(0, looks.Model(2), "La place 3 n'a rien reçu.");
-        Assert.AreEqual(WeaponFinish.Origine, looks.Finish(2));
-        Assert.AreEqual(2, looks.Model(3));
-        Assert.AreEqual(WeaponFinish.Polie, looks.Finish(3));
+        // Chaque arme la sienne, jusqu'à la dernière (au-delà des 32 bits d'avant la refonte).
+        for (int slot = 0; slot < WeaponLooks.Slots; slot++)
+            looks = looks.WithFinish(slot, (WeaponFinish)(slot % WeaponLooks.FinishCount));
+        for (int slot = 0; slot < WeaponLooks.Slots; slot++)
+            Assert.AreEqual((WeaponFinish)(slot % WeaponLooks.FinishCount), looks.Finish(slot), $"Arme {slot + 1}.");
 
-        // Changer une arme ne touche ni le modèle ni la finition des autres.
-        WeaponLooks changed = looks.WithFinish(1, WeaponFinish.Repeinte).WithModel(0, 1);
-        Assert.AreEqual(1, changed.Model(0));
-        Assert.AreEqual(WeaponFinish.Rouillee, changed.Finish(0), "Changer de modèle garde la finition.");
-        Assert.AreEqual(1, changed.Model(1), "Changer de finition garde le modèle.");
-        Assert.AreEqual(WeaponFinish.Repeinte, changed.Finish(1));
-        Assert.AreEqual(looks.Model(3), changed.Model(3));
-        Assert.AreEqual(looks.Finish(3), changed.Finish(3));
+        // Changer une arme ne touche pas aux autres.
+        WeaponLooks changed = looks.WithFinish(9, WeaponFinish.Encrassee);
+        Assert.AreEqual(WeaponFinish.Encrassee, changed.Finish(9));
+        for (int slot = 0; slot < WeaponLooks.Slots; slot++)
+            if (slot != 9) Assert.AreEqual(looks.Finish(slot), changed.Finish(slot), $"Arme {slot + 1} : intacte.");
 
-        // Hors de la panoplie : rien ne bouge.
-        Assert.AreEqual(looks, looks.With(4, 1, WeaponFinish.Polie));
-        Assert.AreEqual(0, looks.Model(-1));
+        // Hors de l'arsenal : rien ne bouge.
+        Assert.AreEqual(looks, looks.WithFinish(WeaponLooks.Slots, WeaponFinish.Polie));
+        Assert.AreEqual(WeaponFinish.Origine, looks.Finish(-1));
     }
 
     [Test]
-    public void LeServeur_RameneAuChoixParDefaut_CeQuiNExistePas()
+    public void LeServeur_RameneALOrigine_CeQuiNExistePas()
     {
         IReadOnlyList<WeaponData> loadout = Loadout();
-        // Un client modifié : tous les bits levés (des modèles et des finitions qui n'existent pas).
-        WeaponLooks sanitized = new WeaponLooks(0xFFFFFFFFu).Sanitized(loadout);
-        for (int slot = 0; slot < WeaponLooks.Slots; slot++)
-        {
-            Assert.AreEqual(0, sanitized.Model(slot), $"Place {slot + 1} : un modèle inexistant redevient celui par défaut.");
-            Assert.AreEqual(WeaponFinish.Origine, sanitized.Finish(slot), $"Place {slot + 1} : une finition inexistante redevient l'origine.");
-        }
+        // Un client modifié : tous les bits levés (des finitions qui n'existent pas, des bits sans arme).
+        WeaponLooks sanitized = new WeaponLooks(ulong.MaxValue).Sanitized(loadout);
+        Assert.AreEqual(WeaponLooks.Default, sanitized, "Une finition inexistante redevient l'origine, et les bits sans arme s'effacent.");
 
-        // Un choix honnête passe tel quel, jusqu'au dernier modèle et à la dernière finition.
+        // Un choix honnête passe tel quel, jusqu'à la dernière finition.
         var honest = WeaponLooks.Default;
         for (int slot = 0; slot < WeaponLooks.Slots; slot++)
-            honest = honest.With(slot, loadout[slot].ModelCount - 1, (WeaponFinish)(WeaponLooks.FinishCount - 1 - slot));
+            honest = honest.WithFinish(slot, (WeaponFinish)((WeaponLooks.FinishCount - 1 - slot % WeaponLooks.FinishCount)));
         Assert.AreEqual(honest, honest.Sanitized(loadout), "Le serveur ne doit pas toucher à un choix valable.");
 
-        // Juste au-delà du dernier modèle et de la dernière finition.
-        WeaponLooks beyond = WeaponLooks.Default.With(1, loadout[1].ModelCount, (WeaponFinish)WeaponLooks.FinishCount).Sanitized(loadout);
-        Assert.AreEqual(0, beyond.Model(1));
-        Assert.AreEqual(WeaponFinish.Origine, beyond.Finish(1));
+        // Juste au-delà de la dernière finition.
+        WeaponLooks beyond = WeaponLooks.Default.WithFinish(11, (WeaponFinish)WeaponLooks.FinishCount).Sanitized(loadout);
+        Assert.AreEqual(WeaponFinish.Origine, beyond.Finish(11));
     }
 
     [Test]
-    public void LaDemandeDeConnexion_PorteLApparenceDesArmes()
+    public void LaDemandeDeConnexion_PorteLApparenceDesDouzeArmes()
     {
-        WeaponLooks looks = WeaponLooks.Default.With(0, 1, WeaponFinish.Polie).With(3, 2, WeaponFinish.Depareillee);
+        WeaponLooks looks = WeaponLooks.Default.WithFinish(0, WeaponFinish.Polie).WithFinish(3, WeaponFinish.Depareillee)
+                                              .WithFinish(11, WeaponFinish.Rouillee);
         Assert.IsTrue(SessionFlow.ParsePayload(SessionFlow.BuildPayload("0.3.0", "Héloïse", looks), out string version, out string name, out WeaponLooks read));
         Assert.AreEqual("0.3.0", version);
         Assert.AreEqual("Héloïse", name, "Le pseudo se lit toujours.");
-        Assert.AreEqual(looks, read, "L'apparence arrive telle qu'elle est partie.");
+        Assert.AreEqual(looks, read, "L'apparence arrive telle qu'elle est partie, la douzième arme comprise.");
 
-        // Une ancienne build : sa version seule, ou sa version et son pseudo. Les armes par défaut.
+        // Une ancienne build : sa version seule, ou sa version et son pseudo. Les armes d'origine.
         Assert.IsTrue(SessionFlow.ParsePayload(System.Text.Encoding.UTF8.GetBytes("0.1.2\nUntel"), out _, out name, out read));
         Assert.AreEqual("Untel", name);
         Assert.AreEqual(WeaponLooks.Default, read);
         Assert.IsTrue(SessionFlow.ParsePayload(System.Text.Encoding.UTF8.GetBytes("0.1.0"), out _, out _, out read));
         Assert.AreEqual(WeaponLooks.Default, read);
 
-        // Un client modifié qui envoie n'importe quoi à la place de l'apparence : les armes par défaut.
+        // Un client modifié qui envoie n'importe quoi à la place de l'apparence : les armes d'origine.
         Assert.IsTrue(SessionFlow.ParsePayload(System.Text.Encoding.UTF8.GetBytes("0.3.0\nUntel\nZZ-pas-hexa"), out _, out _, out read));
         Assert.AreEqual(WeaponLooks.Default, read);
     }
@@ -104,20 +92,44 @@ public class WeaponLooksTests
     public void LApparence_ResteCelleDeCetteInstance_QuandUneAutreEnregistreLaSienne()
     {
         WeaponLooks before = GameSettings.WeaponLooks;
-        int stored = PlayerPrefs.GetInt(GameSettings.WeaponLooksKey, 0);
+        string stored = PlayerPrefs.GetString(GameSettings.WeaponLooksKey, "");
         try
         {
-            WeaponLooks mine = WeaponLooks.Default.With(2, 1, WeaponFinish.Rouillee);
+            WeaponLooks mine = WeaponLooks.Default.WithFinish(2, WeaponFinish.Rouillee);
             GameSettings.WeaponLooks = mine;
-            PlayerPrefs.SetInt(GameSettings.WeaponLooksKey, unchecked((int)WeaponLooks.Default.With(0, 2, WeaponFinish.Polie).Packed));
+            PlayerPrefs.SetString(GameSettings.WeaponLooksKey, WeaponLooks.Default.WithFinish(0, WeaponFinish.Polie).Packed.ToString("X12"));
             Assert.AreEqual(mine, GameSettings.WeaponLooks, "L'autre instance a écrit la sienne : celle-ci garde ses armes.");
         }
         finally
         {
             GameSettings.WeaponLooks = before;
-            PlayerPrefs.SetInt(GameSettings.WeaponLooksKey, stored);
+            PlayerPrefs.SetString(GameSettings.WeaponLooksKey, stored);
             PlayerPrefs.Save();
         }
+    }
+
+    /// <summary>Le réglage d'avant la refonte (8 bits par classe : le modèle, puis la finition) : la
+    /// finition passe à l'arme que montrait le modèle choisi ; les autres armes restent d'origine.</summary>
+    [Test]
+    public void LApparenceDAvantLaRefonte_PasseALArmeDuModeleChoisi()
+    {
+        // Fusil d'assaut : modèle 2 (FX-1), polie ; pompe : modèle 1 (FAP-30), rouillée ; pistolet :
+        // modèle 0 (FX-4), dépareillée ; sniper : rien.
+        uint old = (2u | (uint)WeaponFinish.Polie << 4)
+                 | (1u | (uint)WeaponFinish.Rouillee << 4) << 16
+                 | (0u | (uint)WeaponFinish.Depareillee << 4) << 24;
+        WeaponLooks looks = WeaponLooks.FromBeforeOverhaul(old, GameSettings.ArmsBeforeOverhaul);
+        Assert.AreEqual(WeaponFinish.Polie, looks.Finish(5), "Le FX-1, cinquième arme de l'arsenal après les quatre d'avant.");
+        Assert.AreEqual(WeaponFinish.Rouillee, looks.Finish(8), "Le FAP-30.");
+        Assert.AreEqual(WeaponFinish.Depareillee, looks.Finish(3), "Le FX-4, modèle par défaut du pistolet d'avant.");
+        Assert.AreEqual(WeaponFinish.Origine, looks.Finish(0), "Le FA-07 n'était pas le modèle choisi.");
+        Assert.AreEqual(WeaponFinish.Origine, looks.Finish(1), "Le sniper n'avait rien.");
+
+        // Les places nommées par la table sont bien ces armes-là dans l'arsenal du préfab.
+        IReadOnlyList<WeaponData> loadout = Loadout();
+        string[] expected = { "FX-1", "FAP-30", "FX-4" };
+        int[] slots = { 5, 8, 3 };
+        for (int i = 0; i < slots.Length; i++) Assert.AreEqual(expected[i], loadout[slots[i]].Designation);
     }
 
     /// <summary>« Dépareillée » : les pièces qu'une réparation a prises sur une autre arme portent sa

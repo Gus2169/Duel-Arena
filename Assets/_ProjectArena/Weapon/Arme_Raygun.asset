@@ -12,23 +12,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe33acf964d9c684b81db736a07bf7db, type: 3}
   m_Name: Arme_Raygun
   m_EditorClassIdentifier: DuelArena.Runtime::WeaponData
-  weaponName: Pistolet
+  weaponName: FX-4
+  family: 3
+  role: rayon qui chauffe, cadence libre
   modelPrefab: {fileID: 3746240396287458209, guid: e5a13d63b05ea6644b3bf65ea869b612, type: 3}
-  otherModels:
-  - {fileID: 976176385625153909, guid: 5445effcb65019746a842194260f2846, type: 3}
-  - {fileID: 3785651697421443977, guid: bee6f7a6f239c51459d6c2b22c4d8101, type: 3}
   acceptedAttachments: 13
   acceptedSights: 4
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
-  damagePerHit: 26
-  shotsPerSecond: 4.5
+  damagePerHit: 20
+  shotsPerSecond: 7
   isAutomatic: 0
   maxRange: 60
   headMultiplier: 1.5
   legsMultiplier: 1
   falloffStart: 15
   falloffEnd: 35
-  minDamageMultiplier: 0.75
+  minDamageMultiplier: 0.7
   pelletPattern: []
   aimPatternScale: 1
   hipSpread: 1.1
@@ -52,8 +51,8 @@ MonoBehaviour:
   hitboxMask:
     serializedVersion: 2
     m_Bits: 128
-  magazineSize: 12
-  reloadDuration: 1.6
+  magazineSize: 1
+  reloadDuration: 1.5
   reloadPerRound: 0
   reloadCues:
   - clips:
@@ -64,109 +63,34 @@ MonoBehaviour:
   reloadEndSounds: []
   reloadEndDelay: 0.3
   reloadVolume: 0.8
+  heatPerShot: 0.083333336
+  heatCoolDelay: 0.3
+  heatCoolTime: 2.5
+  overheatVentDuration: 2.5
+  chargeTime: 0
+  unchargedDamage: 0.3
+  chargeSound: {fileID: 0}
+  chargeVolume: 0.7
   sprintToFireTime: 0.2
-  verticalRecoilPattern:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1.1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 3
-      value: 1.2
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 12
-      value: 1.2
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  horizontalRecoilPattern:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 0.2
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 2
-      value: -0.2
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 3
-      value: 0.25
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 4
-      value: -0.25
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 12
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
+  recoilPattern:
+  - {x: 0, y: 1}
+  - {x: 0.2, y: 1.1}
+  - {x: -0.2, y: 1.1500001}
+  - {x: 0.25, y: 1.2}
+  - {x: -0.25, y: 1.2}
+  - {x: -0.23925781, y: 1.2}
+  - {x: -0.2109375, y: 1.2}
+  - {x: -0.17089844, y: 1.2}
+  - {x: -0.125, y: 1.2}
+  - {x: -0.07910156, y: 1.2}
+  - {x: -0.0390625, y: 1.2}
+  - {x: -0.0107421875, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
   recoilPerShotDegrees: 1.8
   recoilRecoverySpeed: 8
   recoilResetDelay: 0.3

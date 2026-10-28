@@ -48,6 +48,9 @@ public class SessionFlow : MonoBehaviour
     private static readonly Dictionary<ulong, WeaponAttachments> approvedAttachments = new Dictionary<ulong, WeaponAttachments>();
     private static readonly Dictionary<ulong, int> approvedPaints = new Dictionary<ulong, int>();
     private static readonly Dictionary<ulong, int> approvedChassis = new Dictionary<ulong, int>();
+    // L'identifiant de joueur des services annoncé par chaque client (2026-10-27) : sa place dans le salon.
+    // Gardé toute la session (RoundManager le relit tant que les joueurs du salon arrivent dans l'arène).
+    private static readonly Dictionary<ulong, string> approvedPlayerIds = new Dictionary<ulong, string>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics()
@@ -57,6 +60,32 @@ public class SessionFlow : MonoBehaviour
         approvedAttachments.Clear();
         approvedPaints.Clear();
         approvedChassis.Clear();
+        approvedPlayerIds.Clear();
+        LaunchOrder.Clear();
+    }
+
+    /// <summary>
+    /// L'ordre du salon en ligne au lancement de la partie (2026-10-27) : les identifiants de joueur de ses
+    /// membres, l'hôte d'abord puis par arrivée au salon, les duellistes tirés au sort en tête avec le
+    /// tirage (OnlineSession.LaunchOrder). Fixé par l'hôte au lancement (LobbyController), lu par RoundManager
+    /// pour faire duellistes les deux premiers, même s'ils arrivent dans l'arène après les autres, et vidé une
+    /// fois tous arrivés. Vide en réseau local : l'ordre d'arrivée y vaut celui du salon.
+    /// </summary>
+    public static readonly List<string> LaunchOrder = new List<string>();
+
+    /// <summary>Le rang de `clientId` dans l'ordre du salon au lancement (LaunchOrder), -1 s'il n'y était pas.</summary>
+    public static int LaunchRankOf(ulong clientId)
+    {
+        if (LaunchOrder.Count == 0 || !approvedPlayerIds.TryGetValue(clientId, out string id) || string.IsNullOrEmpty(id)) return -1;
+        return LaunchOrder.IndexOf(id);
+    }
+
+    /// <summary>Le joueur du salon `playerId` est-il arrivé dans l'arène (l'un des clients `present` l'a annoncé) ?</summary>
+    public static bool LaunchPlayerConnected(string playerId, IReadOnlyList<ulong> present)
+    {
+        foreach (ulong clientId in present)
+            if (approvedPlayerIds.TryGetValue(clientId, out string id) && id == playerId) return true;
+        return false;
     }
 
     /// <summary>
@@ -95,20 +124,22 @@ public class SessionFlow : MonoBehaviour
         approvedAttachments.Clear();
         approvedPaints.Clear();
         approvedChassis.Clear();
+        approvedPlayerIds.Clear();
+        LaunchOrder.Clear();
         networkManager.NetworkConfig.ConnectionApproval = true;
         PrepareConnectionData(networkManager);
         networkManager.ConnectionApprovalCallback = ApproveConnection;
     }
 
     /// <summary>La demande de connexion de cette machine : sa version, le pseudo des Options, l'apparence de
-    /// ses armes, sa couleur et son châssis. À refaire juste avant de démarrer : ils ont pu changer depuis le
-    /// lancement.</summary>
+    /// ses armes, sa couleur, son châssis et son identifiant de joueur des services (vide hors ligne). À
+    /// refaire juste avant de démarrer : ils ont pu changer depuis le lancement.</summary>
     public static void PrepareConnectionData(NetworkManager nm)
     {
         if (nm != null)
             nm.NetworkConfig.ConnectionData = BuildPayload(Application.version, GameSettings.PlayerName, GameSettings.WeaponLooks,
                                                            GameSettings.WeaponAttachments, GameSettings.PreferredColorIndex,
-                                                           GameSettings.PreferredChassis);
+                                                           GameSettings.PreferredChassis, OnlineSession.LocalPlayerId);
     }
 
     /// <summary>Le pseudo annoncé par `clientId` à son approbation, retiré de l'attente (vide s'il
@@ -159,15 +190,35 @@ public class SessionFlow : MonoBehaviour
     }
 
     /// <summary>La demande de connexion : la version, le pseudo, puis l'apparence des armes et leurs
-    /// accessoires (2026-10-16) en hexadécimal, le rang de la couleur choisie (-1 : aucune) et celui du châssis
-    /// (2026-10-26), séparés par des sauts de ligne (que le pseudo, nettoyé, ne peut pas contenir). Fonction pure,
-    /// testée.</summary>
+    /// accessoires (2026-10-16 ; une finition et des accessoires pour chacune des douze armes depuis le
+    /// 2026-10-26) en hexadécimal, le rang de la couleur choisie (-1 : aucune), celui du châssis
+    /// (2026-10-26) et l'identifiant de joueur des services (2026-10-27, nettoyé : SanitizePlayerId), séparés
+    /// par des sauts de ligne (que le pseudo, nettoyé, ne peut pas contenir). Fonction pure, testée.</summary>
+    public static byte[] BuildPayload(string version, string name, WeaponLooks looks, WeaponAttachments attachments, int paint,
+                                      ChassisId chassis, string playerId)
+        => Encoding.UTF8.GetBytes((version ?? "") + "\n" + PlayerMatchState.SanitizeName(name) + "\n" + looks.Packed.ToString("X12")
+                                  + "\n" + attachments.ToHex()
+                                  + "\n" + paint.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                                  + "\n" + ((int)chassis).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                                  + "\n" + SanitizePlayerId(playerId));
+
     public static byte[] BuildPayload(string version, string name, WeaponLooks looks, WeaponAttachments attachments, int paint,
                                       ChassisId chassis)
-        => Encoding.UTF8.GetBytes((version ?? "") + "\n" + PlayerMatchState.SanitizeName(name) + "\n" + looks.Packed.ToString("X8")
-                                  + "\n" + attachments.Packed.ToString("X8")
-                                  + "\n" + paint.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                                  + "\n" + ((int)chassis).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        => BuildPayload(version, name, looks, attachments, paint, chassis, "");
+
+    /// <summary>Un identifiant de joueur des services tel qu'il voyage : lettres, chiffres, « _ » et « - », 64
+    /// caractères au plus (le service n'en emploie pas d'autres). Fonction pure, testée.</summary>
+    public static string SanitizePlayerId(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return "";
+        var builder = new StringBuilder(Mathf.Min(id.Length, 64));
+        foreach (char c in id)
+        {
+            if (builder.Length >= 64) break;
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') builder.Append(c);
+        }
+        return builder.ToString();
+    }
 
     public static byte[] BuildPayload(string version, string name, WeaponLooks looks, WeaponAttachments attachments, int paint)
         => BuildPayload(version, name, looks, attachments, paint, ChassisId.CT01);
@@ -186,6 +237,10 @@ public class SessionFlow : MonoBehaviour
     /// châssis choisis), comme une valeur illisible. Fonction pure, testée.</summary>
     public static bool ParsePayload(byte[] payload, out string version, out string name, out WeaponLooks looks,
                                     out WeaponAttachments attachments, out int paint, out int chassis)
+        => ParsePayload(payload, out version, out name, out looks, out attachments, out paint, out chassis, out _);
+
+    public static bool ParsePayload(byte[] payload, out string version, out string name, out WeaponLooks looks,
+                                    out WeaponAttachments attachments, out int paint, out int chassis, out string playerId)
     {
         version = "";
         name = "";
@@ -193,22 +248,23 @@ public class SessionFlow : MonoBehaviour
         attachments = WeaponAttachments.None;
         paint = -1;
         chassis = -1;
+        playerId = "";
         if (payload == null || payload.Length == 0 || payload.Length > MaxPayloadBytes) return false;
         string[] lines = Encoding.UTF8.GetString(payload).Split('\n');
         version = lines[0];
         if (lines.Length > 1) name = PlayerMatchState.SanitizeName(lines[1]);
-        if (lines.Length > 2 && uint.TryParse(lines[2], System.Globalization.NumberStyles.AllowHexSpecifier,
-                                               System.Globalization.CultureInfo.InvariantCulture, out uint packed))
+        if (lines.Length > 2 && ulong.TryParse(lines[2], System.Globalization.NumberStyles.AllowHexSpecifier,
+                                                System.Globalization.CultureInfo.InvariantCulture, out ulong packed))
             looks = new WeaponLooks(packed);
-        if (lines.Length > 3 && uint.TryParse(lines[3], System.Globalization.NumberStyles.AllowHexSpecifier,
-                                               System.Globalization.CultureInfo.InvariantCulture, out uint chosen))
-            attachments = new WeaponAttachments(chosen);
+        if (lines.Length > 3 && WeaponAttachments.TryParseHex(lines[3], out WeaponAttachments chosen))
+            attachments = chosen;
         if (lines.Length > 4 && int.TryParse(lines[4], System.Globalization.NumberStyles.AllowLeadingSign,
                                               System.Globalization.CultureInfo.InvariantCulture, out int color))
             paint = color;
         if (lines.Length > 5 && int.TryParse(lines[5], System.Globalization.NumberStyles.AllowLeadingSign,
                                               System.Globalization.CultureInfo.InvariantCulture, out int body))
             chassis = body;
+        if (lines.Length > 6) playerId = SanitizePlayerId(lines[6]);
         return true;
     }
 
@@ -255,7 +311,7 @@ public class SessionFlow : MonoBehaviour
     {
         string reason;
         if (!ParsePayload(request.Payload, out string clientVersion, out string clientName, out WeaponLooks clientLooks,
-                          out WeaponAttachments clientAttachments, out int clientPaint, out int clientChassis))
+                          out WeaponAttachments clientAttachments, out int clientPaint, out int clientChassis, out string clientPlayerId))
         {
             response.Approved = false;
             reason = "Demande de connexion invalide.";
@@ -274,6 +330,7 @@ public class SessionFlow : MonoBehaviour
             approvedAttachments[request.ClientNetworkId] = clientAttachments;
             approvedPaints[request.ClientNetworkId] = clientPaint;
             approvedChassis[request.ClientNetworkId] = clientChassis;
+            approvedPlayerIds[request.ClientNetworkId] = clientPlayerId;
         }
         else Debug.Log($"[Session] Connexion refusée : {reason}");
 
@@ -357,6 +414,7 @@ public class SessionFlow : MonoBehaviour
     public static void ReturnToMenu(string message)
     {
         PendingMenuMessage = message ?? "";
+        LaunchOrder.Clear();
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
 

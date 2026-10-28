@@ -147,6 +147,16 @@
                     "priority": 0
                 },
                 {
+                    "name": "SwapItem",
+                    "type": "Button",
+                    "id": "ad26ddea-db1a-46bd-9f46-a216d6cbd8a0",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false,
+                    "priority": 0
+                },
+                {
                     "name": "Weapon1",
                     "type": "Button",
                     "id": "95ac448b-27d8-4a2b-9dc1-f3cb6695f0a4",
@@ -383,6 +393,28 @@
                     "processors": "",
                     "groups": "",
                     "action": "Interact",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "e2daf387-27ce-405a-bc55-c775cc36f8dd",
+                    "path": "<Mouse>/scroll/up",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "SwapItem",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "e9f6bdbf-54b8-45c0-b647-1ef4abe888db",
+                    "path": "<Mouse>/scroll/down",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "SwapItem",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },

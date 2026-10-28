@@ -132,15 +132,18 @@ public class ShotFeedbackTests
     }
 
     /// <summary>
-    /// La classe 4 s'appelle « Pistolet » (2026-10-25, GDD § 6 ; « Raygun » jusque-là) et son rayon est
-    /// rouge, la couleur de l'énergie (la lueur des armes laser, les arcs du gant) : il était vert, une
+    /// Le pistolet laser (le FX-4, à la place de l'ancien « Raygun ») et toutes les armes laser tirent un
+    /// rayon rouge, la couleur de l'énergie (la lueur des armes laser, les arcs du gant) : il était vert, une
     /// couleur de robot. Aucune couleur de la palette des robots ne doit s'en approcher.
     /// </summary>
     [Test]
     public void LePistolet_TireUnRayonRouge_QuAucunRobotNePorte()
     {
         WeaponData pistol = Loadout()[Pistol];
-        Assert.AreEqual("Pistolet", pistol.weaponName);
+        Assert.AreEqual("FX-4", pistol.weaponName, "La place du pistolet d'avant la refonte : le pistolet laser.");
+        // Toutes les armes laser tirent ce rayon rouge (2026-10-26 : le tir suit l'arme).
+        foreach (WeaponData data in Loadout())
+            if (data.shotIsBeam) Assert.AreEqual(pistol.tracerColor, data.tracerColor, $"{data.weaponName} : le rouge de l'énergie.");
         Color.RGBToHSV(pistol.tracerColor, out float hue, out float saturation, out float value);
         Assert.That(Mathf.Min(hue, 1f - hue), Is.LessThan(0.03f), "Un rouge.");
         Assert.Greater(saturation, 0.8f, "Franc, pas rose.");
@@ -158,11 +161,7 @@ public class ShotFeedbackTests
 
     private static IEnumerable<GameObject> Models(WeaponData data)
     {
-        for (int i = 0; i < data.ModelCount; i++)
-        {
-            GameObject prefab = data.ModelPrefabFor(i);
-            if (prefab != null) yield return prefab;
-        }
+        if (data.modelPrefab != null) yield return data.modelPrefab;
     }
 
     /// <summary>Échap revient d'un seul écran, de partout où c'est sans risque.</summary>

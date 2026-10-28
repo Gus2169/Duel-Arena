@@ -68,7 +68,7 @@ public class ShootingCourseHud : MonoBehaviour
     private void OnGUI()
     {
         ShootingCourse course = ShootingCourse.Instance;
-        if (course == null || ShootingRangePanel.IsOpen) return;
+        if (course == null || ShootingRangePanel.IsOpen || PauseMenu.IsOpen) return;
         BuildStyles();
         float cx = Screen.width * 0.5f;
 

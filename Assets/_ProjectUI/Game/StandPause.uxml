@@ -1,0 +1,27 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:da="DuelArena.UI">
+    <!-- Le menu de pause du stand de tir (2026-10-27, demandé par l'utilisateur : changer ses réglages au
+         stand) : reprendre, la fenêtre des armes, les Options (le panneau partagé, OptionsController),
+         quitter le stand. Piloté par PauseMenu, sur /Interface de StandDeTir (ShootingRangeBuilder) ; les
+         mêmes noms que le menu d'Échap de la partie (GameHud.uxml). -->
+    <ui:Template name="OptionsPanel" src="../Shared/OptionsPanel.uxml" />
+    <ui:Style src="../Shared/Theme.uss" />
+    <ui:Style src="GameHud.uss" />
+
+    <ui:VisualElement name="hudRoot" class="hud-root da-vars" picking-mode="Ignore">
+        <ui:VisualElement name="pauseRoot" class="pause-root hidden">
+            <ui:VisualElement name="pauseMain" class="screen">
+                <ui:Label class="pause-title" text="PAUSE" />
+                <!-- Pas d'invitation : personne ne rejoint le stand. -->
+                <ui:Button name="pauseResumeButton" class="menu-button menu-button--primary" text="Reprendre" />
+                <ui:Button name="pauseWeaponsButton" class="menu-button" text="Armes et accessoires (B)" />
+                <ui:Button name="pauseOptionsButton" class="menu-button" text="Options" />
+                <ui:Button name="pauseQuitButton" class="menu-button menu-button--quit" text="Quitter le stand" />
+                <ui:Label class="pause-hint" text="Le stand continue pendant que ce menu est ouvert." />
+            </ui:VisualElement>
+            <ui:VisualElement name="pauseOptions" class="pause-options hidden">
+                <ui:Instance template="OptionsPanel" class="options-instance" />
+                <ui:Button name="pauseOptionsBackButton" class="back-button" text="Retour" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

@@ -7,6 +7,8 @@ using UnityEngine;
 /// </summary>
 public class WeaponGripRulesTests
 {
+    private const string PlayerPrefabPath = "Assets/_ProjectArena/PlayerPrefab/Player.prefab";
+
     /// <summary>Le poing du gant, pris pour un ellipsoïde : dans l'axe, il s'étend de sa demi-dimension ; en
     /// biais, moins loin que le coin de sa boîte, plus loin que sa plus petite demi-dimension.</summary>
     [Test]
@@ -40,5 +42,20 @@ public class WeaponGripRulesTests
         // Sous le garde-main, la paume regarde vers le haut de l'arme ; contre une poignée verticale, vers sa droite.
         Assert.Greater((settings.handguard.Rotation * Vector3.forward).y, 0.9f);
         Assert.Greater((settings.verticalGrip.Rotation * Vector3.forward).x, 0.9f);
+    }
+
+    /// <summary>Chaque châssis a sa paume dans le préfab joueur (2026-10-27) : un châssis ajouté sans la sienne
+    /// prendrait celle du CT-01 et flotterait sous le garde-main, ou s'y enfoncerait (WeaponGripTests la mesure
+    /// sur sa peau). Un rang inconnu prend celle du CT-01.</summary>
+    [Test]
+    public void ChaqueChassis_ASaPaume()
+    {
+        var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        WeaponGrip.Settings settings = prefab.GetComponent<PlayerAnimator>().HandGrip;
+        Assert.AreEqual(RobotChassis.Count, settings.palmPoints.Length, "Il faut une paume par châssis, dans l'ordre de ChassisId.");
+        // Les paumes mesurées : charnue (Y Bot), une plaque (CT-01), une plaque mince (OS-02).
+        Assert.Greater(settings.PalmPoint(ChassisId.Prototype).z, settings.PalmPoint(ChassisId.CT01).z);
+        Assert.Greater(settings.PalmPoint(ChassisId.CT01).z, settings.PalmPoint(ChassisId.OS02).z);
+        Assert.AreEqual(settings.PalmPoint(ChassisId.CT01), settings.PalmPoint((ChassisId)RobotChassis.Count), "Un rang inconnu prend la paume du CT-01.");
     }
 }

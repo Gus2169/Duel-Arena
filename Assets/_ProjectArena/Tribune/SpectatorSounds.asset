@@ -30,6 +30,14 @@ MonoBehaviour:
     - {fileID: 8300000, guid: 26ca33b9e127d9243a9b7af9e0fc478b, type: 3}
     volume: 0.9
     pitchRange: {x: 0.95, y: 1.05}
+  punchBlocked:
+    clips:
+    - {fileID: 8300000, guid: 992f4abd00a230c43800ea7514090236, type: 3}
+    - {fileID: 8300000, guid: f4811ed0f1f20664dbeff6561502d037, type: 3}
+    - {fileID: 8300000, guid: a9b3eb4e0a5f1ab449673f72a96b4642, type: 3}
+    - {fileID: 8300000, guid: a406a34b2d8d82c4b9006aac033b86b5, type: 3}
+    volume: 0.75
+    pitchRange: {x: 0.92, y: 1.04}
   stunned:
     clips:
     - {fileID: 8300000, guid: 8f368218a728fd241b7611fdfd6c76c3, type: 3}

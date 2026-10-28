@@ -1,0 +1,144 @@
+{
+ "code": "MQ1",
+ "racine": "MQ1",
+ "titre": "Marquages peints",
+ "triangles": 3994,
+ "pieces": 18,
+ "resolution": 512,
+ "occlusion": false,
+ "finitions": [
+  ""
+ ],
+ "materiaux": [
+  {
+   "cle": "MarquageBlanc",
+   "nom": "DA_Decor_MarquageBlanc",
+   "finitions": [
+    {
+     "nom": "DA_Decor_MarquageBlanc",
+     "couleur": [
+      0.5647115057049292,
+      0.5520114015120001,
+      0.4793201831008268,
+      1.0
+     ],
+     "rug": 0.7,
+     "metal": 0.0,
+     "aDessous": false,
+     "dessous": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ],
+     "rugDessous": 0.35,
+     "metalDessous": 1.0,
+     "bords": 0.5,
+     "eclats": 0.0,
+     "rayures": 0.0,
+     "salete": 0.2,
+     "variation": 0.05,
+     "echelleEclats": 42.0,
+     "graine": 16,
+     "coat": 0.0,
+     "emission": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ],
+     "forceEmission": 0.0,
+     "aSuie": false,
+     "suie": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "aCouche": false,
+     "couche": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ],
+     "rugCouche": 0.0,
+     "retouches": 0.0,
+     "teinteRetouches": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ],
+     "rouille": 0.0,
+     "teinteRouille": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ],
+     "huile": 0.0,
+     "poussiere": 0.0,
+     "delavage": 0.0,
+     "zones": [],
+     "decalages": [
+      -13.847722508592483,
+      -1.9519334398706008,
+      -8.304737339433522,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ]
+    }
+   ]
+  }
+ ]
+}

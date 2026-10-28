@@ -15,8 +15,10 @@ using UnityEngine.UIElements;
 /// Le cadrage se refait à chaque changement de dimensions, puisqu'il dépend du rapport largeur /
 /// hauteur.
 ///
-/// Le robot tourne seul au repos ; l'arme reste de profil, canon vers la droite, tant qu'on ne la
-/// fait pas tourner — comme dans l'armurerie de Call of Duty, où l'on juge un accessoire de profil.
+/// Rien ne tourne seul (2026-10-27, demandé par l'utilisateur) : le robot reste de trois quarts face et
+/// l'arme de profil, canon vers la droite — comme dans l'armurerie de Call of Duty, où l'on juge un
+/// accessoire de profil —, tant qu'on ne les fait pas tourner à la souris. Lâchés en plein geste, ils
+/// continuent un instant sur leur lancée et s'arrêtent en douceur (une légère inertie, StepSpin).
 ///
 /// Posé À L'ORIGINE DU MONDE, rotation identité : les bornes d'un sujet exprimées dans le repère de
 /// son pivot sont alors directement des positions du monde.
@@ -27,11 +29,17 @@ public class PreviewStage : MonoBehaviour
     [SerializeField] private Transform characterPivot;
     [SerializeField] private Transform weaponPivot;
 
-    [Tooltip("Vitesse de rotation du robot au repos (°/s), quand on ne le fait pas tourner à la souris. L'arme ne tourne pas seule.")]
-    [SerializeField] private float characterAutoRotateSpeed = 14f;
-
     [Tooltip("Rotation (°) par pixel de glissement horizontal.")]
     [SerializeField] private float dragDegreesPerPixel = 0.35f;
+
+    [Tooltip("Inertie : temps (s) en lequel la rotation lancée à la souris perd les deux tiers de sa vitesse. Petit : la rotation s'arrête presque aussitôt.")]
+    [SerializeField] private float spinDecayTime = 0.16f;
+
+    [Tooltip("Vitesse de rotation maximale (°/s) que garde un sujet lâché en plein geste.")]
+    [SerializeField] private float maxSpinSpeed = 720f;
+
+    [Tooltip("La plus petite taille d'arme que le cadrage remplit (demi-longueur, m) : une arme plus courte, un pistolet, se montre à sa taille par rapport à celle-là, plutôt que d'emplir le cadre comme un fusil.")]
+    [SerializeField] private float minWeaponFramingRadius = 0.26f;
 
     [Tooltip("Champ de vision vertical de la caméra d'aperçu (°).")]
     [SerializeField] private float cameraFieldOfView = 30f;
@@ -49,8 +57,9 @@ public class PreviewStage : MonoBehaviour
     private const float CharacterStartYaw = -25f;
 
     private Transform activePivot;
-    private float autoRotateSpeed;
     private bool dragging;
+    private float pendingDragPixels;   // le glissement reçu depuis la dernière image
+    private float spinSpeed;           // °/s : la vitesse du geste, puis celle de la lancée
 
     private RenderTexture texture;
     private Image output;
@@ -85,16 +94,45 @@ public class PreviewStage : MonoBehaviour
 
     private void Update()
     {
-        if (activePivot == null || dragging || autoRotateSpeed == 0f) return;
-        activePivot.Rotate(Vector3.up, autoRotateSpeed * Time.deltaTime, Space.World);
+        if (activePivot == null) return;
+        float dt = Time.unscaledDeltaTime;
+        float degrees = StepSpin(ref spinSpeed, dragging, pendingDragPixels * -dragDegreesPerPixel, dt, spinDecayTime, maxSpinSpeed);
+        pendingDragPixels = 0f;
+        // Angle négatif pour un glissement vers la droite : la face tournée vers la caméra suit la souris,
+        // quel que soit le côté d'où on regarde le plateau.
+        if (degrees != 0f) activePivot.Rotate(Vector3.up, degrees, Space.World);
     }
 
-    /// <summary>Montre le robot dans `viewport`, de trois quarts face, tournant seul.</summary>
+    /// <summary>
+    /// Une image de la rotation à la souris, avec sa lancée : rend l'angle (°) dont tourner le sujet. Tenu,
+    /// il suit le geste (`dragDegrees`, ce que la souris a glissé depuis l'image d'avant), et `speed` retient
+    /// la vitesse du geste, lissée (une souris arrêtée avant de lâcher ne lance rien) ; lâché, il continue à
+    /// cette vitesse, qui décroît de façon exponentielle (`decayTime`) jusqu'à l'arrêt. Fonction pure, testée.
+    /// </summary>
+    public static float StepSpin(ref float speed, bool dragging, float dragDegrees, float dt, float decayTime, float maxSpeed)
+    {
+        if (float.IsNaN(speed) || float.IsInfinity(speed)) speed = 0f;
+        if (!(dt > 0f)) return dragging ? dragDegrees : 0f;
+        if (dragging)
+        {
+            float measured = Mathf.Clamp(dragDegrees / dt, -maxSpeed, maxSpeed);
+            // Lissée sur ~50 ms : un à-coup d'une image ne lance pas le sujet, une souris qui s'arrête l'arrête.
+            speed = Mathf.Lerp(speed, measured, 1f - Mathf.Exp(-dt / 0.05f));
+            return dragDegrees;
+        }
+        if (decayTime <= 0f) { speed = 0f; return 0f; }
+        float before = speed;
+        speed *= Mathf.Exp(-dt / decayTime);
+        if (Mathf.Abs(speed) < 2f) speed = 0f;
+        // L'angle parcouru pendant l'image, à la vitesse moyenne de la décroissance.
+        return (before + speed) * 0.5f * dt;
+    }
+
+    /// <summary>Montre le robot dans `viewport`, de trois quarts face, immobile tant qu'on ne le fait pas tourner.</summary>
     public void ShowCharacter(Image viewport)
     {
         if (characterPivot == null) return;
         Activate(characterPivot, weaponPivot, viewport);
-        autoRotateSpeed = characterAutoRotateSpeed;
 
         characterPivot.localRotation = Quaternion.identity;
         Bounds bounds = ComputeWorldBounds(characterPivot);
@@ -113,11 +151,12 @@ public class PreviewStage : MonoBehaviour
         if (weaponPivot == null) return;
         Quaternion rotation = weaponPivot.localRotation;
         Activate(weaponPivot, characterPivot, viewport);
-        autoRotateSpeed = 0f;
         weaponPivot.localRotation = Quaternion.identity;
 
+        // Une arme courte (un pistolet) garde sa taille par rapport aux autres : le cadrage ne la grossit pas
+        // jusqu'à emplir le cadre (2026-10-27, « un peu trop proches » pour l'utilisateur).
         SetFraming(weaponPivot.TransformPoint(localBounds.center), localBounds.extents.y,
-            HorizontalRadius(localBounds), WeaponViewDirection);
+            WeaponFramingRadius(HorizontalRadius(localBounds), minWeaponFramingRadius), WeaponViewDirection);
         // Le cadrage ne dépend pas de la rotation : l'arme est centrée sur le pivot, et le rayon
         // horizontal couvre tous les angles.
         if (!resetRotation) weaponPivot.localRotation = rotation;
@@ -132,10 +171,18 @@ public class PreviewStage : MonoBehaviour
         if (weaponPivot != null) weaponPivot.gameObject.SetActive(false);
     }
 
+    /// <summary>Le rayon (m) sur lequel cadrer une arme de rayon horizontal `radius` : le sien, sauf une arme
+    /// plus courte que `minRadius`, montrée à sa taille dans le cadre d'une arme de `minRadius`. Fonction
+    /// pure, testée.</summary>
+    public static float WeaponFramingRadius(float radius, float minRadius)
+        => Mathf.Max(float.IsNaN(radius) ? 0f : radius, Mathf.Max(0f, minRadius));
+
     private void Activate(Transform pivot, Transform other, Image viewport)
     {
         activePivot = pivot;
         dragging = false;
+        pendingDragPixels = 0f;
+        spinSpeed = 0f;
         pivot.gameObject.SetActive(true);
         if (other != null) other.gameObject.SetActive(false);
         BindOutput(viewport);
@@ -172,10 +219,11 @@ public class PreviewStage : MonoBehaviour
                 if (output != viewport) return;
                 viewport.CapturePointer(evt.pointerId);
                 dragging = true;
+                spinSpeed = 0f;   // la main reprend le sujet : sa lancée s'arrête
             });
             viewport.RegisterCallback<PointerMoveEvent>(evt =>
             {
-                if (output == viewport && viewport.HasPointerCapture(evt.pointerId)) Drag(evt.deltaPosition.x);
+                if (output == viewport && viewport.HasPointerCapture(evt.pointerId)) pendingDragPixels += evt.deltaPosition.x;
             });
             viewport.RegisterCallback<PointerUpEvent>(evt =>
             {
@@ -188,14 +236,6 @@ public class PreviewStage : MonoBehaviour
         // Un écran qui vient d'être affiché n'est pas encore mis en page : sa taille arrivera par
         // GeometryChangedEvent. Déjà mis en page (on revient sur l'écran), on l'a tout de suite.
         ResizeTexture();
-    }
-
-    private void Drag(float deltaXPixels)
-    {
-        if (activePivot == null) return;
-        // Angle négatif : la face tournée vers la caméra suit la souris, quel que soit le côté
-        // d'où on regarde le plateau.
-        activePivot.Rotate(Vector3.up, -deltaXPixels * dragDegreesPerPixel, Space.World);
     }
 
     private void ResizeTexture()
@@ -276,6 +316,9 @@ public class PreviewStage : MonoBehaviour
     /// ses propres bornes sont une boîte fixe, gonflée pour couvrir toutes les poses possibles
     /// (2 m × 1,8 m pour le robot), et le cadrage le montrait deux fois trop petit. Les os de
     /// Mixamo vont du bout de la tête au bout des orteils ; la marge couvre l'épaisseur du corps.
+    /// Tout le squelette compte, pas seulement les os qui portent la peau (2026-10-27) : celle du
+    /// prototype (le Y Bot) ne porte pas le bout de la tête, et sa vignette coupait la tête, plus
+    /// grande que celles des autres châssis.
     /// Les effets (particules) sont ignorés : leurs bornes vides à l'origine fausseraient tout.</summary>
     internal static Bounds ComputeWorldBounds(Transform root)
     {
@@ -296,6 +339,7 @@ public class PreviewStage : MonoBehaviour
             else bounds.Encapsulate(b);
         }
 
+        var skeletons = new HashSet<Transform>();
         foreach (Renderer r in root.GetComponentsInChildren<Renderer>())
         {
             if (!r.enabled || r is ParticleSystemRenderer) continue;
@@ -305,6 +349,11 @@ public class PreviewStage : MonoBehaviour
                 {
                     if (bone != null) Add(new Bounds(bone.position, Vector3.one * (SkinMargin * 2f)));
                 }
+                // Le reste du squelette sous l'os racine : les bouts (de la tête, des doigts, des orteils).
+                Transform skeleton = skinned.rootBone;
+                if (skeleton == null || !skeletons.Add(skeleton)) continue;
+                foreach (Transform bone in skeleton.GetComponentsInChildren<Transform>())
+                    Add(new Bounds(bone.position, Vector3.one * (SkinMargin * 2f)));
             }
             else Add(r.bounds);
         }

@@ -3,12 +3,12 @@ using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// L'apparence des armes d'un joueur, vue par tous (2026-10-15, GDD § 6) : le modèle et la finition
-/// choisis à l'armurerie pour chacune des quatre armes de la panoplie (WeaponLooks).
+/// L'apparence des armes d'un joueur, vue par tous (2026-10-15, GDD § 6) : la finition choisie à
+/// l'armurerie pour chacune des armes de l'arsenal (WeaponLooks).
 ///
 /// Comme le pseudo, le joueur l'annonce dans sa demande de connexion (SessionFlow) : aucune RPC de
-/// plus. Le serveur la borne (WeaponLooks.Sanitized : un modèle ou une finition qui n'existe pas
-/// redevient le choix par défaut) et la publie à l'apparition du robot, dans le message même qui le
+/// plus. Le serveur la borne (WeaponLooks.Sanitized : une finition qui n'existe pas redevient
+/// l'origine) et la publie à l'apparition du robot, dans le message même qui le
 /// fait apparaître. Le corps (PlayerAnimator) et les bras de la vue subjective (FirstPersonView) s'y
 /// abonnent et mettent en main les bons modèles.
 ///
@@ -18,8 +18,8 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public class PlayerWeaponLooks : NetworkBehaviour
 {
-    private readonly NetworkVariable<uint> looks = new NetworkVariable<uint>(
-        0u, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private readonly NetworkVariable<ulong> looks = new NetworkVariable<ulong>(
+        0UL, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     private WeaponController weapon;
     private bool published;
@@ -53,7 +53,7 @@ public class PlayerWeaponLooks : NetworkBehaviour
         published = false;
     }
 
-    private void HandleChanged(uint previous, uint current) => Changed?.Invoke(new WeaponLooks(current));
+    private void HandleChanged(ulong previous, ulong current) => Changed?.Invoke(new WeaponLooks(current));
 
     /// <summary>Serveur : change l'apparence en cours de partie (le stand de tir, 2026-10-16), bornée
     /// comme à l'apparition.</summary>

@@ -10,7 +10,7 @@ fondu en fin si besoin, et ramené à une crête commune par famille (-1 dBFS). 
 | Pack | Utilisé pour | Licence trouvée dans la banque |
 |---|---|---|
 | Gamemaster Audio, *Pro Sound Collection* v1.3 | armes, impacts et sifflements des balles, pas, franchir et retomber, épave, extinction du robot, parasites, décompte, reconstruction, ambiance de la salle, interface, tribune (coups, blocs, objets) | Aucun fichier de licence. Le guide du pack dit que le crédit n'est **pas obligatoire** (« appréciée »). Bibliothèque commerciale libre de droits : garder la preuve d'achat. |
-| GameBurp, *2000 Game Sound FX* | servomoteurs du robot, impacts métalliques, touche et mort confirmées, départ et manche gagnée, impacts et détente à vide du raygun, étourdissement | Aucun fichier de licence. Bibliothèque commerciale libre de droits : garder la preuve d'achat. |
+| GameBurp, *2000 Game Sound FX* | servomoteurs du robot, impacts métalliques, touche et mort confirmées, départ et manche gagnée, impacts et détente à vide du raygun, étourdissement, coup de poing paré par la garde, montée en charge du FX-2 | Aucun fichier de licence. Bibliothèque commerciale libre de droits : garder la preuve d'achat. |
 | *Mini Moves Pack 1* | ramper (frottements sur surface rugueuse) | Aucun fichier de licence dans son dossier. Le seul contrat de la banque est celui d'Epic Stock Media (pack *Anime Character Vocalizations*) : libre de droits, sans attribution, **un seul utilisateur**, fichiers bruts jamais transmis à un tiers. À vérifier selon d'où vient ce pack. |
 
 Packs non retenus, faute de licence connue : *Inventory SFX Bundle*, *Medieval Fantasy SFX Pack*,
@@ -164,6 +164,10 @@ c'est une boucle, rognée ou fondue elle ne bouclerait plus sans couture.
 | `Tribune/Poing_Impact_03.wav` | `GameBurp - 2000 Game Sound FX/GameBurp - 2000 Game Sound FX Collection (WAV)/IMPACTS - HITS - (50)/IMPACT Metal Hit Short 03.wav` | moyenne, gain +0.7 dB |
 | `Tribune/Poing_Impact_04.wav` | `GameBurp - 2000 Game Sound FX/GameBurp - 2000 Game Sound FX Collection (WAV)/IMPACTS - HITS - (50)/IMPACT Metal Hit Short 04.wav` | moyenne, gain +0.7 dB |
 | `Tribune/Poing_Impact_05.wav` | `GameBurp - 2000 Game Sound FX/GameBurp - 2000 Game Sound FX Collection (WAV)/IMPACTS - HITS - (50)/IMPACT Metal Hit Short 05.wav` | moyenne, gain +0.7 dB |
+| `Tribune/Poing_Pare_01.wav` | `GameBurp - 2000 Game Sound FX/GameBurp - 2000 Game Sound FX Collection (WAV)/IMPACTS - HITS - (50)/IMPACT Thump Thud 01.wav` | moyenne, gain +0.7 dB |
+| `Tribune/Poing_Pare_02.wav` | `GameBurp - 2000 Game Sound FX/GameBurp - 2000 Game Sound FX Collection (WAV)/IMPACTS - HITS - (50)/IMPACT Thump Thud 02.wav` | moyenne, fondu 40 ms, gain +0.7 dB |
+| `Tribune/Poing_Pare_03.wav` | `GameBurp - 2000 Game Sound FX/GameBurp - 2000 Game Sound FX Collection (WAV)/IMPACTS - HITS - (50)/IMPACT Thump Thud 03.wav` | moyenne, fondu 40 ms, gain +0.7 dB |
+| `Tribune/Poing_Pare_04.wav` | `GameBurp - 2000 Game Sound FX/GameBurp - 2000 Game Sound FX Collection (WAV)/IMPACTS - HITS - (50)/IMPACT Thump Thud 04.wav` | moyenne, fondu 40 ms, gain +0.7 dB |
 | `Tribune/Etourdi_01.wav` | `GameBurp - 2000 Game Sound FX/GameBurp - 2000 Game Sound FX Collection (WAV)/ELECTRIC - ZAPS - SHOCKS - (21)/ELECTRIC Power Down 01.wav` | moyenne, gain +0.6 dB |
 | `Tribune/Etourdi_02.wav` | `GameBurp - 2000 Game Sound FX/GameBurp - 2000 Game Sound FX Collection (WAV)/ELECTRIC - ZAPS - SHOCKS - (21)/ELECTRIC Power Down 02.wav` | moyenne, gain +0.6 dB |
 | `Tribune/Etourdi_03.wav` | `GameBurp - 2000 Game Sound FX/GameBurp - 2000 Game Sound FX Collection (WAV)/ELECTRIC - ZAPS - SHOCKS - (21)/ELECTRIC Power Down 03.wav` | moyenne, fondu 40 ms, gain +0.6 dB |
@@ -275,3 +279,4 @@ c'est une boucle, rognée ou fondue elle ne bouclerait plus sans couture.
 | `Interface/Valider.wav` | `Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/User_Interface_Menu/ui_menu_button_confirm_02.wav` | moyenne, gain +3.1 dB |
 | `Interface/Retour.wav` | `Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/User_Interface_Menu/ui_menu_button_cancel_01.wav` | moyenne, gain +8.6 dB |
 | `Interface/Choix.wav` | `Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_semi_auto_rifle_safety_switch_01.wav` | moyenne, gain -0.5 dB |
+| `Armes/FX-2/Charge.wav` | `GameBurp - 2000 Game Sound FX/GameBurp - 2000 Game Sound FX Collection (WAV)/TECH CHARGERS - (45)/TECH CHARGER Power Up 07.wav` | moyenne, fondu 40 ms, gain +0.9 dB |

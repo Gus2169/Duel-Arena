@@ -4,21 +4,43 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// La fenêtre du stand de tir (2026-10-16, demandée par l'utilisateur) : B ou Échap l'ouvre et la
-/// ferme. On y prend une arme, on change son modèle, sa finition et ses accessoires, ça s'applique tout
-/// de suite (le serveur borne et publie, comme à l'apparition : PlayerWeaponLooks.ServerSet,
-/// PlayerWeaponAttachments.ServerSet, qui remplit aussi les chargeurs). La fiche de l'arme se lit à côté
-/// (WeaponStatSheet). On peut garder la configuration pour ses parties (GameSettings), relever les
-/// mannequins, ou revenir au menu.
+/// La fenêtre du stand de tir (2026-10-16, demandée par l'utilisateur) : B l'ouvre et la ferme (Échap la
+/// ferme ; depuis le 2026-10-27, Échap ouvre sinon le menu de pause du stand et ses Options, PauseMenu,
+/// qui peut aussi ouvrir cette fenêtre). On y prend une arme, on change son modèle, sa finition et ses
+/// accessoires, ça s'applique tout de suite (le serveur borne et publie, comme à l'apparition :
+/// PlayerWeaponLooks.ServerSet, PlayerWeaponAttachments.ServerSet, qui remplit aussi les chargeurs). La
+/// fiche de l'arme se lit à côté (WeaponStatSheet). On peut garder la configuration pour ses parties
+/// (GameSettings), relever les mannequins, ou revenir au menu.
 ///
-/// Ouverte, elle libère la souris et coupe les commandes de jeu (PlayerInputReader.Mode.None) ;
-/// fermée, elle verrouille la souris, comme le HUD de la partie (GameHud). OnGUI, outil de test.
+/// Elle, ou le menu de pause, ouverts, elle libère la souris et coupe les commandes de jeu
+/// (PlayerInputReader.Mode.None) ; tous deux fermés, elle verrouille la souris, comme le HUD de la partie
+/// (GameHud). OnGUI, outil de test.
 /// </summary>
 [DisallowMultipleComponent]
 public class ShootingRangePanel : MonoBehaviour
 {
     /// <summary>La fenêtre est-elle ouverte ? (le réticule se tait : CrosshairUI)</summary>
     public static bool IsOpen { get; private set; }
+
+    private static ShootingRangePanel instance;
+
+    /// <summary>Ouvre la fenêtre (le bouton du menu de pause du stand).</summary>
+    public static void Open()
+    {
+        if (instance != null) instance.SetOpen(true);
+    }
+
+    /// <summary>Ferme la fenêtre (Échap, lu par PauseMenu).</summary>
+    public static void Close()
+    {
+        if (instance != null) instance.SetOpen(false);
+    }
+
+    private void SetOpen(bool open)
+    {
+        IsOpen = open;
+        if (open && weapon != null) shownSlot = weapon.LocalSlot;
+    }
 
     private static readonly string[] GripLabels = { "Aucune", "Verticale", "Inclinée" };
 
@@ -27,7 +49,24 @@ public class ShootingRangePanel : MonoBehaviour
     private PlayerWeaponLooks looksSource;
     private PlayerWeaponAttachments attachmentsSource;
     private int shownSlot = -1;
-    private Rect window = new Rect(0f, 0f, 980f, 700f);
+    // Les places de l'arsenal, famille par famille (rangées une fois : la fenêtre se dessine à chaque image).
+    [System.NonSerialized] private List<int>[] familySlots;
+    // Le bouton de chaque arme, son nom et son portrait (gardés : la fenêtre se dessine à chaque image).
+    [System.NonSerialized] private GUIContent[] weaponContents;
+
+    private GUIContent WeaponContent(int slot)
+    {
+        if (weaponContents == null || weaponContents.Length != weapon.Loadout.Count) weaponContents = new GUIContent[weapon.Loadout.Count];
+        return weaponContents[slot] ??= new GUIContent();
+    }
+
+    private static List<int>[] BuildFamilySlots(IReadOnlyList<WeaponData> loadout)
+    {
+        var slots = new List<int>[Arsenal.FamilyCount];
+        for (int family = 0; family < slots.Length; family++) slots[family] = Arsenal.SlotsOf(loadout, (WeaponFamily)family);
+        return slots;
+    }
+    private Rect window = new Rect(0f, 0f, 980f, 830f);
     [System.NonSerialized] private GUIStyle headerStyle;
     [System.NonSerialized] private GUIStyle smallStyle;
     [System.NonSerialized] private GUIStyle statStyle;
@@ -36,10 +75,15 @@ public class ShootingRangePanel : MonoBehaviour
     [System.NonSerialized] private Texture2D windowTexture;
     [System.NonSerialized] private Texture2D chosenTexture;
 
-    private void OnEnable() => IsOpen = false;
+    private void OnEnable()
+    {
+        instance = this;
+        IsOpen = false;
+    }
 
     private void OnDisable()
     {
+        if (instance == this) instance = null;
         IsOpen = false;
         if (input != null) input.SetMode(PlayerInputReader.Mode.Gameplay);
     }
@@ -74,18 +118,16 @@ public class ShootingRangePanel : MonoBehaviour
     private void Update()
     {
         if (!FindPlayer()) return;
+        // B ouvre et ferme la fenêtre ; Échap est lu par le menu de pause, qui la referme d'abord.
         Keyboard keyboard = Keyboard.current;
-        if (keyboard != null && (keyboard.bKey.wasPressedThisFrame || keyboard.escapeKey.wasPressedThisFrame))
-        {
-            IsOpen = !IsOpen;
-            if (IsOpen) shownSlot = weapon.LocalSlot;
-        }
+        if (keyboard != null && keyboard.bKey.wasPressedThisFrame && !PauseMenu.IsOpen) SetOpen(!IsOpen);
 
         // Tenu à chaque image : rien d'autre dans le stand ne règle la souris ni les commandes.
-        PlayerInputReader.Mode mode = IsOpen ? PlayerInputReader.Mode.None : PlayerInputReader.Mode.Gameplay;
+        bool free = IsOpen || PauseMenu.IsOpen;
+        PlayerInputReader.Mode mode = free ? PlayerInputReader.Mode.None : PlayerInputReader.Mode.Gameplay;
         if (input.CurrentMode != mode) input.SetMode(mode);
-        UnityEngine.Cursor.lockState = IsOpen ? CursorLockMode.None : CursorLockMode.Locked;
-        UnityEngine.Cursor.visible = IsOpen;
+        UnityEngine.Cursor.lockState = free ? CursorLockMode.None : CursorLockMode.Locked;
+        UnityEngine.Cursor.visible = free;
     }
 
     private void BuildStyles()
@@ -129,19 +171,27 @@ public class ShootingRangePanel : MonoBehaviour
         WeaponAttachments attachments = weapon.Attachments;
         AttachmentCatalog catalog = data != null ? data.attachmentCatalog : null;
 
+        // Les douze armes, une ligne par famille (2026-10-26).
         GUILayout.Space(4f);
-        GUILayout.BeginHorizontal();
-        for (int i = 0; i < loadout.Count; i++)
+        familySlots ??= BuildFamilySlots(loadout);
+        for (int family = 0; family < familySlots.Length; family++)
         {
-            if (loadout[i] == null) continue;
-            string label = $"{i + 1}  {loadout[i].weaponName}" + (weapon.LocalSlot == i ? "  (en main)" : "");
-            if (GUILayout.Toggle(i == slot, label, optionStyle, GUILayout.Height(30f)) && i != slot)
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(Arsenal.FamilyLabel((WeaponFamily)family), smallStyle, GUILayout.Width(150f));
+            foreach (int i in familySlots[family])
             {
-                shownSlot = i;
-                weapon.RequestWeapon(i);
+                // Le nom, et l'arme de profil à côté (WeaponPortraits : sans accessoire, finition d'origine).
+                GUIContent content = WeaponContent(i);
+                content.text = loadout[i].weaponName + (weapon.LocalSlot == i ? "  (en main)" : "");
+                content.image = WeaponPortraits.Of(loadout[i]);
+                if (GUILayout.Toggle(i == slot, content, optionStyle, GUILayout.Width(250f), GUILayout.Height(44f)) && i != slot)
+                {
+                    shownSlot = i;
+                    weapon.RequestWeapon(i);
+                }
             }
+            GUILayout.EndHorizontal();
         }
-        GUILayout.EndHorizontal();
         if (data == null) return;
 
         GUILayout.Space(8f);
@@ -152,17 +202,7 @@ public class ShootingRangePanel : MonoBehaviour
         if (!server) GUILayout.Label("Seul l'hôte change ses armes au stand.", smallStyle);
         GUI.enabled = server;
 
-        GUILayout.Label("MODÈLE", headerStyle);
-        GUILayout.BeginHorizontal();
-        for (int m = 0; m < data.ModelCount; m++)
-        {
-            GameObject prefab = data.ModelPrefabFor(m);
-            WeaponModel model = prefab != null ? prefab.GetComponent<WeaponModel>() : null;
-            string name = model != null ? model.Designation : $"Modèle {m + 1}";
-            if (GUILayout.Toggle(looks.Model(slot) == m, name, optionStyle) && looks.Model(slot) != m)
-                looksSource.ServerSet(looks.WithModel(slot, m));
-        }
-        GUILayout.EndHorizontal();
+        if (!string.IsNullOrEmpty(data.role)) GUILayout.Label(data.role, smallStyle);
 
         GUILayout.Label("FINITION", headerStyle);
         GUILayout.BeginHorizontal();

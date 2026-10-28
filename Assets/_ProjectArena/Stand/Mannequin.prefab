@@ -48,7 +48,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 3726842882
+  GlobalObjectIdHash: 1879439766
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -91,6 +91,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: DuelArena.Runtime::TrainingDummy
   ShowTopMostFoldoutHeaderGroup: 1
   regenDelay: 3
+  fallPivotBack: 0.14
   regenerates: 1
   eyeHeight: 1.65
   robotModel: {fileID: 508831694506404385, guid: 153a04d1ca870fd41bf53540dbe6af6c, type: 3}

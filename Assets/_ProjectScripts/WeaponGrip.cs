@@ -12,9 +12,9 @@ using UnityEngine;
 /// l'arme de toute leur rotation.
 ///
 /// Ce qui touche l'arme : sur le corps, vu des autres, le poing du gant du taser (la main y est repliée),
-/// posé contre le repère du côté où regarde la paume de la prise ; sur les bras, gant ôté, la paume,
-/// orientée selon la prise (sous le garde-main, autour d'une poignée verticale, contre une poignée
-/// inclinée). Le coude plie vers le bas et l'extérieur ; quand le bras presque tendu n'atteint pas (le
+/// posé contre le repère du côté où regarde la paume de la prise ; sur les bras, gant ôté, la paume du
+/// châssis montré (chacun a la sienne), orientée selon la prise (sous le garde-main, autour d'une poignée
+/// verticale, contre une poignée inclinée). Le coude plie vers le bas et l'extérieur ; quand le bras presque tendu n'atteint pas (le
 /// garde-main d'un pompe, loin devant), la clavicule avance l'épaule.
 ///
 /// La main gauche lâche l'arme (poids lissé) pendant le rechargement (elle va au chargeur), le coup de
@@ -68,8 +68,22 @@ public class WeaponGrip
         [Tooltip("Contre une poignée inclinée (PI-1) : comme sous le garde-main, la paume appuyée sur la rampe.")]
         public HandHold angledGrip = new HandHold(new Vector3(0.3f, 1f, 0.3f), new Vector3(0.65f, -0.15f, 0.75f));
 
-        [Tooltip("Main nue (bras de la vue subjective) : le point de la paume qui se pose sur le repère, dans le repère de l'os de la main (m ; +Y vers les doigts, +Z côté paume). Mesuré sur la peau du Y Bot : le plus saillant du milieu de la paume.")]
-        public Vector3 palmPoint = new Vector3(0.010f, 0.050f, 0.037f);
+        [Tooltip("Main nue (bras de la vue subjective) : le point de la paume qui se pose sur le repère, pour chaque châssis dans l'ordre de ChassisId (CT-01, prototype, OS-02), dans le repère de l'os de la main (m ; +Y vers les doigts, +Z côté paume). Mesuré sur la peau de chacun : la surface de la paume à 1 cm vers le pouce et 5 cm du poignet. Le Y Bot a une paume charnue (3,7 cm de l'os), le CT-01 une plaque (2,1 cm), l'OS-02 une plaque mince (1,4 cm) : avec celle du Y Bot, leurs paumes flottaient 1,4 et 1,7 cm sous le garde-main (2026-10-27).")]
+        public Vector3[] palmPoints =
+        {
+            new Vector3(0.010f, 0.050f, 0.021f),
+            new Vector3(0.010f, 0.050f, 0.037f),
+            new Vector3(0.010f, 0.050f, 0.014f),
+        };
+
+        /// <summary>Le point de la paume du châssis `chassis` (celui du CT-01 pour un rang qui n'a pas le
+        /// sien).</summary>
+        public Vector3 PalmPoint(ChassisId chassis)
+        {
+            int i = (int)chassis;
+            if (palmPoints == null || palmPoints.Length == 0) return Vector3.zero;
+            return palmPoints[i < palmPoints.Length ? i : 0];
+        }
 
         [Tooltip("Gant du taser (vu des autres) : le milieu de son poing, dans le repère du gant (m ; +Z vers le poing, +Y vers le dos de la main, +X vers le pouce). Mesuré sur le GD-1 : la boîte des sommets au-delà de 10 cm du poignet.")]
         public Vector3 gloveFistCenter = new Vector3(0.011f, -0.01f, 0.146f);
@@ -119,6 +133,10 @@ public class WeaponGrip
 
     /// <summary>La main gauche tient-elle l'arme, de 0 à 1 (lissé ; tests).</summary>
     public float LeftWeight => leftWeight;
+
+    /// <summary>Le châssis montré : la main nue (vue subjective) pose sa propre paume (Settings.PalmPoint).
+    /// Le gant, vu des autres, est le même sur tous.</summary>
+    public ChassisId Chassis { get; set; }
 
     /// <summary>
     /// Remet l'arme que la main droite a déplacée à son point de prise (« PriseArme »). À appeler au début
@@ -188,10 +206,10 @@ public class WeaponGrip
         }
         else
         {
-            // La main nue (vue subjective) : la paume sur le repère, orientée selon la prise.
+            // La main nue (vue subjective) : la paume du châssis sur le repère, orientée selon la prise.
             Quaternion handRotation = Quaternion.Slerp(leftHand.rotation, holdRotation, w);
             Vector3 wrist = leftLower.InverseTransformPoint(leftHand.position);
-            Vector3 target = Vector3.Lerp(leftHand.position, marker.position - holdRotation * settings.palmPoint, w);
+            Vector3 target = Vector3.Lerp(leftHand.position, marker.position - holdRotation * settings.PalmPoint(Chassis), w);
             ReachWithShoulder(wrist, target, settings.maxShoulderTurn * w);
             TwoBoneIK.Solve(leftUpper, leftLower, wrist, target, pole, poleWeight);
             leftHand.rotation = handRotation;

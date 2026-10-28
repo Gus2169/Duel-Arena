@@ -51,6 +51,7 @@ public static class RobotAppearance
         copy.transform.localScale = Vector3.one;
         if (Application.isPlaying) Object.Destroy(holder);
         else Object.DestroyImmediate(holder);
+        RenderStyle.TrackRobot(copy);   // dans le rendu choisi dans les Options
         return copy;
     }
 

@@ -354,6 +354,7 @@ MonoBehaviour:
   armory: {fileID: 819321427}
   weaponCustomization: {fileID: 819321430}
   playScreen: {fileID: 819321435}
+  options: {fileID: 819321428}
   artwork: {fileID: 11400000, guid: b1e0ccf30f01c0e478a169132c29e49e, type: 2}
 --- !u!114 &819321427
 MonoBehaviour:
@@ -419,6 +420,14 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 728f72f05ce172c4f8a4311040daccb1, type: 2}
   - {fileID: 11400000, guid: 0f67bef9704b65747a4569234398678d, type: 2}
   - {fileID: 11400000, guid: 72f50928e0375ed42bc4c515b8619fdf, type: 2}
+  - {fileID: 11400000, guid: 34736b0ecca2e6e4d9d7c109315a97bc, type: 2}
+  - {fileID: 11400000, guid: 64d6579562b4ddc4ca48913a112bf6e2, type: 2}
+  - {fileID: 11400000, guid: a4f04edd11a447a43950365ad219c199, type: 2}
+  - {fileID: 11400000, guid: f9878756d459b674c9a115457e6a153f, type: 2}
+  - {fileID: 11400000, guid: bf804a94fb1b4fa4089ffdcfc7253f10, type: 2}
+  - {fileID: 11400000, guid: 5dda986ec96b5cd418d42be3cc706d73, type: 2}
+  - {fileID: 11400000, guid: ad9d7a2a58caf444aa2ce5c422d4f8a2, type: 2}
+  - {fileID: 11400000, guid: f0aedc2430bad31419a2cd5dc1e6014c, type: 2}
   stage: {fileID: 1162473221}
   document: {fileID: 0}
   mainMenu: {fileID: 819321426}
@@ -774,8 +783,10 @@ MonoBehaviour:
   previewCamera: {fileID: 1212415490}
   characterPivot: {fileID: 1264315553}
   weaponPivot: {fileID: 1134097148}
-  characterAutoRotateSpeed: 14
   dragDegreesPerPixel: 0.35
+  spinDecayTime: 0.16
+  maxSpinSpeed: 720
+  minWeaponFramingRadius: 0.26
   cameraFieldOfView: 30
   framingMargin: 1.15
   maxTextureSize: 2048

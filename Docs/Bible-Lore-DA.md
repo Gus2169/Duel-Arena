@@ -228,7 +228,7 @@ Les différences entre combattants peuvent être exprimées par la posture de re
 
 ## 12. Armes et équipements
 
-*Statut : **À reprendre** (relecture du 2026-10-25). L'utilisateur ne ressent pas encore cette vision dans le prototype, et veut l'accentuer. Elle sera revue avec la refonte des armes, où les modèles de chaque classe deviendront des armes distinctes (GDD § 6). Restent acquis : les armes bricolées sont un style visuel (A1), les équipements spéciaux se ramassent dans l'arène (A4), les armes absurdes ne s'obtiennent que des spectateurs ou en power-up (2026-10-25), et l'énergie est rouge.*
+*Statut : **À reprendre** (relecture du 2026-10-25). L'utilisateur ne ressent pas encore cette vision dans le prototype, et veut l'accentuer. La refonte des armes est décidée (2026-10-26, GDD § 6) : les douze modèles deviennent douze armes ; ce qu'elle change à l'apparence est plus bas, en propositions. Restent acquis : les armes bricolées sont un style visuel (A1), les équipements spéciaux se ramassent dans l'arène (A4), les armes absurdes ne s'obtiennent que des spectateurs ou en power-up (2026-10-25), et l'énergie est rouge.*
 
 Les armes peuvent être issues du programme militaire, de prototypes jamais finalisés ou de modifications bricolées par les robots. Elles doivent être visuellement insolites tout en conservant une fonction compréhensible et une lecture claire en combat.
 
@@ -258,7 +258,13 @@ Les armes peuvent être issues du programme militaire, de prototypes jamais fina
 
 Chaque arme, du stock, de la série 30 ou laser, a sa propre histoire de rafistolage.
 
-**Au choix du joueur** (2026-10-15, GDD § 6) : en partie, chaque arme se montre sous le modèle du stock, celui de la série 30 ou le prototype laser de sa classe ; seule l'apparence change, ni la façon dont elle tire, ni le son qu'elle fait. Le raygun, qui tire déjà un rayon, se montre d'abord en pistolet laser (FX-4).
+**Douze armes** (2026-10-26, GDD § 6) : chaque modèle devient une arme à part entière, avec son tir et son son. Dans chaque famille, l'arme du stock est la référence, celle de la série 30 prend un risque (plus rapide ou plus lourde), et le prototype laser a une mécanique à lui : il chauffe au lieu de compter des balles. Les armes laser tirent un rayon rouge, les armes à balles crachent une flamme. *Du 2026-10-15 au 2026-10-26, les trois modèles d'une classe n'étaient que des apparences d'une même arme.*
+
+**Ce que la refonte change à l'apparence** (2026-10-26). La chaleur se lit dans le HUD, pas sur l'arme, qui ne rougit pas (choix de l'utilisateur, GDD § 15). *Propositions de Claude, à valider :*
+- **la vidange** des armes laser : le geste du rechargement tire la cellule à mi-course, l'arme souffle sa chaleur par ses évents, en un jet de vapeur et un sifflement, puis la cellule revient ;
+- **le compteur** à l'arrière des armes laser, face au tireur, montre la chaleur au lieu d'un nombre de balles, comme la jauge du HUD (ou s'éteint) ;
+- **la charge du FX-2** se voit et s'entend : la lueur de l'émetteur monte, un sifflement croît, et le rayon s'épaissit avec la charge ;
+- **les huit lentilles du FX-3** se rangent à plat, comme sa nouvelle gerbe en éventail.
 
 **Les finitions** (2026-10-15, au choix de l'armurerie : GDD § 6) : la même arme peut se montrer dans six états, selon son histoire. *Propositions de Claude, appliquées aux modèles :*
 - d'origine : l'usure de tous les jours ;
@@ -296,6 +302,15 @@ Le cadre est un complexe militaire secret et souterrain, désaffecté et fermé,
 - **Zone de simulation** : éclairage contrôlable, panneaux et modules de configuration.
 
 **La première vraie arène sera un centre d'entraînement rapproché** (choisi le 2026-10-25). Le vrai playtest se fera sur une arène réussie ; les cinq types serviront au jeu fini.
+
+**L'arène de test est habillée en salle de test balistique, la salle B-01** (2026-10-27, choix de l'utilisateur, le layout du blocking gardé tel quel), sous une lumière « **projecteurs, pénombre** » : des rampes de projecteurs froids éclairent le sol de l'arène de façon égale, leurs faisceaux se voient dans la brume (au-dessus des robots), un liseré lumineux court sous le bord de la tribune, et la tribune et le haut de la salle restent dans l'ombre. *Propositions de Claude, appliquées :*
+- une salle souterraine fermée à douze pans, qui suit la tribune : murs de béton banché sombre, pilastres, plafond à 15 m, charpente d'acier rayonnante vers une couronne au-dessus du centre, d'où pendent les rampes ;
+- le blocking habillé : béton banché aux trous de banche, soubassement peint gris-bleu ou noir et son liseré blanc cassé ; au milieu, le tunnel de tir 02 ; des barricades d'essai barrées de hachures noires ; de l'acier peint riveté sur les parapets et les plaques pare-balles ; des caissons d'un mètre (des conteneurs en réduction, tôle ondulée blanc cassé, et des caissons renforcés d'une croix d'acier, aux pièces de rechange du CT-01) et des conteneurs de matériel d'essai ; partout, les impacts de dix ans de tirs ;
+- au sol, peints : les lignes de tir tous les 10 m, leurs distances, les postes A et B, le numéro de la salle ; très haut sur les murs, « B-01 · SALLE DE TEST BALISTIQUE » ; les voyants rouges « TIR EN COURS » sur le tunnel ;
+- l'humour sec des vieilles consignes : « ACCÈS RÉSERVÉ AU PERSONNEL HUMAIN », « CASQUE ANTIBRUIT OBLIGATOIRE », « ESSAI N° 4471 » (à relire par l'utilisateur) ;
+- les pochoirs sont en Saira Stencil One, une police libre (SIL OFL).
+
+Le rendu de cette arène a été essayé dans les trois rendus encore ouverts (section 18), robots compris.
 
 **La créature de l'événement légendaire** (GDD § 10) est **un prototype abandonné ou défectueux** du complexe (2026-10-25).
 
@@ -364,7 +379,7 @@ La direction artistique ne doit jamais prendre le dessus sur la lecture du comba
 | Ressources et récompenses | Une monnaie de pièces détachées, pour embellir son robot, purement esthétique, gagnée en jouant et à chaque niveau (2026-10-25). La vendre contre de l'argent réel reste une possibilité, à décider plus tard. |
 | Présence de robots hors arène | Communauté plus large que les spectateurs d'une partie, à suggérer par l'environnement. |
 | Nom de l'IA | Huit propositions de Claude le 2026-10-25 (VERDICT, SUPERVISEUR S-07, ÉTALON, ARBITRE, SENTINELLE, CONTRÔLE, PROTOCOLE, MIRE) : aucune n'a convaincu l'utilisateur, qui a coché SENTINELLE sans s'y tenir. La recherche continue. |
-| Style de rendu final | Low-poly propre, cel-shading discret ou combinaison des deux : les essais sont prêts (2026-10-26), sur le Y Bot et sur le CT-01, robot inspiré de KAY/O ; l'utilisateur choisit le style (le robot est le CT-01, section 5). |
+| Style de rendu final | Low-poly propre, cel-shading discret ou combinaison des deux : les essais sont prêts (2026-10-26), sur le Y Bot et sur le CT-01, robot inspiré de KAY/O, puis sur l'arène habillée, robots compris (2026-10-27, demandé par l'utilisateur) ; l'utilisateur choisit le style (le robot est le CT-01, section 5). |
 | Niveau de dégradation | Aspect rafistolé important ; quantité de pièces détachées et d'usure à standardiser. |
 
 ## 19. Pitchs de référence
@@ -491,3 +506,21 @@ Cette bible constitue une base de travail. Les décisions finales devront être 
 |---|---|---|
 | 5 | Le CT-01 devient le robot du jeu ; le Y Bot (le châssis « prototype ») et l'OS-02, l'« Ossature » (l'archétype du T-800, épaissi pour montrer autant de sa silhouette que le CT-01), restent au choix du joueur, dans Personnalisation. | Demandes de l'utilisateur, 2026-10-26 |
 | 10, 18 | L'essai des rendus est prêt, sur le Y Bot et sur le CT-01, un robot inspiré de KAY/O (*Valorant*) : visage d'écran à deux yeux en barres, plaques peintes de la couleur du joueur sur une ossature sombre, articulations en tambours, unité d'énergie dans le dos, mires de crash-test aux tempes et aux épaulières, numéro 07, une soudure et une petite plaque d'apprêt en réparations. Pièces rigides dans la silhouette commune. Le style et le robot restent à choisir. | Demande de l'utilisateur, 2026-10-26 |
+
+**2026-10-26 — refonte des armes**
+
+*Les codes renvoient à la page « Refonte des armes ».*
+
+| Section | Ce qui a changé | Décision |
+|---|---|---|
+| 12 | Les douze modèles deviennent douze armes, chacune avec son tir et son son : dans chaque famille, le stock est la référence, la série 30 prend un risque, le prototype laser chauffe au lieu de compter des balles. | P1 à P3 |
+| 12 | La chaleur se lit dans le HUD ; l'arme ne rougit pas. Propositions pour l'apparence : la vidange des armes laser (vapeur et sifflement), leur compteur qui montre la chaleur, la charge visible du FX-2, les lentilles du FX-3 rangées à plat comme sa gerbe en éventail. | C3 ; propositions de Claude |
+
+**2026-10-27 — l'arène de test habillée**
+
+| Section | Ce qui a changé | Décision |
+|---|---|---|
+| 13 | L'arène de test devient la salle de test balistique B-01, le layout du blocking gardé ; lumière « projecteurs, pénombre ». La salle souterraine à douze pans, sa charpente rayonnante, les matériaux, la signalétique, les caisses et les vieilles consignes sont des propositions de Claude. | Choix de l'utilisateur, 2026-10-27 ; propositions de Claude |
+| 18 | Les trois rendus (low poly propre, cel-shading, les deux mêlés) sont essayés sur l'arène habillée, robots compris. | Demande de l'utilisateur, 2026-10-27 |
+| 13 | Deuxième passe, le même jour : les caisses d'un mètre deviennent des caissons-conteneurs et des caissons renforcés (les premières se lisaient comme des tiroirs) ; les projecteurs tracent leurs faisceaux dans la brume, un liseré lumineux court sous la tribune. | Demande de l'utilisateur, 2026-10-27 ; propositions de Claude |
+| 18 | Les deux mêlés ont la préférence de l'utilisateur pour la phase de test : le rendu se règle dans les Options (les deux mêlés par défaut), le choix final viendra plus tard. En cel-shading, seule la lumière principale tombe en aplats (les vagues des flaques des projecteurs n'étaient « pas naturelles »). | Demande de l'utilisateur, 2026-10-27 |

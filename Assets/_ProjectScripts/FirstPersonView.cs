@@ -239,6 +239,8 @@ public class FirstPersonView : NetworkBehaviour
     private void HandleChassis(ChassisId id)
     {
         if (view != null) RobotChassis.Apply(view.transform, id);
+        // chaque châssis pose sa propre paume sur l'arme
+        if (viewGrip != null) viewGrip.Chassis = id;
     }
 
     private void HandleWeaponLooks(WeaponLooks looks)
@@ -497,14 +499,15 @@ public class FirstPersonView : NetworkBehaviour
     }
 
     /// <summary>
-    /// Copie le personnage sous la caméra et le prépare : layer des bras, aucune ombre, tête et
-    /// jambes repliées. La copie garde son Animator et son contrôleur. Sans état, testée.
+    /// Copie le personnage sous la caméra et le prépare : layer des bras, aucune ombre, tête, cou et
+    /// jambes repliés. La copie garde son Animator et son contrôleur. Sans état, testée.
     /// </summary>
     public static GameObject BuildView(GameObject modelSource, Transform cameraTransform, int layer,
                                        out Animator animator, out Transform sight)
     {
         GameObject copy = Instantiate(modelSource, cameraTransform, false);
         copy.name = "VueSubjective";
+        RenderStyle.TrackRobot(copy);   // les bras suivent le rendu choisi dans les Options
         copy.transform.localPosition = Vector3.zero;
         copy.transform.localRotation = Quaternion.identity;
         copy.transform.localScale = Vector3.one;
@@ -520,10 +523,13 @@ public class FirstPersonView : NetworkBehaviour
         animator = copy.GetComponent<Animator>();
         animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
 
-        // Replier la tête (on est dedans) et les jambes (inutiles, et visibles en baissant les yeux
-        // pendant certaines animations). L'Animator d'un humanoïde n'écrit pas l'échelle des os :
-        // il suffit de la poser une fois.
+        // Replier la tête (on est dedans), le cou et les jambes (inutiles, et visibles en baissant les
+        // yeux pendant certaines animations). Le cou : au pistolet, l'œil est 40 cm derrière la mire, à
+        // sa hauteur, et les vérins du cou de l'OS-02 passaient devant lui, un cinquième de l'écran à
+        // droite (2026-10-27). L'Animator d'un humanoïde n'écrit pas l'échelle des os : il suffit de la
+        // poser une fois.
         Collapse(animator.GetBoneTransform(HumanBodyBones.Head));
+        Collapse(animator.GetBoneTransform(HumanBodyBones.Neck));
         Collapse(animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg));
         Collapse(animator.GetBoneTransform(HumanBodyBones.RightUpperLeg));
 

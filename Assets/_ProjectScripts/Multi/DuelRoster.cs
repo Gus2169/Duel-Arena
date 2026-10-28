@@ -49,6 +49,10 @@ public struct MatchRules : INetworkSerializeByMemcpy
     /// <summary>Manches à gagner pour remporter le match : un BO5 ou un BO3, au choix de l'hôte au salon
     /// (GDD § 5, 2026-10-25). Toute autre valeur (0 : des réglages d'avant ce choix) vaut un BO5.</summary>
     public byte roundsToWin;
+    /// <summary>Les deux duellistes du premier match sont tirés au sort parmi tous les joueurs, au lancement
+    /// (2026-10-27, demandé par l'utilisateur : qu'on ne sache pas d'avance qui commence) ; sinon ce sont
+    /// l'hôte et le deuxième arrivé au salon.</summary>
+    public bool randomDuelists;
 
     /// <summary>Le prototype du GDD (§ 16) : quatre places (deux duellistes, deux spectateurs), roi de
     /// la colline, interventions des spectateurs permises, en BO5.</summary>
@@ -81,7 +85,9 @@ public struct MatchRules : INetworkSerializeByMemcpy
 /// testées, sur des listes d'identifiants de clients ; RoundManager les applique aux joueurs présents.
 ///
 /// - Les deux premiers arrivés sont duellistes ; les suivants entrent dans la file des spectateurs,
-///   dans l'ordre d'arrivée.
+///   dans l'ordre d'arrivée. Une partie lancée d'un salon en ligne suit l'ordre du salon, pas celui
+///   d'arrivée dans l'arène, où tous se connectent à la fois (ArrangeByRank, 2026-10-27).
+/// - Au tirage au sort (MatchRules.randomDuelists), deux joueurs au hasard (DrawDuelists).
 /// - En fin de match, au roi de la colline, le gagnant reste, le perdant passe au bout de la file et
 ///   le premier de la file prend sa place (GDD § 4).
 /// - Un duelliste qui part en plein match perd par forfait : l'autre gagne le match, et le premier de
@@ -178,6 +184,50 @@ public static class DuelRoster
         queue.RemoveAt(0);
         queue.Add(loser);
         return true;
+    }
+
+    /// <summary>
+    /// La composition d'une partie lancée d'un salon, refaite de zéro tant que ses joueurs arrivent dans
+    /// l'arène (2026-10-27) : `ranks[i]` est le rang du joueur `present[i]` dans l'ordre du salon (tirage
+    /// compris), -1 pour qui n'y était pas. Les `slots` premiers rangs sont duellistes, même s'ils
+    /// arrivent après d'autres : leur place les attend. Les autres attendent dans l'ordre du salon, puis
+    /// ceux venus sans y être passés, dans leur ordre d'arrivée.
+    /// </summary>
+    public static void ArrangeByRank(IReadOnlyList<ulong> present, IReadOnlyList<int> ranks, int slots, List<ulong> duelists, List<ulong> queue)
+    {
+        duelists.Clear();
+        queue.Clear();
+        var ranked = new List<(int rank, int arrival)>();
+        for (int i = 0; i < present.Count; i++)
+        {
+            int rank = ranks != null && i < ranks.Count ? ranks[i] : -1;
+            ranked.Add((rank < 0 ? int.MaxValue : rank, i));
+        }
+        ranked.Sort((a, b) => a.rank != b.rank ? a.rank.CompareTo(b.rank) : a.arrival.CompareTo(b.arrival));
+        foreach ((int rank, int arrival) in ranked)
+        {
+            if (rank < slots) duelists.Add(present[arrival]);
+            else queue.Add(present[arrival]);
+        }
+    }
+
+    /// <summary>
+    /// Le tirage au sort des duellistes (2026-10-27) : `count` joueurs de `order`, au hasard (`random`), passent
+    /// en tête, dans l'ordre du tirage ; les autres gardent leur ordre derrière eux. Avec moins de joueurs,
+    /// tous restent. Fonction pure (au hasard près, que donne l'appelant), testée.
+    /// </summary>
+    public static List<T> DrawDuelists<T>(IReadOnlyList<T> order, int count, System.Random random)
+    {
+        var rest = new List<T>(order ?? System.Array.Empty<T>());
+        var drawn = new List<T>();
+        while (drawn.Count < count && rest.Count > 0)
+        {
+            int pick = random != null ? random.Next(rest.Count) : 0;
+            drawn.Add(rest[pick]);
+            rest.RemoveAt(pick);
+        }
+        drawn.AddRange(rest);
+        return drawn;
     }
 
     /// <summary>Le rôle de `clientId`, et sa place dans la file (1 = le prochain à entrer, 0 pour un

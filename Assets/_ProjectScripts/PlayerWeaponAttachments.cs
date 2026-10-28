@@ -4,7 +4,7 @@ using UnityEngine;
 
 /// <summary>
 /// Les accessoires des armes d'un joueur (2026-10-16, GDD § 6) : le viseur, la poignée, le laser et le
-/// chargeur choisis à l'armurerie pour chacune des quatre armes (WeaponAttachments).
+/// chargeur choisis à l'armurerie pour chacune des armes de l'arsenal (WeaponAttachments).
 ///
 /// Comme l'apparence (PlayerWeaponLooks), le joueur les annonce dans sa demande de connexion
 /// (SessionFlow), le serveur les borne (WeaponAttachments.Sanitized) et les publie à l'apparition du
@@ -17,8 +17,8 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public class PlayerWeaponAttachments : NetworkBehaviour
 {
-    private readonly NetworkVariable<uint> attachments = new NetworkVariable<uint>(
-        0u, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private readonly NetworkVariable<WeaponAttachments> attachments = new NetworkVariable<WeaponAttachments>(
+        default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     private WeaponController weapon;
     private bool published;
@@ -34,7 +34,7 @@ public class PlayerWeaponAttachments : NetworkBehaviour
 #if UNITY_EDITOR || UNITY_INCLUDE_TESTS
             if (offline.HasValue && !IsSpawned) return offline.Value;
 #endif
-            return new WeaponAttachments(attachments.Value);
+            return attachments.Value;
         }
     }
 
@@ -51,7 +51,7 @@ public class PlayerWeaponAttachments : NetworkBehaviour
         if (IsServer)
         {
             WeaponAttachments wanted = SessionFlow.TakeApprovedAttachments(OwnerClientId);
-            attachments.Value = wanted.Sanitized(weapon != null ? weapon.Loadout : null).Packed;
+            attachments.Value = wanted.Sanitized(weapon != null ? weapon.Loadout : null);
         }
         attachments.OnValueChanged += HandleChanged;
         published = true;
@@ -64,16 +64,16 @@ public class PlayerWeaponAttachments : NetworkBehaviour
         published = false;
     }
 
-    private void HandleChanged(uint previous, uint current) => Changed?.Invoke(new WeaponAttachments(current));
+    private void HandleChanged(WeaponAttachments previous, WeaponAttachments current) => Changed?.Invoke(current);
 
     /// <summary>Serveur : change les accessoires en cours de partie (le stand de tir, 2026-10-16), bornés
     /// comme à l'apparition. Les chargeurs se remplissent : leur taille a pu changer.</summary>
     public void ServerSet(WeaponAttachments value)
     {
         if (!IsServer || !IsSpawned) return;
-        uint packed = value.Sanitized(weapon != null ? weapon.Loadout : null).Packed;
-        if (packed == attachments.Value) return;
-        attachments.Value = packed;
+        WeaponAttachments sanitized = value.Sanitized(weapon != null ? weapon.Loadout : null);
+        if (sanitized == attachments.Value) return;
+        attachments.Value = sanitized;
         if (weapon != null) weapon.ServerRefillMagazine();
     }
 

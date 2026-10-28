@@ -14,10 +14,8 @@ using Object = UnityEngine.Object;
 /// finitions), et les matériaux du shader DuelArena/ArmeUsee, un par matériau de Blender et par
 /// finition, ceux d'une finition qui n'y change rien étant partagés.
 ///
-/// Puis chaque classe dont les trois modèles existent (le stock, la série 30, la version laser) est
-/// branchée sur son WeaponData : le modèle par défaut en modelPrefab (le stock, sauf si le WeaponData en
-/// désigne déjà un autre de la classe, comme le FX-4 du raygun : il est gardé), les deux autres en
-/// otherModels, dans l'ordre des familles.
+/// Puis une arme de l'arsenal qui n'a pas encore de modèle prend celui dont la désignation est son nom :
+/// depuis la refonte du 2026-10-26, chaque modèle est une arme (son WeaponData).
 ///
 /// Réimporter refait tout à partir de l'export, sauf ce qui se règle au ressenti dans le préfab : la
 /// distance de l'œil à la mire (WeaponModel.aimEyeDistance) est gardée.
@@ -324,9 +322,9 @@ public static class WeaponImporter
         return key;
     }
 
-    /// <summary>Chaque classe dont les trois modèles sont importés passe sur eux : le modèle par défaut
-    /// en modèle principal (celui que le WeaponData désigne déjà, s'il est de la classe ; le stock
-    /// sinon), les deux autres en modèles au choix, dans l'ordre des familles.</summary>
+    /// <summary>Depuis la refonte du 2026-10-26, chaque modèle est une arme : une arme de l'arsenal sans
+    /// modèle prend celui dont la désignation est son nom (« FA-30 »). Réimporter réécrit chaque préfab à
+    /// sa place : les armes qui le portent déjà le gardent.</summary>
     private static void AssignToLoadout(List<(Sheet sheet, GameObject prefab)> imported)
     {
         var player = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
@@ -334,46 +332,16 @@ public static class WeaponImporter
         if (weapon == null) return;
         for (int slot = 0; slot < weapon.SlotCount; slot++)
         {
-            var models = new GameObject[3];
-            foreach ((Sheet sheet, GameObject prefab) in imported)
-                if (sheet.classe == slot && sheet.famille >= 0 && sheet.famille < models.Length) models[sheet.famille] = prefab;
-            if (models[0] == null || models[1] == null || models[2] == null) continue;
             WeaponData data = weapon.DataOf(slot);
-            var paths = new string[models.Length];
-            for (int family = 0; family < models.Length; family++) paths[family] = AssetDatabase.GetAssetPath(models[family]);
-            string current = data.modelPrefab != null ? AssetDatabase.GetAssetPath(data.modelPrefab) : null;
-            int[] order = ModelOrder(DefaultFamily(current, paths), models.Length);
-            data.modelPrefab = models[order[0]];
-            data.otherModels = new[] { models[order[1]], models[order[2]] };
-            EditorUtility.SetDirty(data);
-            Debug.Log($"[Armes] {data.weaponName} : {models[order[0]].name} par défaut, puis {models[order[1]].name} et {models[order[2]].name}.");
+            if (data == null || data.modelPrefab != null) continue;
+            foreach ((Sheet _, GameObject prefab) in imported)
+            {
+                if (!prefab.TryGetComponent(out WeaponModel model) || model.Designation != data.weaponName) continue;
+                data.modelPrefab = prefab;
+                EditorUtility.SetDirty(data);
+                Debug.Log($"[Armes] {data.weaponName} : son modèle {prefab.name}.");
+            }
         }
-    }
-
-    /// <summary>La famille du modèle par défaut d'une classe à la réimportation : celle du modèle que
-    /// son WeaponData désigne déjà (`currentPath`), s'il est l'un des siens (`pathsByFamily`), pour
-    /// qu'un choix fait dans Unity survive ; le stock sinon (premier import). Fonction pure, testée.</summary>
-    public static int DefaultFamily(string currentPath, IReadOnlyList<string> pathsByFamily)
-    {
-        if (!string.IsNullOrEmpty(currentPath) && pathsByFamily != null)
-            for (int family = 0; family < pathsByFamily.Count; family++)
-                if (pathsByFamily[family] == currentPath) return family;
-        return (int)WeaponModel.Family.Stock;
-    }
-
-    /// <summary>L'ordre des modèles d'une classe dans son WeaponData (ModelPrefabFor) : la famille par
-    /// défaut d'abord, puis les autres dans l'ordre des familles (stock, série 30, laser). Une famille
-    /// hors bornes redevient le stock. Fonction pure, testée.</summary>
-    public static int[] ModelOrder(int defaultFamily, int familyCount)
-    {
-        var order = new int[familyCount];
-        if (familyCount == 0) return order;
-        if (defaultFamily < 0 || defaultFamily >= familyCount) defaultFamily = (int)WeaponModel.Family.Stock;
-        order[0] = defaultFamily;
-        int next = 1;
-        for (int family = 0; family < familyCount; family++)
-            if (family != defaultFamily) order[next++] = family;
-        return order;
     }
 
     // ------------------------------------------------------------------

@@ -19,13 +19,17 @@ public static class GameSettings
     public const string PreferredColorKey = "DuelArena.PreferredColorIndex";
     private const string FullscreenKey = "DuelArena.Fullscreen";
     private const string ResolutionIndexKey = "DuelArena.ResolutionIndex";
+    private const string ResolutionWidthKey = "DuelArena.ResolutionWidth";
+    private const string ResolutionHeightKey = "DuelArena.ResolutionHeight";
     private const string VSyncKey = "DuelArena.VSync";
+    private const string RenderStyleKey = "DuelArena.RenderStyle";
     private const string FrameRateKey = "DuelArena.FrameRateCap";
     private const string BindingsKey = "DuelArena.Bindings";
     private const string HostCapacityKey = "DuelArena.Host.Capacity";
     private const string HostOrganizationKey = "DuelArena.Host.Organization";
     private const string HostInterventionsKey = "DuelArena.Host.SpectatorInterventions";
     private const string HostRoundsKey = "DuelArena.Host.RoundsToWin";
+    private const string HostRandomDuelistsKey = "DuelArena.Host.RandomDuelists";
     private const string MasterVolumeKey = "DuelArena.Volume.Master";
     private const string MusicVolumeKey = "DuelArena.Volume.Music";
 
@@ -59,9 +63,10 @@ public static class GameSettings
 
     /// <summary>
     /// Les réglages de la partie que cette machine hébergera (2026-10-13) : capacité, organisation des
-    /// duels (roi de la colline ou duellistes fixes), interventions des spectateurs, et depuis le
-    /// 2026-10-25 le nombre de manches (BO5 ou BO3). Choisis au salon, retenus d'une session à l'autre,
-    /// appliqués par le serveur seul (SessionFlow.ActiveRules, RoundManager).
+    /// duels (roi de la colline ou duellistes fixes), interventions des spectateurs, depuis le
+    /// 2026-10-25 le nombre de manches (BO5 ou BO3), et depuis le 2026-10-27 le tirage au sort des
+    /// duellistes. Choisis au salon, retenus d'une session à l'autre, appliqués par le serveur seul
+    /// (SessionFlow.ActiveRules, RoundManager).
     /// </summary>
     public static MatchRules HostRules
     {
@@ -74,6 +79,7 @@ public static class GameSettings
                 organization = (DuelOrganization)Mathf.Clamp(PlayerPrefs.GetInt(HostOrganizationKey, (int)defaults.organization), 0, 255),
                 spectatorInterventions = PlayerPrefs.GetInt(HostInterventionsKey, defaults.spectatorInterventions ? 1 : 0) == 1,
                 roundsToWin = (byte)Mathf.Clamp(PlayerPrefs.GetInt(HostRoundsKey, defaults.roundsToWin), 0, 255),
+                randomDuelists = PlayerPrefs.GetInt(HostRandomDuelistsKey, defaults.randomDuelists ? 1 : 0) == 1,
             }.Sanitized();
         }
         set
@@ -83,6 +89,7 @@ public static class GameSettings
             PlayerPrefs.SetInt(HostOrganizationKey, (int)r.organization);
             PlayerPrefs.SetInt(HostInterventionsKey, r.spectatorInterventions ? 1 : 0);
             PlayerPrefs.SetInt(HostRoundsKey, r.roundsToWin);
+            PlayerPrefs.SetInt(HostRandomDuelistsKey, r.randomDuelists ? 1 : 0);
             PlayerPrefs.Save();
         }
     }
@@ -117,13 +124,29 @@ public static class GameSettings
     // de domaine désactivé) : c'est celui que montre son champ.
     private static string playerName;
 
-    /// <summary>La clé de l'apparence des armes dans PlayerPrefs (publique pour les tests).</summary>
-    public const string WeaponLooksKey = "DuelArena.WeaponLooks";
+    /// <summary>La clé de l'apparence des armes dans PlayerPrefs (publique pour les tests) : douze
+    /// finitions en hexadécimal, depuis la refonte des armes du 2026-10-26.</summary>
+    public const string WeaponLooksKey = "DuelArena.WeaponLooks12";
+
+    /// <summary>Celle d'avant la refonte (un entier : le modèle et la finition de quatre classes), relue
+    /// une fois pour garder les choix du joueur.</summary>
+    public const string WeaponLooksKeyBeforeOverhaul = "DuelArena.WeaponLooks";
+
+    /// <summary>Les places dans l'arsenal des trois armes de chaque classe d'avant la refonte, dans
+    /// l'ordre des modèles qu'elle proposait (le modèle par défaut, puis les deux autres) : ce que
+    /// devient un réglage enregistré avant le 2026-10-26.</summary>
+    public static readonly int[][] ArmsBeforeOverhaul =
+    {
+        new[] { 0, 4, 5 },   // fusil d'assaut : FA-07, FA-30, FX-1
+        new[] { 1, 6, 7 },   // sniper : FP-12, FP-30, FX-2
+        new[] { 2, 8, 9 },   // pompe : FAP-03, FAP-30, FX-3
+        new[] { 3, 10, 11 }, // pistolet : FX-4 (son modèle par défaut), PA-05, RV-30
+    };
 
     /// <summary>
-    /// Le modèle et la finition choisis à l'armurerie pour chaque arme (2026-10-15, GDD § 6), annoncés
-    /// à l'hôte en se connectant (SessionFlow), qui les borne avant de les publier (PlayerWeaponLooks).
-    /// Toutes les finitions sont au choix pendant le prototype (GDD § 14).
+    /// La finition choisie à l'armurerie pour chaque arme (2026-10-15, GDD § 6), annoncée à l'hôte en
+    /// se connectant (SessionFlow), qui la borne avant de la publier (PlayerWeaponLooks). Toutes les
+    /// finitions sont au choix pendant le prototype (GDD § 14).
     ///
     /// Lue une fois par lancement, puis gardée en mémoire, comme le pseudo : deux instances du jeu sur
     /// un même PC partagent la clé du registre, et chacune doit garder ses armes.
@@ -132,13 +155,23 @@ public static class GameSettings
     {
         get
         {
-            if (!weaponLooks.HasValue) weaponLooks = new WeaponLooks(unchecked((uint)PlayerPrefs.GetInt(WeaponLooksKey, 0)));
+            if (!weaponLooks.HasValue)
+            {
+                string saved = PlayerPrefs.GetString(WeaponLooksKey, "");
+                if (ulong.TryParse(saved, System.Globalization.NumberStyles.AllowHexSpecifier,
+                                   System.Globalization.CultureInfo.InvariantCulture, out ulong packed))
+                    weaponLooks = new WeaponLooks(packed);
+                else if (PlayerPrefs.HasKey(WeaponLooksKeyBeforeOverhaul))
+                    weaponLooks = WeaponLooks.FromBeforeOverhaul(unchecked((uint)PlayerPrefs.GetInt(WeaponLooksKeyBeforeOverhaul, 0)), ArmsBeforeOverhaul);
+                else
+                    weaponLooks = WeaponLooks.Default;
+            }
             return weaponLooks.Value;
         }
         set
         {
             weaponLooks = value;
-            PlayerPrefs.SetInt(WeaponLooksKey, unchecked((int)value.Packed));
+            PlayerPrefs.SetString(WeaponLooksKey, value.Packed.ToString("X12"));
             PlayerPrefs.Save();
             WeaponLooksChanged?.Invoke();
         }
@@ -150,8 +183,13 @@ public static class GameSettings
     // L'apparence des armes de CETTE instance, lue une fois (vide = pas encore lue).
     private static WeaponLooks? weaponLooks;
 
-    /// <summary>La clé des accessoires des armes dans PlayerPrefs (publique pour les tests).</summary>
-    public const string WeaponAttachmentsKey = "DuelArena.WeaponAttachments";
+    /// <summary>La clé des accessoires des armes dans PlayerPrefs (publique pour les tests) : ceux des
+    /// douze armes en hexadécimal, depuis la refonte des armes du 2026-10-26.</summary>
+    public const string WeaponAttachmentsKey = "DuelArena.WeaponAttachments12";
+
+    /// <summary>Celle d'avant la refonte (un entier : les accessoires de quatre classes), relue une fois :
+    /// ceux d'une classe passent à ses trois armes.</summary>
+    public const string WeaponAttachmentsKeyBeforeOverhaul = "DuelArena.WeaponAttachments";
 
     /// <summary>
     /// Les accessoires choisis à l'armurerie pour chaque arme (2026-10-16, GDD § 6) : viseur, poignée,
@@ -166,13 +204,22 @@ public static class GameSettings
         get
         {
             if (!weaponAttachments.HasValue)
-                weaponAttachments = new WeaponAttachments(unchecked((uint)PlayerPrefs.GetInt(WeaponAttachmentsKey, 0)));
+            {
+                if (PlayerPrefs.HasKey(WeaponAttachmentsKey)
+                    && WeaponAttachments.TryParseHex(PlayerPrefs.GetString(WeaponAttachmentsKey, ""), out WeaponAttachments saved))
+                    weaponAttachments = saved;
+                else if (PlayerPrefs.HasKey(WeaponAttachmentsKeyBeforeOverhaul))
+                    weaponAttachments = WeaponAttachments.FromBeforeOverhaul(
+                        unchecked((uint)PlayerPrefs.GetInt(WeaponAttachmentsKeyBeforeOverhaul, 0)), ArmsBeforeOverhaul);
+                else
+                    weaponAttachments = WeaponAttachments.None;
+            }
             return weaponAttachments.Value;
         }
         set
         {
             weaponAttachments = value;
-            PlayerPrefs.SetInt(WeaponAttachmentsKey, unchecked((int)value.Packed));
+            PlayerPrefs.SetString(WeaponAttachmentsKey, value.ToHex());
             PlayerPrefs.Save();
             WeaponAttachmentsChanged?.Invoke();
         }
@@ -237,6 +284,28 @@ public static class GameSettings
     // L'inversion de CETTE instance du jeu, lue une fois (vide = pas encore lue).
     private static bool? invertY;
 
+    /// <summary>Le rendu du jeu (2026-10-27, RenderStyle) : low poly propre, cel-shading ou les deux mêlés, au choix du
+    /// joueur le temps de la phase de test ; les deux mêlés par défaut, le choix de l'utilisateur pour les essais. Gardé
+    /// en mémoire comme l'inversion de l'axe, appliqué aussitôt.</summary>
+    public static RenderStyleMode PreferredRenderStyle
+    {
+        get
+        {
+            renderStyle ??= (RenderStyleMode)Mathf.Clamp(PlayerPrefs.GetInt(RenderStyleKey, (int)RenderStyleMode.Meles), 0, 2);
+            return renderStyle.Value;
+        }
+        set
+        {
+            renderStyle = value;
+            PlayerPrefs.SetInt(RenderStyleKey, (int)value);
+            PlayerPrefs.Save();
+            RenderStyle.Set(value);
+        }
+    }
+
+    // Le rendu de CETTE instance du jeu, lu une fois (vide = pas encore lu).
+    private static RenderStyleMode? renderStyle;
+
     /// <summary>
     /// La couleur choisie pour le robot dans Personnalisation : son rang dans la palette de PlayerPaint,
     /// -1 = aucun choix (le serveur donne alors la première couleur libre). Annoncée à l'hôte en se
@@ -296,12 +365,28 @@ public static class GameSettings
         set { PlayerPrefs.SetInt(FullscreenKey, value ? 1 : 0); PlayerPrefs.Save(); }
     }
 
-    /// <summary>Index dans Screen.resolutions ; -1 = pas de préférence enregistrée (on garde la
-    /// résolution courante).</summary>
-    public static int ResolutionIndex
+    /// <summary>La résolution choisie (largeur, hauteur) ; (0, 0) = pas de préférence enregistrée (on garde
+    /// la résolution courante). Depuis le 2026-10-27, la taille elle-même : un rang dans Screen.resolutions,
+    /// où chaque taille revient une fois par fréquence d'écran, ne désignait plus la même d'un écran à
+    /// l'autre. L'ancien rang est relu une fois.</summary>
+    public static Vector2Int Resolution
     {
-        get => PlayerPrefs.GetInt(ResolutionIndexKey, -1);
-        set { PlayerPrefs.SetInt(ResolutionIndexKey, value); PlayerPrefs.Save(); }
+        get
+        {
+            int width = PlayerPrefs.GetInt(ResolutionWidthKey, 0);
+            int height = PlayerPrefs.GetInt(ResolutionHeightKey, 0);
+            if (width > 0 && height > 0) return new Vector2Int(width, height);
+            int index = PlayerPrefs.GetInt(ResolutionIndexKey, -1);
+            Resolution[] all = Screen.resolutions;
+            return index >= 0 && index < all.Length ? new Vector2Int(all[index].width, all[index].height) : Vector2Int.zero;
+        }
+        set
+        {
+            PlayerPrefs.SetInt(ResolutionWidthKey, Mathf.Max(0, value.x));
+            PlayerPrefs.SetInt(ResolutionHeightKey, Mathf.Max(0, value.y));
+            PlayerPrefs.DeleteKey(ResolutionIndexKey);
+            PlayerPrefs.Save();
+        }
     }
 
     public static bool VSync
@@ -326,18 +411,14 @@ public static class GameSettings
         Application.targetFrameRate = FrameRateCap > 0 ? FrameRateCap : -1;
 
         FullScreenMode mode = Fullscreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
-        int index = ResolutionIndex;
-        Resolution[] resolutions = Screen.resolutions;
-        if (index >= 0 && index < resolutions.Length)
-        {
-            Resolution r = resolutions[index];
-            Screen.SetResolution(r.width, r.height, mode, r.refreshRateRatio);
-        }
-        else
-        {
-            Screen.fullScreenMode = mode;
-        }
+        Vector2Int size = Resolution;
+        if (size.x > 0 && size.y > 0) Screen.SetResolution(size.x, size.y, mode);
+        else Screen.fullScreenMode = mode;
     }
+
+    /// <summary>Les remappages enregistrés, tels quels (vide sans remappage) : les Options y comparent ceux
+    /// qu'on vient de faire, pour savoir s'il reste quelque chose à appliquer.</summary>
+    public static string SavedBindingOverridesJson => PlayerPrefs.GetString(BindingsKey, string.Empty);
 
     /// <summary>Remappages enregistrés, appliqués à un asset d'actions donné. Nécessaire car
     /// chaque `new PlayerControls()` déserialise sa PROPRE copie de l'asset généré : sans cet

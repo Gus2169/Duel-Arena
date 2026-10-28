@@ -29,14 +29,14 @@ public class WeaponStatSheetTests
     /// garde (Sanitized) : viseurs, poignées, laser, chargeur.</summary>
     private static IEnumerable<WeaponAttachments> Configurations(IReadOnlyList<WeaponData> loadout, int slot)
     {
-        var seen = new HashSet<uint>();
+        var seen = new HashSet<string>();
         for (int sight = 0; sight <= WeaponAttachments.SightCount; sight++)
         for (int grip = 0; grip < 3; grip++)
         for (int laser = 0; laser < 2; laser++)
         for (int magazine = 0; magazine < 2; magazine++)
         {
             WeaponAttachments a = WeaponAttachments.None.With(slot, sight, (GripKind)grip, laser == 1, magazine == 1).Sanitized(loadout);
-            if (seen.Add(a.Packed)) yield return a;
+            if (seen.Add(a.ToHex())) yield return a;
         }
     }
 
@@ -45,7 +45,7 @@ public class WeaponStatSheetTests
     {
         IReadOnlyList<WeaponData> loadout = Loadout();
         float health = RobotHealth();
-        Assert.AreEqual(4, loadout.Count);
+        Assert.AreEqual(WeaponController.MaxSlots, loadout.Count, "Les barres comparent les douze armes (GDD § 15).");
 
         foreach (WeaponStatSheet.Stat stat in WeaponStatSheet.Bars)
         {
@@ -164,7 +164,7 @@ public class WeaponStatSheetTests
             if (data.falloffEnd > data.falloffStart)
                 StringAssert.Contains($"Jusqu'à {WeaponStatSheet.Number(data.falloffStart)} m", brief, "Il le dit à la portée des pleins dégâts.");
         }
-        Assert.AreEqual(12, zonesChecked);
+        Assert.AreEqual(3 * WeaponController.MaxSlots, zonesChecked);
     }
 
     // Les tirs qu'un robot à pleine vie encaisse sans tomber, comptés comme Health.ApplyDamage.
@@ -225,6 +225,16 @@ public class WeaponStatSheetTests
             Assert.AreEqual("Tête ×1,4, jambes ×0,6", WeaponStatSheet.Zones(data));
             Assert.AreEqual("Arme d'essai. Automatique, 66 coups par minute. Il faut 6 impacts au buste pour neutraliser un robot, "
                             + "5 à la tête, 10 aux jambes.", WeaponStatSheet.Brief(data, 100f));
+
+            // Une arme qui se charge (le FX-2) : l'IA compte des tirs chargés à fond.
+            data.chargeTime = 1f;
+            data.damagePerHit = 100f;
+            data.shotsPerSecond = 2.5f;
+            data.isAutomatic = false;
+            data.headMultiplier = 1.5f;
+            Assert.AreEqual("Tir chargé en 1 s", WeaponStatSheet.FireMode(data));
+            Assert.AreEqual("Arme d'essai. Tir chargé en 1 s, 150 coups par minute. Il faut 1 impact chargé à fond au buste ou "
+                            + "à la tête pour neutraliser un robot, 2 aux jambes.", WeaponStatSheet.Brief(data, 100f));
         }
         finally
         {

@@ -73,6 +73,33 @@ public class SpectatorPhysicsTests
     // Les objets lancés
     // ------------------------------------------------------------------
 
+    /// <summary>La trajectoire que voit le lanceur (2026-10-27) suit celle que le serveur simulera : par-dessus un
+    /// muret, elle s'arrête là où le caillou se brise, et son point de chute est sur la surface touchée.</summary>
+    [Test]
+    public void LaTrajectoireMontree_SArreteLaOuLeServeurBriseLeCaillou()
+    {
+        Box("Sol", new Vector3(0f, -0.5f, 0f), new Vector3(60f, 1f, 60f));
+        Box("Muret", new Vector3(0f, 0.5f, 5f), new Vector3(10f, 1f, 0.4f));
+        Box("Mur du fond", new Vector3(0f, 3f, 22f), new Vector3(10f, 6f, 1f));
+        Physics.SyncTransforms();
+
+        ArenaItem rock = NewItem();
+        foreach (Vector3 velocity in new[] { new Vector3(0f, 6f, 12f), new Vector3(0f, 9f, 16f), new Vector3(1.5f, 2f, 20f) })
+        {
+            Vector3 origin = new Vector3(0f, 1.6f, 0f);
+            var points = new Vector3[ThrowArcPreview.MaxPoints];
+            int count = ThrowArcPreview.Trace(origin, velocity, rock.TestGravity, 0.09f, 1, points, out bool hit, out Vector3 hitPoint, out _);
+            Assert.IsTrue(hit, $"À {velocity} : le caillou touche le décor.");
+            Assert.Greater(count, 2, "Une parabole, pas un trait.");
+
+            rock.TestBegin(ArenaItemKind.Rock, origin, velocity);
+            rock.TestSimulate(8.0);
+            Assert.AreEqual(ArenaItem.Phase.Shattered, rock.TestMotion.phase);
+            Assert.Less(Vector3.Distance(rock.TestMotion.position, hitPoint), 0.06f,
+                $"À {velocity} : la trajectoire montrée finit là où le serveur brise le caillou ({rock.TestMotion.position} contre {hitPoint}).");
+        }
+    }
+
     [Test]
     public void UnCaillouLance_SeBriseSurLeMur()
     {

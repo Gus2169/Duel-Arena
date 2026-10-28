@@ -14,11 +14,13 @@ using UnityEngine.UIElements;
 /// visuel de la map avec les éléments clés ». Sur MainMenuUI, à côté de MainMenuController ; ouvert depuis
 /// l'écran Jouer (une carte de mode, ou Rejoindre avec un code).
 ///
-/// - En tête d'affiche : l'hôte (toujours le premier duelliste) et le second quand on le connaît
-///   (LobbyLineup) : à trois et plus, c'est le premier des autres à arriver dans l'arène.
+/// - En tête d'affiche : l'hôte et le deuxième arrivé au salon (LobbyLineup ; l'arène suit cet ordre, voir
+///   SessionFlow.LaunchOrder). Avec les duellistes tirés au sort, deux points d'interrogation : le tirage se
+///   fait au lancement.
 /// - Dessous, la tribune : ceux qui attendent leur tour, puis les places libres.
 /// - À droite : l'arène (sa carte, ses points d'apparition, sa tribune et ses blocs, MenuArtwork), le mode
-///   et les réglages, que seul l'hôte change et que tous voient changer, puis le code à donner.
+///   et les réglages (sélecteurs, et cases à cocher pour ce qui se dit oui ou non, 2026-10-27), que seul
+///   l'hôte change et que tous voient changer, puis le code à donner.
 /// Les portraits sont le robot de chaque joueur, dans la couleur qu'il aura vraiment : celle qu'il a choisie
 /// si personne avant lui ne l'a prise, sinon la première libre (PlayerPaint.PickPaint, comme le serveur).
 ///
@@ -38,12 +40,6 @@ public class LobbyController : MonoBehaviour
 
     [Tooltip("Nom de la scène de jeu à charger au lancement. Doit être dans les Build Settings.")]
     [SerializeField] private string gameplaySceneName = "MultiTestScene";
-
-    private static readonly (DuelOrganization value, string label)[] Organizations =
-    {
-        (DuelOrganization.KingOfTheHill, "Roi de la colline"),
-        (DuelOrganization.FixedDuelists, "Duellistes fixes"),
-    };
 
     private sealed class DuelistCard
     {
@@ -93,7 +89,8 @@ public class LobbyController : MonoBehaviour
     private Label arenaName;
     private ArenaMapView map;
     private Label modeValue, rulesHint;
-    private OptionCycler roundsCycler, capacityCycler, organizationCycler, interventionsCycler;
+    private OptionCycler roundsCycler, capacityCycler;
+    private Toggle kingToggle, interventionsToggle, randomToggle;
     private Label codeLabel, copyLabel, statusLabel;
     private Button copyButton, startButton, leaveButton;
 
@@ -135,8 +132,9 @@ public class LobbyController : MonoBehaviour
         roundsCycler = root.Q<OptionCycler>("lobbyRoundsCycler");
         rulesHint = root.Q<Label>("lobbyRulesHint");
         capacityCycler = root.Q<OptionCycler>("lobbyCapacityCycler");
-        organizationCycler = root.Q<OptionCycler>("lobbyOrganizationCycler");
-        interventionsCycler = root.Q<OptionCycler>("lobbyInterventionsCycler");
+        kingToggle = root.Q<Toggle>("lobbyKingToggle");
+        interventionsToggle = root.Q<Toggle>("lobbyInterventionsToggle");
+        randomToggle = root.Q<Toggle>("lobbyRandomToggle");
         codeLabel = root.Q<Label>("lobbyCodeLabel");
         copyLabel = root.Q<Label>("lobbyCopyLabel");
         statusLabel = root.Q<Label>("lobbyStatusLabel");
@@ -144,9 +142,6 @@ public class LobbyController : MonoBehaviour
         startButton = root.Q<Button>("lobbyStartButton");
         leaveButton = root.Q<Button>("lobbyLeaveButton");
 
-        var organizationLabels = new string[Organizations.Length];
-        for (int i = 0; i < Organizations.Length; i++) organizationLabels[i] = Organizations[i].label;
-        organizationCycler.Choices = organizationLabels;
         BuildArena();
 
         copyButton.clicked += CopyCode;
@@ -154,8 +149,9 @@ public class LobbyController : MonoBehaviour
         leaveButton.clicked += OnLeaveClicked;
         roundsCycler.RegisterValueChangedCallback(OnRoundsChanged);
         capacityCycler.RegisterValueChangedCallback(OnCapacityChanged);
-        organizationCycler.RegisterValueChangedCallback(OnOrganizationChanged);
-        interventionsCycler.RegisterValueChangedCallback(OnInterventionsChanged);
+        kingToggle.RegisterValueChangedCallback(OnKingChanged);
+        interventionsToggle.RegisterValueChangedCallback(OnInterventionsChanged);
+        randomToggle.RegisterValueChangedCallback(OnRandomChanged);
 
         OnlineSession.Changed += Render;
         OnlineSession.Ended += OnSessionEnded;
@@ -168,8 +164,9 @@ public class LobbyController : MonoBehaviour
         leaveButton.clicked -= OnLeaveClicked;
         roundsCycler.UnregisterValueChangedCallback(OnRoundsChanged);
         capacityCycler.UnregisterValueChangedCallback(OnCapacityChanged);
-        organizationCycler.UnregisterValueChangedCallback(OnOrganizationChanged);
-        interventionsCycler.UnregisterValueChangedCallback(OnInterventionsChanged);
+        kingToggle.UnregisterValueChangedCallback(OnKingChanged);
+        interventionsToggle.UnregisterValueChangedCallback(OnInterventionsChanged);
+        randomToggle.UnregisterValueChangedCallback(OnRandomChanged);
 
         OnlineSession.Changed -= Render;
         OnlineSession.Ended -= OnSessionEnded;
@@ -312,7 +309,7 @@ public class LobbyController : MonoBehaviour
     private void Show(View view)
     {
         List<Entry> players = view.players ?? new List<Entry>();
-        var lineup = LobbyLineup<Entry>.Arrange(players, view.rules.capacity);
+        var lineup = LobbyLineup<Entry>.Arrange(players, view.rules.capacity, view.rules.randomDuelists);
 
         codeLabel.text = string.IsNullOrEmpty(view.code) ? "······" : view.code;
         RenderHeadline(view.host, view.started, players.Count);
@@ -394,11 +391,16 @@ public class LobbyController : MonoBehaviour
 
     private void RenderDuelists(LobbyLineup<Entry> lineup, int playerCount)
     {
+        if (lineup.drawn)
+        {
+            // Le tirage au sort : personne ne sait d'avance qui commence.
+            ShowDuelist(duelists[0], false, default, "DUELLISTE 1", "?", "Tiré au sort au lancement.");
+            ShowDuelist(duelists[1], false, default, "DUELLISTE 2", "?", "Tiré au sort au lancement.");
+            return;
+        }
         ShowDuelist(duelists[0], lineup.hasFirst, lineup.first, "DUELLISTE 1", "", "");
         if (lineup.secondKnown)
             ShowDuelist(duelists[1], true, lineup.second, "DUELLISTE 2", "", "");
-        else if (lineup.secondAmongStands)
-            ShowDuelist(duelists[1], false, default, "DUELLISTE 2", "?", "Le premier des spectateurs arrivé dans l'arène.");
         else
             ShowDuelist(duelists[1], false, default, "DUELLISTE 2", "EN ATTENTE…",
                 playerCount == 0 ? "" : "Donne le code du salon à ton adversaire.");
@@ -442,22 +444,28 @@ public class LobbyController : MonoBehaviour
     private void RenderStands(LobbyLineup<Entry> lineup, MatchRules rules)
     {
         queueList.Clear();
-        foreach (Entry entry in lineup.stands) queueList.Add(StandRow(entry, queueList.childCount + 1));
+        foreach (Entry entry in lineup.stands) queueList.Add(StandRow(entry, queueList.childCount + 1, lineup.drawn));
         for (int i = 0; i < lineup.freeStands; i++) queueList.Add(FreeRow());
 
         int standPlaces = lineup.stands.Count + lineup.freeStands;
+        if (lineup.drawn)
+        {
+            queueTitle.text = $"DANS LE TIRAGE  {lineup.stands.Count}/{standPlaces}";
+            queueHint.text = standPlaces <= DuelRoster.DuelistSlots
+                ? "Deux places : un duel sans tribune."
+                : "Deux d'entre eux seront tirés au sort au lancement ; les autres attendront leur tour sur la tribune.";
+            return;
+        }
         queueTitle.text = standPlaces == 0 ? "SPECTATEURS" : $"SPECTATEURS  {lineup.stands.Count}/{standPlaces}";
         if (standPlaces == 0)
             queueHint.text = "Deux places : un duel sans tribune.";
-        else if (lineup.secondAmongStands)
-            queueHint.text = "Le premier d'entre eux arrivé dans l'arène affronte l'hôte ; les autres attendent leur tour sur la tribune.";
         else
             queueHint.text = rules.organization == DuelOrganization.KingOfTheHill
-                ? "Ils attendent leur tour sur la tribune : le perdant de chaque match passe au bout de la file."
+                ? "Ils attendent leur tour sur la tribune, dans leur ordre d'arrivée : le perdant de chaque match passe au bout de la file."
                 : "Ils regardent le match depuis la tribune.";
     }
 
-    private static VisualElement StandRow(Entry entry, int rank)
+    private static VisualElement StandRow(Entry entry, int rank, bool drawn)
     {
         var row = new SlantBox();
         row.AddToClassList("queue-slot");
@@ -466,8 +474,9 @@ public class LobbyController : MonoBehaviour
         logo.AddToClassList("queue-slot__logo");
         logo.LogoColor = entry.paint;
         row.Add(logo);
-        row.Add(NewLabel(entry.name, "queue-slot__name"));
-        string status = entry.local ? $"TOI · EN FILE {rank}" : $"EN FILE {rank}";
+        row.Add(NewLabel(entry.host ? entry.name + " (hôte)" : entry.name, "queue-slot__name"));
+        string status = drawn ? (entry.local ? "TOI · DANS LE TIRAGE" : "DANS LE TIRAGE")
+                              : entry.local ? $"TOI · EN FILE {rank}" : $"EN FILE {rank}";
         row.Add(NewLabel(status, "queue-slot__status"));
         return row;
     }
@@ -533,12 +542,14 @@ public class LobbyController : MonoBehaviour
         for (int c = capacityFloor; c <= MatchRules.MaxCapacity; c++) capacities.Add(c.ToString());
         capacityCycler.Choices = capacities;
         capacityCycler.SetValueWithoutNotify(Mathf.Max(0, rules.capacity - capacityFloor));
-        organizationCycler.SetValueWithoutNotify(Array.FindIndex(Organizations, o => o.value == rules.organization));
-        interventionsCycler.SetValueWithoutNotify(rules.spectatorInterventions ? 1 : 0);
+        kingToggle.SetValueWithoutNotify(rules.organization == DuelOrganization.KingOfTheHill);
+        interventionsToggle.SetValueWithoutNotify(rules.spectatorInterventions);
+        randomToggle.SetValueWithoutNotify(rules.randomDuelists);
         roundsCycler.SetEnabled(editable);
         capacityCycler.SetEnabled(editable);
-        organizationCycler.SetEnabled(editable);
-        interventionsCycler.SetEnabled(editable);
+        kingToggle.SetEnabled(editable);
+        interventionsToggle.SetEnabled(editable);
+        randomToggle.SetEnabled(editable);
 
         rulesHint.text = host
             ? "Chaque changement s'affiche aussitôt chez les autres joueurs du salon."
@@ -551,15 +562,14 @@ public class LobbyController : MonoBehaviour
     private void OnCapacityChanged(ChangeEvent<int> evt)
         => ChangeRules(r => { r.capacity = (byte)(capacityFloor + evt.newValue); return r; });
 
-    private void OnOrganizationChanged(ChangeEvent<int> evt)
-    {
-        if (evt.newValue < 0 || evt.newValue >= Organizations.Length) return;
-        DuelOrganization chosen = Organizations[evt.newValue].value;
-        ChangeRules(r => { r.organization = chosen; return r; });
-    }
+    private void OnKingChanged(ChangeEvent<bool> evt)
+        => ChangeRules(r => { r.organization = evt.newValue ? DuelOrganization.KingOfTheHill : DuelOrganization.FixedDuelists; return r; });
 
-    private void OnInterventionsChanged(ChangeEvent<int> evt)
-        => ChangeRules(r => { r.spectatorInterventions = evt.newValue == 1; return r; });
+    private void OnInterventionsChanged(ChangeEvent<bool> evt)
+        => ChangeRules(r => { r.spectatorInterventions = evt.newValue; return r; });
+
+    private void OnRandomChanged(ChangeEvent<bool> evt)
+        => ChangeRules(r => { r.randomDuelists = evt.newValue; return r; });
 
     private void ChangeRules(Func<MatchRules, MatchRules> change)
     {
@@ -575,7 +585,8 @@ public class LobbyController : MonoBehaviour
         MatchRules r = rules.Sanitized();
         string organization = r.organization == DuelOrganization.FixedDuelists ? "duellistes fixes" : "roi de la colline";
         string interventions = r.spectatorInterventions ? "spectateurs actifs" : "spectateurs sans interventions";
-        return $"Duel {r.Format}, {r.capacity} places, {organization}, {interventions}.";
+        string draw = r.randomDuelists ? ", duellistes tirés au sort" : "";
+        return $"Duel {r.Format}, {r.capacity} places, {organization}, {interventions}{draw}.";
     }
 
     // ------------------------------------------------------------------
@@ -596,6 +607,10 @@ public class LobbyController : MonoBehaviour
         SetBusy(true);
         SetStatus("Lancement de la partie...", false);
         SessionFlow.ActiveRules = OnlineSession.Rules;   // places, duels, spectateurs : figés pour la partie
+        // L'ordre du salon (les duellistes en tête, tirés au sort avec le tirage), que l'arène suivra : tous
+        // s'y connectent à la fois, et l'ordre d'arrivée n'y dit plus rien (2026-10-27).
+        SessionFlow.LaunchOrder.Clear();
+        SessionFlow.LaunchOrder.AddRange(OnlineSession.LaunchOrder(OnlineSession.Rules.randomDuelists, new System.Random()));
         SessionFlow.PrepareConnectionData(nm);           // le pseudo a pu changer depuis le lancement
 
         try
@@ -615,6 +630,7 @@ public class LobbyController : MonoBehaviour
         catch (Exception e)
         {
             Debug.LogWarning($"[En ligne] Lancement de la partie : {e}");
+            SessionFlow.LaunchOrder.Clear();
             if (this == null) return;
             launching = false;
             SetStatus(OnlineSession.DescribeError(e), true);

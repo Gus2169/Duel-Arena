@@ -11,7 +11,7 @@ using UnityEngine;
 /// seule demande qu'un client puisse faire est « je suis prêt » pendant la préparation
 /// (PlayerMatchState), qui ne fait qu'avancer le décompte.
 ///
-/// Une manche (2026-10-12) : PRÉPARATION (choix de l'arme, 20 s au plus, finie dès que les deux
+/// Une manche (2026-10-12) : PRÉPARATION (choix de l'arme, 30 s au plus, finie dès que les deux
 /// joueurs ont validé) → DÉCOMPTE → MANCHE → FIN DE MANCHE (le survivant garde la main quelques
 /// secondes pour narguer son adversaire, puis fondu au noir) → préparation suivante. Le match fini,
 /// même temps pour le gagnant, puis l'écran de fin, puis un nouveau match.
@@ -64,8 +64,8 @@ public class RoundManager : NetworkBehaviour
     public const ulong NoWinner = ulong.MaxValue;
 
     [Header("Durées (s)")]
-    [Tooltip("Préparation avant chaque manche : chaque joueur choisit son arme dans le panneau du centre de l'écran. Le décompte part dès que les deux ont validé, au plus tard à la fin de ce temps (2026-10-12, demandé par l'utilisateur : 20 s).")]
-    [SerializeField] private float preparationDuration = 20f;
+    [Tooltip("Préparation avant chaque manche : chaque joueur choisit son arme dans le panneau du centre de l'écran. Le décompte part dès que les deux ont validé, au plus tard à la fin de ce temps (2026-10-12, demandé par l'utilisateur ; 30 s à chaque manche depuis le 2026-10-26).")]
+    [SerializeField] private float preparationDuration = 30f;
 
     [Tooltip("Décompte avant le début d'une manche. Pendant ce temps le déplacement est bloqué et le tir interdit, pour que les deux joueurs partent exactement en même temps.")]
     [SerializeField] private float startingDuration = 3f;
@@ -142,6 +142,16 @@ public class RoundManager : NetworkBehaviour
     private readonly List<ulong> duelistIds = new List<ulong>();
     private readonly List<ulong> spectatorQueue = new List<ulong>();
     private readonly List<ulong> presentIds = new List<ulong>();
+    private readonly List<int> presentRanks = new List<int>();
+
+    [Tooltip("Une partie lancée d'un salon en ligne attend ses joueurs dans l'arène au plus ce temps (s), pour faire duellistes ceux que le salon désigne : au-delà, un joueur qui n'arrive pas cède sa place.")]
+    [SerializeField] private float gatheringTimeout = 15f;
+
+    // Côté serveur : les joueurs du salon arrivent encore dans l'arène (SessionFlow.LaunchOrder), et jusqu'à
+    // quand on les attend.
+    private bool gathering;
+    private double gatheringEndsAt;
+    private static readonly System.Random draw = new System.Random();
 
     // ------------------------------------------------------------------
     // Accès global
@@ -314,6 +324,10 @@ public class RoundManager : NetworkBehaviour
         cached = this;
         if (!IsServer) return;
         rules.Value = SessionFlow.ActiveRules.Sanitized();
+        // Lancée d'un salon en ligne : tous ses joueurs se connectent à la fois, dans un ordre que rien ne
+        // prédit. On les attend un peu pour donner les places de duelliste dans l'ordre du salon (2026-10-27).
+        gathering = SessionFlow.LaunchOrder.Count > 0;
+        gatheringEndsAt = Now + gatheringTimeout;
         EnterWaiting();
 
         // Le joueur du Host naît dans la scène du menu, AVANT que l'arène ne soit chargée (voir
@@ -339,7 +353,7 @@ public class RoundManager : NetworkBehaviour
         switch (phase.Value)
         {
             case Phase.WaitingForPlayers:
-                if (HasEnoughPlayers()) StartMatch();
+                if (!gathering && HasEnoughPlayers()) StartMatch();
                 break;
 
             case Phase.Preparation:
@@ -418,15 +432,67 @@ public class RoundManager : NetworkBehaviour
         }
 
         int slots = DuelistSlotsForSession;
-        bool noMatch = phase.Value == Phase.WaitingForPlayers || phase.Value == Phase.Salon;
-        DuelRoster.Sync(presentIds, duelistIds, spectatorQueue, slots, out bool duelistLeft, admitNewcomers: noMatch);
-        // Une place libre va au premier de la file quand aucun match ne se joue ; celle d'un duelliste
-        // parti en plein match, après l'écran de fin du forfait (Update, MatchOver).
-        if (noMatch) DuelRoster.FillFromQueue(duelistIds, spectatorQueue, slots);
+        bool duelistLeft = false;
+        if (gathering)
+        {
+            // Les joueurs du salon arrivent : les places suivent l'ordre du salon, refaites de zéro à chaque
+            // arrivée. Les duellistes qu'il désigne gardent leur place même s'ils arrivent après les autres.
+            // Rangés AVANT de clore l'attente : le dernier arrivé prend sa place à l'image même de son arrivée
+            // (vu à trois instances le 2026-10-27 : clos d'abord, l'attente le laissait au bout de la file).
+            presentRanks.Clear();
+            foreach (ulong id in presentIds) presentRanks.Add(SessionFlow.LaunchRankOf(id));
+            DuelRoster.ArrangeByRank(presentIds, presentRanks, slots, duelistIds, spectatorQueue);
+            UpdateGathering();
+        }
+        else
+        {
+            bool noMatch = phase.Value == Phase.WaitingForPlayers || phase.Value == Phase.Salon;
+            DuelRoster.Sync(presentIds, duelistIds, spectatorQueue, slots, out duelistLeft, admitNewcomers: noMatch);
+            // Une place libre va au premier de la file quand aucun match ne se joue ; celle d'un duelliste
+            // parti en plein match, après l'écran de fin du forfait (Update, MatchOver).
+            if (noMatch) DuelRoster.FillFromQueue(duelistIds, spectatorQueue, slots);
+        }
         ServerApplyRoles();
         byte waiting = (byte)Mathf.Min(spectatorQueue.Count, 255);
         if (spectatorQueueCount.Value != waiting) spectatorQueueCount.Value = waiting;
         return duelistLeft;
+    }
+
+    /// <summary>L'attente des joueurs du salon s'arrête quand tous ceux qui y sont encore sont dans l'arène,
+    /// ou au bout de `gatheringTimeout` : la composition reprend alors son cours ordinaire (une place de
+    /// duelliste restée vide va au premier de la file).</summary>
+    private void UpdateGathering()
+    {
+        bool everyoneHere = true;
+        foreach (string playerId in SessionFlow.LaunchOrder)
+        {
+            // Parti du salon pendant le lancement : on ne l'attend plus.
+            if (!OnlineSession.HasPlayer(playerId)) continue;
+            if (SessionFlow.LaunchPlayerConnected(playerId, presentIds)) continue;
+            everyoneHere = false;
+            break;
+        }
+        if (!everyoneHere && Now < gatheringEndsAt) return;
+        gathering = false;
+        SessionFlow.LaunchOrder.Clear();
+        Debug.Log(everyoneHere ? "[Round] Les joueurs du salon sont tous dans l'arène." : "[Round] Des joueurs du salon ne sont pas arrivés : la partie commence sans eux.");
+    }
+
+    /// <summary>Le tirage au sort des duellistes (MatchRules.randomDuelists), au lancement depuis le salon de
+    /// l'arène : deux des joueurs présents, au hasard ; les autres attendent dans l'ordre où ils étaient.</summary>
+    private void DrawDuelistsAmongPresent()
+    {
+        var order = new List<ulong>(duelistIds);
+        order.AddRange(spectatorQueue);
+        List<ulong> drawn = DuelRoster.DrawDuelists(order, DuelistSlotsForSession, draw);
+        duelistIds.Clear();
+        spectatorQueue.Clear();
+        for (int i = 0; i < drawn.Count; i++)
+        {
+            if (i < DuelistSlotsForSession) duelistIds.Add(drawn[i]);
+            else spectatorQueue.Add(drawn[i]);
+        }
+        ServerApplyRoles();
     }
 
     /// <summary>
@@ -477,13 +543,22 @@ public class RoundManager : NetworkBehaviour
     /// deux instances le second joueur soit spectateur. Le duelliste reste seul, en attente (il
     /// s'échauffe), et le spectateur peut tout faire, lancer compris. À éteindre après.</summary>
     public static bool DebugSoloDuel;
-    private static int DuelistSlotsForSession => DebugSoloDuel ? 1 : DuelRoster.DuelistSlots;
+
+    /// <summary>BANC DE TEST — Editor uniquement, sur l'hôte : aucune place de duelliste, tous les joueurs
+    /// sont spectateurs (2026-10-27) : à deux instances, ils se battent entre eux sur la tribune (coups,
+    /// garde, cailloux). Personne ne joue de match. À éteindre après.</summary>
+    public static bool DebugNoDuel;
+    private static int DuelistSlotsForSession => DebugNoDuel ? 0 : DebugSoloDuel ? 1 : DuelRoster.DuelistSlots;
 
     // Remis à zéro à chaque entrée en Play Mode (le rechargement de domaine est désactivé) : un banc
     // oublié ne doit pas faire du second joueur de l'utilisateur un spectateur. À régler une fois en
     // Play Mode, avant d'héberger.
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    private static void ResetDebug() => DebugSoloDuel = false;
+    private static void ResetDebug()
+    {
+        DebugSoloDuel = false;
+        DebugNoDuel = false;
+    }
 #else
     private static int DuelistSlotsForSession => DuelRoster.DuelistSlots;
 #endif
@@ -795,6 +870,8 @@ public class RoundManager : NetworkBehaviour
         if (!IsServer || phase.Value != Phase.Salon) return;
         if (DuelRoster.FillFromQueue(duelistIds, spectatorQueue, DuelistSlotsForSession)) ServerApplyRoles();
         if (!HasEnoughPlayers()) return;
+        // Le tirage au sort : le salon n'a pas dit qui jouerait, il se décide maintenant.
+        if (rules.Value.randomDuelists) DrawDuelistsAmongPresent();
         Debug.Log("[Round] L'hôte relance la partie.");
         StartMatch();
     }

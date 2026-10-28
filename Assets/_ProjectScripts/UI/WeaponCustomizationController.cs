@@ -9,22 +9,25 @@ using UnityEngine.UIElements.Experimental;
 /// <summary>
 /// L'onglet ARMES de Personnalisation (l'armurerie), posé sur le GameObject `MainMenuUI` à côté des autres
 /// contrôleurs d'écran. Refait le 2026-10-17 sur le plan donné par l'utilisateur (« façon Rainbow Six ») :
-/// - à gauche, la panoplie : les quatre armes, chacune avec sa vignette, son modèle et sa classe (touches 1
-///   à 4) ;
+/// - à gauche, l'arsenal : les douze armes, trois sous le nom de chaque famille (refonte du 2026-10-26,
+///   GDD § 15), chacune avec sa vignette et sa désignation ;
 /// - au milieu, l'arme en grand (on la fait tourner en glissant) et, en bas, ses emplacements : viseur,
-///   poignée, laser, chargeur, puis le modèle et la finition. Un emplacement ouvre au-dessus la bande de ses
-///   choix ; survoler un choix le prévisualise, cliquer l'équipe ;
+///   poignée, laser, chargeur, puis la finition. Un emplacement ouvre au-dessus la bande de ses choix ;
+///   survoler un choix le prévisualise, cliquer l'équipe. Chaque viseur s'y montre tel qu'on le voit en visée
+///   (2026-10-27, demandé par l'utilisateur, comme dans Rainbow Six) : monté sur cette arme, vu de l'œil qui
+///   vise, son réticule allumé ; la mire de l'arme aussi ;
 /// - à droite, sa fiche : le modèle, la classe, les barres (WeaponStatSheet) et le mot de l'IA de supervision
 ///   (Bible § 9 : froide, exacte).
 /// Pas de bouton Appliquer : équiper enregistre.
 ///
 /// Prévisualiser n'enregistre rien : l'arme, sa fiche et ses barres montrent le choix survolé, et les barres
-/// disent ce qu'il gagne ou perd. Équiper (clic ou F) l'enregistre : le modèle et la finition dans
+/// disent ce qu'il gagne ou perd. Équiper (clic ou F) l'enregistre : la finition dans
 /// GameSettings.WeaponLooks (GDD § 6, 2026-10-15), les accessoires dans GameSettings.WeaponAttachments
 /// (2026-10-16). Ils partent avec la demande de connexion (SessionFlow) ; le serveur les borne et les publie
 /// (PlayerWeaponLooks, PlayerWeaponAttachments).
 ///
-/// Le modèle et la finition ne changent que l'apparence ; les accessoires changent l'arme (recul,
+/// Chaque arme garde sa finition et ses accessoires (2026-10-26). La finition ne change que l'apparence ;
+/// les accessoires changent l'arme (recul,
 /// épaulement, chargeur). Tous sont ouverts à tous, et une arme ne propose que ce qu'elle prend
 /// (WeaponAttachments.Accepts : pas de viseur sur le sniper, que les réflex et pas de poignée sur un
 /// pistolet) : les autres emplacements sont grisés, avec la raison. L'aperçu monte les accessoires comme
@@ -32,7 +35,7 @@ using UnityEngine.UIElements.Experimental;
 /// </summary>
 public class WeaponCustomizationController : MonoBehaviour
 {
-    [Tooltip("Les 4 WeaponData de la panoplie, MÊME ORDRE que WeaponController.loadout sur le Player (touches 1 à 4).")]
+    [Tooltip("Les douze WeaponData de l'arsenal, MÊME ORDRE que WeaponController.loadout sur le Player (le rang d'une arme est sa place dans les réglages du joueur).")]
     [SerializeField] private WeaponData[] loadout = new WeaponData[0];
 
     [SerializeField] private PreviewStage stage;
@@ -48,11 +51,19 @@ public class WeaponCustomizationController : MonoBehaviour
     [Tooltip("Vitesse d'écriture des messages de l'IA de supervision (caractères par seconde).")]
     [SerializeField] private float aiTypingSpeed = 140f;
 
-    /// <summary>Les emplacements : les quatre rubriques d'accessoires, puis l'apparence.</summary>
-    private enum Rubric { Sight, Grip, Laser, Magazine, Model, Finish }
+    /// <summary>Les emplacements : les quatre rubriques d'accessoires, puis la finition (le modèle n'est
+    /// plus un choix depuis la refonte des armes : chaque modèle est une arme).</summary>
+    private enum Rubric { Sight, Grip, Laser, Magazine, Finish }
 
     private static readonly Rubric[] AttachmentRubrics = { Rubric.Sight, Rubric.Grip, Rubric.Laser, Rubric.Magazine };
-    private static readonly Rubric[] AllRubrics = { Rubric.Sight, Rubric.Grip, Rubric.Laser, Rubric.Magazine, Rubric.Model, Rubric.Finish };
+    private static readonly Rubric[] AllRubrics = { Rubric.Sight, Rubric.Grip, Rubric.Laser, Rubric.Magazine, Rubric.Finish };
+
+    // Ce qu'on voit en visée : le double de l'image d'une carte de viseur (.choice-card--sight), pour un
+    // réticule net, rendu sur le fond de la carte (.choice-card, MainMenu.uss).
+    private const int SightPictureWidth = 392, SightPictureHeight = 192;
+    private static readonly Color32 ChoiceCardBackground = new Color32(16, 22, 29, 255);
+    private static readonly int ReticleShapeId = Shader.PropertyToID("_Forme");
+    private static readonly int ReticleColorId = Shader.PropertyToID("_CouleurReticule");
 
     private sealed class Slot
     {
@@ -84,7 +95,8 @@ public class WeaponCustomizationController : MonoBehaviour
     private Button stripPrev, stripNext;
     private Label rangeValue, reloadValue, fireModeValue, zonesValue;
 
-    private readonly List<Button> weaponRows = new();
+    // Les tuiles de l'arsenal, à la place de leur arme (null : pas de tuile).
+    private Button[] weaponRows = new Button[0];
     private readonly List<Slot> slots = new();
     private readonly List<Choice> choices = new();
     private readonly List<StatRow> statRows = new();
@@ -96,7 +108,6 @@ public class WeaponCustomizationController : MonoBehaviour
     private bool open;
 
     private GameObject weaponInstance;
-    private int instanceModel = -1;
     private Bounds weaponBounds;
 
     private string aiMessage = "";
@@ -197,7 +208,8 @@ public class WeaponCustomizationController : MonoBehaviour
     }
 
     // ------------------------------------------------------------------
-    // Les touches (F, flèches, 1 à 4), lues seulement quand l'onglet est affiché
+    // Les touches (F, flèches ; 1 à 4 : l'arme par défaut de chaque famille), lues seulement quand
+    // l'onglet est affiché
     // ------------------------------------------------------------------
 
     private void Update()
@@ -262,7 +274,6 @@ public class WeaponCustomizationController : MonoBehaviour
         {
             WeaponLooks looks = GameSettings.WeaponLooks;
             if (previewVariant < 0) return looks;
-            if (selectedRubric == Rubric.Model) return looks.WithModel(currentSlot, previewVariant);
             if (selectedRubric == Rubric.Finish) return looks.WithFinish(currentSlot, (WeaponFinish)previewVariant);
             return looks;
         }
@@ -278,16 +289,19 @@ public class WeaponCustomizationController : MonoBehaviour
         }
     }
 
-    private WeaponModel ModelOf(int model)
+    private WeaponModel CurrentModel
     {
-        WeaponData data = CurrentData;
-        GameObject prefab = data != null ? data.ModelPrefabFor(model) : null;
-        return prefab != null ? prefab.GetComponent<WeaponModel>() : null;
+        get
+        {
+            WeaponData data = CurrentData;
+            GameObject prefab = data != null ? data.modelPrefab : null;
+            return prefab != null ? prefab.GetComponent<WeaponModel>() : null;
+        }
     }
 
-    private WeaponModel EquippedModel => ModelOf(GameSettings.WeaponLooks.Model(currentSlot));
+    private WeaponModel EquippedModel => CurrentModel;
 
-    private WeaponModel ShownModel => ModelOf(ShownLooks.Model(currentSlot));
+    private WeaponModel ShownModel => CurrentModel;
 
     private void ShowSlot(int slot)
     {
@@ -310,13 +324,12 @@ public class WeaponCustomizationController : MonoBehaviour
         Say(WeaponStatSheet.Brief(CurrentData, MaxHealth));
     }
 
-    /// <summary>Met l'aperçu dans cette apparence, avec ces accessoires : un autre modèle se reconstruit
+    /// <summary>Met l'aperçu dans cette apparence, avec ces accessoires : une autre arme se reconstruit
     /// (d'autres pièces, d'autres points d'accroche, un autre cadrage), le reste se pose dessus.</summary>
     private void ShowWeapon(WeaponLooks looks, WeaponAttachments attachments, bool resetRotation)
     {
-        int model = looks.Model(currentSlot);
-        bool rebuilt = weaponInstance == null || model != instanceModel;
-        if (rebuilt) BuildWeaponInstance(model);
+        bool rebuilt = weaponInstance == null;
+        if (rebuilt) BuildWeaponInstance();
 
         if (weaponInstance != null)
         {
@@ -327,15 +340,14 @@ public class WeaponCustomizationController : MonoBehaviour
         if (rebuilt || resetRotation) stage.ShowWeapon(weaponBounds, viewport, resetRotation);
     }
 
-    private void BuildWeaponInstance(int model)
+    private void BuildWeaponInstance()
     {
         if (weaponInstance != null) Destroy(weaponInstance);
         weaponInstance = null;
-        instanceModel = model;
         weaponBounds = new Bounds(Vector3.zero, Vector3.one * 0.3f);
 
         WeaponData data = CurrentData;
-        GameObject prefab = data != null ? data.ModelPrefabFor(model) : null;
+        GameObject prefab = data != null ? data.modelPrefab : null;
         if (prefab == null || stage.WeaponPivot == null) return;
 
         weaponInstance = Instantiate(prefab, stage.WeaponPivot);
@@ -432,9 +444,6 @@ public class WeaponCustomizationController : MonoBehaviour
         if (variant < 0 || !Accepted(selectedRubric, variant)) return;
         switch (selectedRubric)
         {
-            case Rubric.Model:
-                GameSettings.WeaponLooks = GameSettings.WeaponLooks.WithModel(currentSlot, variant);
-                break;
             case Rubric.Finish:
                 GameSettings.WeaponLooks = GameSettings.WeaponLooks.WithFinish(currentSlot, (WeaponFinish)variant);
                 break;
@@ -447,9 +456,7 @@ public class WeaponCustomizationController : MonoBehaviour
         ShowWeapon(GameSettings.WeaponLooks, GameSettings.WeaponAttachments, resetRotation: false);
         RefreshHeader();
         RefreshSlots();
-        // Un autre modèle n'a pas les mêmes accessoires ni les mêmes finitions : la bande se refait.
-        if (selectedRubric == Rubric.Model) BuildStrip();
-        else RefreshChoiceStates();
+        RefreshChoiceStates();
         RefreshStats();
         Say($"Configuration enregistrée. {RubricLabel(selectedRubric)} : {ChoiceTitle(selectedRubric, variant)}.");
     }
@@ -522,7 +529,6 @@ public class WeaponCustomizationController : MonoBehaviour
         Rubric.Grip => "Poignée",
         Rubric.Laser => "Laser",
         Rubric.Magazine => "Chargeur",
-        Rubric.Model => "Modèle",
         _ => "Finition",
     };
 
@@ -532,7 +538,6 @@ public class WeaponCustomizationController : MonoBehaviour
         Rubric.Grip => "ico-grip",
         Rubric.Laser => "ico-laser",
         Rubric.Magazine => "ico-magazine",
-        Rubric.Model => "ico-rifle",
         _ => "ico-brush",
     };
 
@@ -541,7 +546,6 @@ public class WeaponCustomizationController : MonoBehaviour
         WeaponData data = CurrentData;
         if (data == null) return false;
         if (IsAttachment(rubric)) return WeaponAttachments.AcceptsAny(data, Category(rubric));
-        if (rubric == Rubric.Model) return data.ModelCount > 1;
         WeaponModel model = EquippedModel;
         return model != null && model.GetComponent<WeaponFinishes>() != null;
     }
@@ -550,13 +554,12 @@ public class WeaponCustomizationController : MonoBehaviour
     {
         foreach (Rubric rubric in AllRubrics)
             if (Available(rubric)) return rubric;
-        return Rubric.Model;
+        return Rubric.Finish;
     }
 
     private int VariantCount(Rubric rubric)
     {
         if (IsAttachment(rubric)) return WeaponAttachments.VariantCount(Category(rubric));
-        if (rubric == Rubric.Model) return CurrentData != null ? CurrentData.ModelCount : 0;
         return WeaponLooks.FinishCount;
     }
 
@@ -569,11 +572,6 @@ public class WeaponCustomizationController : MonoBehaviour
     private int Equipped(Rubric rubric)
     {
         if (IsAttachment(rubric)) return GameSettings.WeaponAttachments.Variant(currentSlot, Category(rubric));
-        if (rubric == Rubric.Model)
-        {
-            int model = GameSettings.WeaponLooks.Model(currentSlot);
-            return model < VariantCount(rubric) ? model : 0;
-        }
         return (int)GameSettings.WeaponLooks.Finish(currentSlot);
     }
 
@@ -614,11 +612,6 @@ public class WeaponCustomizationController : MonoBehaviour
     private string ChoiceCode(Rubric rubric, int variant)
     {
         if (IsAttachment(rubric)) return AttachmentCode(CurrentData, ShownModel, Category(rubric), variant);
-        if (rubric == Rubric.Model)
-        {
-            WeaponModel model = ModelOf(variant);
-            return model != null ? model.Designation : $"M{variant + 1}";
-        }
         return WeaponLooks.FinishCode((WeaponFinish)variant);
     }
 
@@ -641,14 +634,14 @@ public class WeaponCustomizationController : MonoBehaviour
     }
 
     /// <summary>
-    /// Une arme résumée : le modèle choisi et sa famille (« FA-30 · Série 30 »), puis sa finition et les
+    /// Une arme résumée : sa désignation et son rang dans sa famille (« FA-30 · Série 30 »), puis sa finition et les
     /// accessoires que l'arme porte vraiment (« Repeinte · PI-1 · LT-1 · chargeur 45 ») : ce qu'elle ne prend
     /// pas, le serveur le ferait tomber.
     /// </summary>
     public static void Summarize(WeaponData data, int slot, WeaponLooks looks, WeaponAttachments attachments,
                                  out string model, out string details)
     {
-        GameObject prefab = data != null ? data.ModelPrefabFor(looks.Model(slot)) : null;
+        GameObject prefab = data != null ? data.modelPrefab : null;
         WeaponModel weaponModel = prefab != null ? prefab.GetComponent<WeaponModel>() : null;
         model = weaponModel != null ? $"{weaponModel.Designation} · {ModelTitle(weaponModel)}" : data != null ? data.weaponName : "";
 
@@ -680,8 +673,6 @@ public class WeaponCustomizationController : MonoBehaviour
                 return variant == 0 ? "Aucun" : TitleOf(catalog != null ? catalog.LaserPrefab(PistolModel) : null, "Laser tactique");
             case Rubric.Magazine:
                 return variant == 0 ? "Chargeur d'origine" : "Grande capacité";
-            case Rubric.Model:
-                return ModelTitle(ModelOf(variant));
             default:
                 return WeaponLooks.FinishLabel((WeaponFinish)variant);
         }
@@ -695,7 +686,8 @@ public class WeaponCustomizationController : MonoBehaviour
         switch (rubric)
         {
             case Rubric.Sight:
-                return variant == 0 ? "Hausse et guidon" : "Sans grossissement";
+                if (variant == 0) return "Hausse et guidon";
+                return TryReticle(variant, out string shape, out _) ? Capitalized(shape) : "Sans grossissement";
             case Rubric.Grip:
                 if (variant == (int)GripKind.Vertical) return $"Recul vertical −{Less(catalog != null ? catalog.verticalGripRecoil : 1f)}";
                 if (variant == (int)GripKind.Angled) return $"Épaulement −{Less(catalog != null ? catalog.angledGripAimTime : 1f)}";
@@ -723,7 +715,9 @@ public class WeaponCustomizationController : MonoBehaviour
         {
             case Rubric.Sight:
                 if (variant == 0) return "Mire de l'arme : sa hausse et son guidon d'origine.";
-                return $"{title} ({code}). Viseur sans grossissement : il remplace la hausse et le guidon. Le tir ne change pas.";
+                string reticle = TryReticle(variant, out string shape, out string color)
+                    ? $" Réticule {(color.Length > 0 ? color + " " : "")}: {shape}." : "";
+                return $"{title} ({code}).{reticle} Viseur sans grossissement : il remplace la hausse et le guidon. Le tir ne change pas.";
             case Rubric.Grip:
                 if (variant == (int)GripKind.Vertical)
                     return $"{title} ({code}). Recul vertical : −{Less(catalog != null ? catalog.verticalGripRecoil : 1f)}, épaulé comme à la hanche.";
@@ -749,11 +743,6 @@ public class WeaponCustomizationController : MonoBehaviour
                            + $"{WeaponStatSheet.Number(AttachmentCatalog.ReloadDuration(data, true, catalog))} s.";
                 string longer = WeaponStatSheet.Reload(data, WeaponAttachments.None.WithMagazine(currentSlot, true), currentSlot);
                 return $"Chargeur grande capacité : {standard} → {extended} {rounds}. Rechargement : {reload} → {longer}.";
-            case Rubric.Model:
-                WeaponModel model = ModelOf(variant);
-                if (model == null) return title;
-                return $"{model.Designation}, {WeaponModel.FamilyLabel(model.ModelFamily)}. {WeaponModel.FamilyDescription(model.ModelFamily)} "
-                       + "Apparence seulement : la classe fait les dégâts.";
             default:
                 var finish = (WeaponFinish)variant;
                 return $"Finition {WeaponLooks.FinishLabel(finish).ToLowerInvariant()}. {WeaponLooks.FinishDescription(finish)} "
@@ -779,12 +768,42 @@ public class WeaponCustomizationController : MonoBehaviour
                 return data != null && data.reloadPerRound
                     ? "Chargeur grande capacité : plus de cartouches, chacune glissée aussi vite."
                     : "Chargeur grande capacité : plus de coups, un rechargement plus long.";
-            case Rubric.Model:
-                return "Trois modèles par classe : le stock, la série 30, le prototype laser. Apparence seulement.";
             default:
                 return "Six finitions, vues par tous les joueurs. Apparence seulement.";
         }
     }
+
+    /// <summary>Le réticule d'un viseur, lu sur sa vitre (DuelArena/ViseurReticule) : sa forme en mots
+    /// (« cercle et point ») et sa couleur (« rouge »).</summary>
+    private bool TryReticle(int variant, out string shape, out string color)
+    {
+        shape = color = "";
+        GameObject prefab = Catalog != null ? Catalog.SightPrefab(variant) : null;
+        Material lens = prefab != null && prefab.TryGetComponent(out WeaponAttachment sight) && sight.Lens != null
+            ? sight.Lens.sharedMaterial : null;
+        if (lens == null || !lens.HasProperty(ReticleShapeId)) return false;
+        shape = ReticleShapeLabel(Mathf.RoundToInt(lens.GetFloat(ReticleShapeId)));
+        if (lens.HasProperty(ReticleColorId)) color = PaletteNames.NameOf(lens.GetColor(ReticleColorId)).ToLowerInvariant();
+        return shape.Length > 0;
+    }
+
+    /// <summary>Les formes du réticule, dans l'ordre de _Forme (DuelArena/ViseurReticule, celui de
+    /// commun_accessoires.FORMES_RETICULE dans Blender) ; vide pour une forme inconnue.</summary>
+    public static string ReticleShapeLabel(int shape) => shape switch
+    {
+        0 => "point",
+        1 => "cercle et point",
+        2 => "cercle et chevron",
+        3 => "losange et point",
+        4 => "tirets et point",
+        5 => "cercle et croix",
+        6 => "triangle",
+        7 => "tirets et chevron",
+        _ => "",
+    };
+
+    private static string Capitalized(string text)
+        => string.IsNullOrEmpty(text) ? text : char.ToUpperInvariant(text[0]) + text.Substring(1);
 
     private static string SightFamiliesLabel(SightFamilies families)
     {
@@ -801,55 +820,58 @@ public class WeaponCustomizationController : MonoBehaviour
     private static string Milliseconds(float seconds) => $"{Mathf.RoundToInt(seconds * 1000f)} ms";
 
     // ------------------------------------------------------------------
-    // À gauche : la panoplie
+    // À gauche : l'arsenal, trois armes sous le nom de chaque famille (GDD § 15, 2026-10-26)
     // ------------------------------------------------------------------
 
     private void BuildWeaponRows()
     {
         weaponList.Clear();
-        weaponRows.Clear();
-        for (int i = 0; i < loadout.Length; i++)
+        weaponRows = new Button[loadout.Length];
+        for (int family = 0; family < Arsenal.FamilyCount; family++)
         {
-            int slot = i;
-            var row = new Button { focusable = false };
-            row.AddToClassList("da-btn");
-            row.AddToClassList("side-btn");
-            row.AddToClassList("ui-select");
-            var background = new SlantBox { pickingMode = PickingMode.Ignore };
-            background.AddToClassList("slant-bg");
-            row.Add(background);
-            var thumb = new VisualElement { pickingMode = PickingMode.Ignore };
-            thumb.AddToClassList("side-btn__thumb");
-            row.Add(thumb);
-            var text = new VisualElement { pickingMode = PickingMode.Ignore };
-            text.AddToClassList("side-btn__text");
-            text.Add(NewLabel("", "side-btn__title"));
-            text.Add(NewLabel(loadout[i] != null ? loadout[i].weaponName.ToUpperInvariant() : $"ARME {i + 1}", "side-btn__subtitle"));
-            row.Add(text);
-            row.Add(NewLabel((i + 1).ToString(), "side-btn__key"));
-            row.clicked += () => ShowSlot(slot);
-            weaponList.Add(row);
-            weaponRows.Add(row);
+            List<int> slotsOfFamily = Arsenal.SlotsOf(loadout, (WeaponFamily)family);
+            if (slotsOfFamily.Count == 0) continue;
+            var group = new VisualElement();
+            group.AddToClassList("weapon-family");
+            group.Add(NewLabel(Arsenal.FamilyLabel((WeaponFamily)family).ToUpperInvariant(), "weapon-family__title"));
+            var row = new VisualElement();
+            row.AddToClassList("weapon-family__row");
+            foreach (int i in slotsOfFamily)
+            {
+                int slot = i;
+                var tile = new Button { focusable = false };
+                tile.AddToClassList("da-btn");
+                tile.AddToClassList("weapon-tile");
+                tile.AddToClassList("ui-select");
+                var background = new SlantBox { pickingMode = PickingMode.Ignore };
+                background.AddToClassList("slant-bg");
+                tile.Add(background);
+                var thumb = new VisualElement { pickingMode = PickingMode.Ignore };
+                thumb.AddToClassList("weapon-tile__thumb");
+                tile.Add(thumb);
+                tile.Add(NewLabel(loadout[i].Designation, "weapon-tile__code"));
+                tile.tooltip = string.IsNullOrEmpty(loadout[i].role) ? loadout[i].weaponName : $"{loadout[i].Designation} : {loadout[i].role}";
+                tile.clicked += () => ShowSlot(slot);
+                row.Add(tile);
+                weaponRows[i] = tile;
+            }
+            group.Add(row);
+            weaponList.Add(group);
         }
         RefreshWeaponRows();
     }
 
-    /// <summary>Le modèle et la vignette de chaque arme, telle qu'elle est équipée.</summary>
+    /// <summary>La vignette de chaque arme, telle qu'elle est équipée.</summary>
     private void RefreshWeaponRows()
     {
         WeaponLooks looks = GameSettings.WeaponLooks;
         WeaponAttachments attachments = GameSettings.WeaponAttachments;
-        for (int i = 0; i < weaponRows.Count && i < loadout.Length; i++)
+        for (int i = 0; i < weaponRows.Length && i < loadout.Length; i++)
         {
             WeaponData data = loadout[i];
-            GameObject prefab = data != null ? data.ModelPrefabFor(looks.Model(i)) : null;
-            WeaponModel model = prefab != null ? prefab.GetComponent<WeaponModel>() : null;
-            Label title = weaponRows[i].Q<Label>(className: "side-btn__title");
-            if (title != null) title.text = model != null ? model.Designation : data != null ? data.weaponName.ToUpperInvariant() : "";
-
-            VisualElement thumb = weaponRows[i].Q<VisualElement>(className: "side-btn__thumb");
+            VisualElement thumb = weaponRows[i] != null ? weaponRows[i].Q<VisualElement>(className: "weapon-tile__thumb") : null;
             if (thumbnails == null || thumb == null || data == null) continue;
-            thumbnails.Weapon(data, looks.Model(i), looks.Finish(i), attachments, i, 224, 112, texture =>
+            thumbnails.Weapon(data, looks.Finish(i), attachments, i, 192, 96, texture =>
             {
                 if (texture is RenderTexture rt) thumb.style.backgroundImage = new StyleBackground(Background.FromRenderTexture(rt));
             });
@@ -859,7 +881,8 @@ public class WeaponCustomizationController : MonoBehaviour
 
     private void RefreshWeaponRowStates()
     {
-        for (int i = 0; i < weaponRows.Count; i++) weaponRows[i].EnableInClassList("side-btn--active", i == currentSlot);
+        for (int i = 0; i < weaponRows.Length; i++)
+            if (weaponRows[i] != null) weaponRows[i].EnableInClassList("weapon-tile--active", i == currentSlot);
     }
 
     // ------------------------------------------------------------------
@@ -875,7 +898,7 @@ public class WeaponCustomizationController : MonoBehaviour
             var button = new Button { focusable = false };
             button.AddToClassList("slot-btn");
             button.AddToClassList("ui-select");
-            if (rubric == Rubric.Model) button.AddToClassList("slot-btn--group-start");
+            if (rubric == Rubric.Finish) button.AddToClassList("slot-btn--group-start");
             var icon = new VisualElement { pickingMode = PickingMode.Ignore };
             icon.AddToClassList("slot-btn__icon");
             icon.AddToClassList(RubricIcon(rubric));
@@ -919,6 +942,7 @@ public class WeaponCustomizationController : MonoBehaviour
             var card = new Button { focusable = false };
             card.AddToClassList("choice-card");
             card.AddToClassList("ui-select");
+            if (selectedRubric == Rubric.Sight) card.AddToClassList("choice-card--sight");
             var art = new VisualElement { pickingMode = PickingMode.Ignore };
             art.AddToClassList("choice-card__art");
             card.Add(art);
@@ -943,8 +967,8 @@ public class WeaponCustomizationController : MonoBehaviour
         if (stripOpen) SetStripOpen(true);
     }
 
-    /// <summary>La vignette d'un choix : l'accessoire seul, l'arme dans un autre modèle ou une autre
-    /// finition. Sans vignette (la mire, « aucun »), le code reste écrit à sa place.</summary>
+    /// <summary>La vignette d'un choix : l'accessoire seul, l'arme dans une autre finition, ou pour un viseur
+    /// ce qu'on voit en visée. Sans vignette (« aucun »), le code reste écrit à sa place.</summary>
     private void RequestChoiceArt(int variant, VisualElement art, Label code)
     {
         if (thumbnails == null) return;
@@ -959,11 +983,13 @@ public class WeaponCustomizationController : MonoBehaviour
 
         switch (selectedRubric)
         {
-            case Rubric.Model:
-                thumbnails.Weapon(data, variant, looks.Finish(currentSlot), WeaponAttachments.None, currentSlot, 300, 132, Show);
-                break;
             case Rubric.Finish:
-                thumbnails.Weapon(data, looks.Model(currentSlot), (WeaponFinish)variant, WeaponAttachments.None, currentSlot, 300, 132, Show);
+                thumbnails.Weapon(data, (WeaponFinish)variant, WeaponAttachments.None, currentSlot, 300, 132, Show);
+                break;
+            case Rubric.Sight:
+                // Le viseur sur cette arme, de l'œil qui vise, avec le laser équipé : la mire de l'arme comprise.
+                thumbnails.SightPicture(data, looks.Finish(currentSlot), GameSettings.WeaponAttachments.WithSight(currentSlot, variant),
+                    currentSlot, SightPictureWidth, SightPictureHeight, ChoiceCardBackground, Show);
                 break;
             default:
                 if (variant == 0) return;

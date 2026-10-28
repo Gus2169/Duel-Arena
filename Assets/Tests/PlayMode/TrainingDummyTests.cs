@@ -61,4 +61,44 @@ public class TrainingDummyTests
         Animator animator = look.GetComponent<Animator>();
         Assert.IsNull(animator.runtimeAnimatorController, "Il joue son attente, pas le contrôleur du jeu.");
     }
+
+    /// <summary>Neutralisé, le mannequin tombe en arrière (sa tête finit derrière ses pieds, au sol), ne se
+    /// touche plus, puis se relève et se touche de nouveau quand il retrouve sa vie (2026-10-27).</summary>
+    [UnityTest]
+    public IEnumerator UnMannequinNeutralise_TombeEnArriere_NeSeTouchePlus_PuisSeReleve()
+    {
+        GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(DummyPrefabPath);
+        dummy = Object.Instantiate(prefab, new Vector3(30f, 0f, 30f), Quaternion.Euler(0f, 180f, 0f));
+        yield return null;
+        Physics.SyncTransforms();
+
+        var trainee = dummy.GetComponent<TrainingDummy>();
+        Transform look = dummy.transform.Find("Apparence");
+        Vector3 facing = dummy.transform.forward;
+        Vector3 front = dummy.transform.position + facing * 5f;
+        Vector3 chest = dummy.transform.position + Vector3.up * 1.25f;
+        Assert.AreEqual(HitboxZoneType.Torso, ShootAt(front + Vector3.up * 1.25f, chest), "Debout : touché au buste (garde).");
+
+        dummy.GetComponent<Health>().ApplyDamage(1000f);
+        float until = Time.time + TrainingDummy.FallTime + TrainingDummy.BounceTime + 0.2f;
+        while (Time.time < until) yield return null;
+        Physics.SyncTransforms();
+
+        Vector3 head = look.TransformPoint(new Vector3(0f, trainee.EyeHeight, 0f));
+        Vector3 offset = head - dummy.transform.position;
+        Assert.Less(offset.y, 0.5f, "Sa tête est au sol.");
+        Assert.Less(Vector3.Dot(offset, facing), -1.2f, "Il est tombé en arrière, loin de celui qui tire.");
+        Assert.IsNull(ShootAt(front + Vector3.up * 1.25f, chest), "À terre, il ne se touche plus là où il était debout.");
+        Assert.IsNull(ShootAt(head + Vector3.up * 3f, head), "Ni couché au sol.");
+        Assert.IsFalse(dummy.GetComponent<CapsuleCollider>().enabled, "Ni son corps.");
+
+        dummy.GetComponent<Health>().ResetHealth();
+        until = Time.time + TrainingDummy.RiseTime + 0.2f;
+        while (Time.time < until) yield return null;
+        Physics.SyncTransforms();
+        Assert.Less(Vector3.Distance(look.TransformPoint(new Vector3(0f, trainee.EyeHeight, 0f)), dummy.transform.position + Vector3.up * trainee.EyeHeight), 0.02f,
+            "Relevé : de nouveau debout.");
+        Assert.AreEqual(HitboxZoneType.Torso, ShootAt(front + Vector3.up * 1.25f, chest), "Et de nouveau touché au buste.");
+        Assert.IsTrue(dummy.GetComponent<CapsuleCollider>().enabled);
+    }
 }

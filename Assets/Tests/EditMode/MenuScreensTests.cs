@@ -17,16 +17,22 @@ public class MenuScreensTests
     // ------------------------------------------------------------------ Les modes de l'écran Jouer
 
     [Test]
-    public void LesHuitModes_SontDansLOrdreDeLaMaquette_EtToutEstRempli()
+    public void LesCinqModes_SontDansLOrdre_EtToutEstRempli()
     {
         IReadOnlyList<GameMode> modes = GameModeCatalog.Modes;
-        Assert.AreEqual(8, modes.Count, "Les neuf cartes de la maquette, moins l'événement légendaire (2026-10-25).");
+        Assert.AreEqual(5, modes.Count,
+            "Le classique, les dons d'armes et trois pistes : le roi de la colline, les spectateurs et les cailloux sont des options du classique (2026-10-27).");
         string theme = File.ReadAllText("Assets/_ProjectUI/Shared/Theme.uss");
         for (int i = 0; i < modes.Count; i++)
         {
-            if (i > 0) Assert.Greater((int)modes[i].id, (int)modes[i - 1].id, "Dans l'ordre de l'énumération.");
+            // Ce qui se joue d'abord, puis les pistes verrouillées (2026-10-27) ; chaque groupe dans l'ordre de l'énumération.
+            if (i > 0 && modes[i].CanCreate == modes[i - 1].CanCreate)
+                Assert.Greater((int)modes[i].id, (int)modes[i - 1].id, "Dans l'ordre de l'énumération.");
+            if (i > 0) Assert.IsFalse(modes[i].CanCreate && !modes[i - 1].CanCreate, "Les modes jouables avant les modes verrouillés.");
             Assert.AreNotEqual(GameModeId.Legendary, modes[i].id,
                 "L'événement légendaire est une surprise rare des modes arcade, pas un mode (GDD § 10, 2026-10-25).");
+            foreach (GameModeId option in new[] { GameModeId.KingOfTheHill, GameModeId.Spectators, GameModeId.Rocks })
+                Assert.AreNotEqual(option, modes[i].id, $"{option} est une option du classique, cochée au salon : pas une carte (2026-10-27).");
             Assert.IsFalse(string.IsNullOrWhiteSpace(modes[i].title), modes[i].id.ToString());
             Assert.IsFalse(string.IsNullOrWhiteSpace(modes[i].subtitle), modes[i].id.ToString());
             Assert.IsFalse(string.IsNullOrWhiteSpace(modes[i].description), modes[i].id.ToString());
@@ -36,17 +42,12 @@ public class MenuScreensTests
     }
 
     [Test]
-    public void ChaqueModeJouable_OuvreUnSalonQuiPorteSonNom()
+    public void ChaqueModeJouable_OuvreUnSalonClassique()
     {
-        foreach (GameModeId id in new[] { GameModeId.Classic, GameModeId.KingOfTheHill, GameModeId.Spectators })
+        foreach (GameModeId id in new[] { GameModeId.Classic, GameModeId.WeaponGifts })
         {
             Assert.IsTrue(GameModeCatalog.Get(id).CanCreate, id.ToString());
-            Assert.AreEqual(id, GameModeCatalog.ModeOf(GameModeCatalog.RulesFor(id)), $"Le salon de {id} doit se nommer {id}.");
-        }
-        foreach (GameModeId id in new[] { GameModeId.WeaponGifts, GameModeId.Rocks })
-        {
-            Assert.IsTrue(GameModeCatalog.Get(id).CanCreate, "Les dons d'armes et les cailloux existent déjà, dans le mode Spectateurs.");
-            Assert.AreEqual(GameModeId.Spectators, GameModeCatalog.ModeOf(GameModeCatalog.RulesFor(id)));
+            Assert.AreEqual(GameModeId.Classic, GameModeCatalog.ModeOf(GameModeCatalog.RulesFor(id)), $"Le salon de {id} joue le classique.");
         }
         foreach (GameModeId id in new[] { GameModeId.Tournament, GameModeId.Darkness, GameModeId.Ranked })
         {
@@ -63,15 +64,11 @@ public class MenuScreensTests
         Assert.AreEqual(2, classic.capacity, "Le classique : un contre un, personne d'autre.");
         Assert.AreEqual(DuelOrganization.FixedDuelists, classic.organization);
         Assert.IsFalse(classic.spectatorInterventions);
+        Assert.IsFalse(classic.randomDuelists, "L'hôte et le deuxième arrivé, sauf si l'hôte coche le tirage.");
 
-        MatchRules king = GameModeCatalog.RulesFor(GameModeId.KingOfTheHill);
-        Assert.AreEqual(DuelOrganization.KingOfTheHill, king.organization);
-        Assert.Greater(king.capacity, 2, "Une rotation demande une file.");
-        Assert.IsFalse(king.spectatorInterventions, "La tribune regarde : c'est ce qui le distingue du mode Spectateurs.");
-
-        MatchRules stands = GameModeCatalog.RulesFor(GameModeId.Spectators);
-        Assert.AreEqual(MatchRules.MaxCapacity, stands.capacity);
-        Assert.IsTrue(stands.spectatorInterventions);
+        MatchRules gifts = GameModeCatalog.RulesFor(GameModeId.WeaponGifts);
+        Assert.AreEqual(MatchRules.MaxCapacity, gifts.capacity, "Des spectateurs pour lancer les armes.");
+        Assert.IsTrue(gifts.spectatorInterventions);
 
         foreach (GameMode mode in GameModeCatalog.Modes)
         {
@@ -81,17 +78,28 @@ public class MenuScreensTests
     }
 
     [Test]
-    public void LeSalon_NommeLeModeQueJouentSesReglages_QuelsQuIlsSoient()
+    public void LeSalon_NommeLeClassiqueEtSesOptions_QuelsQueSoientSesReglages()
     {
         for (int capacity = MatchRules.MinCapacity; capacity <= MatchRules.MaxCapacity; capacity++)
         {
             var fixedDuel = new MatchRules { capacity = (byte)capacity, organization = DuelOrganization.FixedDuelists, spectatorInterventions = false };
             var rotation = new MatchRules { capacity = (byte)capacity, organization = DuelOrganization.KingOfTheHill, spectatorInterventions = false };
-            var lively = new MatchRules { capacity = (byte)capacity, organization = DuelOrganization.FixedDuelists, spectatorInterventions = true };
+            var lively = new MatchRules { capacity = (byte)capacity, organization = DuelOrganization.KingOfTheHill, spectatorInterventions = true };
             Assert.AreEqual("Classique", GameModeCatalog.Describe(fixedDuel));
-            Assert.AreEqual("Roi de la colline", GameModeCatalog.Describe(rotation));
-            Assert.AreEqual("Spectateurs", GameModeCatalog.Describe(lively), "Une tribune qui intervient, c'est le mode Spectateurs.");
+            Assert.AreEqual("Classique · roi de la colline", GameModeCatalog.Describe(rotation));
+            Assert.AreEqual("Classique · roi de la colline · tribune active", GameModeCatalog.Describe(lively));
+            Assert.AreEqual(GameModeId.Classic, GameModeCatalog.ModeOf(lively), "Le roi de la colline et la tribune sont des options du classique.");
         }
+    }
+
+    [Test]
+    public void LeTirageAuSort_VoyageDansLesReglagesDuSalon_EtSeRetient()
+    {
+        var drawn = new MatchRules { capacity = 4, organization = DuelOrganization.KingOfTheHill, roundsToWin = MatchRules.Bo5RoundsToWin, randomDuelists = true };
+        Assert.IsTrue(OnlineSession.ParseRules(OnlineSession.FormatRules(drawn)).randomDuelists, "Le tirage voyage dans les réglages du salon.");
+        Assert.IsFalse(OnlineSession.ParseRules(OnlineSession.FormatRules(MatchRules.Default)).randomDuelists);
+        Assert.IsFalse(OnlineSession.ParseRules("4;0;1;3").randomDuelists, "Un salon d'avant le tirage (quatre champs) : pas de tirage.");
+        StringAssert.Contains("tirés au sort", LobbyController.DescribeRules(drawn));
     }
 
     /// <summary>
@@ -131,8 +139,8 @@ public class MenuScreensTests
         LobbyLineup<string> lineup = LobbyLineup<string>.Arrange(new[] { "hôte" }, 4);
         Assert.IsTrue(lineup.hasFirst);
         Assert.AreEqual("hôte", lineup.first);
-        Assert.IsFalse(lineup.secondKnown);
-        Assert.IsFalse(lineup.secondAmongStands, "Personne d'autre : le second est attendu, pas parmi les spectateurs.");
+        Assert.IsFalse(lineup.secondKnown, "Personne d'autre : le second est attendu.");
+        Assert.IsFalse(lineup.drawn);
         Assert.AreEqual(0, lineup.stands.Count);
         Assert.AreEqual(2, lineup.freeStands, "Quatre places : deux duellistes, deux places de tribune.");
     }
@@ -149,18 +157,30 @@ public class MenuScreensTests
     }
 
     [Test]
-    public void ATroisEtPlus_LeSecondReste_ParmiLesSpectateurs()
+    public void ATroisEtPlus_LeDeuxiemeArrive_ResteLeSecondDuelliste()
     {
         LobbyLineup<string> lineup = LobbyLineup<string>.Arrange(new[] { "hôte", "b", "c" }, 6);
-        Assert.AreEqual("hôte", lineup.first, "L'hôte est toujours le premier duelliste (son robot naît le premier).");
-        Assert.IsFalse(lineup.secondKnown, "Le second sera le premier des autres à arriver dans l'arène : rien ne le prédit.");
-        Assert.IsTrue(lineup.secondAmongStands);
-        CollectionAssert.AreEqual(new[] { "b", "c" }, lineup.stands, "Les autres, dans leur ordre d'arrivée.");
+        Assert.AreEqual("hôte", lineup.first, "L'hôte est le premier duelliste.");
+        Assert.IsTrue(lineup.secondKnown, "Le deuxième arrivé au salon reste en tête d'affiche quand un troisième arrive (2026-10-27).");
+        Assert.AreEqual("b", lineup.second);
+        CollectionAssert.AreEqual(new[] { "c" }, lineup.stands, "Les suivants, sur la tribune, dans leur ordre d'arrivée.");
         Assert.AreEqual(3, lineup.freeStands, "Six places, trois joueurs : trois places libres.");
 
         LobbyLineup<string> full = LobbyLineup<string>.Arrange(new[] { "a", "b", "c", "d", "e", "f" }, 6);
-        Assert.AreEqual(5, full.stands.Count);
+        Assert.AreEqual("b", full.second);
+        CollectionAssert.AreEqual(new[] { "c", "d", "e", "f" }, full.stands);
         Assert.AreEqual(0, full.freeStands, "Complet.");
+    }
+
+    [Test]
+    public void AuTirage_PersonneNEstEnTeteDAffiche_TousSontDansLeTirage()
+    {
+        LobbyLineup<string> lineup = LobbyLineup<string>.Arrange(new[] { "hôte", "b", "c" }, 4, randomDuelists: true);
+        Assert.IsTrue(lineup.drawn);
+        Assert.IsFalse(lineup.hasFirst, "On ne sait pas d'avance qui commence.");
+        Assert.IsFalse(lineup.secondKnown);
+        CollectionAssert.AreEqual(new[] { "hôte", "b", "c" }, lineup.stands, "Tous, l'hôte compris, dans le tirage.");
+        Assert.AreEqual(1, lineup.freeStands, "Quatre places, trois joueurs : une place libre.");
     }
 
     [Test]

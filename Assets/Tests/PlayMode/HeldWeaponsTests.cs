@@ -68,7 +68,7 @@ public class HeldWeaponsTests
     /// <summary>L'apparence arrive du serveur après la création des armes (PlayerWeaponLooks) : le bon
     /// modèle remplace l'ancien, sans que l'arme en main disparaisse, et la finition est posée.</summary>
     [UnityTest]
-    public IEnumerator UneAutreApparence_RemplaceLeModele_GardeLArmeEnMain_EtPoseLaFinition()
+    public IEnumerator UneAutreApparence_PoseLaFinition_EtGardeLArmeEnMain()
     {
         instance = TestCharacter.InstantiateModel(out Animator animator);
         yield return null;
@@ -78,24 +78,23 @@ public class HeldWeaponsTests
 
         var looks = WeaponLooks.Default;
         for (int slot = 0; slot < loadout.Count; slot++)
-            looks = looks.With(slot, slot % loadout[slot].ModelCount == 0 ? 2 : 1, (WeaponFinish)((slot + 1) % WeaponLooks.FinishCount));
+            looks = looks.WithFinish(slot, (WeaponFinish)((slot + 1) % WeaponLooks.FinishCount));
         HeldWeapons.Build(hand, loadout, looks);
-        yield return null;   // Destroy est différé : l'ancien modèle part à la fin de l'image
+        yield return null;
 
         for (int slot = 0; slot < loadout.Count; slot++)
         {
             Transform copy = hand.Find(HeldWeapons.SlotName(slot));
             Assert.IsNotNull(copy, $"{loadout[slot].weaponName} a disparu de la main.");
-            string wanted = loadout[slot].ModelPrefabFor(looks.Model(slot)).GetComponent<WeaponModel>().Designation;
-            Assert.AreEqual(wanted, copy.GetComponent<WeaponModel>().Designation, $"{loadout[slot].weaponName} : le modèle choisi n'est pas en main.");
+            Assert.AreEqual(loadout[slot].Designation, copy.GetComponent<WeaponModel>().Designation, $"{loadout[slot].weaponName} : son modèle n'est pas en main.");
             Assert.AreEqual(looks.Finish(slot), copy.GetComponent<WeaponFinishes>().Shown, $"{loadout[slot].weaponName} : la finition choisie n'est pas posée.");
             Assert.AreEqual(slot == 2, copy.gameObject.activeSelf, $"{loadout[slot].weaponName} : l'arme en main doit le rester, les autres cachées.");
         }
         int copies = 0;
         for (int i = 0; i < hand.childCount; i++) if (hand.GetChild(i).GetComponent<WeaponModel>() != null) copies++;
-        Assert.AreEqual(loadout.Count, copies, "Les anciens modèles sont restés dans la main.");
+        Assert.AreEqual(loadout.Count, copies, "Une copie par arme, pas une de plus.");
         Assert.AreSame(hand.Find(HeldWeapons.SlotName(2)).GetComponent<WeaponModel>().Sight, PlayerAnimator.FindSight(animator),
-            "Le buste doit suivre la mire du nouveau modèle.");
+            "Le buste doit suivre la mire de l'arme en main.");
     }
 
     /// <summary>Les accessoires arrivent du serveur (PlayerWeaponAttachments, 2026-10-16) : chaque arme

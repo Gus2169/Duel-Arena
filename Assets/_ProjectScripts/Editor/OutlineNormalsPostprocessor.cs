@@ -16,15 +16,18 @@ public class OutlineNormalsPostprocessor : AssetPostprocessor
         new[] { RenderTrialBuilder.Ct01Path, RenderTrialBuilder.Os02Path },
         System.Array.ConvertAll(RobotChassisBuilder.Robots, r => r.FbxPath)));
 
+    /// <summary>Les robots de Blender, et les props du décor (2026-10-27 : le contour de leur essai de cel-shading).</summary>
+    private bool Concerned => System.Array.IndexOf(Models, assetPath) >= 0 || assetPath.StartsWith(DecorImporter.Folder + "/");
+
     private void OnPreprocessModel()
     {
-        if (System.Array.IndexOf(Models, assetPath) < 0) return;
+        if (!Concerned) return;
         ((ModelImporter)assetImporter).importTangents = ModelImporterTangents.None;
     }
 
     private void OnPostprocessModel(GameObject root)
     {
-        if (System.Array.IndexOf(Models, assetPath) < 0) return;
+        if (!Concerned) return;
         foreach (SkinnedMeshRenderer renderer in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             if (renderer.sharedMesh != null) StoreSmoothNormals(renderer.sharedMesh);
         foreach (MeshFilter filter in root.GetComponentsInChildren<MeshFilter>(true))

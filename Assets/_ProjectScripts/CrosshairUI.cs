@@ -47,6 +47,8 @@ public class CrosshairUI : MonoBehaviour
     [SerializeField] private Color ammoEmptyColor = new Color(1f, 0.4f, 0.3f);
     [Tooltip("Le fond du compteur de munitions : la teinte de la jauge de vie du HUD (GameHud.uss), un peu plus sombre.")]
     [SerializeField] private Color ammoPanelColor = new Color(10f / 255f, 13f / 255f, 17f / 255f, 0.8f);
+    [Tooltip("La jauge de la charge (le FX-2) une fois pleine : le tir est prêt.")]
+    [SerializeField] private Color chargeFullColor = new Color(1f, 0.3f, 0.22f);
 
     [Header("Lunette du sniper")]
     [Tooltip("Diamètre de l'ouverture de la lunette, en part de la hauteur de l'écran.")]
@@ -69,7 +71,7 @@ public class CrosshairUI : MonoBehaviour
     [System.NonSerialized] private string nameText;
     [System.NonSerialized] private GUIContent measured;
     private Vector2 ammoTextSize, nameTextSize;
-    private int shownAmmo, shownMagazineSize, shownSlot;
+    private int shownAmmo, shownMagazineSize;
     private WeaponData shownWeaponData;
 
     private void Awake()
@@ -104,7 +106,7 @@ public class CrosshairUI : MonoBehaviour
         // Mort (la caméra regarde l'épave), ou un écran a la main (préparation, Échap, fin de
         // match) : ni réticule ni munitions.
         if (health != null && health.IsDead) return;
-        if (GameHud.HidesCrosshair || ShootingRangePanel.IsOpen) return;
+        if (GameHud.HidesCrosshair || ShootingRangePanel.IsOpen || PauseMenu.IsOpen) return;
 
         // Un spectateur n'a pas d'arme (2026-10-13) : un simple point, pour viser ses lancers et ses
         // coups. Aucune aide de plus : le geste reste imparfait (GDD § 3).
@@ -198,26 +200,28 @@ public class CrosshairUI : MonoBehaviour
         if (weapon == null || weapon.MagazineSize <= 0) return;
         BuildStylesIfNeeded();
 
-        int ammo = weapon.DisplayedAmmo;
+        // Une arme laser n'a pas de balles : une jauge de chaleur à leur place (GDD § 15, 2026-10-26).
+        bool hot = weapon.DisplayedUsesHeat;
+        bool overheated = hot && weapon.DisplayedOverheated;
+        int ammo = hot ? (overheated ? 0 : 1) : weapon.DisplayedAmmo;
         Color textColor = ammo == 0 ? ammoEmptyColor : crosshairColor;
 
         // Les textes ne sont refaits (et mesurés) que quand ils changent : OnGUI tourne à chaque image.
-        int size = weapon.MagazineSize;
+        int size = hot ? -1 : weapon.MagazineSize;
         measured ??= new GUIContent();
         if (ammoText == null || ammo != shownAmmo || size != shownMagazineSize)
         {
             shownAmmo = ammo;
             shownMagazineSize = size;
-            ammoText = $"{ammo} / {size}";
+            ammoText = !hot ? $"{ammo} / {size}" : overheated ? "SURCHAUFFE" : "CHALEUR";
             measured.text = ammoText;
             ammoTextSize = ammoStyle.CalcSize(measured);
         }
         bool named = weapon.Data != null;
-        if (named && (nameText == null || weapon.Data != shownWeaponData || weapon.DisplayedSlot != shownSlot))
+        if (named && (nameText == null || weapon.Data != shownWeaponData))
         {
             shownWeaponData = weapon.Data;
-            shownSlot = weapon.DisplayedSlot;
-            nameText = $"{shownSlot + 1}  {shownWeaponData.weaponName}";
+            nameText = shownWeaponData.weaponName;
             measured.text = nameText;
             nameTextSize = nameStyle.CalcSize(measured);
         }
@@ -227,8 +231,9 @@ public class CrosshairUI : MonoBehaviour
         float scale = Screen.height / 1080f;
         float padding = 14f * scale;
         float nameHeight = named ? nameTextSize.y : 0f;
-        float panelWidth = Mathf.Max(ammoTextSize.x, named ? nameTextSize.x : 0f) + 2f * padding;
-        float panelHeight = nameHeight + ammoTextSize.y + 8f * scale;
+        float gaugeHeight = hot ? 10f * scale : 0f;
+        float panelWidth = Mathf.Max(Mathf.Max(ammoTextSize.x, named ? nameTextSize.x : 0f), hot ? 180f * scale : 0f) + 2f * padding;
+        float panelHeight = nameHeight + ammoTextSize.y + 8f * scale + (hot ? gaugeHeight + 8f * scale : 0f);
         var panel = new Rect(Screen.width - 28f * scale - panelWidth, Screen.height - 24f * scale - panelHeight, panelWidth, panelHeight);
         GUI.color = ammoPanelColor;
         GUI.DrawTexture(panel, pixel);
@@ -240,8 +245,19 @@ public class CrosshairUI : MonoBehaviour
         }
         ammoStyle.normal.textColor = textColor;
         GUI.Label(new Rect(panel.x, panel.y + 4f * scale + nameHeight, panelWidth - padding, ammoTextSize.y), ammoText, ammoStyle);
+        if (hot)
+        {
+            // La jauge se remplit en tirant et se vide en refroidissant ; rouge surchauffée.
+            var gauge = new Rect(panel.x + padding, panel.yMax - 8f * scale - gaugeHeight, panelWidth - 2f * padding, gaugeHeight);
+            GUI.color = new Color(1f, 1f, 1f, 0.15f);
+            GUI.DrawTexture(gauge, pixel);
+            GUI.color = overheated ? ammoEmptyColor : crosshairColor;
+            GUI.DrawTexture(new Rect(gauge.x, gauge.y, gauge.width * Mathf.Clamp01(weapon.DisplayedHeat), gauge.height), pixel);
+            GUI.color = Color.white;
+        }
 
         float below = cy + hipGap + hipLineLength + 14f;
+        float charge = weapon.DisplayedCharge;
         if (weapon.IsReloading)
         {
             // Barre sous le réticule : c'est là que le regard se trouve pendant un duel. Fond sombre
@@ -253,13 +269,26 @@ public class CrosshairUI : MonoBehaviour
             GUI.color = crosshairColor;
             GUI.DrawTexture(new Rect(cx - width * 0.5f, below, width * weapon.ReloadProgress, height), pixel);
         }
+        else if (charge > 0f)
+        {
+            // La charge du tir (le FX-2, 2026-10-26) : sous le réticule, là où est le regard, lunette
+            // comprise. Pleine, elle change de couleur : lâcher la gâchette tire un coup qui tue au buste.
+            const float width = 64f;
+            const float height = 4f;
+            GUI.color = new Color(0f, 0f, 0f, 0.6f);
+            GUI.DrawTexture(new Rect(cx - width * 0.5f - 1f, below - 1f, width + 2f, height + 2f), pixel);
+            GUI.color = charge >= 1f ? chargeFullColor : crosshairColor;
+            GUI.DrawTexture(new Rect(cx - width * 0.5f, below, width * charge, height), pixel);
+        }
         else if (ammo == 0)
         {
-            // Une ombre sous le texte : il se lit aussi sur un mur clair.
+            // Une ombre sous le texte : il se lit aussi sur un mur clair. Une arme laser ne se vide
+            // d'elle-même que si rien n'interrompt sa vidange.
+            string hint = hot ? "R : vider" : "R : recharger";
             hintStyle.normal.textColor = new Color(0f, 0f, 0f, 0.75f);
-            GUI.Label(new Rect(cx - 149f, below - 3f, 300f, 30f), "R : recharger", hintStyle);
+            GUI.Label(new Rect(cx - 149f, below - 3f, 300f, 30f), hint, hintStyle);
             hintStyle.normal.textColor = textColor;
-            GUI.Label(new Rect(cx - 150f, below - 4f, 300f, 30f), "R : recharger", hintStyle);
+            GUI.Label(new Rect(cx - 150f, below - 4f, 300f, 30f), hint, hintStyle);
         }
     }
 

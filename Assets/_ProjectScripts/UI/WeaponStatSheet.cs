@@ -73,7 +73,11 @@ public static class WeaponStatSheet
                 return HipDispersion(data) * AttachmentCatalog.HipSpreadFactor(catalog, attachments, slot);
             case Stat.Handling: return AttachmentCatalog.AimTime(data, attachments.Grip(slot), catalog);
             case Stat.Mobility: return data.moveSpeedMultiplier;
-            default: return AttachmentCatalog.MagazineSize(data, attachments.ExtendedMagazine(slot), catalog);
+            default:
+                // Une arme laser n'a pas de chargeur : les tirs d'affilée avant la surchauffe en tiennent lieu.
+                if (data.UsesHeat)
+                    return WeaponController.ShotsBeforeOverheat(WeaponController.HeatRulesFor(data, attachments.ExtendedMagazine(slot)), data.shotsPerSecond);
+                return AttachmentCatalog.MagazineSize(data, attachments.ExtendedMagazine(slot), catalog);
         }
     }
 
@@ -195,7 +199,7 @@ public static class WeaponStatSheet
     public static string FireMode(WeaponData data)
     {
         if (data == null) return "";
-        string mode = data.isAutomatic ? "Automatique" : "Coup par coup";
+        string mode = data.UsesCharge ? $"Tir chargé en {Number(data.chargeTime)} s" : data.isAutomatic ? "Automatique" : "Coup par coup";
         return data.PelletCount > 1 ? $"{mode}, {data.PelletCount} plombs" : mode;
     }
 
@@ -235,7 +239,10 @@ public static class WeaponStatSheet
     {
         if (data == null) return "";
         bool pellets = data.PelletCount > 1;
-        string Unit(int n) => pellets ? (n > 1 ? "décharges complètes" : "décharge complète") : (n > 1 ? "impacts" : "impact");
+        // Une arme qui se charge (le FX-2) : ses nombres sont ceux d'un tir chargé à fond.
+        string Unit(int n) => pellets ? (n > 1 ? "décharges complètes" : "décharge complète")
+                            : data.UsesCharge ? (n > 1 ? "impacts chargés à fond" : "impact chargé à fond")
+                            : (n > 1 ? "impacts" : "impact");
 
         int body = ShotsToKill(data, 1f, maxHealth);
         int head = ShotsToKill(data, data.headMultiplier, maxHealth);

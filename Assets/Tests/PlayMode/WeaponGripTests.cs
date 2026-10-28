@@ -13,10 +13,11 @@ using UnityEngine.TestTools;
 ///
 /// Ce qui casse ici ne lève aucune erreur : une main qui flotte sous l'arme, un poing qui traverse le
 /// garde-main, une arme qu'emporte la main droite, une main restée collée au garde-main pendant que le
-/// clip va chercher le chargeur. On mesure ce qui se voit, sur les maillages : le milieu de la paume du
-/// robot, déformé comme Unity le déforme ; le poing du gant, qui doit être sous le repère (du côté où
-/// regarde la paume de la prise) et l'effleurer sans traverser l'arme. Le seul contact d'une surface ne
-/// suffit pas : sans prise, le gros poing du gant frôle déjà le repère, ou le traverse.
+/// clip va chercher le chargeur. On mesure ce qui se voit, sur les maillages : la surface de la paume de
+/// chaque châssis (2026-10-27 : chacun a la sienne, le CT-01 et l'OS-02 flottaient 1,4 et 1,7 cm sous le
+/// garde-main avec celle du Y Bot) ; le poing du gant, qui doit être sous le repère (du côté où regarde la
+/// paume de la prise) et l'effleurer sans traverser l'arme. Le seul contact d'une surface ne suffit pas :
+/// sans prise, le gros poing du gant frôle déjà le repère, ou le traverse.
 ///
 /// Ces maillages ne sont pas lisibles en Play Mode (Read/Write coupé à l'import, ce qui convient au jeu) :
 /// Surfaces les relève avant (IPrebuildSetup, en mode Édition).
@@ -26,6 +27,11 @@ public class WeaponGripTests
 {
     /// <summary>La main tient le repère à 2 cm près.</summary>
     private const float Touch = 0.02f;
+
+    /// <summary>La paume des bras, posée par la prise sur le repère, y est à 5 mm près.</summary>
+    private const float PalmTouch = 0.005f;
+
+    private static readonly ChassisId[] AllChassis = { ChassisId.CT01, ChassisId.Prototype, ChassisId.OS02 };
 
     /// <summary>Le poing du gant : ce qui dépasse de 10 cm le poignet (les jointures sont à 12,8 cm, le
     /// bout des électrodes à 19,2 cm ; en deçà, la manchette).</summary>
@@ -42,18 +48,16 @@ public class WeaponGripTests
     {
         public Vector3[] fist;          // les sommets du poing du gant, dans le repère du gant
         public Vector3 fistCenter;      // le milieu de la boîte qu'ils occupent
-        public Vector3 palm;            // le milieu de la paume gauche, sommet de la peau (repère du maillage)
-        public string[] palmBones;      // ses os, par leur chemin sous « Model »
-        public Matrix4x4[] palmBindPoses;
-        public float[] palmWeights;
+        public Vector3[] palms;         // la surface de la paume gauche de chaque châssis (repère de l'os de la main)
     }
 
     private static string SurfacePath => System.IO.Path.Combine(Application.dataPath, "..", "Temp", "WeaponGripTests.json");
     private static SurfaceData surfaces;
 
-    /// <summary>Relève, avant le Play Mode, ce que le test mesure : le poing du gant, et le sommet de la
-    /// peau au milieu de la paume gauche (le plus en avant côté paume, à mi-chemin du poignet aux
-    /// jointures).</summary>
+    /// <summary>Relève, avant le Play Mode, ce que le test mesure : le poing du gant, et pour chaque châssis
+    /// la surface de sa paume gauche sous le point de paume de la prise (un rayon tiré du côté paume vers
+    /// l'os, sur les triangles de la main au repos). Les mains du CT-01 et de l'OS-02 sont des blocs : leur
+    /// paume est une face, sans sommet au milieu.</summary>
     public class Surfaces : IPrebuildSetup
     {
         public void Setup()
@@ -76,44 +80,51 @@ public class WeaponGripTests
             data.fistCenter = box.center;
 
             Transform hand = animator.GetBoneTransform(HumanBodyBones.LeftHand);
-            float best = float.NegativeInfinity;
+            WeaponGrip.Settings settings = Prefab.GetComponent<PlayerAnimator>().HandGrip;
+            data.palms = new Vector3[RobotChassis.Count];
             foreach (SkinnedMeshRenderer skin in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
-                Mesh mesh = skin.sharedMesh;
+                int owner = RobotChassis.OwnerOf(skin.name);
                 int handIndex = System.Array.IndexOf(skin.bones, hand);
-                if (handIndex < 0) continue;
+                if (owner < 0 || handIndex < 0) continue;
+                Mesh mesh = skin.sharedMesh;
                 Vector3[] vertices = mesh.vertices;
                 BoneWeight[] weights = mesh.boneWeights;
-                Matrix4x4[] poses = mesh.bindposes;
-                for (int i = 0; i < vertices.Length; i++)
+                int[] triangles = mesh.triangles;
+                // Dans le repère de l'os de la main (+Y vers les doigts, +Z côté paume).
+                Matrix4x4 pose = mesh.bindposes[handIndex];
+                Vector3 point = settings.PalmPoint((ChassisId)owner);
+                var origin = new Vector3(point.x, point.y, 0.2f);
+                for (int i = 0; i < triangles.Length; i += 3)
                 {
-                    if (weights[i].boneIndex0 != handIndex) continue;
-                    // Dans le repère de l'os de la main (Y Bot : +Y vers les doigts, +Z côté paume).
-                    Vector3 p = poses[handIndex].MultiplyPoint3x4(vertices[i]);
-                    if (Mathf.Abs(p.x) > 0.02f || p.y < 0.05f || p.y > 0.08f || p.z <= best) continue;
-                    best = p.z;
-                    BoneWeight w = weights[i];
-                    int[] index = { w.boneIndex0, w.boneIndex1, w.boneIndex2, w.boneIndex3 };
-                    data.palm = vertices[i];
-                    data.palmWeights = new[] { w.weight0, w.weight1, w.weight2, w.weight3 };
-                    data.palmBones = new string[4];
-                    data.palmBindPoses = new Matrix4x4[4];
-                    for (int k = 0; k < 4; k++)
-                    {
-                        data.palmBones[k] = Path(skin.bones[index[k]], model);
-                        data.palmBindPoses[k] = poses[index[k]];
-                    }
+                    int a = triangles[i], b = triangles[i + 1], c = triangles[i + 2];
+                    if (weights[a].boneIndex0 != handIndex || weights[b].boneIndex0 != handIndex || weights[c].boneIndex0 != handIndex) continue;
+                    if (!RayHit(origin, Vector3.back, pose.MultiplyPoint3x4(vertices[a]), pose.MultiplyPoint3x4(vertices[b]),
+                                pose.MultiplyPoint3x4(vertices[c]), out float distance)) continue;
+                    Vector3 hit = origin + Vector3.back * distance;
+                    if (hit.z > data.palms[owner].z) data.palms[owner] = hit;
                 }
             }
             System.IO.File.WriteAllText(SurfacePath, JsonUtility.ToJson(data));
             surfaces = null;
         }
 
-        private static string Path(Transform t, Transform root)
+        /// <summary>Le rayon `origin` + t·`direction` (t > 0) touche-t-il le triangle (a, b, c) ? (Möller–Trumbore)</summary>
+        private static bool RayHit(Vector3 origin, Vector3 direction, Vector3 a, Vector3 b, Vector3 c, out float distance)
         {
-            string path = t.name;
-            for (Transform p = t.parent; p != null && p != root; p = p.parent) path = p.name + "/" + path;
-            return path;
+            distance = 0f;
+            Vector3 e1 = b - a, e2 = c - a, p = Vector3.Cross(direction, e2);
+            float det = Vector3.Dot(e1, p);
+            if (Mathf.Abs(det) < 1e-12f) return false;
+            float inv = 1f / det;
+            Vector3 s = origin - a;
+            float u = Vector3.Dot(s, p) * inv;
+            if (u < 0f || u > 1f) return false;
+            Vector3 q = Vector3.Cross(s, e1);
+            float v = Vector3.Dot(direction, q) * inv;
+            if (v < 0f || u + v > 1f) return false;
+            distance = Vector3.Dot(e2, q) * inv;
+            return distance > 0f;
         }
     }
 
@@ -123,15 +134,24 @@ public class WeaponGripTests
             surfaces = JsonUtility.FromJson<SurfaceData>(System.IO.File.ReadAllText(SurfacePath));
         Assert.IsNotNull(surfaces, "Le gant et la main n'ont pas été relevés avant le Play Mode (Surfaces).");
         Assert.Greater(surfaces.fist.Length, 100, "Le poing du gant n'a pas été relevé.");
-        Assert.AreEqual(4, surfaces.palmBones != null ? surfaces.palmBones.Length : 0, "Le milieu de la paume n'a pas été trouvé sur la peau du robot.");
+        Assert.AreEqual(RobotChassis.Count, surfaces.palms != null ? surfaces.palms.Length : 0, "Il faut la paume de chaque châssis.");
+        foreach (ChassisId chassis in AllChassis)
+            Assert.Greater(surfaces.palms[(int)chassis].z, 0.005f, $"La paume du {RobotChassis.NameOf(chassis)} n'a pas été trouvée sous le point de paume de la prise.");
         return surfaces;
     }
+
+    /// <summary>Les bras suivent le rendu choisi dans les Options (RenderStyle.TrackRobot), relu des PlayerPrefs au
+    /// lancement : on le fixe aux deux mêlés, le rendu par défaut du joueur et le pire cas pour ce que les bras
+    /// couvrent de l'écran (le contour des robots en cel-shading élargit leur silhouette).</summary>
+    [SetUp]
+    public void FixRenderStyle() => RenderStyle.Set(RenderStyleMode.Meles);
 
     [TearDown]
     public void TearDown()
     {
         if (instance != null) Object.DestroyImmediate(instance);
         if (cameraGo != null) Object.DestroyImmediate(cameraGo);
+        RenderStyle.Set(RenderStyleMode.LowPolyPropre);
     }
 
     private static GameObject Prefab => UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(TestCharacter.PlayerPrefabPath);
@@ -216,19 +236,15 @@ public class WeaponGripTests
         return model.transform.rotation * hold.palm.normalized;
     }
 
-    /// <summary>Le milieu de la paume gauche des bras, sur leur peau déformée par la pose de l'image.</summary>
-    private Vector3 PalmCenter()
+    /// <summary>La surface de la paume gauche du châssis `chassis` sur les bras, dans la pose de l'image.</summary>
+    private Vector3 PalmCenter(ChassisId chassis = ChassisId.CT01)
+        => arms.GetBoneTransform(HumanBodyBones.LeftHand).TransformPoint(Data().palms[(int)chassis]);
+
+    /// <summary>Montre le châssis `chassis` sur les bras, et le dit à leur prise.</summary>
+    private void ShowChassis(ChassisId chassis)
     {
-        SurfaceData data = Data();
-        Vector3 p = Vector3.zero;
-        for (int k = 0; k < 4; k++)
-        {
-            if (data.palmWeights[k] <= 0f) continue;
-            Transform bone = arms.transform.Find(data.palmBones[k]);
-            Assert.IsNotNull(bone, $"Les bras de la vue subjective n'ont pas l'os « {data.palmBones[k]} ».");
-            p += (bone.localToWorldMatrix * data.palmBindPoses[k]).MultiplyPoint3x4(data.palm) * data.palmWeights[k];
-        }
-        return p;
+        RobotChassis.Apply(arms.transform, chassis);
+        armsGrip.Chassis = chassis;
     }
 
     /// <summary>Le poing du gant du corps par rapport au repère, `normal` étant où regarde la paume de la
@@ -245,7 +261,7 @@ public class WeaponGripTests
     }
 
     /// <summary>
-    /// En visée, pour les douze modèles (WeaponData.ModelPrefabFor) : le milieu de la paume des bras est
+    /// En visée, pour les douze armes (une par modèle) : la paume des bras de chaque châssis est
     /// sur le repère « MainGauche », le poing du gant du corps juste dessous, alors que le clip seul les
     /// en laisse loin ; un pistolet n'a pas de repère et sa pose n'est pas touchée ; sur une crosse
     /// droite, la main droite tient le poignet et l'arme ne bouge pas, puis revient à son point de prise.
@@ -261,12 +277,12 @@ public class WeaponGripTests
 
         for (int slot = 0; slot < loadout.Count; slot++)
         {
-            for (int m = 0; m < loadout[slot].ModelCount; m++)
+            // Un modèle par arme depuis la refonte du 2026-10-26.
             {
-                Hold(loadout, WeaponLooks.Default.With(slot, m, WeaponFinish.Origine), WeaponAttachments.None, slot,
+                Hold(loadout, WeaponLooks.Default, WeaponAttachments.None, slot,
                      out WeaponModel bodyModel, out WeaponModel armsModel);
                 yield return null;   // Destroy est différé : l'ancien modèle part à la fin de l'image
-                Assert.IsNotNull(bodyModel, $"{loadout[slot].weaponName}, modèle {m} : rien en main.");
+                Assert.IsNotNull(bodyModel, $"{loadout[slot].weaponName} : rien en main.");
                 bool pistol = bodyModel.PistolHold;
                 AttachmentCatalog catalog = loadout[slot].attachmentCatalog;
                 Aim(pistol);
@@ -301,19 +317,11 @@ public class WeaponGripTests
                 }
                 else
                 {
-                    float palm = Vector3.Distance(PalmCenter(), armsMarker.position);
                     Fist(bodyMarker.position, HoldNormal(bodyModel, catalog, settings), out float off, out float reach);
-                    Transform armsHand = arms.GetBoneTransform(HumanBodyBones.LeftHand);
-                    Vector3 palmInHand = Quaternion.Inverse(armsHand.rotation) * (PalmCenter() - armsHand.position);
-                    Transform shoulder = arms.GetBoneTransform(HumanBodyBones.LeftUpperArm);
-                    float armLength = Vector3.Distance(shoulder.position, arms.GetBoneTransform(HumanBodyBones.LeftLowerArm).position)
-                                      + Vector3.Distance(arms.GetBoneTransform(HumanBodyBones.LeftLowerArm).position, armsHand.position);
-                    string line = $"{bodyModel.Designation} : paume à {palm * 100f:F1} cm du repère (clip seul {palmClip * 100f:F1}) ; " +
-                                  $"poing décalé de {off * 100f:F1} cm, dépasse de {reach * 100f:F1} cm (clip seul {offClip * 100f:F1} et {reachClip * 100f:F1}) ; " +
-                                  $"paume dans la main {palmInHand.x:F3} {palmInHand.y:F3} {palmInHand.z:F3}, épaule-poignet {Vector3.Distance(shoulder.position, armsHand.position):F3} sur {armLength:F3}";
+                    string line = $"{bodyModel.Designation} : poing décalé de {off * 100f:F1} cm, dépasse de {reach * 100f:F1} cm " +
+                                  $"(clip seul {offClip * 100f:F1} et {reachClip * 100f:F1}) ; paume du CT-01 à {palmClip * 100f:F1} cm du repère avec le clip seul";
                     report.AppendLine(line);
                     Debug.Log("[PRISE] " + line);
-                    Assert.Less(palm, Touch, $"{bodyModel.Designation} : en vue subjective, le milieu de la paume est à {palm * 100f:F1} cm du garde-main.");
                     Assert.Less(off, Touch, $"{bodyModel.Designation} : vu des autres, le poing du gant est à {off * 100f:F1} cm du dessous du garde-main.");
                     Assert.Less(Mathf.Abs(reach), Touch, $"{bodyModel.Designation} : vu des autres, le poing du gant dépasse le garde-main de {reach * 100f:F1} cm.");
                     if (palmClip > Touch && (offClip > Touch || Mathf.Abs(reachClip) > Touch)) missedByClip++;
@@ -333,6 +341,24 @@ public class WeaponGripTests
                     Assert.Less(Vector3.Distance(anchor.localPosition, bodyModel.transform.localPosition), 1e-5f,
                         $"{bodyModel.Designation} : l'arme n'est pas revenue à son point de prise.");
                     stocks++;
+                }
+
+                // La paume des bras, châssis par châssis : chacun pose la sienne sur le repère.
+                if (armsMarker != null)
+                {
+                    var palms = new System.Text.StringBuilder();
+                    foreach (ChassisId chassis in AllChassis)
+                    {
+                        ShowChassis(chassis);
+                        yield return Run(0.2f, () => Grip(bodyModel, armsModel, catalog, true, settings));
+                        yield return null;
+                        Grip(bodyModel, armsModel, catalog, true, settings);
+                        float palm = Vector3.Distance(PalmCenter(chassis), armsMarker.position);
+                        palms.Append($" {RobotChassis.NameOf(chassis)} {palm * 1000f:F1} mm");
+                        Assert.Less(palm, PalmTouch, $"{bodyModel.Designation} : en vue subjective, la paume du {RobotChassis.NameOf(chassis)} est à {palm * 100f:F1} cm du garde-main.");
+                    }
+                    ShowChassis(ChassisId.CT01);
+                    report.AppendLine($"{bodyModel.Designation} : paume des bras sur le repère :{palms}");
                 }
             }
         }
@@ -438,8 +464,8 @@ public class WeaponGripTests
 
     /// <summary>
     /// En vue subjective, les bras épaulés ne cachent pas l'écran (2026-10-17) : pour les douze modèles, sans
-    /// accessoire et avec ceux du rapport (viseur PR-A, poignée inclinée, laser, grand chargeur au fusil
-    /// d'assaut), les bras placés comme FirstPersonView les place (mire dans l'axe, à la distance de l'œil)
+    /// accessoire sur chacun des trois châssis, et avec les accessoires du rapport (viseur PR-A, poignée
+    /// inclinée, laser, grand chargeur au fusil d'assaut), les bras placés comme FirstPersonView les place (mire dans l'axe, à la distance de l'œil)
     /// couvrent moins de 5 % du tiers droit de l'écran, hors du tiers du bas où se tient l'arme (les deux
     /// mains d'un pistolet y sont). Au FAP-30, la main droite tenait le poignet de sa crosse droite, 7 cm
     /// devant l'œil et sous lui : elle et son avant-bras en couvraient 43 %. À la hanche, où elle se voit,
@@ -526,15 +552,21 @@ public class WeaponGripTests
         int measured = 0, stocksAtHip = 0;
         float worst = 0f;
         string worstName = "";
+        // Les trois châssis sans accessoire (2026-10-27 : au pistolet, les vérins du cou de l'OS-02 passaient devant
+        // l'œil), et le CT-01 avec les accessoires du rapport.
+        var cases = new List<(ChassisId chassis, WeaponAttachments attachments)>();
+        foreach (ChassisId chassis in AllChassis) cases.Add((chassis, WeaponAttachments.None));
+        cases.Add((ChassisId.CT01, WeaponAttachments.FromBeforeOverhaul(0x486A60E1u, GameSettings.ArmsBeforeOverhaul)));
         try
         {
-            foreach (WeaponAttachments attachments in new[] { WeaponAttachments.None, new WeaponAttachments(0x486A60E1u) })
+            foreach ((ChassisId chassis, WeaponAttachments attachments) in cases)
             {
+                ShowChassis(chassis);
                 for (int slot = 0; slot < loadout.Count; slot++)
                 {
-                    for (int m = 0; m < loadout[slot].ModelCount; m++)
+                    // Un modèle par arme depuis la refonte du 2026-10-26.
                     {
-                        Hold(loadout, WeaponLooks.Default.With(slot, m, WeaponFinish.Origine), attachments, slot, out _, out WeaponModel shown);
+                        Hold(loadout, WeaponLooks.Default, attachments, slot, out _, out WeaponModel shown);
                         yield return null;   // Destroy est différé : l'ancien modèle part à la fin de l'image
                         armsModel = shown;
                         catalog = loadout[slot].attachmentCatalog;
@@ -545,7 +577,7 @@ public class WeaponGripTests
                         yield return new WaitForEndOfFrame();
                         Measure(out float screen, out float rightThird, out float rightAbove);
                         measured++;
-                        string name = $"{armsModel.Designation} ({(attachments.Packed == 0 ? "sans accessoire" : "accessoires du rapport")})";
+                        string name = $"{armsModel.Designation} ({RobotChassis.NameOf(chassis)}, {(attachments == WeaponAttachments.None ? "sans accessoire" : "accessoires du rapport")})";
                         report.AppendLine($"{name} : en visée, bras sur {screen * 100f:F1} % de l'écran, {rightThird * 100f:F1} % du tiers droit, " +
                                           $"{rightAbove * 100f:F1} % hors du bas");
                         Assert.Greater(screen, 0.03f, $"Garde anti-vacuité : {name}, l'arme épaulée devrait se voir.");
@@ -573,38 +605,72 @@ public class WeaponGripTests
             target.Release();
         }
         Debug.Log("[VUE-SUBJECTIVE] " + report);
-        Assert.AreEqual(24, measured, "Il faut les douze modèles, sans accessoire et avec ceux du rapport.");
-        Assert.AreEqual(4, stocksAtHip, "Le FP-30 et le FAP-30 ont une crosse droite.");
+        Assert.AreEqual(48, measured, "Il faut les douze modèles sur les trois châssis, et avec les accessoires du rapport.");
+        Assert.AreEqual(8, stocksAtHip, "Le FP-30 et le FAP-30 ont une crosse droite.");
         Assert.Less(worst, 0.05f, $"{worstName} : en visée, les bras couvrent {worst * 100f:F1} % du tiers droit de l'écran, hors du bas.");
     }
 
-    /// <summary>Une poignée montée (2026-10-16) prend la main gauche : son repère, pas le garde-main.</summary>
+    /// <summary>La paume des bras atteint une poignée montée à 1 cm près : bras tendu, l'IK s'arrête quelques
+    /// millimètres avant (5 mm au FA-30, poignée verticale).</summary>
+    private const float GripReach = 0.01f;
+
+    /// <summary>
+    /// Une poignée montée (2026-10-16) prend la main gauche : son repère, pas le garde-main. Sur chaque arme qui en
+    /// prend une, avec chaque poignée et sur chaque châssis (2026-10-27) : au FP-30 et au FX-2, elle était montée 30
+    /// et 41 cm devant la main, hors de portée du bras (la main des bras restait 9 à 17 cm en arrière, le gant 11 à
+    /// 16 cm, la poignée vide) ; au FP-12 et au FX-1, la paume la manquait d'un centimètre, bras tendu.
+    /// </summary>
     [UnityTest]
-    public IEnumerator UnePoigneeMontee_PrendLaMainGauche()
+    public IEnumerator ChaquePoigneeMontee_PrendLaMainGauche_SurChaqueArme()
     {
         Setup();
         IReadOnlyList<WeaponData> loadout = Loadout();
         WeaponGrip.Settings settings = Settings();
-        AttachmentCatalog catalog = loadout[0].attachmentCatalog;
+        var report = new System.Text.StringBuilder();
+        int held = 0;
         foreach (GripKind kind in new[] { GripKind.Vertical, GripKind.Angled })
         {
-            Hold(loadout, WeaponLooks.Default, WeaponAttachments.None.With(0, 0, kind, false, false), 0,
-                 out WeaponModel bodyModel, out WeaponModel armsModel);
-            yield return null;
-            WeaponAttachment mounted = AttachmentMount.Mounted(bodyModel.transform, AttachmentCategory.Grip);
-            Assert.IsNotNull(mounted, $"La poignée {kind} n'est pas montée sur le fusil d'assaut.");
-            Assert.IsNotNull(mounted.LeftHand, $"La poignée {mounted.Code} n'a pas de repère « MainGauche ».");
-            Aim(false);
-            yield return Run(0.6f, () => Grip(bodyModel, armsModel, catalog, true, settings));
-            yield return null;
-            Grip(bodyModel, armsModel, catalog, true, settings);
-            float palm = Vector3.Distance(PalmCenter(), LeftMarker(armsModel).position);
-            Fist(LeftMarker(bodyModel).position, HoldNormal(bodyModel, catalog, settings), out float off, out float reach);
-            Debug.Log($"[PRISE] {mounted.Code} : paume à {palm * 100f:F1} cm, poing décalé de {off * 100f:F1} cm, dépasse de {reach * 100f:F1} cm");
-            Assert.Less(palm, Touch, $"{mounted.Code} : la paume est à {palm * 100f:F1} cm de la poignée.");
-            Assert.Less(off, Touch, $"{mounted.Code} : le poing du gant est à {off * 100f:F1} cm de la poignée.");
-            Assert.Less(Mathf.Abs(reach), Touch, $"{mounted.Code} : le poing du gant dépasse la poignée de {reach * 100f:F1} cm.");
+            var attachments = WeaponAttachments.None;
+            for (int s = 0; s < loadout.Count; s++)
+                if (WeaponAttachments.Accepts(loadout[s], AttachmentCategory.Grip, (int)kind)) attachments = attachments.WithGrip(s, kind);
+            for (int slot = 0; slot < loadout.Count; slot++)
+            {
+                if (!WeaponAttachments.Accepts(loadout[slot], AttachmentCategory.Grip, (int)kind)) continue;
+                Hold(loadout, WeaponLooks.Default, attachments, slot, out WeaponModel bodyModel, out WeaponModel armsModel);
+                yield return null;   // Destroy est différé : l'ancien modèle part à la fin de l'image
+                WeaponAttachment mounted = AttachmentMount.Mounted(bodyModel.transform, AttachmentCategory.Grip);
+                string name = $"{bodyModel.Designation} + {kind}";
+                Assert.IsNotNull(mounted, $"{name} : la poignée n'est pas montée.");
+                Assert.IsNotNull(mounted.LeftHand, $"La poignée {mounted.Code} n'a pas de repère « MainGauche ».");
+                AttachmentCatalog catalog = loadout[slot].attachmentCatalog;
+                Aim(false);
+                ShowChassis(ChassisId.CT01);
+                yield return Run(0.6f, () => Grip(bodyModel, armsModel, catalog, true, settings));
+                yield return null;
+                Grip(bodyModel, armsModel, catalog, true, settings);
+                Fist(LeftMarker(bodyModel).position, HoldNormal(bodyModel, catalog, settings), out float off, out float reach);
+                Assert.Less(off, Touch, $"{name} : vu des autres, le poing du gant est à {off * 100f:F1} cm de la poignée.");
+                Assert.Less(Mathf.Abs(reach), Touch, $"{name} : vu des autres, le poing du gant dépasse la poignée de {reach * 100f:F1} cm.");
+
+                // la paume des bras de chaque châssis sur la poignée
+                var palms = new System.Text.StringBuilder();
+                foreach (ChassisId chassis in AllChassis)
+                {
+                    ShowChassis(chassis);
+                    yield return Run(0.2f, () => Grip(bodyModel, armsModel, catalog, true, settings));
+                    yield return null;
+                    Grip(bodyModel, armsModel, catalog, true, settings);
+                    float palm = Vector3.Distance(PalmCenter(chassis), LeftMarker(armsModel).position);
+                    palms.Append($" {RobotChassis.NameOf(chassis)} {palm * 1000f:F1} mm");
+                    Assert.Less(palm, GripReach, $"{name} : en vue subjective, la paume du {RobotChassis.NameOf(chassis)} est à {palm * 100f:F1} cm de la poignée.");
+                }
+                ShowChassis(ChassisId.CT01);
+                report.AppendLine($"{name} : poing décalé de {off * 100f:F1} cm, dépasse de {reach * 100f:F1} cm ; paume :{palms}");
+                held++;
+            }
         }
+        Debug.Log("[PRISE] poignées montées :\n" + report);
+        Assert.AreEqual(18, held, "Les neuf armes d'épaule prennent les deux poignées.");
     }
 }
 #endif

@@ -1,0 +1,168 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe33acf964d9c684b81db736a07bf7db, type: 3}
+  m_Name: Arme_PA05
+  m_EditorClassIdentifier: DuelArena.Runtime::WeaponData
+  weaponName: PA-05
+  family: 3
+  role: semi-automatique, le plus mobile, sort le plus vite
+  modelPrefab: {fileID: 976176385625153909, guid: 5445effcb65019746a842194260f2846, type: 3}
+  acceptedAttachments: 13
+  acceptedSights: 4
+  attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
+  damagePerHit: 26
+  shotsPerSecond: 4.5
+  isAutomatic: 0
+  maxRange: 60
+  headMultiplier: 1.5
+  legsMultiplier: 1
+  falloffStart: 15
+  falloffEnd: 35
+  minDamageMultiplier: 0.75
+  pelletPattern: []
+  aimPatternScale: 1
+  hipSpread: 1.1
+  hipSpreadMoving: 2.2
+  hipSpreadPerShot: 0.35
+  hipSpreadMaxBloom: 1.2
+  hipSpreadRecovery: 5
+  aimCurve: 2
+  killKnockback: 0
+  killKnockbackLift: 0
+  raiseTime: 0.35
+  moveSpeedMultiplier: 1
+  aimTime: 0.1
+  scopeMagnification: 1
+  hipCrosshair: 1
+  shotIsBeam: 0
+  tracerColor: {r: 1, g: 0.101960786, b: 0.05490196, a: 1}
+  worldMask:
+    serializedVersion: 2
+    m_Bits: 1
+  hitboxMask:
+    serializedVersion: 2
+    m_Bits: 128
+  magazineSize: 15
+  reloadDuration: 1.5
+  reloadPerRound: 0
+  reloadCues:
+  - clips:
+    - {fileID: 8300000, guid: f75db620a58756e4991d23a25584e353, type: 3}
+    at: 0.04
+    volume: 0.7
+  - clips:
+    - {fileID: 8300000, guid: 34ddabedbf33995409877878dec5d404, type: 3}
+    at: 0.45
+    volume: 0.75
+  - clips:
+    - {fileID: 8300000, guid: 2b75be781975d1d4cb86cf41ea27d726, type: 3}
+    at: 0.72
+    volume: 0.7
+  reloadRoundSounds: []
+  reloadEndSounds: []
+  reloadEndDelay: 0.3
+  reloadVolume: 0.8
+  heatPerShot: 0
+  heatCoolDelay: 0.3
+  heatCoolTime: 2.5
+  overheatVentDuration: 2.5
+  chargeTime: 0
+  unchargedDamage: 0.3
+  chargeSound: {fileID: 0}
+  chargeVolume: 0.7
+  sprintToFireTime: 0.2
+  recoilPattern:
+  - {x: 0, y: 1}
+  - {x: 0.2, y: 1.1}
+  - {x: -0.2, y: 1.1500001}
+  - {x: 0.25, y: 1.2}
+  - {x: -0.25, y: 1.2}
+  - {x: -0.23925781, y: 1.2}
+  - {x: -0.2109375, y: 1.2}
+  - {x: -0.17089844, y: 1.2}
+  - {x: -0.125, y: 1.2}
+  - {x: -0.07910156, y: 1.2}
+  - {x: -0.0390625, y: 1.2}
+  - {x: -0.0107421875, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 1.2}
+  recoilPerShotDegrees: 1.8
+  recoilRecoverySpeed: 8
+  recoilResetDelay: 0.3
+  fireSounds:
+  - {fileID: 8300000, guid: 71a338a5c24650d4498625dafc7c7087, type: 3}
+  - {fileID: 8300000, guid: f79a20f89845c5e4694f8f90a17d6025, type: 3}
+  - {fileID: 8300000, guid: 419820708ead17e4fb8767ed589be99d, type: 3}
+  - {fileID: 8300000, guid: 31af49bec104ac14f87a6c4535d657be, type: 3}
+  - {fileID: 8300000, guid: 8d3137e5896064046a1324ce0865ab77, type: 3}
+  - {fileID: 8300000, guid: e6c627a61e0c20f4abe2bf576f0ebb35, type: 3}
+  - {fileID: 8300000, guid: 12905fe16cf3403478cda8b08760ecf4, type: 3}
+  - {fileID: 8300000, guid: a59c4d5b81b84ee41840932d12e6c761, type: 3}
+  fireVolume: 0.8
+  firePitchRange: {x: 1.25, y: 1.32}
+  fireFirstSound: {fileID: 0}
+  fireTailSound: {fileID: 8300000, guid: 664a67a012e4d964b9d2c8e629fb0555, type: 3}
+  fireMechanismSounds: []
+  fireMechanismDelay: 0.4
+  fireMechanismVolume: 0.8
+  impactSounds:
+    clips:
+    - {fileID: 8300000, guid: 5eca8e94be3446a4292769fd85c3cba7, type: 3}
+    - {fileID: 8300000, guid: 34bdded649405114aa28478afb1ee6c9, type: 3}
+    - {fileID: 8300000, guid: 1a178c13c8bc7fd418e3e78810707a84, type: 3}
+    - {fileID: 8300000, guid: 1e65896a140421544818831dd7c19241, type: 3}
+    - {fileID: 8300000, guid: a5e687725470781468cf274971fa499b, type: 3}
+    - {fileID: 8300000, guid: 8975d85ef48f8a44c8b3f5c1133d32b9, type: 3}
+    volume: 0.7
+    pitchRange: {x: 0.94, y: 1.06}
+  bodyImpactSounds:
+    clips:
+    - {fileID: 8300000, guid: 77068a372cc1a0349a6222a6fcab0fa3, type: 3}
+    - {fileID: 8300000, guid: 957376f72c8cd7e4b8dc164dc80d6b41, type: 3}
+    - {fileID: 8300000, guid: de58961054d9c1f49840a7d2a71dbd5f, type: 3}
+    - {fileID: 8300000, guid: 7a0b13d9f31bb404f832b4d246aa233a, type: 3}
+    - {fileID: 8300000, guid: 762963a2a6c47fb4d86abb4236aed610, type: 3}
+    volume: 0.8
+    pitchRange: {x: 0.94, y: 1.06}
+  flybySounds:
+    clips:
+    - {fileID: 8300000, guid: 9d0c1c9dfd28cab4291c5ed5b0a6cf0b, type: 3}
+    - {fileID: 8300000, guid: 236b3bdb6baa6694580ec50dd37ce0b2, type: 3}
+    - {fileID: 8300000, guid: 2cb92b8a8ac72d143a5d45114d20bc00, type: 3}
+    - {fileID: 8300000, guid: 858a8a5bae9111d419750dd641f4b2c4, type: 3}
+    - {fileID: 8300000, guid: 62cf0d64c66899342b8265ea2df66362, type: 3}
+    - {fileID: 8300000, guid: da3a2c5020ceb69479944910a519279a, type: 3}
+    volume: 0.7
+    pitchRange: {x: 0.95, y: 1.05}
+  dryFireSounds:
+    clips:
+    - {fileID: 8300000, guid: 27a69b60ed60a604496a60fa02c497e5, type: 3}
+    - {fileID: 8300000, guid: c49377187f1a8fe43b444aa3de449a77, type: 3}
+    - {fileID: 8300000, guid: b4ab50db468e21344af36506cdeafe2e, type: 3}
+    volume: 0.6
+    pitchRange: {x: 0.98, y: 1.02}
+  raiseSounds:
+    clips:
+    - {fileID: 8300000, guid: 5ad95c324fb16ef4b8809d40f0fb7cbe, type: 3}
+    - {fileID: 8300000, guid: b363cedcf2d9d644abac54a5b87abe89, type: 3}
+    - {fileID: 8300000, guid: 035f626716887fe418b27e4cdc053dd0, type: 3}
+    - {fileID: 8300000, guid: d1c3cc6a65a3701499f82d352a7ba5ef, type: 3}
+    volume: 0.5
+    pitchRange: {x: 0.97, y: 1.03}

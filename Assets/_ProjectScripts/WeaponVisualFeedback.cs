@@ -38,8 +38,104 @@ public class WeaponVisualFeedback : MonoBehaviour
     [SerializeField] private float muzzleLightIntensity = 3f;
     [SerializeField] private float muzzleLightRange = 4f;
 
+    [Header("Charge du tir (le FX-2, 2026-10-26)")]
+    [Tooltip("Diamètre (m) de l'éclat au canon d'une arme chargée à fond : le point du laser tactique, en gros. Il grandit avec la charge et bat, pleine.")]
+    [SerializeField] private float chargeGlowSize = 0.09f;
+    [Tooltip("Sa taille apparente au moins (radians, pour la caméra de qui regarde), chargée à fond : comme le point du laser tactique, il se voit de loin.")]
+    [SerializeField] private float chargeGlowAngularSize = 0.015f;
+    [Tooltip("Sa lumière, chargée à fond : elle se voit sur les murs proches, l'adversaire voit venir le tir.")]
+    [SerializeField] private float chargeLightIntensity = 2f;
+    [SerializeField] private float chargeLightRange = 3f;
+
     private static Mesh flashMesh;
+    private static Mesh glowQuad;
     private int flashCount;
+    private MeshRenderer chargeGlow;
+    private Light chargeLight;
+
+    /// <summary>L'éclat de la charge est-il montré ? (tests)</summary>
+    public bool ChargeGlowShown => chargeGlow != null && chargeGlow.enabled;
+    public Transform ChargeGlowTransform => chargeGlow != null ? chargeGlow.transform : null;
+
+    /// <summary>
+    /// L'éclat d'une arme qui se charge (le FX-2) à sa bouche `muzzle` : d'autant plus gros et lumineux
+    /// que la charge (0 à 1) est haute, battant une fois pleine ; caché sans charge. Le matériau est celui
+    /// du point du laser tactique (DuelArena/FaisceauLaser), face à la caméra. Cosmétique, sur l'arme que
+    /// chaque machine montre (les bras du tireur, le corps chez les autres) : l'adversaire voit venir le
+    /// tir (GDD § 6).
+    /// </summary>
+    public void ShowCharge(Transform muzzle, float charge, Material material, Color color)
+    {
+        if (muzzle == null || material == null || !(charge > 0f))
+        {
+            if (chargeGlow != null && chargeGlow.enabled)
+            {
+                chargeGlow.enabled = false;
+                if (chargeLight != null) chargeLight.enabled = false;
+            }
+            return;
+        }
+        if (chargeGlow == null)
+        {
+            var go = new GameObject("EclatCharge");
+            go.AddComponent<MeshFilter>().sharedMesh = GlowQuad();
+            chargeGlow = go.AddComponent<MeshRenderer>();
+            chargeGlow.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            chargeGlow.receiveShadows = false;
+            chargeGlow.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            chargeGlow.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+            var lightObject = new GameObject("Lumiere");
+            lightObject.transform.SetParent(go.transform, false);
+            chargeLight = lightObject.AddComponent<Light>();
+            chargeLight.type = LightType.Point;
+            chargeLight.shadows = LightShadows.None;
+        }
+        // Enfant de la bouche, il suit l'arme ; sur son layer, il est dessiné avec elle. Une arme refaite
+        // (HeldWeapons) l'emporte avec elle : il renaît à l'image suivante.
+        Transform t = chargeGlow.transform;
+        if (t.parent != muzzle)
+        {
+            t.SetParent(muzzle, false);
+            chargeGlow.gameObject.layer = muzzle.gameObject.layer;
+        }
+        float pulse = charge >= 1f ? 1f + 0.15f * Mathf.Sin(Time.time * 18f) : 1f;
+        float size = chargeGlowSize;
+        Camera viewer = Camera.main;
+        if (viewer != null)
+        {
+            Vector3 away = muzzle.position - viewer.transform.position;
+            if (away.sqrMagnitude > 1e-8f) t.rotation = Quaternion.LookRotation(away, viewer.transform.up);
+            size = Mathf.Max(size, away.magnitude * chargeGlowAngularSize);
+        }
+        size *= (0.3f + 0.7f * charge) * pulse;
+        t.position = muzzle.position;
+        Vector3 parentScale = muzzle.lossyScale;
+        t.localScale = new Vector3(size / Mathf.Max(1e-4f, parentScale.x), size / Mathf.Max(1e-4f, parentScale.y),
+                                   size / Mathf.Max(1e-4f, parentScale.z));
+        if (chargeGlow.sharedMaterial != material) chargeGlow.sharedMaterial = material;
+        chargeGlow.enabled = true;
+        chargeLight.color = color;
+        chargeLight.intensity = chargeLightIntensity * charge * pulse;
+        chargeLight.range = chargeLightRange;
+        chargeLight.enabled = true;
+    }
+
+    /// <summary>Un carré d'un mètre, centré, tourné vers -Z (la caméra), ses UV de 0 à 1 et ses couleurs
+    /// de sommet blanches (le shader du point du laser les lit).</summary>
+    private static Mesh GlowQuad()
+    {
+        if (glowQuad != null) return glowQuad;
+        glowQuad = new Mesh { name = "Eclat de charge" };
+        glowQuad.vertices = new[]
+        {
+            new Vector3(-0.5f, -0.5f, 0f), new Vector3(0.5f, -0.5f, 0f), new Vector3(0.5f, 0.5f, 0f), new Vector3(-0.5f, 0.5f, 0f),
+        };
+        glowQuad.uv = new[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(0f, 1f) };
+        glowQuad.colors = new[] { Color.white, Color.white, Color.white, Color.white };
+        glowQuad.triangles = new[] { 0, 2, 1, 0, 3, 2 };
+        glowQuad.RecalculateBounds();
+        return glowQuad;
+    }
 
     /// <summary>La flamme de bouche est-elle prête (matériau branché) ? (tests)</summary>
     public bool HasMuzzleFlash => muzzleFlashMaterial != null;
@@ -152,8 +248,9 @@ public class WeaponVisualFeedback : MonoBehaviour
     /// <summary>Trace visuelle instantanée entre le point de départ et le point d'arrivée du tir.</summary>
     public void SpawnTracer(Vector3 start, Vector3 end) => SpawnTracer(start, end, tracerColor);
 
-    /// <summary>Même trace, à la couleur de l'arme (WeaponData.tracerColor : le rayon du raygun).</summary>
-    public void SpawnTracer(Vector3 start, Vector3 end, Color color)
+    /// <summary>Même trace, à la couleur de l'arme (WeaponData.tracerColor : le rayon des armes laser),
+    /// `weight` fois plus épaisse et plus durable (le tir chargé du FX-2).</summary>
+    public void SpawnTracer(Vector3 start, Vector3 end, Color color, float weight = 1f)
     {
         var go = new GameObject("ShotTracer");
         var lr = go.AddComponent<LineRenderer>();
@@ -161,8 +258,8 @@ public class WeaponVisualFeedback : MonoBehaviour
         lr.sharedMaterial = TracerMaterial(color);
         lr.startColor = color;
         lr.endColor = color;
-        lr.startWidth = tracerWidth;
-        lr.endWidth = tracerWidth;
+        lr.startWidth = tracerWidth * weight;
+        lr.endWidth = tracerWidth * weight;
         lr.positionCount = 2;
         lr.useWorldSpace = true;
         lr.SetPosition(0, start);
@@ -170,7 +267,7 @@ public class WeaponVisualFeedback : MonoBehaviour
         lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         lr.receiveShadows = false;
 
-        Destroy(go, tracerDuration);
+        Destroy(go, tracerDuration * weight);
     }
 
     /// <summary>Petit marqueur temporaire à l'endroit précis où le tir a touché quelque chose.</summary>

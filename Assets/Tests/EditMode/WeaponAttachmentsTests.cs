@@ -31,6 +31,11 @@ public class WeaponAttachmentsTests
     private static IReadOnlyList<WeaponData> Loadout() =>
         UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath).GetComponentInChildren<WeaponController>(true).Loadout;
 
+    /// <summary>Les deux ont-ils les mêmes accessoires pour l'arme de la place `slot` ?</summary>
+    private static bool SameSlot(WeaponAttachments a, WeaponAttachments b, int slot)
+        => a.Sight(slot) == b.Sight(slot) && a.Grip(slot) == b.Grip(slot) && a.Laser(slot) == b.Laser(slot)
+           && a.ExtendedMagazine(slot) == b.ExtendedMagazine(slot);
+
     private static AttachmentCatalog Catalog() =>
         UnityEditor.AssetDatabase.LoadAssetAtPath<AttachmentCatalog>(AttachmentImporter.CatalogPath);
 
@@ -80,7 +85,20 @@ public class WeaponAttachmentsTests
         Assert.IsTrue(a.ExtendedMagazine(Pistol));
         Assert.AreEqual(GripKind.Angled, a.Grip(Sniper));
         Assert.AreEqual(0, a.Sight(Sniper), "Une rubrique change sans toucher aux autres.");
-        Assert.AreEqual(WeaponAttachments.None.Packed, (a.Packed >> 16) & 0xFFu, "La place 3 n'a rien reçu.");
+        Assert.AreEqual(0, a.Sight(Shotgun), "La place 3 n'a rien reçu.");
+        Assert.AreEqual(GripKind.None, a.Grip(Shotgun));
+        Assert.IsFalse(a.Laser(Shotgun) || a.ExtendedMagazine(Shotgun));
+
+        // Les douze armes ont chacune les leurs (96 bits depuis la refonte du 2026-10-26) : la dernière
+        // ne déborde pas sur les autres.
+        WeaponAttachments far = a.With(11, ReflexC, GripKind.Vertical, true, true).With(8, HoloA, GripKind.Angled, false, true);
+        Assert.AreEqual(ReflexC, far.Sight(11));
+        Assert.AreEqual(GripKind.Vertical, far.Grip(11));
+        Assert.IsTrue(far.Laser(11) && far.ExtendedMagazine(11));
+        Assert.AreEqual(HoloA, far.Sight(8), "La neuvième arme, la première de la seconde moitié.");
+        for (int slot = 0; slot < 8; slot++) Assert.IsTrue(SameSlot(a, far, slot), $"Place {slot + 1} : intacte.");
+        Assert.IsTrue(WeaponAttachments.TryParseHex(far.ToHex(), out WeaponAttachments reread));
+        Assert.AreEqual(far, reread, "Écrits puis relus en hexadécimal, tels quels.");
 
         // Une rubrique à la fois, par les choix de l'armurerie : les autres restent.
         WeaponAttachments b = a.WithVariant(Rifle, AttachmentCategory.Sight, RedDotA).WithVariant(Rifle, AttachmentCategory.Laser, 0);
@@ -88,10 +106,10 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(0, b.Variant(Rifle, AttachmentCategory.Laser));
         Assert.AreEqual((int)GripKind.Vertical, b.Variant(Rifle, AttachmentCategory.Grip));
         Assert.AreEqual(1, b.Variant(Rifle, AttachmentCategory.Magazine));
-        Assert.AreEqual(a.Packed & 0xFFFFFF00u, b.Packed & 0xFFFFFF00u, "Les autres armes n'ont pas bougé.");
+        for (int slot = 1; slot < WeaponAttachments.Slots; slot++) Assert.IsTrue(SameSlot(a, b, slot), $"Place {slot + 1} : les autres armes n'ont pas bougé.");
 
-        // Hors de la panoplie : rien ne bouge.
-        Assert.AreEqual(a, a.With(4, HoloA, GripKind.Angled, true, true));
+        // Hors de l'arsenal : rien ne bouge.
+        Assert.AreEqual(a, a.With(WeaponAttachments.Slots, HoloA, GripKind.Angled, true, true));
         Assert.AreEqual(0, a.Sight(-1));
         Assert.AreEqual(WeaponAttachments.SightCount + 1, WeaponAttachments.VariantCount(AttachmentCategory.Sight),
             "Dix viseurs, plus la mire de l'arme.");
@@ -111,12 +129,12 @@ public class WeaponAttachmentsTests
             .With(Pistol, RedDotA, GripKind.Vertical, true, true);
         WeaponAttachments kept = asked.Sanitized(loadout);
 
-        Assert.AreEqual(asked.Packed & 0xFFu, kept.Packed & 0xFFu, "Le fusil d'assaut prend tout.");
+        Assert.IsTrue(SameSlot(asked, kept, Rifle), "Le fusil d'assaut prend tout.");
         Assert.AreEqual(0, kept.Sight(Sniper), "Le sniper garde sa lunette : pas de viseur.");
         Assert.AreEqual(GripKind.Vertical, kept.Grip(Sniper), "Mais il prend une poignée...");
         Assert.IsTrue(kept.Laser(Sniper), "... un laser...");
         Assert.IsTrue(kept.ExtendedMagazine(Sniper), "... et le chargeur.");
-        Assert.AreEqual(asked.Packed & 0xFF0000u, kept.Packed & 0xFF0000u, "Le fusil à pompe prend tout.");
+        Assert.IsTrue(SameSlot(asked, kept, Shotgun), "Le fusil à pompe prend tout.");
         Assert.AreEqual(0, kept.Sight(Pistol), "Un point rouge ne tient pas sur une glissière de pistolet.");
         Assert.AreEqual(GripKind.None, kept.Grip(Pistol), "Un pistolet n'a pas de poignée avant.");
         Assert.IsTrue(kept.Laser(Pistol));
@@ -127,7 +145,7 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(ReflexC, reflex.WithSight(Pistol, ReflexC).Sanitized(loadout).Sight(Pistol));
 
         // Tous les bits levés : des viseurs et des poignées qui n'existent pas.
-        WeaponAttachments all = new WeaponAttachments(0xFFFFFFFFu).Sanitized(loadout);
+        WeaponAttachments all = new WeaponAttachments(ulong.MaxValue, uint.MaxValue).Sanitized(loadout);
         for (int slot = 0; slot < WeaponAttachments.Slots; slot++)
         {
             Assert.AreEqual(0, all.Sight(slot), $"Place {slot + 1} : le viseur 15 n'existe pas.");
@@ -153,7 +171,7 @@ public class WeaponAttachmentsTests
         WeaponLooks looks = WeaponLooks.Default.WithFinish(Rifle, WeaponFinish.Rouillee);
 
         WeaponCustomizationController.Summarize(loadout[Rifle], Rifle, looks, asked, out string model, out string details);
-        StringAssert.StartsWith(loadout[Rifle].ModelPrefabFor(0).GetComponent<WeaponModel>().Designation, model, "Le modèle choisi d'abord.");
+        StringAssert.StartsWith(loadout[Rifle].Designation, model, "La désignation de l'arme d'abord.");
         Assert.AreEqual($"Rouillée · {Code(catalog.SightPrefab(HoloA))} · {Code(catalog.verticalGrip)} · {Code(catalog.laser)} · "
                         + $"chargeur {AttachmentCatalog.MagazineSize(loadout[Rifle], true, catalog)}", details);
 
@@ -168,9 +186,10 @@ public class WeaponAttachmentsTests
     [Test]
     public void LaDemandeDeConnexion_PorteLesAccessoires()
     {
-        WeaponLooks looks = WeaponLooks.Default.With(0, 1, WeaponFinish.Polie);
+        WeaponLooks looks = WeaponLooks.Default.WithFinish(0, WeaponFinish.Polie);
         WeaponAttachments attachments = WeaponAttachments.None.With(Rifle, HoloA, GripKind.Vertical, true, false)
-                                                              .With(Pistol, ReflexC, GripKind.None, true, true);
+                                                              .With(Pistol, ReflexC, GripKind.None, true, true)
+                                                              .With(11, ReflexA, GripKind.None, true, false);
         Assert.IsTrue(SessionFlow.ParsePayload(SessionFlow.BuildPayload("0.1.4", "Héloïse", looks, attachments),
                                                out string version, out string name, out WeaponLooks readLooks, out WeaponAttachments read));
         Assert.AreEqual("0.1.4", version);
@@ -193,18 +212,18 @@ public class WeaponAttachmentsTests
     public void LesAccessoires_RestentCeuxDeCetteInstance_QuandUneAutreEnregistreLesSiens()
     {
         WeaponAttachments before = GameSettings.WeaponAttachments;
-        int stored = PlayerPrefs.GetInt(GameSettings.WeaponAttachmentsKey, 0);
+        string stored = PlayerPrefs.GetString(GameSettings.WeaponAttachmentsKey, "");
         try
         {
             WeaponAttachments mine = WeaponAttachments.None.With(Rifle, HoloA, GripKind.Vertical, true, true);
             GameSettings.WeaponAttachments = mine;
-            PlayerPrefs.SetInt(GameSettings.WeaponAttachmentsKey, unchecked((int)WeaponAttachments.None.WithSight(Rifle, RedDotA).Packed));
+            PlayerPrefs.SetString(GameSettings.WeaponAttachmentsKey, WeaponAttachments.None.WithSight(Rifle, RedDotA).ToHex());
             Assert.AreEqual(mine, GameSettings.WeaponAttachments, "L'autre instance a écrit les siens : celle-ci garde les siens.");
         }
         finally
         {
             GameSettings.WeaponAttachments = before;
-            PlayerPrefs.SetInt(GameSettings.WeaponAttachmentsKey, stored);
+            PlayerPrefs.SetString(GameSettings.WeaponAttachmentsKey, stored);
             PlayerPrefs.Save();
         }
     }
@@ -218,12 +237,15 @@ public class WeaponAttachmentsTests
     {
         IReadOnlyList<WeaponData> loadout = Loadout();
         AttachmentCatalog catalog = Catalog();
-        int[] expected = { 45, 8, 9, 18 };   // 30, 5, 6 et 12 balles d'origine
+        int[] expected = { 45, 8, 9 };   // 30, 5 et 6 balles d'origine (FA-07, FP-12, FAP-03)
         for (int slot = 0; slot < loadout.Count; slot++)
         {
             WeaponData data = loadout[slot];
+            // Une arme laser n'a pas de balles : sa cellule grande capacité tient plus de chaleur (WeaponHeatTests).
+            if (data.UsesHeat) continue;
+            int big = slot < expected.Length ? expected[slot] : Mathf.RoundToInt(data.magazineSize * catalog.extendedMagazineCapacity);
             Assert.AreEqual(data.magazineSize, AttachmentCatalog.MagazineSize(data, false, catalog), $"{data.weaponName} : le chargeur d'origine.");
-            Assert.AreEqual(expected[slot], AttachmentCatalog.MagazineSize(data, true, catalog), $"{data.weaponName} : le grand chargeur.");
+            Assert.AreEqual(big, AttachmentCatalog.MagazineSize(data, true, catalog), $"{data.weaponName} : le grand chargeur.");
             Assert.AreEqual(data.magazineSize, AttachmentCatalog.MagazineSize(data, true, null), "Sans catalogue, aucun effet.");
             Assert.AreEqual(data.reloadDuration, AttachmentCatalog.ReloadDuration(data, false, catalog), 1e-6f);
         }
@@ -322,13 +344,10 @@ public class WeaponAttachmentsTests
         {
             Assert.AreSame(catalog, data.attachmentCatalog, $"{data.weaponName} ne porte pas le catalogue : ses accessoires n'auraient aucun effet.");
             // Chaque modèle qui a un chargeur a son grand chargeur, sauf le barillet du RV-30.
-            for (int model = 0; model < data.ModelCount; model++)
-            {
-                WeaponModel m = data.ModelPrefabFor(model).GetComponent<WeaponModel>();
-                GameObject magazine = catalog.MagazinePrefab(m.Designation);
-                if (m.Designation == "RV-30") Assert.IsNull(magazine, "Un barillet ne s'allonge pas.");
-                else Assert.IsNotNull(magazine, $"{m.Designation} n'a pas de chargeur grande capacité.");
-            }
+            WeaponModel m = data.modelPrefab.GetComponent<WeaponModel>();
+            GameObject magazine = catalog.MagazinePrefab(m.Designation);
+            if (m.Designation == "RV-30") Assert.IsNull(magazine, "Un barillet ne s'allonge pas.");
+            else Assert.IsNotNull(magazine, $"{m.Designation} n'a pas de chargeur grande capacité.");
         }
         Assert.AreEqual(AttachmentSlots.All, loadout[Rifle].acceptedAttachments);
         Assert.AreEqual(AttachmentSlots.Grip | AttachmentSlots.Laser | AttachmentSlots.Magazine, loadout[Sniper].acceptedAttachments);
@@ -474,10 +493,13 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(weapon.GetComponent<WeaponModel>().AimEyeDistance, eye, 1e-6f, "Un pistolet se vise toujours à bout de bras.");
 
         // Le barillet du RV-30 n'a pas de modèle de grand chargeur : rien n'est monté, l'effet vaut.
+        const int Revolver = 11;
+        WeaponData rv30 = Loadout()[Revolver];
+        Assert.AreEqual("RV-30", rv30.Designation, "Garde : la douzième arme est le revolver.");
         Transform revolver = Instantiate("RV30");
-        AttachmentMount.Apply(revolver, pistol, WeaponAttachments.None.WithMagazine(Pistol, true), Pistol, WeaponFinish.Origine);
+        AttachmentMount.Apply(revolver, rv30, WeaponAttachments.None.WithMagazine(Revolver, true), Revolver, WeaponFinish.Origine);
         Assert.IsNull(AttachmentMount.Mounted(revolver, AttachmentCategory.Magazine));
-        Assert.AreEqual(18, AttachmentCatalog.MagazineSize(pistol, true, pistol.attachmentCatalog));
+        Assert.AreEqual(9, AttachmentCatalog.MagazineSize(rv30, true, rv30.attachmentCatalog), "Six coups, neuf au grand chargeur.");
     }
 
     [Test]

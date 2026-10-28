@@ -145,6 +145,25 @@ public class HitboxHistoryTests
     }
 
     [Test]
+    public void LaGardeDUnSpectateur_EstCelleDuDebutDeLIntervalle_CommeLesDrapeauxQuAfficheLeFrappeur()
+    {
+        // Le coup de poing juge la garde à l'instant que voyait le frappeur (2026-10-27). Sa pose
+        // interpolée prend ses drapeaux au début de l'intervalle : le rewind fait de même.
+        var history = new List<PlayerLocomotion.HitboxPose> { Pose(10f, 0f), Pose(11f, 0f), Pose(12f, 0f) };
+        var levee = history[1];
+        levee.guard = true;
+        history[1] = levee;
+        var tenue = history[2];
+        tenue.guard = true;
+        history[2] = tenue;
+
+        Assert.IsTrue(PlayerLocomotion.SampleHitboxHistory(history, 10.9f, out var avant));
+        Assert.IsFalse(avant.guard, "Juste avant la pose où elle se lève, la garde n'y est pas encore.");
+        Assert.IsTrue(PlayerLocomotion.SampleHitboxHistory(history, 11.1f, out var apres));
+        Assert.IsTrue(apres.guard, "Juste après, elle y est.");
+    }
+
+    [Test]
     public void UneSeulePose_LaRenvoieQuelQueSoitLInstant()
     {
         var history = new List<PlayerLocomotion.HitboxPose> { Pose(10f, 7f) };

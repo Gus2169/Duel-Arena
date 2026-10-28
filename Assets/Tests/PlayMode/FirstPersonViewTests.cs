@@ -24,7 +24,7 @@ public class FirstPersonViewTests
     }
 
     [UnityTest]
-    public IEnumerator LaCopie_VitSurLeLayerDesBras_SansOmbre_TeteEtJambesRepliees()
+    public IEnumerator LaCopie_VitSurLeLayerDesBras_SansOmbre_TeteCouEtJambesRepliees()
     {
         source = TestCharacter.InstantiateModel(out _);
         cameraGo = new GameObject("CameraTest");
@@ -42,6 +42,7 @@ public class FirstPersonViewTests
             Assert.AreEqual(ShadowCastingMode.Off, r.shadowCastingMode, r.name + " projette une ombre : le joueur en aurait deux.");
         }
         Assert.AreEqual(Vector3.zero, animator.GetBoneTransform(HumanBodyBones.Head).localScale, "La tête n'est pas repliée : la caméra est dedans.");
+        Assert.AreEqual(Vector3.zero, animator.GetBoneTransform(HumanBodyBones.Neck).localScale, "Le cou n'est pas replié : au pistolet, ses pièces passent devant l'œil.");
         Assert.AreEqual(Vector3.zero, animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg).localScale);
         Assert.AreEqual(Vector3.zero, animator.GetBoneTransform(HumanBodyBones.RightUpperLeg).localScale);
     }

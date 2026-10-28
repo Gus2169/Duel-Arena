@@ -569,6 +569,7 @@ MonoBehaviour:
   weapon: {fileID: 0}
   ammoEmptyColor: {r: 1, g: 0.4, b: 0.3, a: 1}
   ammoPanelColor: {r: 0.039215688, g: 0.050980393, b: 0.06666667, a: 0.8}
+  chargeFullColor: {r: 1, g: 0.3, b: 0.22, a: 1}
   scopeDiameter: 0.92
   scopeReticleColor: {r: 0, g: 0, b: 0, a: 0.9}
 --- !u!114 &4778785776251366436
@@ -596,6 +597,10 @@ MonoBehaviour:
   muzzleLightColor: {r: 1, g: 0.62, b: 0.25, a: 1}
   muzzleLightIntensity: 3
   muzzleLightRange: 4
+  chargeGlowSize: 0.09
+  chargeGlowAngularSize: 0.015
+  chargeLightIntensity: 2
+  chargeLightRange: 3
 --- !u!114 &9223354944556659811
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -766,7 +771,10 @@ MonoBehaviour:
     angledGrip:
       palm: {x: 0.3, y: 1, z: 0.3}
       fingers: {x: 0.65, y: -0.15, z: 0.75}
-    palmPoint: {x: 0.01, y: 0.05, z: 0.037}
+    palmPoints:
+    - {x: 0.01, y: 0.05, z: 0.021}
+    - {x: 0.01, y: 0.05, z: 0.037}
+    - {x: 0.01, y: 0.05, z: 0.014}
     gloveFistCenter: {x: 0.011, y: -0.01, z: 0.146}
     gloveFistHalfSize: {x: 0.071, y: 0.056, z: 0.046}
     elbowPole: {x: -0.5, y: -1, z: 0}
@@ -888,12 +896,15 @@ MonoBehaviour:
   punchRange: 1.5
   punchRadius: 0.3
   punchStunDuration: 2.5
+  comboWindow: 0.35
+  guardHalfAngle: 70
+  guardShake: 1.2
+  guardShakeDuration: 0.2
   stunImmunity: 1.5
   rockStunDuration: 1.5
   pickupRange: 2.3
   pickupAngle: 35
-  chargeTime: 0.8
-  minThrowSpeed: 9
+  throwRaiseTime: 0.25
   maxThrowSpeed: 24
   throwCooldown: 0.5
   flinchPitch: 3.5
@@ -919,9 +930,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: DuelArena.Runtime::SpectatorView
   ShowTopMostFoldoutHeaderGroup: 1
   fistTarget: {x: -0.07, y: -0.11, z: 0.55}
+  viewOffset: {x: 0, y: -0.08, z: -0.1}
+  guardBlendTime: 0.1
+  guardViewOffset: {x: 0, y: -0.15, z: 0.03}
   holdOffset: {x: 0.24, y: -0.21, z: 0.45}
   holdEuler: {x: 8, y: -25, z: 4}
-  windUpOffset: {x: 0.06, y: 0.1, z: -0.2}
+  windUpOffset: {x: 0.1, y: 0.06, z: -0.62}
   throwPushTime: 0.15
 --- !u!114 &1409261084488968949
 MonoBehaviour:
@@ -1159,6 +1173,14 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 728f72f05ce172c4f8a4311040daccb1, type: 2}
   - {fileID: 11400000, guid: 0f67bef9704b65747a4569234398678d, type: 2}
   - {fileID: 11400000, guid: 72f50928e0375ed42bc4c515b8619fdf, type: 2}
+  - {fileID: 11400000, guid: 34736b0ecca2e6e4d9d7c109315a97bc, type: 2}
+  - {fileID: 11400000, guid: 64d6579562b4ddc4ca48913a112bf6e2, type: 2}
+  - {fileID: 11400000, guid: a4f04edd11a447a43950365ad219c199, type: 2}
+  - {fileID: 11400000, guid: f9878756d459b674c9a115457e6a153f, type: 2}
+  - {fileID: 11400000, guid: bf804a94fb1b4fa4089ffdcfc7253f10, type: 2}
+  - {fileID: 11400000, guid: 5dda986ec96b5cd418d42be3cc706d73, type: 2}
+  - {fileID: 11400000, guid: ad9d7a2a58caf444aa2ce5c422d4f8a2, type: 2}
+  - {fileID: 11400000, guid: f0aedc2430bad31419a2cd5dc1e6014c, type: 2}
   aimCamera: {fileID: 8366488429288959033}
   cameraLook: {fileID: 3352715494086386985}
   visualFeedback: {fileID: 4778785776251366436}

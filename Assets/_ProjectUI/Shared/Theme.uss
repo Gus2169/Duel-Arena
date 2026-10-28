@@ -718,6 +718,61 @@
     color: var(--text-dim);
 }
 
+/* ---------- Cases à cocher (2026-10-27, demandées par l'utilisateur pour ce qui se dit oui ou non) ----------
+   Un Toggle d'UI Toolkit, sans libellé : la case seule, cochée en jaune avec la coche de la charte. */
+
+.da-check {
+    margin: 0;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+/* La case garde sa taille : sans libellé, le thème donne à son conteneur une base nulle, qui la coupait. */
+.da-check > .unity-toggle__input {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: auto;
+    width: 28px;
+    overflow: visible;
+}
+
+.da-check.unity-toggle .unity-toggle__checkmark {
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 4px;
+    border-width: 2px;
+    border-radius: 2px;
+    border-color: rgba(190, 205, 220, 0.55);
+    background-color: rgba(6, 9, 13, 0.85);
+    background-image: none;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: rgb(18, 22, 28);
+    transition-duration: 0.1s;
+}
+
+.da-check.unity-toggle:hover .unity-toggle__checkmark {
+    border-color: rgb(244, 190, 28);
+}
+
+.da-check.unity-toggle:checked .unity-toggle__checkmark,
+.da-check.unity-toggle .unity-toggle__checkmark:checked {
+    border-color: rgb(244, 190, 28);
+    background-color: rgb(244, 190, 28);
+    background-image: url("project://database/Assets/_ProjectUI/Icons/check.svg");
+}
+
+.da-check.unity-toggle:disabled .unity-toggle__checkmark {
+    border-color: rgba(143, 155, 168, 0.3);
+    opacity: 0.75;
+}
+
+.da-check.unity-toggle:disabled:checked .unity-toggle__checkmark,
+.da-check.unity-toggle:disabled .unity-toggle__checkmark:checked {
+    background-color: rgba(244, 190, 28, 0.45);
+    border-color: rgba(244, 190, 28, 0.2);
+}
+
 /* ---------- Indicateur d'attente ---------- */
 
 .da-spinner {

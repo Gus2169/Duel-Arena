@@ -146,9 +146,6 @@ def canon(a):
                     dessous="Polymere")
     f = kit.loft(pc, kit.sections_av(POUTRE_BASSE), "Peinture", mats_cotes=mats)
     kit.chanfreiner(pc, 0.0012, f)
-    for av in (0.344, 0.369, 0.394, 0.419, 0.444):    # nervures sous la main gauche
-        f = kit.boite(pc, av, av + 0.009, 0.0600, 0.0650, -0.0130, 0.0130, "Polymere")
-        kit.chanfreiner(pc, 0.0007, f)
     a.objet(pc)
 
     pc = a.piece("Carenages", "Peinture")
@@ -192,7 +189,9 @@ def montages(a):
     pc = a.piece("Montages", "Peinture")
     ca.plaque_montage(pc, -0.060, 0.220, P(-0.060, H_PLAQUE), "haut", largeur=0.022, ep=0.0035, encoches=10)
     ca.plaque_montage(pc, 0.522, 0.594, P(0.522, 0.080, -0.0206), "droite", largeur=0.012, encoches=3)
-    ca.plaque_montage(pc, 0.636, 0.716, P(0.636, 0.0645), "bas", largeur=0.016, encoches=4)
+    # dessous, à la place des nervures sous la main gauche : une poignée montée entre les bagues (à 0,68 m) était
+    # hors de portée du bras (2026-10-27)
+    ca.plaque_montage(pc, 0.340, 0.462, P(0.340, 0.0645), "bas", largeur=0.016, encoches=6)
     a.objet(pc)
 
 
@@ -377,7 +376,7 @@ def construire(a):
     a.accroches({
         "Viseur": P(0.075, H_PLAQUE + 0.0035),
         "Laser": P(0.558, 0.080, -0.0231),
-        "Poignee": P(0.676, 0.0620),
+        "Poignee": P(0.416, 0.0620),                # plaque du dessous, 3,6 cm devant la main gauche
         "Chargeur": P(0.210, 0.040),
         "Crosse": P(-0.090, 0.110),
     })

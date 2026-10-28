@@ -47,6 +47,37 @@ public static class ElectricArc
         }
     }
 
+    /// <summary>
+    /// Le même éclair dans un plan (2026-10-27 : la vue d'un robot touché par un caillou, HitIndicatorOverlay).
+    /// Chaque milieu se décale de côté dans le plan, d'un côté ou de l'autre au hasard de la graine : jamais
+    /// presque droit, comme en trois dimensions. La graine avance.
+    /// </summary>
+    public static void Build2D(Vector2 start, Vector2 end, int generations, float jaggedness, Vector2 bow,
+                               ref uint seed, Vector2[] points)
+    {
+        int last = PointCount(generations) - 1;
+        points[0] = start;
+        points[last] = end;
+        for (int step = last; step > 1; step >>= 1)
+        {
+            int half = step >> 1;
+            for (int i = half; i < last; i += step)
+            {
+                Vector2 a = points[i - half], b = points[i + half];
+                Vector2 mid = (a + b) * 0.5f;
+                if (step == last) mid += bow;
+                float length = Vector2.Distance(a, b);
+                if (length > 1e-6f)
+                {
+                    float reach = length * jaggedness * (0.4f + 0.6f * Next01(ref seed));
+                    Vector2 side = new Vector2(a.y - b.y, b.x - a.x) / length;
+                    mid += side * (Next01(ref seed) < 0.5f ? -reach : reach);
+                }
+                points[i] = mid;
+            }
+        }
+    }
+
     /// <summary>Un vecteur unitaire perpendiculaire à `direction` (unitaire), au hasard de la graine.</summary>
     public static Vector3 RandomPerpendicular(Vector3 direction, ref uint seed)
     {

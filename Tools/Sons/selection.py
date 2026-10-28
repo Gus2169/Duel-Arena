@@ -65,6 +65,9 @@ FAMILIES = [
     # ---------------------------------------------------------------- Tribune
     dict(dest="Tribune", items=seq(GM + "/Whooshes/whoosh_swish_med_{:02d}.wav", range(1, 6), "Poing_Elan_{:02d}")),
     dict(dest="Tribune", items=seq(GB + "/IMPACTS - HITS - (50)/IMPACT Metal Hit Short {:02d}.wav", range(1, 6), "Poing_Impact_{:02d}")),
+    # La garde (2026-10-27) : un coup paré, un choc sourd et bref (centre de 1,4 à 2,6 kHz), qui ne se
+    # confond pas avec le coup qui touche, métallique et clair (3,6 kHz).
+    dict(dest="Tribune", items=seq(GB + "/IMPACTS - HITS - (50)/IMPACT Thump Thud {:02d}.wav", [1, 2, 3, 4], "Poing_Pare_{:02d}")),
     dict(dest="Tribune", items=seq(GB + "/ELECTRIC - ZAPS - SHOCKS - (21)/ELECTRIC Power Down {:02d}.wav", [1, 2, 3], "Etourdi_{:02d}")),
     dict(dest="Tribune", items=seq(GM + "/Impacts_Smashable/rock_impact_small_hit_{:02d}.wav", [1, 2, 3], "Bloc_Coup_{:02d}")),
     dict(dest="Tribune", items=seq(GM + "/Impacts_Smashable/rock_smashable_hit_impact_large_{:02d}.wav", [1, 2, 3], "Bloc_Casse_{:02d}")),
@@ -121,4 +124,9 @@ FAMILIES = [
     dict(dest="Interface", items=[("Valider", UI + "/ui_menu_button_confirm_02.wav")]),
     dict(dest="Interface", items=[("Retour", UI + "/ui_menu_button_cancel_01.wav")]),
     dict(dest="Interface", items=[("Choix", GUNS + "/gun_semi_auto_rifle_safety_switch_01.wav")]),
+    # ---------------------------------------------------------------- FX-2 (2026-10-26)
+    # La montée en charge du tir chargé : un son grave qui monte (0,1 à 1,6 kHz) en 1,2 s, joué pendant
+    # la charge et accordé sur sa durée (WeaponAudio). L'adversaire l'entend venir (GDD § 6). Pas le
+    # « Power Up Short 01 », qui fait déjà la manche gagnée.
+    dict(dest="Armes/FX-2", items=[("Charge", GB + "/TECH CHARGERS - (45)/TECH CHARGER Power Up 07.wav")]),
 ]

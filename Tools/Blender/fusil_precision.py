@@ -99,7 +99,8 @@ def chassis(a):
     f = kit.boite(pc, -0.072, AV_CARCASSE + 0.008, H_AXE + 0.0150, H_AXE + 0.0220, -0.0105, 0.0105)
     kit.chanfreiner(pc, 0.0008, f)
     ca.rail(pc, -0.072, 0.640, P(-0.072, H_AXE + 0.0215), "haut")
-    ca.rail(pc, 0.460, 0.620, P(0.460, H_AXE - R_GM * 0.92 + 0.0010), "bas")
+    # dessous, reculé jusqu'à la main gauche : une poignée montée à 0,54 m la manquait de 1 cm, bras tendu (2026-10-27)
+    ca.rail(pc, 0.360, 0.520, P(0.360, H_AXE - R_GM * 0.92 + 0.0010), "bas")
     ca.rail(pc, 0.500, 0.580, P(0.500, H_AXE, -R_GM * 0.92 + 0.0010), "droite")
     a.objet(pc)
 
@@ -238,7 +239,7 @@ def construire(a):
     a.accroches({
         "Viseur": P(0.075, H_RAIL),
         "Laser": P(0.540, H_AXE, -0.0350),
-        "Poignee": P(0.540, H_AXE - 0.0350),
+        "Poignee": P(0.410, H_AXE - 0.0350),        # rail du dessous, 3 cm devant la main gauche
         "Chargeur": P(0.204, 0.052),
         "Crosse": P(-0.091, 0.092),
     })

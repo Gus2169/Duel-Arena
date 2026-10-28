@@ -43,8 +43,11 @@ public class MenuUxmlTests
             "duelistPortrait1", "duelistUnknown0", "duelistUnknown1", "duelistRole0", "duelistRole1", "duelistName0",
             "duelistName1", "duelistStatus0", "duelistStatus1", "lobbyQueueTitle", "lobbyQueueHint", "lobbyQueueList",
             "lobbyArenaName", "lobbyMap", "lobbyMapLegend", "lobbyModeValue", "lobbyRoundsCycler", "lobbyRulesHint",
-            "lobbyCapacityCycler", "lobbyOrganizationCycler", "lobbyInterventionsCycler", "lobbyCodeLabel",
+            "lobbyCapacityCycler", "lobbyKingToggle", "lobbyInterventionsToggle", "lobbyRandomToggle", "lobbyCodeLabel",
             "lobbyCopyLabel", "lobbyStatusLabel", "lobbyCopyButton", "lobbyStartButton", "lobbyLeaveButton");
+        // Ce qui se dit oui ou non : de vraies cases à cocher (2026-10-27).
+        foreach (string check in new[] { "lobbyKingToggle", "lobbyInterventionsToggle", "lobbyRandomToggle" })
+            Assert.IsInstanceOf<Toggle>(root.Q(check), check);
         AssertNames(root, "ArmoryController",
             "customTabRobot", "customTabWeapons", "customPageRobot", "customPageWeapons", "customHintsRobot",
             "customHintsWeapons", "robotCategories", "robotGrid", "robotGridTitle", "robotInfoName", "robotInfoTitle",
@@ -72,6 +75,18 @@ public class MenuUxmlTests
         AssertOptionsPanel(root);
     }
 
+    /// <summary>Le menu de pause du stand de tir (2026-10-27) : le même que celui de la partie, les Options
+    /// comprises, et le bouton de la fenêtre des armes.</summary>
+    [Test]
+    public void LaPauseDuStand_PorteLesOptionsEtLaFenetreDesArmes()
+    {
+        VisualElement root = Clone("Assets/_ProjectUI/Game/StandPause.uxml");
+        AssertNames(root, "PauseMenu", "pauseRoot", "pauseMain", "pauseOptions", "pauseResumeButton",
+            "pauseWeaponsButton", "pauseOptionsButton", "pauseQuitButton", "pauseOptionsBackButton");
+        Assert.IsTrue(root.Q("pauseRoot").ClassListContains("hidden"), "Fermé au départ.");
+        AssertOptionsPanel(root);
+    }
+
     /// <summary>L'écran de fin et son vote, et le salon de la partie (2026-10-26) : les éléments que
     /// cherchent MatchEndScreen et SalonPanel, et les sélecteurs du salon, de vrais OptionCycler.</summary>
     [Test]
@@ -81,19 +96,38 @@ public class MenuUxmlTests
         AssertNames(root, "MatchEndScreen", "endScreen", "endTitle", "endSubtitle", "scoreTable", "endCountdown",
             "endQuitButton", "endVote", "endVoteStatus", "endVoteButtons", "endRematchButton", "endSalonButton");
         AssertNames(root, "SalonPanel", "salonPanel", "salonPlayers", "salonMode", "salonRulesHint", "salonInvite",
-            "salonStatus", "salonRoundsCycler", "salonCapacityCycler", "salonOrganizationCycler",
-            "salonInterventionsCycler", "salonLaunchButton", "salonQuitButton");
-        foreach (string cycler in new[] { "salonRoundsCycler", "salonCapacityCycler", "salonOrganizationCycler", "salonInterventionsCycler" })
+            "salonStatus", "salonRoundsCycler", "salonCapacityCycler", "salonKingToggle", "salonInterventionsToggle",
+            "salonRandomToggle", "salonLaunchButton", "salonQuitButton");
+        foreach (string cycler in new[] { "salonRoundsCycler", "salonCapacityCycler" })
             Assert.IsInstanceOf<DuelArena.UI.OptionCycler>(root.Q(cycler), $"{cycler} : l'espace de noms du HUD (xmlns:da).");
+        foreach (string check in new[] { "salonKingToggle", "salonInterventionsToggle", "salonRandomToggle" })
+            Assert.IsInstanceOf<Toggle>(root.Q(check), check);
+    }
+
+    /// <summary>La vue d'un robot touché par un caillou (2026-10-27) : l'élément que cherche HitIndicatorHud, un
+    /// vrai HitIndicatorOverlay, et caché tant que rien ne l'a touché.</summary>
+    [Test]
+    public void LeHud_PorteLIndicateurDesCaillouxRecus()
+    {
+        VisualElement root = Clone("Assets/_ProjectUI/Game/GameHud.uxml");
+        VisualElement indicator = root.Q("hitIndicator");
+        Assert.IsInstanceOf<DuelArena.UI.HitIndicatorOverlay>(indicator, "HitIndicatorHud cherche « hitIndicator » : l'espace de noms du HUD (xmlns:da).");
+        Assert.IsTrue(indicator.ClassListContains("hidden"), "Caché au départ.");
+        Assert.AreEqual(PickingMode.Ignore, indicator.pickingMode, "Il ne prend jamais la souris.");
     }
 
     private static void AssertOptionsPanel(VisualElement root)
     {
         AssertNames(root, "OptionsController",
             "tabGameplayButton", "tabAudioButton", "tabGraphicsButton", "tabControlsButton", "pageGameplay",
-            "pageAudio", "pageGraphics", "pageControls", "sensitivitySlider", "sensitivityValue", "invertYCycler",
+            "pageAudio", "pageGraphics", "pageControls", "sensitivitySlider", "sensitivityValue", "invertYToggle",
             "masterVolumeSlider", "musicVolumeSlider", "masterVolumeValue", "musicVolumeValue", "resolutionCycler",
-            "fullscreenCycler", "vsyncCycler", "frameRateCycler", "bindRowScroll", "resetBindingsButton");
-        Assert.IsInstanceOf<DuelArena.UI.OptionCycler>(root.Q("invertYCycler"));
+            "fullscreenToggle", "vsyncToggle", "frameRateCycler", "renderStyleCycler", "bindRowScroll", "resetBindingsButton",
+            "optionsApplyButton", "optionsRevertButton", "optionsPendingLabel", "optionsLeaveModal",
+            "optionsLeaveApplyButton", "optionsLeaveDiscardButton");
+        Assert.IsInstanceOf<DuelArena.UI.OptionCycler>(root.Q("resolutionCycler"));
+        foreach (string check in new[] { "invertYToggle", "fullscreenToggle", "vsyncToggle" })
+            Assert.IsInstanceOf<Toggle>(root.Q(check), $"{check} : une case à cocher (2026-10-27).");
+        Assert.IsTrue(root.Q("optionsLeaveModal").ClassListContains("hidden"), "La fenêtre de sortie est fermée au départ.");
     }
 }

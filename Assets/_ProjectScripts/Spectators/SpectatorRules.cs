@@ -55,6 +55,60 @@ public static class SpectatorRules
     public static bool IsStunned(double stunnedUntil, double time) => time < stunnedUntil;
 
     // ------------------------------------------------------------------
+    // Les poings (2026-10-27, demandés par l'utilisateur)
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Le prochain coup de poing part-il du poing DROIT ? L'enchaînement alterne gauche puis droite tant
+    /// que le joueur relance avant la fin du geste précédent plus `comboWindow` ; au-delà, il repart du
+    /// gauche, le direct de la garde. `sincePrevious` : depuis le début du coup précédent (l'infini s'il
+    /// n'y en a pas eu). Fonction pure, testée.
+    /// </summary>
+    public static bool NextPunchIsRight(bool previousWasRight, double sincePrevious, float punchDuration, float comboWindow)
+        => !previousWasRight && sincePrevious <= punchDuration + Mathf.Max(0f, comboWindow);
+
+    /// <summary>
+    /// Un coup de poing reste-t-il demandé après cette image ? Un appui pendant un coup attend la fin du
+    /// geste (l'enchaînement) ; en garde ou en visant un lancer, il est perdu : il partirait sinon
+    /// sitôt la garde baissée ou l'objet lancé. Fonction pure, testée.
+    /// </summary>
+    public static bool PunchStillWanted(bool queued, bool pressed, bool guarding, bool aimingThrow)
+        => !guarding && !aimingThrow && (queued || pressed);
+
+    /// <summary>
+    /// Le spectateur vise-t-il un lancer (2026-10-27, demandé par l'utilisateur) ? L'objet en main (sorti, pas
+    /// rangé), le clic droit tenu, dans une phase où l'on lance, et pas en plein coup de poing : sa trajectoire
+    /// se montre, et le clic gauche lance. Fonction pure, testée.
+    /// </summary>
+    public static bool ThrowAimHeld(bool objectInHand, bool aimHeld, bool phaseAllowed, bool punching)
+        => objectInHand && aimHeld && phaseAllowed && !punching;
+
+    /// <summary>Les poings sont-ils libres pour frapper et parer ? Les mains vides, ou l'objet tenu rangé
+    /// (molette). Fonction pure, testée.</summary>
+    public static bool FistsOut(ArenaItemKind carried, bool stowed) => carried == ArenaItemKind.None || stowed;
+
+    /// <summary>
+    /// La garde arrête-t-elle ce qui arrive de `towardThreat` (depuis le robot, vers le frappeur ou d'où
+    /// vient le caillou) ? Seulement de face : dans `halfAngle` degrés autour de l'avant du robot (son
+    /// cap `yaw`, à plat). Ce qui tombe d'en haut, vient de côté ou de dans le dos passe. Fonction pure,
+    /// testée.
+    /// </summary>
+    public static bool GuardCovers(float yaw, Vector3 towardThreat, float halfAngle)
+    {
+        if (!IsFinite(towardThreat) || towardThreat.sqrMagnitude < 1e-8f) return false;
+        Vector3 forward = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+        return Vector3.Angle(forward, towardThreat) <= halfAngle;
+    }
+
+    /// <summary>
+    /// La garde arrête-t-elle ce qui arrive de `towardThreat` ? Levée (`guard`), les poings sortis, de
+    /// face (GuardCovers), et jamais chez un étourdi : sa garde ne retombe chez le serveur qu'un
+    /// aller-retour après le coup qui l'étourdit, et un étourdi ne pare rien. Fonction pure, testée.
+    /// </summary>
+    public static bool GuardStops(bool guard, bool fistsOut, bool stunned, float yaw, Vector3 towardThreat, float halfAngle)
+        => guard && fistsOut && !stunned && GuardCovers(yaw, towardThreat, halfAngle);
+
+    // ------------------------------------------------------------------
     // Le lancer
     // ------------------------------------------------------------------
 

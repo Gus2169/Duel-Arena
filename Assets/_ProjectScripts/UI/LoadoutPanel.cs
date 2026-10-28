@@ -6,12 +6,12 @@ using UnityEngine.UIElements;
 
 /// <summary>
 /// Le panneau de préparation (2026-10-12, demandé par l'utilisateur) : avant chaque manche, un
-/// onglet s'ouvre au centre de l'écran, chaque joueur choisit son arme (clic, ou touches 1 à 4) et
-/// valide. Le décompte part dès que les deux ont validé, au plus tard au bout de 20 s
+/// onglet s'ouvre au centre de l'écran, chaque joueur choisit son arme parmi les douze (un clic) et
+/// valide. Le décompte part dès que les deux ont validé, au plus tard au bout de 30 s
 /// (RoundManager). Une fois la manche lancée, on garde son arme.
 ///
-/// Une VUE sur l'arme du joueur : choisir passe par le même changement d'arme que les touches 1 à
-/// 4 (WeaponController.RequestWeapon : prédit, puis contrôlé par le serveur), et valider demande au
+/// Une VUE sur l'arme du joueur : choisir passe par le changement d'arme du joueur
+/// (WeaponController.RequestWeapon : prédit, puis contrôlé par le serveur), et valider demande au
 /// serveur de marquer le joueur prêt (PlayerMatchState.RequestReady). Ce panneau ne décide rien.
 /// </summary>
 [DisallowMultipleComponent]
@@ -113,25 +113,35 @@ public class LoadoutPanel : MonoBehaviour
         if (state != null) state.RequestReady();
     }
 
+    // Les douze armes, une colonne par famille (2026-10-26). Provisoire : le panneau aux favorites en
+    // grand, « Toutes les armes » derrière, viendra avec l'interface de la refonte (GDD § 6).
     private void BuildCards()
     {
         builtFor = weapon;
         cardRow.Clear();
         cards.Clear();
         cardSlots.Clear();
-        for (int slot = 0; slot < weapon.SlotCount; slot++)
+        for (int family = 0; family < Arsenal.FamilyCount; family++)
         {
-            WeaponData data = weapon.DataOf(slot);
-            if (data == null) continue;
-            int chosen = slot;
-            var card = new Button(() => weapon.RequestWeapon(chosen));
-            card.AddToClassList("loadout-card");
-            card.Add(NewLabel($"TOUCHE {slot + 1}", "loadout-card-key"));
-            card.Add(NewLabel(data.weaponName, "loadout-card-name"));
-            card.Add(NewLabel(Summary(data, weapon.MagazineSizeOf(slot)), "loadout-card-stats"));
-            cardRow.Add(card);
-            cards.Add(card);
-            cardSlots.Add(slot);
+            List<int> slots = Arsenal.SlotsOf(weapon.Loadout, (WeaponFamily)family);
+            if (slots.Count == 0) continue;
+            var column = new VisualElement();
+            column.AddToClassList("loadout-family");
+            column.Add(NewLabel(Arsenal.FamilyLabel((WeaponFamily)family).ToUpperInvariant(), "loadout-family__title"));
+            foreach (int slot in slots)
+            {
+                WeaponData data = weapon.DataOf(slot);
+                int chosen = slot;
+                var card = new Button(() => weapon.RequestWeapon(chosen));
+                card.AddToClassList("loadout-card");
+                // Le nom, et l'arme de profil à côté : rien d'autre (2026-10-27, demandé par l'utilisateur).
+                card.Add(NewLabel(data.weaponName, "loadout-card-name"));
+                card.Add(Portrait(data));
+                column.Add(card);
+                cards.Add(card);
+                cardSlots.Add(slot);
+            }
+            cardRow.Add(column);
         }
     }
 
@@ -142,15 +152,14 @@ public class LoadoutPanel : MonoBehaviour
         return label;
     }
 
-    /// <summary>Ce qu'il faut savoir d'une arme pour la choisir, en une ligne : dégâts au buste,
-    /// cadence, chargeur (celui du joueur : le chargeur grande capacité compte).</summary>
-    public static string Summary(WeaponData data) => Summary(data, data.magazineSize);
-
-    public static string Summary(WeaponData data, int magazineSize)
+    /// <summary>L'arme de profil, sans accessoire, dans sa finition d'origine (WeaponPortraits, rendus par le
+    /// menu) ; vide si le menu ne l'a pas rendue.</summary>
+    private static VisualElement Portrait(WeaponData data)
     {
-        string damage = data.PelletCount > 1 ? $"{data.damagePerHit:0} × {data.PelletCount} plombs" : $"{data.damagePerHit:0} dégâts";
-        string rate = $"{data.shotsPerSecond:0.#} coup{(data.shotsPerSecond >= 2f ? "s" : "")}/s";
-        string mode = data.isAutomatic ? "auto" : "coup par coup";
-        return $"{damage}\n{rate}, {mode}\n{magazineSize} au chargeur";
+        var portrait = new VisualElement { pickingMode = PickingMode.Ignore };
+        portrait.AddToClassList("loadout-card__portrait");
+        Texture2D image = WeaponPortraits.Of(data);
+        if (image != null) portrait.style.backgroundImage = new StyleBackground(image);
+        return portrait;
     }
 }

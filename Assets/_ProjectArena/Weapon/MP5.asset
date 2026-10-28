@@ -12,11 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe33acf964d9c684b81db736a07bf7db, type: 3}
   m_Name: MP5
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
-  weaponName: Fusil d'assaut
+  weaponName: FA-07
+  family: 0
+  role: "polyvalent, la r\xE9f\xE9rence"
   modelPrefab: {fileID: 6230278374698882433, guid: d318b24d85c7840488012a61a2bc6ba4, type: 3}
-  otherModels:
-  - {fileID: 3508787465862713915, guid: e6aa5e2e6b3e0ff45bc724f1e29e1bbf, type: 3}
-  - {fileID: 9060819362404915580, guid: 93f0ff89c2d73f84aaa7c42a797c46f3, type: 3}
   acceptedAttachments: 15
   acceptedSights: 7
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
@@ -72,199 +71,61 @@ MonoBehaviour:
   reloadEndSounds: []
   reloadEndDelay: 0.3
   reloadVolume: 0.8
+  heatPerShot: 0
+  heatCoolDelay: 0.3
+  heatCoolTime: 2.5
+  overheatVentDuration: 2.5
+  chargeTime: 0
+  unchargedDamage: 0.3
+  chargeSound: {fileID: 0}
+  chargeVolume: 0.7
   sprintToFireTime: 0.3
-  verticalRecoilPattern:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0.6
-      inSlope: 0.25
-      outSlope: 0.25
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 1
-      value: 0.85
-      inSlope: 0.22499996
-      outSlope: 0.22499996
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 2
-      value: 1.05
-      inSlope: 0.17500001
-      outSlope: 0.17500001
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 3
-      value: 1.2
-      inSlope: 0.125
-      outSlope: 0.125
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 4
-      value: 1.3
-      inSlope: 0.049999952
-      outSlope: 0.049999952
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 6
-      value: 1.3
-      inSlope: -0.024999997
-      outSlope: -0.024999997
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 9
-      value: 1.15
-      inSlope: -0.049999993
-      outSlope: -0.049999993
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 12
-      value: 1
-      inSlope: -0.049999993
-      outSlope: -0.049999993
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  horizontalRecoilPattern:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 1
-      value: 0
-      inSlope: 0.075
-      outSlope: 0.075
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 2
-      value: 0.15
-      inSlope: -0.125
-      outSlope: -0.125
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 3
-      value: -0.25
-      inSlope: 0.124999985
-      outSlope: 0.124999985
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 4
-      value: 0.4
-      inSlope: -0.125
-      outSlope: -0.125
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 5
-      value: -0.5
-      inSlope: 0.07499999
-      outSlope: 0.07499999
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 6
-      value: 0.55
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 7
-      value: -0.5
-      inSlope: -0.049999982
-      outSlope: -0.049999982
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 8
-      value: 0.45
-      inSlope: 0.049999982
-      outSlope: 0.049999982
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 9
-      value: -0.4
-      inSlope: -0.050000012
-      outSlope: -0.050000012
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 10
-      value: 0.35
-      inSlope: 0.2125
-      outSlope: 0.2125
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 12
-      value: -0.3
-      inSlope: -0.325
-      outSlope: -0.325
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
+  recoilPattern:
+  - {x: 0, y: 0.6}
+  - {x: 0, y: 0.85}
+  - {x: 0.15, y: 1.05}
+  - {x: -0.25, y: 1.2}
+  - {x: 0.4, y: 1.3}
+  - {x: -0.5, y: 1.3187499}
+  - {x: 0.55, y: 1.3}
+  - {x: -0.5, y: 1.261111}
+  - {x: 0.45, y: 1.2055556}
+  - {x: -0.4, y: 1.15}
+  - {x: 0.35, y: 1.1}
+  - {x: 0.15937498, y: 1.05}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
+  - {x: -0.3, y: 1}
   recoilPerShotDegrees: 1.2
   recoilRecoverySpeed: 6
   recoilResetDelay: 0.35

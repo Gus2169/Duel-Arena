@@ -1,0 +1,49 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bf7f3b6734a61ce4abc08a6b6e71afec, type: 3}
+  m_Name: RobotStyleMaterials
+  m_EditorClassIdentifier: DuelArena.Runtime::RobotStyleMaterials
+  pairs:
+  - game: {fileID: -840037777384891287, guid: 2162231c074380b40b19696ba0cdc536, type: 3}
+    cel: {fileID: 2100000, guid: a158f46b8d6b8f14082519ca18df27f9, type: 2}
+  - game: {fileID: -4565884009001823619, guid: 2162231c074380b40b19696ba0cdc536, type: 3}
+    cel: {fileID: 2100000, guid: 0575838a080f63243939489d27391c0c, type: 2}
+  - game: {fileID: 2100000, guid: 2b54c036e60efc94daee35c7ffc52e69, type: 2}
+    cel: {fileID: 2100000, guid: 4bbe4be0c3f444443abf8722fced7e48, type: 2}
+  - game: {fileID: 2100000, guid: accbc07bc7e3bb94095d0f7471c918f4, type: 2}
+    cel: {fileID: 2100000, guid: e70cc546f9e8cc6479b7772da51cf0a2, type: 2}
+  - game: {fileID: 2100000, guid: 1f3344e317df485429778816bc195036, type: 2}
+    cel: {fileID: 2100000, guid: bc2e48ae018e4c94ab8fde6fb2531f43, type: 2}
+  - game: {fileID: 2100000, guid: 873da257acd463b4eb7692cf3ae97ce9, type: 2}
+    cel: {fileID: 2100000, guid: 6836ca6d3bdffb8489d3eaf394044ec0, type: 2}
+  - game: {fileID: 2100000, guid: 3a3e39ceac271664e92b7314e958636a, type: 2}
+    cel: {fileID: 2100000, guid: a8134d5751bfc9f4089a17b918d60562, type: 2}
+  - game: {fileID: 2100000, guid: ea34241d50340c34189b8b4b7d9c9578, type: 2}
+    cel: {fileID: 2100000, guid: 6c0ccd3ff289e524abb27d94352cb1a7, type: 2}
+  - game: {fileID: 2100000, guid: c55f9a3c3772f6f429adb835b5e67c73, type: 2}
+    cel: {fileID: 2100000, guid: f9dbb6d70d40ca949b91f965836a6240, type: 2}
+  - game: {fileID: 2100000, guid: 113013260efc4ff4a830fd58e47f76a0, type: 2}
+    cel: {fileID: 2100000, guid: 82988638f3372ea46b109ee5936345e0, type: 2}
+  - game: {fileID: 2100000, guid: 5ae11f4868393eb45af7b39ab923d1fc, type: 2}
+    cel: {fileID: 2100000, guid: e26544c13e311bc4594aa9598ec2678f, type: 2}
+  - game: {fileID: 2100000, guid: 8aeba26c9d5c74a49b074a420db66392, type: 2}
+    cel: {fileID: 2100000, guid: ee47cb34e6868c4419c527b7981dddca, type: 2}
+  - game: {fileID: 2100000, guid: 23d590f6c48b5674989fc01e25fa3302, type: 2}
+    cel: {fileID: 2100000, guid: 48b03b4d8a7b90741af0635c5c831bd7, type: 2}
+  - game: {fileID: 2100000, guid: 4cf5463b6a8266240b5a24909cd83d25, type: 2}
+    cel: {fileID: 2100000, guid: f9178beaf97bc5044bca6b7055421e26, type: 2}
+  - game: {fileID: 2100000, guid: d19227b21ec17c04aa0428248f58903d, type: 2}
+    cel: {fileID: 2100000, guid: 08a84f562a6dc264cb58c3130f414b21, type: 2}
+  - game: {fileID: 2100000, guid: e2137158a86cb4b4ca4a5226475b9a97, type: 2}
+    cel: {fileID: 2100000, guid: 5c03b653ecdd7f541877904c7e43cc43, type: 2}
+  - game: {fileID: 2100000, guid: a1be1ed8ae7f8fa4c8341b1a59efb41a, type: 2}
+    cel: {fileID: 2100000, guid: cf7bd723c81adb544852351c4acae1d3, type: 2}

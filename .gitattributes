@@ -132,3 +132,9 @@
 *_Nettoye.asset filter=lfs diff=lfs merge=lfs -text
 # Et le maillage d'un robot remonté sur le squelette du joueur (2026-10-26, RobotChassisBuilder) : le CT-01.
 *_Monte.asset filter=lfs diff=lfs merge=lfs -text
+# Les maillages de l'habillage d'une arène, construits par script (2026-10-27, ArenaDecorBuilder) : refaits à
+# chaque habillage.
+*_Decor.asset filter=lfs diff=lfs merge=lfs -text
+# La lumière cuite d'une scène (2026-10-27) : LightingData.asset est un fichier BINAIRE malgré son extension.
+# La règle *.asset plus haut le prendrait pour du texte et changerait ses fins de ligne : il serait corrompu.
+LightingData.asset filter=lfs diff=lfs merge=lfs -text

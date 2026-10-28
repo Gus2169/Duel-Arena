@@ -12,11 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe33acf964d9c684b81db736a07bf7db, type: 3}
   m_Name: Arme_Pompe
   m_EditorClassIdentifier: DuelArena.Runtime::WeaponData
-  weaponName: "Fusil \xE0 pompe"
+  weaponName: FAP-03
+  family: 2
+  role: "\xE0 pompe, gerbe de 8 plombs, la r\xE9f\xE9rence"
   modelPrefab: {fileID: 634769849560242409, guid: 4636e0e53e39c894cb9ffd81ad3e0c9f, type: 3}
-  otherModels:
-  - {fileID: 2267903643973397799, guid: f0981ead843020e4f8039258feac85f2, type: 3}
-  - {fileID: 6432783213821724603, guid: bd92be7c8e9d58d4ea0ab81b9b8b38a0, type: 3}
   acceptedAttachments: 15
   acceptedSights: 7
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
@@ -77,55 +76,17 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 2c4f1965eac140d45977f056e17116b5, type: 3}
   reloadEndDelay: 0.25
   reloadVolume: 0.75
+  heatPerShot: 0
+  heatCoolDelay: 0.3
+  heatCoolTime: 2.5
+  overheatVentDuration: 2.5
+  chargeTime: 0
+  unchargedDamage: 0.3
+  chargeSound: {fileID: 0}
+  chargeVolume: 0.7
   sprintToFireTime: 0.3
-  verticalRecoilPattern:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 12
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  horizontalRecoilPattern:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 12
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
+  recoilPattern:
+  - {x: 0, y: 1}
   recoilPerShotDegrees: 4.5
   recoilRecoverySpeed: 9
   recoilResetDelay: 0.35

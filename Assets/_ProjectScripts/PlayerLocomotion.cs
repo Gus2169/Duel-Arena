@@ -78,6 +78,7 @@ public class PlayerLocomotion : NetworkBehaviour
         public float aimPitch;   // tangage du regard, en degrés (+ = vers le bas, comme la caméra)
         public byte flags;       // DisplayFlags
         public byte teleportId;  // change à chaque téléportation : l'interpolation repart de zéro
+        public byte charge;      // la charge du tir (0 à 255 pour 0 à 1, le FX-2) : l'adversaire la voit et l'entend
     }
 
     [System.Flags]
@@ -653,19 +654,24 @@ public class PlayerLocomotion : NetworkBehaviour
 
     /// <summary>
     /// Ce joueur est-il spectateur ? Variable réseau écrite par le serveur : juste partout. Un spectateur
-    /// se déplace comme un duelliste (même prédiction, même réconciliation), à mains nues : ni visée,
-    /// ni tir, ni lean, ni franchissement, ni position allongée (filtrés chez le joueur ET par le
-    /// serveur, SpectatorInputFilter). Les phases de manche ne le gèlent pas ; seul un étourdissement
-    /// l'arrête (SpectatorController).
+    /// se déplace comme un duelliste (même prédiction, même réconciliation), à mains nues : ni tir, ni
+    /// lean, ni franchissement, ni position allongée (filtrés chez le joueur ET par le serveur,
+    /// SpectatorInputFilter). Sa visée est sa GARDE (2026-10-27, SpectatorController) : elle voyage,
+    /// se simule (pas de sprint, l'allure de la visée), se publie (DisplayGuard) et se rembobine
+    /// (HitboxPose.guard) comme la visée d'un duelliste. Les phases de manche ne le gèlent pas ; seul un
+    /// étourdissement l'arrête.
     /// </summary>
     public bool IsSpectator => matchState != null && matchState.IsSpectator;
 
-    /// <summary>Ce qu'un spectateur envoie de ses commandes : ni visée, ni tir, ni lean, ni
-    /// franchissement. Appliquée chez le joueur avant le snapshot, et par le serveur à l'arrivée : un
-    /// client modifié n'y gagne rien. Fonction pure, testée.</summary>
-    public static void SpectatorInputFilter(ref bool aimHeld, ref bool fireHeld, ref bool firePressed, ref int leanState, ref bool jumpPressed)
+    /// <summary>Un spectateur en garde, tel que cette machine le montre : sa simulation chez qui la fait
+    /// tourner, la pose publiée ailleurs (comme DisplayAiming, dont elle prend la place).</summary>
+    public bool DisplayGuard => IsSpectator && DisplayAiming;
+
+    /// <summary>Ce qu'un spectateur envoie de ses commandes : ni tir, ni lean, ni franchissement (la
+    /// visée passe : c'est sa garde). Appliquée chez le joueur avant le snapshot, et par le serveur à
+    /// l'arrivée : un client modifié n'y gagne rien. Fonction pure, testée.</summary>
+    public static void SpectatorInputFilter(ref bool fireHeld, ref bool firePressed, ref int leanState, ref bool jumpPressed)
     {
-        aimHeld = false;
         fireHeld = false;
         firePressed = false;
         leanState = 0;
@@ -674,7 +680,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private static MovementInputSnapshot FilterForSpectator(MovementInputSnapshot snap)
     {
-        SpectatorInputFilter(ref snap.aimHeld, ref snap.fireHeld, ref snap.firePressedThisFrame, ref snap.leanState, ref snap.jumpPressed);
+        SpectatorInputFilter(ref snap.fireHeld, ref snap.firePressedThisFrame, ref snap.leanState, ref snap.jumpPressed);
         snap.weaponSlot = 0;
         return snap;
     }
@@ -720,6 +726,39 @@ public class PlayerLocomotion : NetworkBehaviour
     public static void TrackAim(ref double lastUnaimed, double clock, bool aiming)
     {
         if (!aiming) lastUnaimed = clock;
+    }
+
+    // La charge d'un tir (2026-10-26, le FX-2, GDD § 6) : comptée sur les inputs comme l'épaulement, par
+    // le joueur sur ceux qu'il envoie et par le serveur sur ceux qu'il reçoit (ChargeTracker). Elle ne
+    // monte que pendant les inputs où la gâchette est tenue et où l'arme pourrait tirer (WeaponController :
+    // LocalChargeAllowed, ServerChargeAllowed).
+    private readonly ChargeTracker localCharge = new ChargeTracker();
+    private readonly ChargeTracker serverCharge = new ChargeTracker();
+
+    /// <summary>Chez le propriétaire : la charge (s) de son dernier input, celle qu'un tir emporterait.</summary>
+    public float LocalChargeSeconds => localCharge.Seconds();
+
+    /// <summary>Chez le propriétaire : son tir vient de partir, il emporte la charge.</summary>
+    public void ConsumeLocalCharge() => localCharge.ConsumeLatest();
+
+    /// <summary>Serveur : la charge (s) qu'emporte le tir annoncé à l'input `claimed`, jugé sur l'input de
+    /// référence `reference` (ChargeTracker.SecondsFor).</summary>
+    public float ServerChargeSecondsFor(int claimed, int reference) => serverCharge.SecondsFor(claimed, reference);
+
+    /// <summary>Serveur : ce tir est parti, il emporte sa charge.</summary>
+    public void ServerConsumeCharge(int claimed, int reference) => serverCharge.Consume(claimed, reference);
+
+    /// <summary>La charge (0 à 1) à AFFICHER, gâchette tenue : celle des inputs chez qui les compte (le
+    /// tireur, le serveur), la pose publiée chez un spectateur ; 0 sans charge en cours, ou avec une arme
+    /// qui ne se charge pas. Catégorie C réseautée : l'éclat au canon, le son, la jauge du HUD.</summary>
+    public float DisplayCharge
+    {
+        get
+        {
+            if (!Simulates) return displayedPose.charge / 255f;
+            if (weapon == null) return 0f;
+            return !IsSpawned || IsOwner ? localCharge.Displayed(weapon.LocalChargeTime) : serverCharge.Displayed(weapon.ServerChargeTime);
+        }
     }
 
     private float verticalVelocity;
@@ -1151,6 +1190,7 @@ public class PlayerLocomotion : NetworkBehaviour
         public float yaw;
         public float leanOffset;
         public StanceState stance; // avec sa transition : la forme exacte se recalcule à l'instant visé
+        public bool guard;         // un spectateur en garde (2026-10-27) : le coup de poing la juge à cet instant
     }
 
     // Côté serveur : historique glissant, alimenté à chaque tick où le serveur fait autorité sur
@@ -1446,6 +1486,7 @@ public class PlayerLocomotion : NetworkBehaviour
             yaw = transform.eulerAngles.y,
             leanOffset = LeanOffset,
             stance = networkStance.Value,
+            guard = IsSpectator && IsAiming,
         });
 
         // Une liste plutôt qu'une file : on a besoin d'un accès indexé pour interpoler entre deux poses.
@@ -1562,6 +1603,8 @@ public class PlayerLocomotion : NetworkBehaviour
                 // la transition se recalcule à l'instant visé (ApplyHitboxAt). On prend donc celle
                 // qui était en vigueur à cet instant : la nouvelle si le changement le précède.
                 stance = b.stance.changedAt <= targetTime ? b.stance : a.stance,
+                // Comme les drapeaux de la pose qu'affiche le frappeur : ceux du début de l'intervalle.
+                guard = a.guard,
             };
             return true;
         }
@@ -1684,10 +1727,15 @@ public class PlayerLocomotion : NetworkBehaviour
             int sequence = nextInputSequence++;
             ServerLastReceivedInput = sequence;
             bool sprintInput = WantsToSprint(snap.sprintHeld, snap.move, snap.aimHeld, snap.fireHeld);
+            double localClockBefore = localInputClock, serverClockBefore = serverInputClock;
             AdvanceInputClock(ref localInputClock, ref localLastSprintClock, dt, sprintInput);
             AdvanceInputClock(ref serverInputClock, ref serverLastSprintClock, dt, sprintInput);
             TrackAim(ref localLastUnaimedClock, localInputClock, snap.aimHeld);
             TrackAim(ref serverLastUnaimedClock, serverInputClock, snap.aimHeld);
+            // La charge du Host se juge une fois, sur le chargeur du serveur : c'est lui qui juge ses tirs.
+            bool charging = weapon != null && weapon.ServerChargeAllowed(snap.fireHeld);
+            localCharge.Record(sequence, localClockBefore, localInputClock, charging);
+            serverCharge.Record(sequence, serverClockBefore, serverInputClock, charging);
             ServerRecordReceivedInput(sequence);
 
             ServerCheckAutoStand(snap);
@@ -1794,10 +1842,11 @@ public class PlayerLocomotion : NetworkBehaviour
         // rechargement (GateSprint). Décidé ici, chez le propriétaire, et envoyé tel quel : Move()
         // reste une fonction du seul snapshot. Le serveur vérifie de son côté (ServerSprintedSince).
         // Un spectateur n'a ni arme ni taser : son clic gauche frappe ou lance (SpectatorController), et
-        // c'est le coup, l'élan d'un lancer ou l'étourdissement qui arrêtent son sprint.
+        // c'est le coup, l'élan d'un lancer, la garde ou l'étourdissement qui arrêtent son sprint.
         bool spectating = IsSpectator;
+        bool guard = spectating && spectator != null && spectator.LocalGuardHeld;
         bool intent = spectating
-            ? WantsToSprint(input.SprintHeld, input.MoveInput, false, false)
+            ? WantsToSprint(input.SprintHeld, input.MoveInput, guard, false)
             : WantsToSprint(input.SprintHeld, input.MoveInput, input.AimHeld, input.FireHeld);
         // Un rechargement en attente (sortie de sprint, franchissement) arrête le sprint comme un
         // rechargement en cours : il partira dès que l'arme sera remontée.
@@ -1836,7 +1885,8 @@ public class PlayerLocomotion : NetworkBehaviour
             lookX = input.LookInput.x * LookScale * GameSettings.SensitivityMultiplier,
             sprintHeld = input.SprintHeld && sprintAllowed,
             sneakHeld = input.SneakHeld,
-            aimHeld = GateAim(input.AimHeld, !spectating && weapon != null && weapon.IsReloading),
+            // Un spectateur n'épaule rien : son clic droit lève sa garde, quand ses poings sont sortis.
+            aimHeld = spectating ? guard : GateAim(input.AimHeld, weapon != null && weapon.IsReloading),
             aimPitch = cameraLook != null ? cameraLook.Pitch : 0f,
             fireHeld = input.FireHeld,
             firePressedThisFrame = input.FirePressedThisFrame,
@@ -1885,9 +1935,11 @@ public class PlayerLocomotion : NetworkBehaviour
         });
 
         QueueInputForServer(sequence, snap, dt);
+        double clockBefore = localInputClock;
         AdvanceInputClock(ref localInputClock, ref localLastSprintClock, dt,
                           WantsToSprint(snap.sprintHeld, snap.move, snap.aimHeld, snap.fireHeld));
         TrackAim(ref localLastUnaimedClock, localInputClock, snap.aimHeld);
+        localCharge.Record(sequence, clockBefore, localInputClock, weapon != null && weapon.LocalChargeAllowed(snap.fireHeld));
 
 #if UNITY_EDITOR
         // Triche simulée : on renvoie le MÊME input plusieurs fois, avec des numéros de séquence
@@ -1963,8 +2015,9 @@ public class PlayerLocomotion : NetworkBehaviour
         // (Unpack) : au-delà, le buste se couchait presque à l'horizontale, emportant la surface
         // touchable avec lui.
         if (!IsValidInput(snap.move, snap.lookX, wire.deltaTime)) return;
-        // Un spectateur n'a ni visée, ni tir, ni lean, ni franchissement : le serveur l'impose, quoi que
-        // le client envoie (2026-10-13). Le joueur honnête a déjà filtré de même (ReadLocalInput).
+        // Un spectateur n'a ni tir, ni lean, ni franchissement : le serveur l'impose, quoi que le client
+        // envoie (2026-10-13). Le joueur honnête a déjà filtré de même (ReadLocalInput). Sa visée, c'est sa
+        // garde : elle passe, et le serveur ne la croit qu'avec les poings sortis (SpectatorController).
         if (IsSpectator) snap = FilterForSpectator(snap);
         snap.aimPitch = SanitizeAimPitch(snap.aimPitch);
 
@@ -1973,9 +2026,13 @@ public class PlayerLocomotion : NetworkBehaviour
         ServerLastReceivedInput = Mathf.Max(ServerLastReceivedInput, sequence);
         // L'horloge de la sortie de sprint avance à la RÉCEPTION, dans l'ordre des numéros : c'est
         // ce que le joueur avait envoyé quand il a tiré ou rechargé (voir TimeSinceSprint).
+        double clockBefore = serverInputClock;
         AdvanceInputClock(ref serverInputClock, ref serverLastSprintClock, wire.deltaTime,
                           WantsToSprint(snap.sprintHeld, snap.move, snap.aimHeld, snap.fireHeld));
         TrackAim(ref serverLastUnaimedClock, serverInputClock, snap.aimHeld);
+        // La charge, jugée sur le chargeur du serveur à la réception (avec la marge du rechargement : elle
+        // profite au tireur, jamais au point de charger pendant une vidange).
+        serverCharge.Record(sequence, clockBefore, serverInputClock, weapon != null && weapon.ServerChargeAllowed(snap.fireHeld));
         ServerRecordReceivedInput(sequence);
 
         // Garde-fou anti-flood (mémoire) : sans plafond, un client qui inonde le serveur d'inputs fait
@@ -2313,6 +2370,8 @@ public class PlayerLocomotion : NetworkBehaviour
         if (IsVaulting) flags |= DisplayFlags.Vaulting;
         if (IsAiming) flags |= DisplayFlags.Aiming;
 
+        float charge = weapon != null ? serverCharge.Displayed(weapon.ServerChargeTime) : 0f;
+
         return new DisplayPose
         {
             time = ServerClock,
@@ -2322,6 +2381,7 @@ public class PlayerLocomotion : NetworkBehaviour
             aimPitch = AimPitch,
             flags = (byte)flags,
             teleportId = serverTeleportId,
+            charge = (byte)Mathf.RoundToInt(charge * 255f),
         };
     }
 
@@ -2404,6 +2464,7 @@ public class PlayerLocomotion : NetworkBehaviour
                 aimPitch = Mathf.Lerp(a.aimPitch, b.aimPitch, t),
                 flags = a.flags,
                 teleportId = b.teleportId,
+                charge = (byte)Mathf.RoundToInt(Mathf.Lerp(a.charge, b.charge, t)),
             };
         }
 

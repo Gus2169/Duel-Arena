@@ -107,9 +107,6 @@ def capot(a):
                     dessous="Polymere")
     f = kit.loft(pc, kit.sections_av(CAPOT), "Peinture", mats_cotes=mats)
     kit.chanfreiner(pc, 0.0015, f)
-    for av in (0.345, 0.370, 0.395, 0.420, 0.445):    # nervures sous la main gauche
-        f = kit.boite(pc, av, av + 0.008, 0.0575, 0.0625, -0.016, 0.016, "Polymere")
-        kit.chanfreiner(pc, 0.0007, f)
     for x0, x1 in ((0.0300, 0.0334), (-0.0334, -0.0300)):   # panneaux de céramique sur les flancs
         f = kit.prisme(pc, [(0.300, 0.082), (0.322, 0.075), (0.500, 0.077), (0.522, 0.093), (0.505, 0.112),
                             (0.310, 0.112)], x0, x1, "Ceramique")
@@ -120,7 +117,7 @@ def capot(a):
     fentes = [(0.538, 0.548), (0.554, 0.564), (0.570, 0.580)]
     for av0, av1 in fentes:                                                     # évents du dessus
         kit.boite(cp, av0, av1, 0.155, 0.180, -0.0125, 0.0125)
-    a.couper(ob, cp, auto=True)   # capot, nervures et panneaux se chevauchent
+    a.couper(ob, cp, auto=True)   # capot et panneaux se chevauchent
     ca.coeur(a, 0.392, 0.508, H_AXE, r=0.0060, bobines=4, r_bobine=0.0128)
     pc = a.piece("Lueurs_Capot", "Lueur")
     ca.lueurs_dessus(pc, fentes, 0.1553, 0.0120)
@@ -148,7 +145,9 @@ def montages(a):
     pc = a.piece("Montages", "Peinture")
     ca.plaque_montage(pc, 0.000, 0.200, P(0.000, 0.1745), "haut", largeur=0.022, ep=0.004, encoches=8)
     ca.plaque_montage(pc, 0.300, 0.370, P(0.300, 0.120, -0.0318), "droite", largeur=0.020, encoches=3)
-    ca.plaque_montage(pc, 0.470, 0.530, P(0.470, 0.0662), "bas", largeur=0.018, encoches=3)
+    # dessous, à la place des nervures sous la main gauche : une poignée montée à 0,50 m, 12 cm devant la main, la
+    # manquait d'un centimètre, bras tendu (2026-10-27)
+    ca.plaque_montage(pc, 0.338, 0.462, P(0.338, 0.0640), "bas", largeur=0.018, encoches=6)
     a.objet(pc)
 
 
@@ -224,7 +223,7 @@ def construire(a):
     a.accroches({
         "Viseur": P(0.100, 0.1785),
         "Laser": P(0.335, 0.120, -0.0343),
-        "Poignee": P(0.500, 0.0637),
+        "Poignee": P(0.420, 0.0615),                # plaque du dessous, 4 cm devant la main gauche
         "Chargeur": P(0.210, 0.026),
         "Crosse": P(-0.100, 0.115),
     })

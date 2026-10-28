@@ -64,6 +64,7 @@ public class PlayerInputReader : MonoBehaviour
         "LMB" => "Clic gauche",
         "RMB" => "Clic droit",
         "MMB" => "Clic molette",
+        "Scroll Up" or "Scroll Down" or "Scroll Up/Down" or "Scroll Up | Scroll Down" => "Molette",
         _ => label,
     };
 
@@ -72,26 +73,16 @@ public class PlayerInputReader : MonoBehaviour
     /// le rechargement.</summary>
     public bool InteractPressedThisFrame => controls != null && controls.Gameplay.Interact.WasPressedThisFrame();
 
+    /// <summary>Un cran de molette, dans un sens ou dans l'autre, pendant cette frame (2026-10-27) : un
+    /// spectateur range l'objet qu'il tient (ses poings sortent) ou le ressort. Même lecture directe que
+    /// le rechargement.</summary>
+    public bool SwapItemPressedThisFrame => controls != null && controls.Gameplay.SwapItem.WasPressedThisFrame();
+
     /// <summary>Appui sur la gâchette pendant cette frame, lu directement dans l'Input System : c'est
     /// lui que lit une arme au coup par coup (2026-10-11). FirePressedThisFrame, posé par callback et
     /// remis à zéro par PlayerLocomotion en fin d'Update, pouvait être consommé avant que l'arme ne
     /// le lise (dette n° 32) ; il ne sert plus qu'au snapshot de déplacement.</summary>
     public bool FireWasPressedThisFrame => controls != null && controls.Gameplay.Fire.WasPressedThisFrame();
-
-    /// <summary>Arme demandée pendant cette frame (touches 1 à 4, 2026-10-11) : 0 à 3, ou -1. Même
-    /// lecture directe que le rechargement.</summary>
-    public int WeaponSlotPressedThisFrame
-    {
-        get
-        {
-            if (controls == null) return -1;
-            if (controls.Gameplay.Weapon1.WasPressedThisFrame()) return 0;
-            if (controls.Gameplay.Weapon2.WasPressedThisFrame()) return 1;
-            if (controls.Gameplay.Weapon3.WasPressedThisFrame()) return 2;
-            if (controls.Gameplay.Weapon4.WasPressedThisFrame()) return 3;
-            return -1;
-        }
-    }
 
     private void Awake()
     {
@@ -142,9 +133,8 @@ public class PlayerInputReader : MonoBehaviour
     {
         /// <summary>Toutes les commandes : le joueur joue.</summary>
         Gameplay,
-        /// <summary>Seulement les touches d'arme (1 à 4), dans le panneau de préparation.</summary>
-        WeaponChoice,
-        /// <summary>Aucune : un menu a la main (Échap, écran de fin).</summary>
+        /// <summary>Aucune : un écran a la main (Échap, préparation, écran de fin). Les touches 1 à 4 de la
+        /// préparation ont disparu avec la refonte des armes (2026-10-26) : on y choisit à la souris.</summary>
         None,
     }
 
@@ -154,8 +144,7 @@ public class PlayerInputReader : MonoBehaviour
 
     /// <summary>
     /// Coupe ou rend les commandes de jeu (GameHud, selon les écrans ouverts). Coupées, elles lisent
-    /// zéro : le joueur s'arrête et ne tire plus pendant qu'il clique dans un menu. Pendant la
-    /// préparation, seules les touches d'arme restent, pour choisir au clavier.
+    /// zéro : le joueur s'arrête et ne tire plus pendant qu'il clique dans un menu.
     /// </summary>
     public void SetMode(Mode value)
     {
@@ -173,13 +162,6 @@ public class PlayerInputReader : MonoBehaviour
             return;
         }
         controls.Gameplay.Disable();
-        if (value == Mode.WeaponChoice)
-        {
-            controls.Gameplay.Weapon1.Enable();
-            controls.Gameplay.Weapon2.Enable();
-            controls.Gameplay.Weapon3.Enable();
-            controls.Gameplay.Weapon4.Enable();
-        }
     }
 
 #if UNITY_EDITOR
@@ -205,6 +187,28 @@ public class PlayerInputReader : MonoBehaviour
     /// WeaponController.AutopilotAimAtOpponent, il fait tenir le rôle du tireur à une instance
     /// que personne ne pilote (le clone de Multiplayer Play Mode).</summary>
     public static bool AutopilotFire;
+
+    /// <summary>Tir chargé de test (le FX-2, 2026-10-26) — Editor uniquement : avec AutopilotFire, la
+    /// gâchette est tenue tour à tour pendant chacune de ces durées (s), puis lâchée
+    /// AutopilotChargeGap secondes. Vide : tenue sans fin.</summary>
+    public static float[] AutopilotChargeHolds;
+    public static float AutopilotChargeGap = 0.6f;
+
+    /// <summary>La gâchette du tir chargé de test est-elle tenue à l'instant `time` ? Fonction pure.</summary>
+    public static bool AutopilotChargeHeld(float time, float[] holds, float gap)
+    {
+        if (holds == null || holds.Length == 0) return true;
+        float cycle = 0f;
+        foreach (float hold in holds) cycle += hold + gap;
+        float t = Mathf.Repeat(time, Mathf.Max(0.01f, cycle));
+        foreach (float hold in holds)
+        {
+            if (t < hold) return true;
+            t -= hold + gap;
+            if (t < 0f) return false;
+        }
+        return false;
+    }
 
     /// <summary>Visée maintenue de test — Editor uniquement (vérifier la vue subjective en visée, et
     /// la direction du buste, va-et-vient compris).</summary>
@@ -350,7 +354,7 @@ public class PlayerInputReader : MonoBehaviour
         AimHeld = controls.Gameplay.Aim.IsPressed();
         FireHeld = controls.Gameplay.Fire.IsPressed();
 #if UNITY_EDITOR
-        if (AutopilotFire) FireHeld = true;
+        if (AutopilotFire) FireHeld = AutopilotChargeHeld(Time.time, AutopilotChargeHolds, AutopilotChargeGap);
         if (AutopilotAim) AimHeld = true;
         if (autopilotLookActive) LookInput = AutopilotLookDelta();
         if (autopilotMoveActive) MoveInput = autopilotMove;

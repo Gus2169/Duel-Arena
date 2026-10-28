@@ -142,6 +142,58 @@
     flex-grow: 1;
 }
 
+/* Une case à cocher (2026-10-27) : au milieu de la place d'un sélecteur, là où se lit sa valeur. */
+.opt-row__check-cell {
+    flex-grow: 1;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Appliquer ou annuler ce qui a changé (2026-10-27). */
+.opt-footer {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top-width: 1px;
+    border-color: rgba(150, 170, 190, 0.18);
+}
+
+.opt-footer__note {
+    flex-grow: 1;
+    flex-shrink: 1;
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Medium.ttf");
+    font-size: 14px;
+    color: var(--yellow);
+    white-space: normal;
+    margin: 0 16px 0 0;
+    padding: 0;
+}
+
+.opt-footer__button {
+    width: 190px;
+    height: 44px;
+    margin-left: 12px;
+}
+
+.opt-footer__button > .da-btn__label {
+    font-size: 15px;
+}
+
+/* La fenêtre qui propose d'appliquer en sortant : par-dessus tout le panneau. */
+.opt-leave {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(4, 6, 9, 0.82);
+}
+
 .opt-row__value {
     width: 76px;
     flex-shrink: 0;

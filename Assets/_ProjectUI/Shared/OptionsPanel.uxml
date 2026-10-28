@@ -1,8 +1,10 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:da="DuelArena.UI">
-    <!-- Le panneau des Options, partagé par le menu principal et le menu d'Échap en partie (2026-10-12),
-         refait le 2026-10-17 d'après la maquette de l'utilisateur : onglets verticaux, curseurs avec leur
-         valeur, sélecteurs « ‹ Non › ». OptionsController le retrouve par les noms ci-dessous, où qu'il soit.
-         Pas de bouton Appliquer : chaque réglage s'applique aussitôt. -->
+    <!-- Le panneau des Options, partagé par le menu principal, le menu d'Échap en partie et celui du stand
+         (2026-10-12), refait le 2026-10-17 d'après la maquette de l'utilisateur : onglets verticaux, curseurs
+         avec leur valeur, sélecteurs « ‹ › », cases à cocher pour ce qui se dit oui ou non (2026-10-27).
+         OptionsController le retrouve par les noms ci-dessous, où qu'il soit. Depuis le 2026-10-27 (demandé
+         par l'utilisateur), rien ne s'applique avant le bouton Appliquer ; en sortant avec des réglages en
+         attente, une fenêtre propose de les appliquer ou de les ignorer. -->
     <ui:Style src="Theme.uss" />
     <ui:Style src="OptionsPanel.uss" />
     <ui:VisualElement class="opt-panel da-vars da-font">
@@ -47,7 +49,9 @@
                     </ui:VisualElement>
                     <ui:VisualElement class="opt-row">
                         <ui:Label class="opt-row__label" text="Inversion de l'axe vertical" />
-                        <da:OptionCycler name="invertYCycler" class="opt-row__cycler" choices-text="Non;Oui" loop="true" />
+                        <ui:VisualElement class="opt-row__check-cell">
+                            <ui:Toggle name="invertYToggle" class="da-check" />
+                        </ui:VisualElement>
                         <ui:VisualElement class="opt-row__value" />
                     </ui:VisualElement>
                 </ui:VisualElement>
@@ -75,17 +79,26 @@
                     </ui:VisualElement>
                     <ui:VisualElement class="opt-row">
                         <ui:Label class="opt-row__label" text="Plein écran" />
-                        <da:OptionCycler name="fullscreenCycler" class="opt-row__cycler" choices-text="Non;Oui" loop="true" />
+                        <ui:VisualElement class="opt-row__check-cell">
+                            <ui:Toggle name="fullscreenToggle" class="da-check" />
+                        </ui:VisualElement>
                         <ui:VisualElement class="opt-row__value" />
                     </ui:VisualElement>
                     <ui:VisualElement class="opt-row">
                         <ui:Label class="opt-row__label" text="Synchronisation verticale" />
-                        <da:OptionCycler name="vsyncCycler" class="opt-row__cycler" choices-text="Non;Oui" loop="true" />
+                        <ui:VisualElement class="opt-row__check-cell">
+                            <ui:Toggle name="vsyncToggle" class="da-check" />
+                        </ui:VisualElement>
                         <ui:VisualElement class="opt-row__value" />
                     </ui:VisualElement>
                     <ui:VisualElement class="opt-row">
                         <ui:Label class="opt-row__label" text="Limite d'images par seconde" />
                         <da:OptionCycler name="frameRateCycler" class="opt-row__cycler" />
+                        <ui:VisualElement class="opt-row__value" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="opt-row">
+                        <ui:Label class="opt-row__label" text="Rendu" />
+                        <da:OptionCycler name="renderStyleCycler" class="opt-row__cycler" choices-text="Low poly propre;Cel-shading;Les deux mêlés" loop="true" />
                         <ui:VisualElement class="opt-row__value" />
                     </ui:VisualElement>
                 </ui:VisualElement>
@@ -100,6 +113,39 @@
                         </ui:Button>
                     </ui:VisualElement>
                     <ui:ScrollView name="bindRowScroll" class="opt-binds" horizontal-scroller-visibility="Hidden" />
+                </ui:VisualElement>
+
+                <!-- Appliquer ce qui a changé, ou revenir aux réglages en vigueur (2026-10-27) -->
+                <ui:VisualElement class="opt-footer">
+                    <ui:Label name="optionsPendingLabel" class="opt-footer__note" text="" />
+                    <ui:Button name="optionsRevertButton" class="da-btn opt-footer__button ui-back" focusable="false">
+                        <da:SlantBox class="slant-bg" />
+                        <ui:Label class="da-btn__label" text="ANNULER" picking-mode="Ignore" />
+                    </ui:Button>
+                    <ui:Button name="optionsApplyButton" class="da-btn da-btn--primary opt-footer__button ui-confirm" focusable="false">
+                        <da:SlantBox class="slant-bg" />
+                        <ui:Label class="da-btn__label" text="APPLIQUER" picking-mode="Ignore" />
+                    </ui:Button>
+                </ui:VisualElement>
+            </da:SlantBox>
+        </ui:VisualElement>
+
+        <!-- En sortant avec des réglages en attente : les appliquer, ou les ignorer -->
+        <ui:VisualElement name="optionsLeaveModal" class="opt-leave hidden">
+            <da:SlantBox class="modal">
+                <da:ArenaLogo class="modal__logo" />
+                <ui:Label class="modal__title" text="APPLIQUER LES RÉGLAGES ?" />
+                <ui:Label class="modal__text" text="Des réglages ont changé sans être appliqués." />
+                <ui:VisualElement class="modal__buttons">
+                    <ui:Button name="optionsLeaveDiscardButton" class="da-btn ui-back" focusable="false">
+                        <da:SlantBox class="slant-bg" />
+                        <ui:Label class="da-btn__label" text="IGNORER" picking-mode="Ignore" />
+                    </ui:Button>
+                    <ui:VisualElement class="modal__gap" />
+                    <ui:Button name="optionsLeaveApplyButton" class="da-btn da-btn--primary ui-confirm" focusable="false">
+                        <da:SlantBox class="slant-bg" />
+                        <ui:Label class="da-btn__label" text="APPLIQUER" picking-mode="Ignore" />
+                    </ui:Button>
                 </ui:VisualElement>
             </da:SlantBox>
         </ui:VisualElement>

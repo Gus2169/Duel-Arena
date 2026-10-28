@@ -8,12 +8,18 @@ using UnityEngine;
 /// s'accroupir) reste celui de PlayerLocomotion, prédit et réconcilié comme celui d'un duelliste ; le
 /// rôle lui retire le reste (ni arme, ni lean, ni franchissement, ni allongé).
 ///
-/// - SE BATTRE : un coup de poing (V, ou clic gauche les mains vides). Il étourdit un autre spectateur
+/// - SE BATTRE : des coups de poing (clic gauche les poings sortis, ou V). Relancés avant la fin du
+///   geste, ils s'enchaînent gauche puis droite (2026-10-27). Un coup étourdit un autre spectateur
 ///   quelques secondes, qui lâche ce qu'il tient : on peut le lui voler. Il fend aussi les blocs de la
 ///   tribune, d'où l'on arrache des cailloux.
+/// - PARER (clic droit maintenu, les poings sortis, 2026-10-27) : la garde arrête de face les coups de
+///   poing et les cailloux. On n'y frappe pas, on n'y court pas, et on y marche comme un duelliste qui
+///   vise : pour un spectateur, la garde prend la place de la visée (PlayerLocomotion).
 /// - RAMASSER (F) : un caillou ou du matériel posé devant soi. Une seule chose en main.
-/// - LANCER (clic gauche maintenu, puis relâché) : plus l'élan est long, plus ça part loin. Le geste
-///   est imparfait, sans aide à la visée (GDD § 3). Clic droit annule l'élan.
+/// - LA MOLETTE range l'objet tenu (les poings sont sortis) ou le ressort (2026-10-27).
+/// - LANCER (l'objet en main, 2026-10-27, demandé par l'utilisateur) : le clic droit maintenu vise, le bras
+///   armé, et montre au seul lanceur la trajectoire de l'objet jusqu'à ce qu'il touche le décor
+///   (ThrowArcPreview) ; le clic gauche lance, à pleine force. Relâcher le clic droit renonce.
 /// - ÊTRE ÉTOURDI : on ne bouge plus et on ne fait plus rien pendant quelques secondes, puis on est
 ///   immunisé un instant, pour ne pas rester au sol sous les coups.
 ///
@@ -24,7 +30,8 @@ using UnityEngine;
 /// étincelles et la vue subjective sont cosmétiques (catégorie C).
 ///
 /// Le même composant reçoit, chez un DUELLISTE, ce que lui font les spectateurs : un caillou qui le
-/// touche secoue sa visée (tranché par l'utilisateur le 2026-10-13 : aucun dégât).
+/// touche secoue sa visée (tranché par l'utilisateur le 2026-10-13 : aucun dégât), et sa vue montre d'où
+/// il est parti (2026-10-27, HitIndicatorHud), comme celle d'un spectateur que sa garde n'a pas protégé.
 /// </summary>
 [DisallowMultipleComponent]
 public class SpectatorController : NetworkBehaviour
@@ -38,6 +45,8 @@ public class SpectatorController : NetworkBehaviour
         public double stunImmuneUntil;
         public ArenaItemKind carried;
         public byte carriedVariant;
+        /// <summary>L'objet tenu est rangé, les poings sont sortis (la molette, 2026-10-27).</summary>
+        public bool stowed;
     }
 
     [Header("Coup de poing (à juger en jouant)")]
@@ -50,6 +59,15 @@ public class SpectatorController : NetworkBehaviour
     [SerializeField] private float punchRadius = 0.3f;
     [Tooltip("Étourdissement d'un coup de poing (s) : « quelques secondes » (demande de l'utilisateur).")]
     [SerializeField] private float punchStunDuration = 2.5f;
+    [Tooltip("Après la fin d'un coup, le suivant part encore de l'autre poing pendant ce temps (s) ; au-delà, l'enchaînement repart du gauche.")]
+    [SerializeField] private float comboWindow = 0.35f;
+
+    [Header("Garde (à juger en jouant)")]
+    [Tooltip("Demi-angle (degrés) autour de l'avant du robot dans lequel la garde arrête un coup de poing ou un caillou : ce qui vient de côté, de dans le dos ou d'au-dessus passe.")]
+    [SerializeField] private float guardHalfAngle = 70f;
+    [Tooltip("Secousse de la vue (degrés) d'un spectateur dont la garde arrête un coup, et sa durée (s).")]
+    [SerializeField] private float guardShake = 1.2f;
+    [SerializeField] private float guardShakeDuration = 0.2f;
 
     [Header("Étourdissement")]
     [Tooltip("Après un étourdissement, on ne peut pas être étourdi de nouveau pendant ce temps (s) : personne ne reste au sol sous les coups de deux autres.")]
@@ -64,9 +82,9 @@ public class SpectatorController : NetworkBehaviour
     [SerializeField] private float pickupAngle = 35f;
 
     [Header("Lancer (à juger en jouant)")]
-    [Tooltip("Temps d'élan (s) pour lancer à pleine force.")]
-    [SerializeField] private float chargeTime = 0.8f;
-    [SerializeField] private float minThrowSpeed = 9f;
+    [Tooltip("Le temps (s) que met le bras à s'armer quand on vise (l'élan montré) ; on peut lancer avant.")]
+    [SerializeField] private float throwRaiseTime = 0.25f;
+    [Tooltip("La vitesse (m/s) d'un objet lancé : un lancer part toujours à pleine force, on vise par la hauteur du regard et la trajectoire montrée.")]
     [SerializeField] private float maxThrowSpeed = 24f;
     [Tooltip("Intervalle minimal entre deux lancers (s), en temps réel côté serveur.")]
     [SerializeField] private float throwCooldown = 0.5f;
@@ -93,7 +111,14 @@ public class SpectatorController : NetworkBehaviour
     private static readonly List<SpectatorController> spawned = new List<SpectatorController>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    private static void ResetStatics() => spawned.Clear();
+    private static void ResetStatics()
+    {
+        spawned.Clear();
+#if UNITY_EDITOR
+        AutopilotBrawl = AutopilotBrawlMode.None;
+        AutopilotSwapRequested = false;
+#endif
+    }
 
     public static IReadOnlyList<SpectatorController> Spawned => spawned;
 
@@ -107,12 +132,20 @@ public class SpectatorController : NetworkBehaviour
 
     // Chez le joueur.
     private float localPunchEndsAt = -1f;
-    private bool charging;
-    private float chargeStartedAt;
+    private bool punchQueued;          // un appui pendant un coup : le suivant part à la fin du geste
+    private bool lastPunchRight;
+    private float lastPunchStartedAt = float.NegativeInfinity;
+    private bool fistsSelected = true; // le choix de la molette, tout de suite : les poings, ou l'objet tenu
+    private bool guarding;
+    private bool aimingThrow;
+    private float aimStartedAt;
     private float throwHiddenUntil = -1f;
+    private ThrowArcPreview throwArc;
     private ArenaItem pickupCandidate;
     private readonly List<Vector3> candidatePositions = new List<Vector3>();
     private readonly List<ArenaItem> candidateItems = new List<ArenaItem>();
+    private int rockHitCount;
+    private Vector3 lastRockHitFrom;
 
     // Au serveur.
     private double serverLastPunchAt = double.NegativeInfinity;
@@ -122,6 +155,7 @@ public class SpectatorController : NetworkBehaviour
     private Vector3 serverPunchOffset;
     private Vector3 serverPunchDirection;
     private double serverPunchViewTime;
+    private int serverPunchReferenceInput = -1;
 
     // L'objet tenu, vu sur le corps (toutes les machines).
     private GameObject handVisual;
@@ -132,9 +166,14 @@ public class SpectatorController : NetworkBehaviour
     private ArcLines stunArcs;
     private float stunVisual;
 
-    /// <summary>Levé à chaque coup de poing VU depuis cette machine (durée du geste) : chez le joueur à
-    /// l'appui, chez les autres à la diffusion du serveur. Cosmétique (animation, vue subjective).</summary>
-    public event System.Action<float> OnPunch;
+    /// <summary>Levé à chaque coup de poing VU depuis cette machine (durée du geste, poing droit ?) : chez
+    /// le joueur à l'appui, chez les autres à la diffusion du serveur. Cosmétique (animation, vue
+    /// subjective).</summary>
+    public event System.Action<float, bool> OnPunch;
+
+    /// <summary>Levé quand la garde de ce spectateur arrête un coup ou un caillou, sur toutes les
+    /// machines (le serveur l'a décidé). Cosmétique : les bras encaissent.</summary>
+    public event System.Action OnGuardHit;
 
     /// <summary>Levé à chaque lancer vu depuis cette machine. Cosmétique.</summary>
     public event System.Action OnThrow;
@@ -157,9 +196,23 @@ public class SpectatorController : NetworkBehaviour
     public ArenaItemKind Carried => state.Value.carried;
     public int CarriedVariant => state.Value.carriedVariant;
 
-    /// <summary>L'objet en main tel que cette machine le montre : chez le joueur qui vient de lancer,
-    /// sa main est déjà vide, le temps que le serveur le confirme.</summary>
+    /// <summary>L'objet tenu tel que cette machine le montre, rangé ou non : chez le joueur qui vient de
+    /// lancer, il n'a déjà plus rien, le temps que le serveur le confirme.</summary>
     public ArenaItemKind ShownCarried => IsOwner && Time.time < throwHiddenUntil ? ArenaItemKind.None : state.Value.carried;
+
+    /// <summary>Les poings sont-ils sortis (rien de tenu, ou l'objet rangé) ? Chez le joueur, son choix à
+    /// la molette, tout de suite ; ailleurs, l'état publié par le serveur.</summary>
+    public bool FistsOut => IsOwner
+        ? fistsSelected || ShownCarried == ArenaItemKind.None
+        : SpectatorRules.FistsOut(state.Value.carried, state.Value.stowed);
+
+    /// <summary>Ce que ce spectateur a en main, tel que cette machine le montre : rien, poings sortis.</summary>
+    public ArenaItemKind ShownInHand => FistsOut ? ArenaItemKind.None : ShownCarried;
+
+    /// <summary>Chez le joueur : tient-il sa garde (clic droit, poings sortis, ni coup ni étourdi) ? Elle
+    /// part au serveur à la place de la visée, qu'un spectateur n'a pas (PlayerLocomotion) : prédite,
+    /// simulée, publiée et rembobinée comme elle.</summary>
+    public bool LocalGuardHeld => guarding;
 
     /// <summary>L'horloge de cette machine pour l'étourdissement : celle de la prédiction chez le joueur
     /// (NetworkManager.LocalTime, comme Move()), celle du serveur ailleurs.</summary>
@@ -186,15 +239,29 @@ public class SpectatorController : NetworkBehaviour
     public bool IsPunching => Time.time < localPunchEndsAt;
     /// <summary>De l'appui au contact du coup de poing (s) : l'animation y tend le poing.</summary>
     public float PunchContactDelay => punchContactDelay;
-    public bool IsCharging => charging;
-    public float ChargeProgress => charging ? Mathf.Clamp01((Time.time - chargeStartedAt) / Mathf.Max(0.01f, chargeTime)) : 0f;
 
-    /// <summary>Chez le joueur : le sprint s'efface devant le coup, l'élan et l'étourdissement
+    /// <summary>Chez le joueur : vise-t-il un lancer (clic droit, l'objet en main) ? Sa trajectoire se montre.</summary>
+    public bool IsAimingThrow => aimingThrow;
+
+    /// <summary>De 0 à 1, le bras qui s'arme pendant la visée d'un lancer (l'élan montré par l'animation).</summary>
+    public float ThrowAimProgress => aimingThrow ? Mathf.Clamp01((Time.time - aimStartedAt) / Mathf.Max(0.01f, throwRaiseTime)) : 0f;
+
+    /// <summary>La vitesse d'un objet lancé dans la direction `direction` : celle que le serveur lui donnera.</summary>
+    public Vector3 ThrowVelocityAlong(Vector3 direction) => SpectatorRules.ThrowVelocity(direction, 1f, maxThrowSpeed, maxThrowSpeed);
+
+    /// <summary>Chez le joueur : le sprint s'efface devant le coup, la visée d'un lancer et l'étourdissement
     /// (PlayerLocomotion.GateSprint).</summary>
-    public bool LocalBlocksSprint => IsPunching || charging || IsStunnedNow;
+    public bool LocalBlocksSprint => IsPunching || aimingThrow || IsStunnedNow;
 
     /// <summary>Chez le joueur : l'objet qu'il vise pour le ramasser, ou null.</summary>
     public ArenaItem PickupCandidate => pickupCandidate;
+
+    /// <summary>Chez le joueur : les cailloux qui l'ont touché depuis qu'il est apparu (2026-10-27). La vue du
+    /// robot touché les montre (HitIndicatorHud, qui sonde ce compte).</summary>
+    public int RockHitCount => rockHitCount;
+
+    /// <summary>Chez le joueur : d'où partait le dernier caillou qui l'a touché (le point du lancer).</summary>
+    public Vector3 LastRockHitFrom => lastRockHitFrom;
 
     /// <summary>Les spectateurs peuvent-ils agir dans cette partie ? (réglage de l'hôte)</summary>
     public static bool InterventionsAllowed
@@ -255,6 +322,12 @@ public class SpectatorController : NetworkBehaviour
     private void HandleStateChanged(State previous, State current)
     {
         bool pickedUp = previous.carried == ArenaItemKind.None && current.carried != ArenaItemKind.None;
+        if (IsOwner)
+        {
+            // Ce qu'on ramasse arrive en main ; les mains vides, ce sont les poings.
+            if (pickedUp) fistsSelected = false;
+            if (current.carried == ArenaItemKind.None) fistsSelected = true;
+        }
         if (pickedUp) OnPickUp?.Invoke();
         SpectatorSounds sounds = Sounds;
         if (sounds == null) return;
@@ -280,6 +353,7 @@ public class SpectatorController : NetworkBehaviour
         if (!IsSpawned) return;
         UpdateHandVisual();
         UpdateStunVisual();
+        if (IsOwner) UpdateThrowArc();
     }
 
     // ------------------------------------------------------------------
@@ -291,7 +365,9 @@ public class SpectatorController : NetworkBehaviour
         bool spectating = IsSpectatorRole;
         if (!spectating || input == null || !InterventionsAllowed || IsStunnedNow || input.CurrentMode != PlayerInputReader.Mode.Gameplay)
         {
-            charging = false;
+            aimingThrow = false;
+            guarding = false;
+            punchQueued = false;
             pickupCandidate = null;
             return;
         }
@@ -299,35 +375,51 @@ public class SpectatorController : NetworkBehaviour
         pickupCandidate = FindPickupCandidate();
         bool holding = ShownCarried != ArenaItemKind.None;
 
-        bool wantsPunch = input.MeleePressedThisFrame || (!holding && input.FireWasPressedThisFrame);
+        // La molette range l'objet tenu (les poings sortent) ou le ressort ; sans objet, les poings
+        // restent (2026-10-27). Pas pendant la visée d'un lancer : on lance ou on renonce d'abord.
+        bool swap = input.SwapItemPressedThisFrame;
+#if UNITY_EDITOR
+        if (AutopilotSwapRequested) swap = true;
+        AutopilotSwapRequested = false;
+#endif
+        if (swap && holding && !aimingThrow)
+        {
+            fistsSelected = !fistsSelected;
+            SelectFistsServerRpc(fistsSelected);
+        }
+        bool fists = FistsOut;
+
+        bool wantsPunch = input.MeleePressedThisFrame || (fists && input.FireWasPressedThisFrame);
         bool wantsPickUp = input.InteractPressedThisFrame;
-        bool fireHeld = input.FireHeld;
         bool firePressed = input.FireWasPressedThisFrame;
         bool aimHeld = input.AimHeld;
 #if UNITY_EDITOR
-        AutopilotOverride(ref wantsPunch, ref wantsPickUp, ref fireHeld, ref firePressed, holding);
+        AutopilotOverride(ref wantsPunch, ref wantsPickUp, ref firePressed, ref aimHeld, holding);
 #endif
 
-        if (holding)
+        // Le lancer (2026-10-27) : le clic droit maintenu vise, et montre la trajectoire ; le clic gauche
+        // lance. Relâcher le clic droit renonce.
+        bool aiming = SpectatorRules.ThrowAimHeld(holding && !fists, aimHeld, ThrowPhaseAllowed, IsPunching);
+        if (aiming && !aimingThrow) aimStartedAt = Time.time;
+        aimingThrow = aiming;
+        if (aimingThrow && firePressed)
         {
-            if (!charging && firePressed && ThrowPhaseAllowed && !IsPunching)
-            {
-                charging = true;
-                chargeStartedAt = Time.time;
-            }
-            if (charging && aimHeld) charging = false; // clic droit : on renonce
-            if (charging && !fireHeld)
-            {
-                Throw();
-                charging = false;
-            }
-        }
-        else
-        {
-            charging = false;
+            Throw();
+            aimingThrow = false;
         }
 
-        if (wantsPunch && !charging && !IsPunching) Punch();
+        // La garde : clic droit, les poings sortis. On n'y frappe pas ; un coup déjà parti va à son
+        // terme, et la garde monte après.
+        guarding = fists && aimHeld && !IsPunching;
+        // Un appui pendant un coup est retenu : le suivant part à la fin du geste, de l'autre poing. Qui
+        // martèle le clic enchaîne gauche, droite, gauche... En garde ou en visant un lancer, il est perdu.
+        punchQueued = SpectatorRules.PunchStillWanted(punchQueued, wantsPunch, guarding, aimingThrow);
+        if (punchQueued && !IsPunching)
+        {
+            punchQueued = false;
+            Punch(fists);
+        }
+
         if (wantsPickUp && !holding && pickupCandidate != null)
             PickUpServerRpc(new NetworkObjectReference(pickupCandidate.NetworkObject));
     }
@@ -363,30 +455,65 @@ public class SpectatorController : NetworkBehaviour
             || !Physics.Linecast(eye, item + Vector3.up * 0.25f, worldMask, QueryTriggerInteraction.Ignore);
     }
 
-    private void Punch()
+    /// <summary>Un coup de poing : l'autre poing si le joueur relance avant la fin du geste précédent
+    /// (l'enchaînement) ; un objet en main droite, il ne frappe que du gauche.</summary>
+    private void Punch(bool fists)
     {
+        bool right = fists && SpectatorRules.NextPunchIsRight(lastPunchRight, Time.time - lastPunchStartedAt, punchDuration, comboWindow);
+        lastPunchRight = right;
+        lastPunchStartedAt = Time.time;
         localPunchEndsAt = Time.time + punchDuration;
-        OnPunch?.Invoke(punchDuration);
+        OnPunch?.Invoke(punchDuration, right);
         Sounds?.punchSwing.PlayOn(audioSource);
         if (playerCamera == null || locomotion == null) return;
         Transform eye = playerCamera.transform;
-        PunchServerRpc(eye.position, eye.forward, locomotion.ViewServerTime);
+        // Le dernier input produit avant le coup, et ceux pas encore partis avec lui : le serveur y lit
+        // la garde du frappeur, qui ne frappe pas en garde (PlayerLocomotion.ServerReferenceInput).
+        locomotion.SendPendingInputs();
+        PunchServerRpc(eye.position, eye.forward, locomotion.ViewServerTime, right, locomotion.LastInputSequence);
     }
 
     private void Throw()
     {
-        float charge = ChargeProgress;
         throwHiddenUntil = Time.time + 0.6f;
         OnThrow?.Invoke();
         Sounds?.throwSwing.PlayOn(audioSource);
         if (playerCamera == null) return;
         Transform eye = playerCamera.transform;
-        ThrowServerRpc(ThrowOrigin(eye), eye.forward, charge);
+        ThrowServerRpc(ThrowOrigin(eye), eye.forward);
     }
 
     /// <summary>D'où part un objet lancé : un peu devant l'œil, du côté de la main droite.</summary>
     public static Vector3 ThrowOrigin(Transform eye)
         => eye.position + eye.forward * 0.4f + eye.right * 0.15f - eye.up * 0.1f;
+
+    /// <summary>Chez le joueur : d'où partira son objet s'il le lance maintenant, comme le serveur le décidera
+    /// (la main, ou l'œil si un mur les sépare), et dans quelle direction. Faux sans caméra.</summary>
+    public bool TryGetThrowStart(out Vector3 origin, out Vector3 direction)
+    {
+        origin = default;
+        direction = default;
+        if (playerCamera == null) return false;
+        Transform eye = playerCamera.transform;
+        origin = ThrowOrigin(eye);
+        direction = eye.forward;
+        // La main dans un mur ou derrière le garde-corps : l'objet part de l'œil (ThrowServerRpc).
+        if (Physics.Linecast(eye.position, origin, worldMask, QueryTriggerInteraction.Ignore)) origin = eye.position;
+        return true;
+    }
+
+    /// <summary>Chez le joueur : la trajectoire de son lancer, qu'il voit seul pendant qu'il vise.</summary>
+    private void UpdateThrowArc()
+    {
+        if (!aimingThrow && throwArc == null) return;
+        if (throwArc == null)
+        {
+            var go = new GameObject("Trajectoire du lancer");
+            go.transform.SetParent(transform, false);
+            throwArc = go.AddComponent<ThrowArcPreview>();
+            throwArc.Bind(this);
+        }
+    }
 
     // ------------------------------------------------------------------
     // Au serveur : les demandes du joueur
@@ -399,8 +526,19 @@ public class SpectatorController : NetworkBehaviour
     /// <summary>L'œil du joueur tel que le serveur le connaît (posture publiée, sans lean).</summary>
     private Vector3 ServerEye => transform.position + Vector3.up * (locomotion != null ? locomotion.EyeLocal(locomotion.NetworkedStance).y : 1.65f);
 
+    /// <summary>La molette (2026-10-27) : ranger l'objet tenu (les poings sortent) ou le ressortir. Sans
+    /// objet, rien à ranger.</summary>
     [ServerRpc]
-    private void PunchServerRpc(Vector3 origin, Vector3 direction, double viewServerTime)
+    private void SelectFistsServerRpc(bool fists)
+    {
+        State s = state.Value;
+        if (s.carried == ArenaItemKind.None || s.stowed == fists) return;
+        s.stowed = fists;
+        state.Value = s;
+    }
+
+    [ServerRpc]
+    private void PunchServerRpc(Vector3 origin, Vector3 direction, double viewServerTime, bool right, int inputSequence)
     {
         // Une valeur non finie ne vient que d'un client modifié : avec NaN, les tests de distance
         // seraient faux, donc passés (CLAUDE.md).
@@ -416,20 +554,23 @@ public class SpectatorController : NetworkBehaviour
             return;
         }
         serverLastPunchAt = now;
-        PunchClientRpc();
+        // Le poing qui frappe n'est qu'une suggestion du joueur : il ne change que le geste montré.
+        PunchClientRpc(right);
 
         serverPunchPending = true;
         serverPunchResolveAt = now + punchContactDelay;
         serverPunchOffset = offset;
         serverPunchDirection = direction.normalized;
         serverPunchViewTime = viewServerTime + punchContactDelay;
+        // Borné comme celui de toute demande : jamais avant le dernier input reçu.
+        serverPunchReferenceInput = locomotion != null ? locomotion.ServerReferenceInput(inputSequence) : -1;
     }
 
     [ClientRpc]
-    private void PunchClientRpc()
+    private void PunchClientRpc(bool right)
     {
         if (IsOwner) return; // déjà joué à l'appui
-        OnPunch?.Invoke(punchDuration);
+        OnPunch?.Invoke(punchDuration, right);
         Sounds?.punchSwing.PlayOn(audioSource);
     }
 
@@ -441,6 +582,9 @@ public class SpectatorController : NetworkBehaviour
     private void ServerResolvePunch()
     {
         if (!ServerCanAct()) return; // étourdi pendant son élan : le coup ne part pas
+        // On ne frappe pas en garde : celle du frappeur à l'input qui précède son coup, que le serveur
+        // connaît une fois cet input simulé (un client modifié qui frapperait garde levée ne frappe pas).
+        if (locomotion != null && locomotion.ServerInputFlags(serverPunchReferenceInput, out _, out bool attackerGuard) && attackerGuard) return;
 
         Vector3 origin = transform.position + serverPunchOffset;
         Vector3 direction = serverPunchDirection;
@@ -480,6 +624,13 @@ public class SpectatorController : NetworkBehaviour
         }
 
         if (victim == null) return;
+        // Sa garde, telle que la voyait le frappeur : de face, elle arrête le coup.
+        if (victim.ServerGuardsAgainst(targetTime, origin))
+        {
+            victim.GuardedClientRpc(direction);
+            Debug.Log($"[Spectateurs] {PlayerMatchState.NameOf(victim.OwnerClientId)} pare le coup de {PlayerMatchState.NameOf(OwnerClientId)} (rewind {rewind * 1000f:F0} ms).");
+            return;
+        }
         victim.PunchedClientRpc();
         victim.ServerStun(punchStunDuration, direction);
         Debug.Log($"[Spectateurs] {PlayerMatchState.NameOf(OwnerClientId)} frappe {PlayerMatchState.NameOf(victim.OwnerClientId)} (rewind {rewind * 1000f:F0} ms).");
@@ -487,6 +638,42 @@ public class SpectatorController : NetworkBehaviour
 
     [ClientRpc]
     private void PunchedClientRpc() => Sounds?.punchHit.PlayOn(audioSource);
+
+    /// <summary>
+    /// Serveur : la garde de ce spectateur arrête-t-elle ce qui vient de `threat` (l'œil du frappeur, ou
+    /// un point d'où arrive un caillou) à l'instant `time` ? Sa garde et son cap à cet instant, tirés de
+    /// l'historique du rewind (ce que voyait le frappeur, comme sa position), et ses poings sortis : un
+    /// objet en main, ou étourdi, il ne pare rien (SpectatorRules.GuardStops).
+    /// </summary>
+    private bool ServerGuardsAgainst(double time, Vector3 threat)
+    {
+        if (locomotion == null) return false;
+        bool guard = locomotion.IsAiming;
+        float yaw = transform.eulerAngles.y;
+        Vector3 feet = transform.position;
+        PlayerLocomotion.Stance stance = locomotion.NetworkedStance;
+        if (locomotion.ServerTrySamplePose(time, out PlayerLocomotion.HitboxPose pose))
+        {
+            guard = pose.guard;
+            yaw = pose.yaw;
+            feet = pose.position;
+            stance = pose.stance.current;
+        }
+        Vector3 eye = feet + Vector3.up * locomotion.EyeLocal(stance).y;
+        return SpectatorRules.GuardStops(guard, SpectatorRules.FistsOut(state.Value.carried, state.Value.stowed),
+                                         IsStunnedAt(NetworkManager.ServerTime.Time), yaw, threat - eye, guardHalfAngle);
+    }
+
+    /// <summary>La garde a arrêté un coup ou un caillou (décidé par le serveur) : chacun entend le choc
+    /// sur les poings (catégorie B), le joueur sent sa vue secouée du côté du coup (C).</summary>
+    [ClientRpc]
+    private void GuardedClientRpc(Vector3 direction)
+    {
+        Sounds?.punchBlocked.PlayOn(audioSource);
+        OnGuardHit?.Invoke();
+        if (IsOwner && cameraLook != null)
+            cameraLook.Shake(guardShake * SpectatorRules.FlinchSide(direction, transform.right), guardShakeDuration);
+    }
 
     [ServerRpc]
     private void PickUpServerRpc(NetworkObjectReference itemReference)
@@ -503,19 +690,22 @@ public class SpectatorController : NetworkBehaviour
         State s = state.Value;
         s.carried = item.Kind;
         s.carriedVariant = (byte)Mathf.Clamp(item.Variant, 0, 255);
+        s.stowed = false; // ce qu'on ramasse arrive en main
         state.Value = s;
         item.ServerConsume();
     }
 
     [ServerRpc]
-    private void ThrowServerRpc(Vector3 origin, Vector3 direction, float charge)
+    private void ThrowServerRpc(Vector3 origin, Vector3 direction)
     {
-        if (!WeaponController.IsFinite(origin) || !WeaponController.IsFinite(direction) || float.IsNaN(charge)) return;
+        if (!WeaponController.IsFinite(origin) || !WeaponController.IsFinite(direction)) return;
         State s = state.Value;
-        if (!ServerCanAct() || s.carried == ArenaItemKind.None || !ThrowPhaseAllowed) return;
+        // Un objet rangé ne se lance pas : il faut le ressortir (la molette).
+        if (!ServerCanAct() || s.carried == ArenaItemKind.None || s.stowed || !ThrowPhaseAllowed) return;
         double now = Time.timeAsDouble;
         if (now - serverLastThrowAt < throwCooldown * 0.85) return;
-        Vector3 velocity = SpectatorRules.ThrowVelocity(direction, charge, minThrowSpeed, maxThrowSpeed);
+        // Toujours à pleine force (2026-10-27) : le joueur vise par la trajectoire montrée.
+        Vector3 velocity = ThrowVelocityAlong(direction);
         if (velocity == Vector3.zero) return;
 
         Vector3 eye = ServerEye;
@@ -533,6 +723,7 @@ public class SpectatorController : NetworkBehaviour
         ArenaItem.ServerSpawn(tribune.ItemPrefab, s.carried, s.carriedVariant, origin, velocity, OwnerClientId, false);
         s.carried = ArenaItemKind.None;
         s.carriedVariant = 0;
+        s.stowed = false;
         state.Value = s;
         ThrowClientRpc();
     }
@@ -562,29 +753,49 @@ public class SpectatorController : NetworkBehaviour
         return true;
     }
 
-    /// <summary>Serveur : un caillou lancé touche ce spectateur.</summary>
-    public void ServerRockHitSpectator(Vector3 rockVelocity)
+    /// <summary>Serveur : un caillou lancé de `origin` touche ce spectateur. De face, sa garde l'arrête (il se
+    /// brise sur ses poings) ; sinon, il l'étourdit, et le spectateur voit d'où il est parti. Le caillou est
+    /// simulé au présent : la garde aussi.</summary>
+    public void ServerRockHitSpectator(Vector3 rockVelocity, Vector3 origin)
     {
+        if (!IsServer || !IsSpectatorRole) return;
+        if (ServerGuardsAgainst(NetworkManager.ServerTime.Time, ServerEye - rockVelocity))
+        {
+            GuardedClientRpc(rockVelocity);
+            Debug.Log($"[Spectateurs] {PlayerMatchState.NameOf(OwnerClientId)} pare un caillou.");
+            return;
+        }
+        // Touché : il le voit, même pendant son répit, où le caillou ne l'étourdit pas.
+        RockHitClientRpc(rockVelocity, origin, false, OwnerOnly);
         if (ServerStun(rockStunDuration, rockVelocity.normalized))
             Debug.Log($"[Spectateurs] {PlayerMatchState.NameOf(OwnerClientId)} étourdi par un caillou.");
     }
 
-    /// <summary>Serveur : un caillou lancé touche ce DUELLISTE. Aucun dégât : sa visée est secouée,
-    /// chez lui seulement (catégorie C, déclenchée par le serveur).</summary>
-    public void ServerRockHitDuelist(Vector3 rockVelocity, Vector3 point)
+    /// <summary>Serveur : un caillou lancé de `origin` touche ce DUELLISTE. Aucun dégât : sa visée est
+    /// secouée, et il voit d'où le caillou est parti, chez lui seulement (catégorie C, déclenchée par le
+    /// serveur).</summary>
+    public void ServerRockHitDuelist(Vector3 rockVelocity, Vector3 point, Vector3 origin)
     {
         if (!IsServer || IsSpectatorRole) return;
-        RockHitClientRpc(rockVelocity, new ClientRpcParams
-        {
-            Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
-        });
+        RockHitClientRpc(rockVelocity, origin, true, OwnerOnly);
         Debug.Log($"[Spectateurs] Caillou sur le duelliste {PlayerMatchState.NameOf(OwnerClientId)}.");
     }
 
-    [ClientRpc]
-    private void RockHitClientRpc(Vector3 rockVelocity, ClientRpcParams clientRpcParams = default)
+    /// <summary>Une RPC pour le seul propriétaire de ce robot.</summary>
+    private ClientRpcParams OwnerOnly => new ClientRpcParams
     {
-        if (!IsOwner || cameraLook == null) return;
+        Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
+    };
+
+    /// <summary>Un caillou parti de `origin` a touché ce robot (décidé par le serveur, chez le propriétaire) :
+    /// sa vue le montre (HitIndicatorHud), et un duelliste (`flinch`) en a la visée secouée.</summary>
+    [ClientRpc]
+    private void RockHitClientRpc(Vector3 rockVelocity, Vector3 origin, bool flinch, ClientRpcParams clientRpcParams = default)
+    {
+        if (!IsOwner) return;
+        rockHitCount++;
+        lastRockHitFrom = origin;
+        if (!flinch || cameraLook == null) return;
         // La visée remonte et y reste ; la vue tremble un instant du côté où va le caillou. Aucun hasard :
         // le même caillou donne toujours la même secousse (GDD § 3).
         float side = SpectatorRules.FlinchSide(rockVelocity, transform.right);
@@ -609,6 +820,7 @@ public class SpectatorController : NetworkBehaviour
         }
         s.carried = ArenaItemKind.None;
         s.carriedVariant = 0;
+        s.stowed = false;
         if (IsSpawned) state.Value = s;
     }
 
@@ -630,10 +842,11 @@ public class SpectatorController : NetworkBehaviour
     // Ce que voient les autres (catégorie C)
     // ------------------------------------------------------------------
 
-    /// <summary>L'objet en main droite, sur le corps du robot : les autres voient qui tient quoi.</summary>
+    /// <summary>L'objet en main droite, sur le corps du robot : les autres voient qui tient quoi. Rangé
+    /// (les poings sortis), il ne se voit pas.</summary>
     private void UpdateHandVisual()
     {
-        ArenaItemKind kind = ShownCarried;
+        ArenaItemKind kind = ShownInHand;
         int variant = kind == ArenaItemKind.None ? -1 : CarriedVariant;
         if (kind == handKind && variant == handVariant) return;
         ClearHandVisual();
@@ -729,38 +942,51 @@ public class SpectatorController : NetworkBehaviour
     // ------------------------------------------------------------------
 
     public static bool AutopilotSpectator;
-    private float autopilotChargeUntil;
+    private float autopilotAimUntil;
 
-    private void AutopilotOverride(ref bool punch, ref bool pickUp, ref bool fireHeld, ref bool firePressed, bool holding)
+    /// <summary>La bagarre de test (2026-10-27) : Frapper, il va au contact du spectateur le plus proche et
+    /// martèle le clic (l'enchaînement) ; Garder, il lui fait face, garde levée, sans bouger.</summary>
+    public enum AutopilotBrawlMode { None, Punch, Guard }
+    public static AutopilotBrawlMode AutopilotBrawl;
+
+    /// <summary>Un coup de molette de test, consommé à l'image suivante.</summary>
+    public static bool AutopilotSwapRequested;
+
+    private void AutopilotOverride(ref bool punch, ref bool pickUp, ref bool firePressed, ref bool aimHeld, bool holding)
     {
+        if (AutopilotBrawl != AutopilotBrawlMode.None)
+        {
+            AutopilotFight(ref punch, ref aimHeld);
+            return;
+        }
         if (!AutopilotSpectator) return;
         punch = false;
         pickUp = false;
-        fireHeld = false;
         firePressed = false;
+        aimHeld = false;
         input.AutopilotMove(Vector2.zero);
         if (!holding && pickupCandidate == null && AutopilotGoToItem()) return;
         if (holding)
         {
-            // Vise le duelliste le plus proche (tir tendu), puis prend tout son élan.
+            // Vise le duelliste le plus proche (tir tendu), le clic droit maintenu, puis lance. Sans duelliste
+            // (le banc sans duel), le spectateur le plus proche.
             PlayerLocomotion duelist = null;
             foreach (PlayerLocomotion p in PlayerLocomotion.SpawnedPlayers)
             {
                 if (p != null && !p.IsSpectator && p.IsAlive) { duelist = p; break; }
             }
+            if (duelist == null)
+            {
+                SpectatorController other = NearestOtherSpectator(out _);
+                if (other != null) duelist = other.locomotion;
+            }
             // Un caillou au buste ; une arme à ses pieds, pour qu'il la ramasse.
             float aimHeight = ShownCarried == ArenaItemKind.Rock ? 1.2f : 0.2f;
             if (duelist != null) AutopilotLookAt(duelist.transform.position + Vector3.up * aimHeight, maxThrowSpeed);
-            if (!charging && Time.time > autopilotChargeUntil + 0.5f)
-            {
-                firePressed = true;
-                fireHeld = true;
-                autopilotChargeUntil = Time.time + chargeTime + 0.1f;
-            }
-            else if (charging)
-            {
-                fireHeld = Time.time < autopilotChargeUntil;
-            }
+            // Une visée de 0,4 s, le temps que le bras s'arme et que la vue se pose, puis le lancer.
+            if (!aimingThrow) autopilotAimUntil = Time.time + 0.4f;
+            aimHeld = true;
+            firePressed = aimingThrow && Time.time >= autopilotAimUntil;
             return;
         }
         if (pickupCandidate != null)
@@ -786,6 +1012,38 @@ public class SpectatorController : NetworkBehaviour
         AutopilotLookAtPoint(aim);
         if (Vector3.Distance(eye, aim) > punchRange * 0.8f) input.AutopilotMove(Vector2.up);
         else punch = !IsPunching;
+    }
+
+    /// <summary>La bagarre de test : face au spectateur le plus proche, au contact pour frapper (le clic
+    /// martelé, que la file des coups enchaîne), ou garde levée sur place.</summary>
+    private void AutopilotFight(ref bool punch, ref bool aimHeld)
+    {
+        punch = false;
+        aimHeld = false;
+        input.AutopilotMove(Vector2.zero);
+        SpectatorController target = NearestOtherSpectator(out float distance);
+        if (target == null || playerCamera == null) return;
+        AutopilotLookAtPoint(target.transform.position + Vector3.up * 1.4f);
+        if (AutopilotBrawl == AutopilotBrawlMode.Guard)
+        {
+            aimHeld = true;
+            return;
+        }
+        if (distance > 1.1f) input.AutopilotMove(Vector2.up);
+        else punch = true;
+    }
+
+    private SpectatorController NearestOtherSpectator(out float distance)
+    {
+        SpectatorController nearest = null;
+        distance = float.MaxValue;
+        foreach (SpectatorController other in spawned)
+        {
+            if (other == null || other == this || !other.IsSpectatorRole) continue;
+            float d = Vector3.Distance(transform.position, other.transform.position);
+            if (d < distance) { distance = d; nearest = other; }
+        }
+        return nearest;
     }
 
     /// <summary>Le matériel ou le caillou posé le plus proche sur la tribune : on y va, et on le
