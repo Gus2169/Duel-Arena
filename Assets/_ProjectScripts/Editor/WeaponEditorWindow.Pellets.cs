@@ -19,7 +19,7 @@ public partial class WeaponEditorWindow
     /// <summary>Ce que la gerbe devient dans le contexte de l'aperçu : resserrée épaulée, ou par le laser
     /// à la hanche (WeaponData.PelletOffset).</summary>
     private float PelletScale(WeaponData data)
-        => previewAiming ? data.aimPatternScale : previewLaser && catalog != null && AcceptsLaser(data) ? catalog.laserHipSpread : 1f;
+        => previewAiming ? data.aimPatternScale : previewLaser ? LaserHipFactor(data) : 1f;
 
     private void DrawPelletTab(WeaponData data)
     {

@@ -147,13 +147,14 @@ public class WeaponVisualFeedback : MonoBehaviour
     /// centièmes de seconde. Enfant de la bouche, elle suit l'arme ; sur son layer, elle est dessinée
     /// avec elle (les bras du tireur, le corps chez les autres). Cosmétique : chaque machine la place
     /// sur l'arme qu'elle montre. Elle tourne d'un coup à l'autre (un angle d'or, pas de hasard).
+    /// `size` : ce que les accessoires lui font (le frein de bouche la grossit, AttachmentCatalog.MuzzleFlashScale).
     /// </summary>
-    public GameObject SpawnMuzzleFlash(Transform muzzle, Vector3 forward)
+    public GameObject SpawnMuzzleFlash(Transform muzzle, Vector3 forward, float size = 1f)
     {
         if (muzzle == null || muzzleFlashMaterial == null || forward.sqrMagnitude < 1e-6f) return null;
         flashCount++;
         float roll = flashCount * 137.5f;
-        float scale = 0.85f + 0.3f * (0.5f + 0.5f * Mathf.Sin(flashCount * 2.3f));
+        float scale = (0.85f + 0.3f * (0.5f + 0.5f * Mathf.Sin(flashCount * 2.3f))) * Mathf.Clamp(size, 0.1f, 5f);
 
         var go = new GameObject("FlammeBouche");
         go.layer = muzzle.gameObject.layer;

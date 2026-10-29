@@ -179,7 +179,7 @@ public class WeaponHeatTests
             lasers++;
             HeatRules standard = WeaponController.HeatRulesFor(data, false);
             HeatRules big = WeaponController.HeatRulesFor(data, true);
-            Assert.AreEqual(standard.perShot / data.attachmentCatalog.extendedMagazineCapacity, big.perShot, 1e-6f, $"{data.weaponName} : la moitié de chaleur en plus.");
+            Assert.AreEqual(standard.perShot / AttachmentCatalog.Factor(data.attachmentCatalog, WeaponStat.MagazineSize, AttachmentCatalog.Only(AttachmentCategory.Magazine, 1), 0), big.perShot, 1e-6f, $"{data.weaponName} : la moitié de chaleur en plus.");
             Assert.Greater(big.vent, standard.vent, $"{data.weaponName} : la grande cellule se vide plus lentement.");
             Assert.Greater(standard.overheatVent, standard.vent, $"{data.weaponName} : la surchauffe se paie (vidange forcée plus longue).");
             int shots = WeaponController.ShotsBeforeOverheat(standard, data.shotsPerSecond);

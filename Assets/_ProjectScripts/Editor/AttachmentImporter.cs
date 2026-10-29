@@ -251,6 +251,12 @@ public static class AttachmentImporter
                                    sheet.donnees != null ? sheet.donnees.arme : "", HiddenParts(sheet));
             attachment.EditorSetupOptics(sheet.donnees != null ? sheet.donnees.descriptionReticule : "", zoom, eyepiece.ToArray(),
                                          pistolLens, sheet.donnees != null ? sheet.donnees.descriptionReticuleCentre : "");
+            // Un accessoire fait pour une arme : son choix dans sa rubrique (le chargeur grand ou rapide, la crosse
+            // légère ou lourde, ce qui va au canon), et la bouche qu'il donne à l'arme.
+            Transform muzzle = root.Find(AttachmentMount.MuzzleName);
+            if (category == AttachmentCategory.Barrel && muzzle == null)
+                throw new InvalidOperationException($"{sheet.code} : ce qui va au canon sans repère « {AttachmentMount.MuzzleName} ».");
+            attachment.EditorSetupVariant(sheet.donnees != null && sheet.donnees.variante > 0 ? sheet.donnees.variante : 1, muzzle);
             var finishes = instance.AddComponent<WeaponFinishes>();
             finishes.EditorSetup(pieces.ToArray());
             return PrefabUtility.SaveAsPrefabAsset(instance, prefabPath);
@@ -269,9 +275,13 @@ public static class AttachmentImporter
 
     /// <summary>Ce que l'accessoire cache de l'arme : les organes de visée (ou la lunette d'origine) sous un
     /// viseur, le chargeur d'origine sous un chargeur grande capacité, sauf la rallonge d'un tube (elle s'y
-    /// ajoute).</summary>
+    /// ajoute). Une crosse, ce qui va au canon, un chargeur rapide nomment dans leur fiche les pièces de leur
+    /// arme qu'ils remplacent (`masque` : la crosse d'origine, le compensateur du FA-30, le bout du canon sous un
+    /// canon court...).</summary>
     public static string[] HiddenParts(AttachmentSheet sheet)
     {
+        if (sheet.donnees != null && sheet.donnees.masque != null && sheet.donnees.masque.Length > 0)
+            return (string[])sheet.donnees.masque.Clone();
         switch (sheet.Category)
         {
             case AttachmentCategory.Sight: return (string[])IronSights.Clone();
@@ -310,16 +320,25 @@ public static class AttachmentImporter
         catalog.verticalGrip = Find("PV-1");
         catalog.angledGrip = Find("PI-1");
 
-        var magazines = new List<(string code, GameObject prefab)>();
-        foreach ((AttachmentSheet sheet, GameObject prefab) in imported)
-            if (sheet.Category == AttachmentCategory.Magazine) magazines.Add((sheet.code, prefab));
-        magazines.Sort((a, b) => string.CompareOrdinal(a.code, b.code));
-        catalog.magazines = magazines.ConvertAll(m => m.prefab).ToArray();
+        catalog.magazines = OfCategory(imported, AttachmentCategory.Magazine);
+        catalog.stocks = OfCategory(imported, AttachmentCategory.Stock);
+        catalog.barrels = OfCategory(imported, AttachmentCategory.Barrel);
 
         catalog.beamMaterial = BeamMaterial("Faisceau_Laser", false, 1.6f, 0.6f);
         catalog.dotMaterial = BeamMaterial("Point_Laser", true, 3f, 1f);
         EditorUtility.SetDirty(catalog);
         return catalog;
+    }
+
+    /// <summary>Les accessoires d'une rubrique faits pour une arme (un chargeur, une crosse, ce qui va au canon),
+    /// rangés par leur code.</summary>
+    private static GameObject[] OfCategory(List<(AttachmentSheet sheet, GameObject prefab)> imported, AttachmentCategory category)
+    {
+        var found = new List<(string code, GameObject prefab)>();
+        foreach ((AttachmentSheet sheet, GameObject prefab) in imported)
+            if (sheet.Category == category) found.Add((sheet.code, prefab));
+        found.Sort((a, b) => string.CompareOrdinal(a.code, b.code));
+        return found.ConvertAll(m => m.prefab).ToArray();
     }
 
     /// <summary>Le matériau du faisceau ou du point du laser (rouge, comme le faisceau de LT-1) : son
@@ -379,6 +398,8 @@ public static class AttachmentImporter
             "Poignee" => AttachmentCategory.Grip,
             "Laser" => AttachmentCategory.Laser,
             "Chargeur" => AttachmentCategory.Magazine,
+            "Crosse" => AttachmentCategory.Stock,
+            "Canon" => AttachmentCategory.Barrel,
             _ => throw new InvalidOperationException($"{code} : rubrique inconnue « {categorie} »."),
         };
     }
@@ -401,7 +422,9 @@ public static class AttachmentImporter
         public float grossissement;      // lunette (0 ou 1 : sans)
         public string couleurFaisceau;   // laser
         public string effet;             // poignée : « recul » ou « epaulement »
-        public string arme;              // chargeur : la désignation du modèle d'arme
+        public string arme;              // chargeur, crosse, canon : la désignation du modèle d'arme
         public string genre;             // chargeur : « chargeur », « cellule », « tube »...
+        public int variante;             // son choix dans sa rubrique (WeaponAttachments.Variant ; 0 : 1)
+        public string[] masque;          // les pièces de l'arme qu'il remplace (sinon, celles de sa rubrique)
     }
 }

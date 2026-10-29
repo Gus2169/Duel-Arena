@@ -433,6 +433,35 @@ def monter(a, scene_arme, point, nom=None, col=None):
     return e
 
 
+def descendants(ob):
+    """Les objets sous `ob`, à toutes profondeurs."""
+    out = []
+    for c in ob.children:
+        out.append(c)
+        out.extend(descendants(c))
+    return out
+
+
+def copier_piece(a, at, ob, nom=None):
+    """Une pièce de l'arme `at`, copiée dans l'atelier `a` (même géométrie, mêmes matériaux par leur clé, même
+    attribut des chanfreins), dans le repère de l'arme : une crosse ou un canon se refait à partir de la pièce
+    qu'il remplace. Les matériaux portent les mêmes noms d'une arme à l'autre (seul celui de la bouche est propre
+    à chaque arme : il devient celui de l'accessoire)."""
+    cles = {m.name: cle for cle, m in at.M.items()}
+    pc = a.piece(nom or ob.name.split(".")[0][len(at.prefixe) + 1:])
+    pc.bm.free()
+    pc.bm = bmesh.new()
+    pc.bm.from_mesh(ob.data)
+    pc.bord = pc.bm.faces.layers.float.get("bord") or pc.bm.faces.layers.float.new("bord")
+    pc.materiaux = []
+    indices = [pc.mat(cles.get(m.name, "Peinture") if m else "Peinture") for m in ob.data.materials] or [pc.mat("Peinture")]
+    for f in pc.bm.faces:
+        f.material_index = indices[min(f.material_index, len(indices) - 1)]
+    if not ob.matrix_world == Matrix.Identity(4):
+        bmesh.ops.transform(pc.bm, matrix=ob.matrix_world, verts=pc.bm.verts)
+    return pc
+
+
 _ARMES = {}
 
 

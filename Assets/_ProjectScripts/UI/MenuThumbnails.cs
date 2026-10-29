@@ -146,7 +146,8 @@ public class MenuThumbnails : MonoBehaviour
     public void Weapon(WeaponData data, WeaponFinish finish, WeaponAttachments attachments, int slot, int width, int height, Action<Texture> ready)
     {
         if (data == null) { ready?.Invoke(null); return; }
-        string fitted = $"{attachments.Sight(slot)}.{(int)attachments.Grip(slot)}.{(attachments.Laser(slot) ? 1 : 0)}.{(attachments.ExtendedMagazine(slot) ? 1 : 0)}";
+        string fitted = $"{attachments.Sight(slot)}.{(int)attachments.Grip(slot)}.{(attachments.Laser(slot) ? 1 : 0)}.{(int)attachments.Magazine(slot)}"
+                        + $".{(int)attachments.Stock(slot)}.{(int)attachments.Barrel(slot)}";
         string key = $"arme/{data.name}/{(int)finish}/{fitted}/{width}x{height}";
         Request(key, () => RenderWeapon(data, finish, attachments, slot, width, height), ready);
     }
@@ -165,8 +166,8 @@ public class MenuThumbnails : MonoBehaviour
     /// l'œil qui vise. L'œil est là où la vue subjective le met (AttachmentMount.SightOf : derrière la mire du
     /// viseur, à sa distance de l'œil, ou derrière la hausse ; un pistolet à bout de bras), et regarde dans l'axe.
     /// Le réticule est celui du jeu, dessiné à l'infini par la vitre (DuelArena/ViseurReticule) : il tombe au
-    /// centre, à sa vraie taille par rapport à la fenêtre. Seuls le viseur et le laser (sur le flanc) peuvent se
-    /// voir de l'œil : la poignée et le chargeur, sous l'arme, ne comptent pas.
+    /// centre, à sa vraie taille par rapport à la fenêtre. Seuls le viseur, le laser (sur le flanc) et ce qui est
+    /// monté au canon peuvent se voir de l'œil : la poignée, le chargeur et la crosse ne comptent pas.
     ///
     /// Rendue sur `background`, le fond de ce qui la montre : la vitre, teintée et à peine opaque, s'y compose
     /// comme en jeu. Sur un fond transparent, l'interface (qui ne lit pas l'alpha prémultiplié) perdait la
@@ -177,7 +178,7 @@ public class MenuThumbnails : MonoBehaviour
     {
         if (data == null) { ready?.Invoke(null); return; }
         WeaponAttachments seen = SeenFromTheEye(attachments, slot);
-        string key = $"visee/{data.name}/{(int)finish}/{seen.Sight(slot)}.{(seen.Laser(slot) ? 1 : 0)}"
+        string key = $"visee/{data.name}/{(int)finish}/{seen.Sight(slot)}.{(seen.Laser(slot) ? 1 : 0)}.{(int)seen.Barrel(slot)}"
                      + $"/{background.r},{background.g},{background.b},{background.a}/{width}x{height}";
         Request(key, () => RenderSightPicture(data, finish, seen, slot, width, height, background), ready);
     }
@@ -192,8 +193,11 @@ public class MenuThumbnails : MonoBehaviour
     }
 #endif
 
+    /// <summary>Ce qui peut se voir de l'œil qui vise : le viseur, le laser sur le flanc, et ce qui est monté au
+    /// canon (un canon long dépasse sous la ligne de visée).</summary>
     private static WeaponAttachments SeenFromTheEye(WeaponAttachments attachments, int slot)
-        => WeaponAttachments.None.WithSight(slot, attachments.Sight(slot)).WithLaser(slot, attachments.Laser(slot));
+        => WeaponAttachments.None.WithSight(slot, attachments.Sight(slot)).WithLaser(slot, attachments.Laser(slot))
+                                 .WithBarrel(slot, attachments.Barrel(slot));
 
     /// <summary>
     /// Les portraits des armes de la panoplie (WeaponPortraits, 2026-10-27, demandés par l'utilisateur) :
@@ -474,16 +478,20 @@ public class MenuThumbnails : MonoBehaviour
         finally { DestroyImmediate(image); }
     }
 
-    /// <summary>Les pièces de l'arme qu'un viseur cache (WeaponAttachment.Hides) : sa hausse et son guidon.</summary>
+    /// <summary>Les pièces de l'arme qu'un viseur cache (WeaponAttachment.Hides) : sa hausse et son guidon, celui
+    /// qu'un canon long ou court a déplacé compris.</summary>
     private static List<Renderer> IronSights(Transform weapon, WeaponData data)
     {
         var renderers = new List<Renderer>();
         GameObject anySight = data.attachmentCatalog != null ? data.attachmentCatalog.SightPrefab(1) : null;
         if (anySight == null || !anySight.TryGetComponent(out WeaponAttachment sight)) return renderers;
+        WeaponAttachment barrel = AttachmentMount.Mounted(weapon, AttachmentCategory.Barrel);
         foreach (string part in sight.Hides)
         {
             Transform piece = weapon.Find(part);
             if (piece != null) renderers.AddRange(piece.GetComponentsInChildren<Renderer>());
+            Transform moved = barrel != null ? barrel.transform.Find(part) : null;
+            if (moved != null) renderers.AddRange(moved.GetComponentsInChildren<Renderer>());
         }
         return renderers;
     }

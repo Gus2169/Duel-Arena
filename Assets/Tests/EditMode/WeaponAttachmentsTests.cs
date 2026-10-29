@@ -20,6 +20,7 @@ public class WeaponAttachmentsTests
     private const string PlayerPrefabPath = "Assets/_ProjectArena/PlayerPrefab/Player.prefab";
     private const int Rifle = 0, Sniper = 1, Shotgun = 2, Pistol = 3;
     private const int Carbine = 6, ChargedRifle = 7;   // le FP-30 et le FX-2 : avec le FP-12, les armes de précision
+    private const int Fa30 = 4, LaserRifle = 5;           // le FA-30 (ses dégâts baissent), le FX-1 (une arme laser)
     private const int RedDotA = 1, HoloA = 4, ReflexA = 8, ReflexC = 10, ReflexD = 11, ScopeL2A = 12, ScopeL3A = 15;
 
     private readonly List<GameObject> created = new List<GameObject>();
@@ -37,7 +38,7 @@ public class WeaponAttachmentsTests
     /// <summary>Les deux ont-ils les mêmes accessoires pour l'arme de la place `slot` ?</summary>
     private static bool SameSlot(WeaponAttachments a, WeaponAttachments b, int slot)
         => a.Sight(slot) == b.Sight(slot) && a.Grip(slot) == b.Grip(slot) && a.Laser(slot) == b.Laser(slot)
-           && a.ExtendedMagazine(slot) == b.ExtendedMagazine(slot);
+           && a.Magazine(slot) == b.Magazine(slot) && a.Stock(slot) == b.Stock(slot) && a.Barrel(slot) == b.Barrel(slot);
 
     private static AttachmentCatalog Catalog() =>
         UnityEditor.AssetDatabase.LoadAssetAtPath<AttachmentCatalog>(AttachmentImporter.CatalogPath);
@@ -96,8 +97,8 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(GripKind.None, a.Grip(Shotgun));
         Assert.IsFalse(a.Laser(Shotgun) || a.ExtendedMagazine(Shotgun));
 
-        // Les douze armes ont chacune les leurs (96 bits depuis la refonte du 2026-10-26) : la dernière
-        // ne déborde pas sur les autres.
+        // Les douze armes ont chacune les leurs (16 bits chacune depuis le 2026-10-29) : la dernière ne déborde
+        // pas sur les autres.
         WeaponAttachments far = a.With(11, ReflexC, GripKind.Vertical, true, true).With(8, HoloA, GripKind.Angled, false, true);
         Assert.AreEqual(ReflexC, far.Sight(11));
         Assert.AreEqual(GripKind.Vertical, far.Grip(11));
@@ -120,6 +121,124 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(0, a.Sight(-1));
         Assert.AreEqual(WeaponAttachments.SightCount + 1, WeaponAttachments.VariantCount(AttachmentCategory.Sight),
             "Quinze viseurs, plus la mire de l'arme.");
+    }
+
+    /// <summary>La crosse, le canon et le chargeur rapide (2026-10-29) ont leurs bits à eux : ils ne débordent ni
+    /// sur les rubriques d'avant ni sur l'arme voisine, et voyagent en hexadécimal.</summary>
+    [Test]
+    public void LaCrosseLeCanonEtLeChargeurRapide_GardentLeursBits_SansToucherAuReste()
+    {
+        WeaponAttachments a = WeaponAttachments.None.With(Rifle, HoloA, GripKind.Vertical, true, false)
+            .WithMagazine(Rifle, MagazineKind.Fast).WithStock(Rifle, StockKind.Heavy).WithBarrel(Rifle, BarrelKind.Short);
+        Assert.AreEqual(HoloA, a.Sight(Rifle));
+        Assert.AreEqual(GripKind.Vertical, a.Grip(Rifle));
+        Assert.IsTrue(a.Laser(Rifle));
+        Assert.AreEqual(MagazineKind.Fast, a.Magazine(Rifle));
+        Assert.IsFalse(a.ExtendedMagazine(Rifle), "Le chargeur rapide n'est pas le grand.");
+        Assert.AreEqual(StockKind.Heavy, a.Stock(Rifle));
+        Assert.AreEqual(BarrelKind.Short, a.Barrel(Rifle));
+        for (int slot = 0; slot < WeaponAttachments.Slots; slot++)
+            if (slot != Rifle) Assert.IsTrue(SameSlot(WeaponAttachments.None, a, slot), $"Place {slot + 1} : intacte.");
+
+        // Chaque rubrique à sa plus haute valeur, sur la dernière arme : rien ne déborde.
+        WeaponAttachments last = WeaponAttachments.None.WithSight(11, ScopeL3A).WithGrip(11, GripKind.Angled).WithLaser(11, true)
+            .WithMagazine(11, MagazineKind.Fast).WithStock(11, StockKind.Heavy).WithBarrel(11, BarrelKind.Short);
+        Assert.AreEqual(ScopeL3A, last.Sight(11));
+        Assert.AreEqual(GripKind.Angled, last.Grip(11));
+        Assert.IsTrue(last.Laser(11));
+        Assert.AreEqual(MagazineKind.Fast, last.Magazine(11));
+        Assert.AreEqual(StockKind.Heavy, last.Stock(11));
+        Assert.AreEqual(BarrelKind.Short, last.Barrel(11));
+        Assert.IsTrue(SameSlot(WeaponAttachments.None, last, 10), "L'arme d'avant n'a rien reçu.");
+        Assert.AreEqual(WeaponAttachments.HexLength, last.ToHex().Length);
+        Assert.IsTrue(WeaponAttachments.TryParseHex(last.ToHex(), out WeaponAttachments reread));
+        Assert.AreEqual(last, reread, "Écrits puis relus en hexadécimal, tels quels.");
+
+        // Une rubrique à la fois, par les choix de l'armurerie : les autres restent.
+        WeaponAttachments b = a.WithVariant(Rifle, AttachmentCategory.Barrel, (int)BarrelKind.Compensator)
+                               .WithVariant(Rifle, AttachmentCategory.Stock, 0);
+        Assert.AreEqual((int)BarrelKind.Compensator, b.Variant(Rifle, AttachmentCategory.Barrel));
+        Assert.AreEqual(0, b.Variant(Rifle, AttachmentCategory.Stock));
+        Assert.AreEqual((int)MagazineKind.Fast, b.Variant(Rifle, AttachmentCategory.Magazine));
+        Assert.AreEqual(HoloA, b.Sight(Rifle));
+        Assert.AreEqual(3, WeaponAttachments.VariantCount(AttachmentCategory.Magazine), "Le chargeur d'origine, le grand, le rapide.");
+        Assert.AreEqual(3, WeaponAttachments.VariantCount(AttachmentCategory.Stock));
+        Assert.AreEqual(5, WeaponAttachments.VariantCount(AttachmentCategory.Barrel));
+    }
+
+    /// <summary>Les accessoires enregistrés avant le 2026-10-29 (8 bits par arme, 24 chiffres hexadécimaux), dans
+    /// les réglages du joueur comme dans la demande d'une build plus ancienne : chaque arme retrouve les siens.</summary>
+    [Test]
+    public void LesAccessoiresDAvant_SeRelisentTelsQuels()
+    {
+        // L'ancien codage : 4 bits de viseur, 2 de poignée, 1 de laser, 1 de grand chargeur ; les huit premières
+        // armes dans `low`, les autres dans `high`.
+        ulong low = ((ulong)(HoloA | (1 << 4) | (1 << 6) | (1 << 7)) << (8 * Rifle)) | ((ulong)(ReflexC | (1 << 7)) << (8 * Pistol));
+        uint high = (uint)(ReflexA | (2 << 4) | (1 << 6)) << (8 * (11 - 8));
+        string old = high.ToString("X8") + low.ToString("X16");
+        Assert.AreEqual(WeaponAttachments.LegacyHexLength, old.Length);
+        Assert.IsTrue(WeaponAttachments.TryParseHex(old, out WeaponAttachments read));
+        Assert.AreEqual(HoloA, read.Sight(Rifle));
+        Assert.AreEqual(GripKind.Vertical, read.Grip(Rifle));
+        Assert.IsTrue(read.Laser(Rifle));
+        Assert.IsTrue(read.ExtendedMagazine(Rifle), "Le grand chargeur d'avant reste le grand chargeur.");
+        Assert.AreEqual(StockKind.Standard, read.Stock(Rifle), "Pas de crosse, pas de canon : ils n'existaient pas.");
+        Assert.AreEqual(BarrelKind.Standard, read.Barrel(Rifle));
+        Assert.AreEqual(ReflexC, read.Sight(Pistol));
+        Assert.IsTrue(read.ExtendedMagazine(Pistol));
+        Assert.IsFalse(read.Laser(Pistol));
+        Assert.AreEqual(ReflexA, read.Sight(11), "La douzième arme, dans la seconde moitié de l'ancien codage.");
+        Assert.AreEqual(GripKind.Angled, read.Grip(11));
+        Assert.IsTrue(read.Laser(11));
+        Assert.AreEqual(WeaponAttachments.FromLegacy(low, high), read);
+
+        // Plus court : complété de zéros à gauche (la première arme seule).
+        Assert.IsTrue(WeaponAttachments.TryParseHex("94", out read));
+        Assert.AreEqual(HoloA, read.Sight(0));
+        Assert.AreEqual(GripKind.Vertical, read.Grip(0));
+        Assert.IsTrue(read.ExtendedMagazine(0));
+        Assert.IsFalse(WeaponAttachments.TryParseHex(new string('0', WeaponAttachments.HexLength + 1), out _), "Trop long : refusé.");
+        Assert.IsFalse(WeaponAttachments.TryParseHex("ZZ", out _), "Pas de l'hexadécimal : refusé.");
+    }
+
+    /// <summary>Qui prend quoi (2026-10-29, l'utilisateur) : pas de crosse sur un pistolet ; les canons long et court
+    /// seulement sur une arme dont les dégâts baissent avec la distance (le compensateur et le frein partout,
+    /// armes laser comprises, avec leurs émetteurs) ; pas de chargeur rapide sur une arme qui recharge cartouche par
+    /// cartouche. Un client modifié qui demande le reste n'a que ce qu'il pouvait avoir.</summary>
+    [Test]
+    public void LaCrosseLeCanonEtLeChargeurRapide_NeVontQueLaOuLArmeLesPrend()
+    {
+        IReadOnlyList<WeaponData> loadout = Loadout();
+        int pistols = 0, longBarrels = 0, perRound = 0;
+        for (int slot = 0; slot < loadout.Count; slot++)
+        {
+            WeaponData data = loadout[slot];
+            bool pistol = data.modelPrefab.GetComponent<WeaponModel>().PistolHold;
+            WeaponAttachments asked = WeaponAttachments.None.WithStock(slot, StockKind.Heavy).WithBarrel(slot, BarrelKind.Long)
+                                                           .WithMagazine(slot, MagazineKind.Fast);
+            WeaponAttachments kept = asked.Sanitized(loadout);
+            Assert.AreEqual(pistol ? StockKind.Standard : StockKind.Heavy, kept.Stock(slot),
+                            $"{data.weaponName} : {(pistol ? "une crosse n'a pas sa place sur un pistolet" : "la crosse se monte")}.");
+            Assert.AreEqual(data.HasFalloff ? BarrelKind.Long : BarrelKind.Standard, kept.Barrel(slot),
+                            $"{data.weaponName} : le canon long {(data.HasFalloff ? "repousse la baisse de ses dégâts" : "n'aurait que sa contrepartie")}.");
+            Assert.AreEqual(data.reloadPerRound ? MagazineKind.Standard : MagazineKind.Fast, kept.Magazine(slot),
+                            $"{data.weaponName} : le chargeur rapide {(data.reloadPerRound ? "ne sert pas une arme qui recharge une à une" : "se monte")}.");
+            foreach (BarrelKind device in new[] { BarrelKind.Compensator, BarrelKind.MuzzleBrake })
+                Assert.AreEqual(device, asked.WithBarrel(slot, device).Sanitized(loadout).Barrel(slot), $"{data.weaponName} : {device} va sur toutes les armes.");
+            Assert.AreEqual(MagazineKind.Extended, asked.WithMagazine(slot, MagazineKind.Extended).Sanitized(loadout).Magazine(slot),
+                            $"{data.weaponName} : le grand chargeur va sur toutes les armes.");
+            if (pistol) pistols++;
+            if (data.HasFalloff) longBarrels++;
+            if (data.reloadPerRound) perRound++;
+        }
+        Assert.AreEqual(3, pistols, "Garde : trois pistolets.");
+        Assert.GreaterOrEqual(longBarrels, 4, "Garde : des armes dont les dégâts baissent.");
+        Assert.GreaterOrEqual(perRound, 2, "Garde : des armes qui rechargent une à une.");
+
+        // Des choix qui n'existent pas, codés quand même : le chargeur 3, la crosse 3, le canon 7.
+        Assert.AreEqual(MagazineKind.Standard, WeaponAttachments.None.WithMagazine(Rifle, (MagazineKind)3).Sanitized(loadout).Magazine(Rifle));
+        Assert.AreEqual(StockKind.Standard, WeaponAttachments.None.WithStock(Rifle, (StockKind)3).Sanitized(loadout).Stock(Rifle));
+        Assert.AreEqual(BarrelKind.Standard, WeaponAttachments.None.WithBarrel(Fa30, (BarrelKind)7).Sanitized(loadout).Barrel(Fa30));
     }
 
     /// <summary>Le serveur ne publie que ce que l'arme prend : un client modifié qui demande un point rouge
@@ -157,7 +276,7 @@ public class WeaponAttachmentsTests
 
         // Tous les bits levés : le viseur 15 (la lunette ×3), qui ne reste que sur les armes de précision, et
         // une poignée qui n'existe pas.
-        WeaponAttachments all = new WeaponAttachments(ulong.MaxValue, uint.MaxValue).Sanitized(loadout);
+        WeaponAttachments all = new WeaponAttachments(ulong.MaxValue, ulong.MaxValue, ulong.MaxValue, ulong.MaxValue).Sanitized(loadout);
         for (int slot = 0; slot < WeaponAttachments.Slots; slot++)
         {
             bool precision = slot == Sniper || slot == Carbine || slot == ChargedRifle;
@@ -187,7 +306,7 @@ public class WeaponAttachmentsTests
         WeaponCustomizationController.Summarize(loadout[Rifle], Rifle, looks, asked, out string model, out string details);
         StringAssert.StartsWith(loadout[Rifle].Designation, model, "La désignation de l'arme d'abord.");
         Assert.AreEqual($"Rouillée · {Code(catalog.SightPrefab(HoloA))} · {Code(catalog.verticalGrip)} · {Code(catalog.laser)} · "
-                        + $"chargeur {AttachmentCatalog.MagazineSize(loadout[Rifle], true, catalog)}", details);
+                        + $"chargeur {AttachmentCatalog.MagazineSize(loadout[Rifle], true)}", details);
 
         WeaponCustomizationController.Summarize(loadout[Sniper], Sniper, looks, asked, out _, out details);
         Assert.AreEqual("D'origine · sans accessoire", details, "Le sniper garde sa lunette : le point rouge demandé n'y est pas.");
@@ -251,27 +370,165 @@ public class WeaponAttachmentsTests
     {
         IReadOnlyList<WeaponData> loadout = Loadout();
         AttachmentCatalog catalog = Catalog();
+        WeaponAttachments big = AttachmentCatalog.Only(AttachmentCategory.Magazine, 1);
+        float capacity = AttachmentCatalog.Factor(catalog, WeaponStat.MagazineSize, big, 0);
+        float longer = AttachmentCatalog.Factor(catalog, WeaponStat.ReloadTime, big, 0);
+        Assert.Greater(capacity, 1f, "Le grand chargeur tient plus de balles...");
+        Assert.Greater(longer, 1f, "... et se change moins vite.");
         int[] expected = { 45, 8, 9 };   // 30, 5 et 6 balles d'origine (FA-07, FP-12, FAP-03)
         for (int slot = 0; slot < loadout.Count; slot++)
         {
             WeaponData data = loadout[slot];
             // Une arme laser n'a pas de balles : sa cellule grande capacité tient plus de chaleur (WeaponHeatTests).
             if (data.UsesHeat) continue;
-            int big = slot < expected.Length ? expected[slot] : Mathf.RoundToInt(data.magazineSize * catalog.extendedMagazineCapacity);
-            Assert.AreEqual(data.magazineSize, AttachmentCatalog.MagazineSize(data, false, catalog), $"{data.weaponName} : le chargeur d'origine.");
-            Assert.AreEqual(big, AttachmentCatalog.MagazineSize(data, true, catalog), $"{data.weaponName} : le grand chargeur.");
-            Assert.AreEqual(data.magazineSize, AttachmentCatalog.MagazineSize(data, true, null), "Sans catalogue, aucun effet.");
-            Assert.AreEqual(data.reloadDuration, AttachmentCatalog.ReloadDuration(data, false, catalog), 1e-6f);
+            int extended = slot < expected.Length ? expected[slot] : Mathf.RoundToInt(data.magazineSize * capacity);
+            Assert.AreEqual(data.magazineSize, AttachmentCatalog.MagazineSize(data, WeaponAttachments.None, slot), $"{data.weaponName} : le chargeur d'origine.");
+            Assert.AreEqual(extended, AttachmentCatalog.MagazineSize(data, WeaponAttachments.None.WithMagazine(slot, true), slot), $"{data.weaponName} : le grand chargeur.");
+            Assert.AreEqual(data.magazineSize, AttachmentCatalog.MagazineSize(data, WeaponAttachments.None.WithMagazine(slot + 1, true), slot),
+                $"{data.weaponName} : le grand chargeur d'une autre arme n'y change rien.");
+            Assert.AreEqual(data.reloadDuration, AttachmentCatalog.ReloadDuration(data, WeaponAttachments.None, slot), 1e-6f);
         }
 
         WeaponData rifle = loadout[Rifle];
-        Assert.AreEqual(rifle.reloadDuration * catalog.extendedMagazineReload, AttachmentCatalog.ReloadDuration(rifle, true, catalog), 1e-5f,
+        Assert.AreEqual(rifle.reloadDuration * longer, AttachmentCatalog.ReloadDuration(rifle, true), 1e-5f,
             "Un chargeur plus long se change moins vite.");
-        Assert.Greater(catalog.extendedMagazineReload, 1f);
         WeaponData shotgun = loadout[Shotgun];
         Assert.IsTrue(shotgun.reloadPerRound, "Le fusil à pompe recharge cartouche par cartouche.");
-        Assert.AreEqual(shotgun.reloadDuration, AttachmentCatalog.ReloadDuration(shotgun, true, catalog), 1e-6f,
+        Assert.AreEqual(shotgun.reloadDuration, AttachmentCatalog.ReloadDuration(shotgun, true), 1e-6f,
             "Une cartouche se glisse aussi vite : le tube en prend seulement plus.");
+
+        WeaponData orphan = Object.Instantiate(rifle);
+        try
+        {
+            orphan.attachmentCatalog = null;
+            Assert.AreEqual(orphan.magazineSize, AttachmentCatalog.MagazineSize(orphan, true), "Sans catalogue, aucun effet.");
+        }
+        finally { Object.DestroyImmediate(orphan); }
+    }
+
+    /// <summary>
+    /// Les sept accessoires du 2026-10-25 font ce que dit le GDD (§ 6), sans que le test en recopie les valeurs :
+    /// la crosse lourde retient le recul et fait épauler moins vite, la légère l'inverse ; le compensateur retient
+    /// le recul de côté et pousse plus vers le haut ; le frein de bouche ne retient que les premiers coups et
+    /// grossit la flamme ; le canon long repousse la baisse des dégâts et fait sortir et épauler l'arme moins vite,
+    /// le court l'inverse ; le chargeur rapide recharge plus vite, avec moins de balles.
+    /// </summary>
+    [Test]
+    public void LesNouveauxAccessoires_FontCeQueDitLeGDD()
+    {
+        IReadOnlyList<WeaponData> loadout = Loadout();
+        AttachmentCatalog catalog = Catalog();
+        WeaponData fa30 = loadout[Fa30];
+        Assert.IsTrue(fa30.HasFalloff, "Garde : les dégâts du FA-30 baissent avec la distance.");
+
+        WeaponAttachments heavy = AttachmentCatalog.Only(AttachmentCategory.Stock, (int)StockKind.Heavy);
+        AttachmentCatalog.RecoilFactors(catalog, heavy, 0, out float vertical, out float horizontal);
+        Assert.Less(vertical, 1f, "La crosse lourde retient le recul vertical...");
+        Assert.Less(horizontal, 1f, "... et horizontal...");
+        Assert.Greater(AttachmentCatalog.AimTime(fa30, heavy, 0), fa30.aimTime, "... et fait épauler moins vite.");
+        WeaponAttachments light = AttachmentCatalog.Only(AttachmentCategory.Stock, (int)StockKind.Light);
+        AttachmentCatalog.RecoilFactors(catalog, light, 0, out vertical, out horizontal);
+        Assert.Greater(vertical, 1f, "La crosse légère : plus de recul...");
+        Assert.Greater(horizontal, 1f);
+        Assert.Less(AttachmentCatalog.AimTime(fa30, light, 0), fa30.aimTime, "... pour épauler plus vite.");
+
+        WeaponAttachments compensator = AttachmentCatalog.Only(AttachmentCategory.Barrel, (int)BarrelKind.Compensator);
+        AttachmentCatalog.RecoilFactors(catalog, compensator, 0, out vertical, out horizontal);
+        Assert.Less(horizontal, 1f, "Le compensateur retient le recul de côté...");
+        Assert.Greater(vertical, 1f, "... et l'arme monte plus.");
+
+        WeaponAttachments brake = AttachmentCatalog.Only(AttachmentCategory.Barrel, (int)BarrelKind.MuzzleBrake);
+        int firstShots = catalog.firstShots;
+        Assert.Greater(firstShots, 0, "Garde : des premiers coups.");
+        AttachmentCatalog.RecoilFactors(catalog, brake, 0, 0, out vertical, out horizontal);
+        Assert.Less(vertical, 1f, "Le frein de bouche retient le premier coup...");
+        Assert.Less(horizontal, 1f);
+        AttachmentCatalog.RecoilFactors(catalog, brake, 0, firstShots - 1, out vertical, out _);
+        Assert.Less(vertical, 1f, "... et les suivants, jusqu'au dernier des premiers...");
+        AttachmentCatalog.RecoilFactors(catalog, brake, 0, firstShots, out vertical, out horizontal);
+        Assert.AreEqual(1f, vertical, 1e-6f, "... mais plus après.");
+        Assert.AreEqual(1f, horizontal, 1e-6f);
+        Assert.Greater(AttachmentCatalog.MuzzleFlashScale(catalog, brake, 0), 1f, "Sa flamme se voit plus : on voit mieux le tireur.");
+        Assert.AreEqual(1f, AttachmentCatalog.MuzzleFlashScale(catalog, compensator, 0), 1e-6f);
+
+        WeaponAttachments longBarrel = AttachmentCatalog.Only(AttachmentCategory.Barrel, (int)BarrelKind.Long);
+        WeaponAttachments shortBarrel = AttachmentCatalog.Only(AttachmentCategory.Barrel, (int)BarrelKind.Short);
+        float far = fa30.falloffEnd, near = fa30.falloffStart * 0.85f;
+        Assert.Greater(fa30.DamageAt(HitboxZoneType.Torso, far, 1f, AttachmentCatalog.FalloffScale(catalog, longBarrel, 0)),
+                       fa30.DamageAt(HitboxZoneType.Torso, far), "Le canon long : plus de dégâts là où ils baissaient...");
+        Assert.Greater(AttachmentCatalog.RaiseTime(fa30, longBarrel, 0), fa30.raiseTime, "... pour une arme plus lente à sortir...");
+        Assert.Greater(AttachmentCatalog.AimTime(fa30, longBarrel, 0), fa30.aimTime, "... et à épauler.");
+        Assert.Less(fa30.DamageAt(HitboxZoneType.Torso, near, 1f, AttachmentCatalog.FalloffScale(catalog, shortBarrel, 0)),
+                    fa30.DamageAt(HitboxZoneType.Torso, near), "Le canon court : les dégâts baissent plus tôt...");
+        Assert.Less(AttachmentCatalog.RaiseTime(fa30, shortBarrel, 0), fa30.raiseTime, "... pour une arme plus rapide à sortir...");
+        Assert.Less(AttachmentCatalog.AimTime(fa30, shortBarrel, 0), fa30.aimTime, "... et à épauler.");
+        Assert.AreEqual(fa30.DamageAt(HitboxZoneType.Torso, 1f), fa30.DamageAt(HitboxZoneType.Torso, 1f, 1f, AttachmentCatalog.FalloffScale(catalog, longBarrel, 0)),
+                        1e-6f, "De près, les dégâts pleins ne changent pas.");
+
+        WeaponData rifle = loadout[Rifle];
+        Assert.IsFalse(rifle.HasFalloff, "Garde : les dégâts du FA-07 ne baissent pas.");
+        Assert.AreEqual(rifle.DamageAt(HitboxZoneType.Torso, 90f), rifle.DamageAt(HitboxZoneType.Torso, 90f, 1f, 0.5f), 1e-6f,
+                        "Une arme sans baisse des dégâts n'a pas de portée à changer.");
+
+        WeaponAttachments fast = AttachmentCatalog.Only(AttachmentCategory.Magazine, (int)MagazineKind.Fast);
+        Assert.Less(AttachmentCatalog.MagazineSize(fa30, fast, 0), fa30.magazineSize, "Le chargeur rapide : moins de balles...");
+        Assert.Less(AttachmentCatalog.ReloadDuration(fa30, fast, 0), fa30.reloadDuration, "... rechargées plus vite.");
+        Assert.AreEqual(AttachmentCatalog.MagazineSize(fa30, MagazineKind.Fast), AttachmentCatalog.MagazineSize(fa30, fast, 0));
+        WeaponData laser = loadout[LaserRifle];
+        Assert.IsTrue(laser.UsesHeat, "Garde : le FX-1 chauffe.");
+        Assert.Less(WeaponController.HeatRulesFor(laser, fast, 0).overheatVent, WeaponController.HeatRulesFor(laser, WeaponAttachments.None, 0).overheatVent,
+                    "La cellule rapide vide sa surchauffe plus vite...");
+        Assert.Greater(WeaponController.HeatRulesFor(laser, fast, 0).perShot, WeaponController.HeatRulesFor(laser, WeaponAttachments.None, 0).perShot,
+                       "... et chauffe plus vite.");
+    }
+
+    /// <summary>Le motif rejoué (l'éditeur des armes) pousse les premiers coups de ce que leur font les accessoires
+    /// (le frein de bouche), comme le tireur en jeu : les suivants, comme sans.</summary>
+    [Test]
+    public void LaRafaleRejouee_RetientLesPremiersCoups_CommeEnJeu()
+    {
+        var data = ScriptableObject.CreateInstance<WeaponData>();
+        try
+        {
+            data.shotsPerSecond = 10f;
+            data.recoilResetDelay = 0.35f;
+            data.recoilPerShotDegrees = 1f;
+            data.recoilPattern = new[] { new Vector2(0f, 1f), new Vector2(1f, 2f), new Vector2(-1f, 3f), new Vector2(0.5f, 4f), new Vector2(0f, 5f) };
+            Assert.IsTrue(RecoilPattern.Chains(data), "Garde : une arme qui s'enchaîne dans son motif.");
+            var plain = new List<Vector2>();
+            var braked = new List<Vector2>();
+            RecoilPattern.Burst(data, 5, Vector2.one, false, plain);
+            RecoilPattern.Burst(data, 5, Vector2.one, false, braked, 3, 0.5f);
+            for (int shot = 1; shot <= 3; shot++)
+                Assert.AreEqual((plain[shot] - plain[shot - 1]) * 0.5f, braked[shot] - braked[shot - 1], $"Le coup {shot} pousse deux fois moins.");
+            Assert.AreEqual(plain[4] - plain[3], braked[4] - braked[3], "Le quatrième, comme sans frein.");
+        }
+        finally { Object.DestroyImmediate(data); }
+    }
+
+    /// <summary>L'armurerie dit les nouveaux effets selon l'arme : la portée des dégâts se tait sur une arme dont les
+    /// dégâts ne baissent pas, la flamme devient l'épaisseur du rayon d'une arme laser, et ses accessoires ont leurs
+    /// noms (ses émetteurs, sa cellule).</summary>
+    [Test]
+    public void LesNouveauxEffets_SeDisentSelonLArme()
+    {
+        IReadOnlyList<WeaponData> loadout = Loadout();
+        AttachmentEffect[] effects = AttachmentCatalog.DefaultEffects();
+        AttachmentEffect Effect(AttachmentCategory category, int variant)
+            => System.Array.Find(effects, e => e.category == category && e.variant == variant);
+        AttachmentEffect longBarrel = Effect(AttachmentCategory.Barrel, (int)BarrelKind.Long);
+        AttachmentEffect brake = Effect(AttachmentCategory.Barrel, (int)BarrelKind.MuzzleBrake);
+        StringAssert.Contains("Portée des dégâts +30 %", WeaponStats.Describe(longBarrel, loadout[Fa30]));
+        StringAssert.DoesNotContain("portée", WeaponStats.Describe(longBarrel, loadout[Rifle]).ToLowerInvariant(),
+                                    "Les dégâts du FA-07 ne baissent pas : sa portée ne change pas.");
+        StringAssert.Contains("flamme de bouche +50 %", WeaponStats.Describe(brake, loadout[Rifle]));
+        StringAssert.Contains("épaisseur du rayon +50 %", WeaponStats.Describe(brake, loadout[LaserRifle]));
+        Assert.AreEqual("Compensateur", WeaponAttachments.ChoiceName(AttachmentCategory.Barrel, (int)BarrelKind.Compensator, loadout[Rifle]));
+        Assert.AreEqual("Stabilisateur", WeaponAttachments.ChoiceName(AttachmentCategory.Barrel, (int)BarrelKind.Compensator, loadout[LaserRifle]));
+        Assert.AreEqual("Focaliseur long", WeaponAttachments.ChoiceName(AttachmentCategory.Barrel, (int)BarrelKind.Long, loadout[LaserRifle]));
+        Assert.AreEqual("Cellule rapide", WeaponAttachments.ChoiceName(AttachmentCategory.Magazine, (int)MagazineKind.Fast, loadout[LaserRifle]));
+        Assert.AreEqual("Chargeur rapide", WeaponAttachments.ChoiceName(AttachmentCategory.Magazine, (int)MagazineKind.Fast, loadout[Rifle]));
+        Assert.AreEqual("Crosse lourde", WeaponAttachments.ChoiceName(AttachmentCategory.Stock, (int)StockKind.Heavy, loadout[Rifle]));
     }
 
     /// <summary>Depuis le tir à la hanche façon Rainbow Six (2026-10-16), le laser ne touche plus au
@@ -282,17 +539,15 @@ public class WeaponAttachmentsTests
         AttachmentCatalog catalog = Catalog();
         var grip = WeaponAttachments.None.WithGrip(Rifle, GripKind.Vertical);
         AttachmentCatalog.RecoilFactors(catalog, grip, Rifle, out float vertical, out float horizontal);
-        Assert.AreEqual(catalog.verticalGripRecoil, vertical, 1e-6f, "La poignée verticale retient le recul vertical...");
+        Assert.Less(vertical, 1f, "La poignée verticale retient le recul vertical...");
         Assert.AreEqual(1f, horizontal, 1e-6f, "... et rien d'autre.");
-        Assert.Less(catalog.verticalGripRecoil, 1f);
         Assert.AreEqual(1f, AttachmentCatalog.HipSpreadFactor(catalog, grip, Rifle), 1e-6f, "Elle ne resserre pas le cône.");
 
         var laser = WeaponAttachments.None.WithLaser(Rifle, true);
         AttachmentCatalog.RecoilFactors(catalog, laser, Rifle, out vertical, out horizontal);
         Assert.AreEqual(1f, vertical, 1e-6f, "Le laser ne retient pas le recul...");
         Assert.AreEqual(1f, horizontal, 1e-6f);
-        Assert.AreEqual(catalog.laserHipSpread, AttachmentCatalog.HipSpreadFactor(catalog, laser, Rifle), 1e-6f, "... il resserre la hanche.");
-        Assert.Less(catalog.laserHipSpread, 1f);
+        Assert.Less(AttachmentCatalog.HipSpreadFactor(catalog, laser, Rifle), 1f, "... il resserre la hanche.");
         Assert.AreEqual(1f, AttachmentCatalog.HipSpreadFactor(catalog, laser, Sniper), 1e-6f, "Le laser d'une arme ne resserre pas une autre.");
 
         AttachmentCatalog.RecoilFactors(catalog, grip, Sniper, out vertical, out _);
@@ -305,12 +560,91 @@ public class WeaponAttachmentsTests
     [Test]
     public void LaPoigneeInclinee_FaitEpaulerPlusVite()
     {
-        AttachmentCatalog catalog = Catalog();
         WeaponData rifle = Loadout()[Rifle];
-        Assert.AreEqual(rifle.aimTime, AttachmentCatalog.AimTime(rifle, GripKind.None, catalog), 1e-6f);
-        Assert.AreEqual(rifle.aimTime, AttachmentCatalog.AimTime(rifle, GripKind.Vertical, catalog), 1e-6f, "La poignée verticale n'y change rien.");
-        Assert.AreEqual(rifle.aimTime * catalog.angledGripAimTime, AttachmentCatalog.AimTime(rifle, GripKind.Angled, catalog), 1e-6f);
-        Assert.Less(catalog.angledGripAimTime, 1f);
+        Assert.AreEqual(rifle.aimTime, AttachmentCatalog.AimTime(rifle, GripKind.None), 1e-6f);
+        Assert.AreEqual(rifle.aimTime, AttachmentCatalog.AimTime(rifle, GripKind.Vertical), 1e-6f, "La poignée verticale n'y change rien.");
+        Assert.Less(AttachmentCatalog.AimTime(rifle, GripKind.Angled), rifle.aimTime, "La poignée inclinée fait épauler plus vite.");
+        Assert.AreEqual(AttachmentCatalog.AimTime(rifle, GripKind.Angled),
+                        AttachmentCatalog.AimTime(rifle, WeaponAttachments.None.WithGrip(Rifle, GripKind.Angled), Rifle), 1e-6f,
+                        "Seule ou parmi les accessoires de l'arme, le même épaulement.");
+    }
+
+    /// <summary>
+    /// Les effets sont des données (2026-10-29, demandé par l'utilisateur : « supprimer, ajouter, modifier ») : un
+    /// effet ajouté à un accessoire change l'arme qui le porte et elle seule, deux effets sur la même
+    /// caractéristique se multiplient, et un effet retiré ne change plus rien. Un viseur pourrait en porter aussi.
+    /// </summary>
+    [Test]
+    public void UnEffet_SAjouteSeRetireEtSeMultiplie_SurLArmeQuiPorteLAccessoire()
+    {
+        var catalog = ScriptableObject.CreateInstance<AttachmentCatalog>();
+        WeaponData rifle = Object.Instantiate(Loadout()[Rifle]);
+        try
+        {
+            catalog.effects = new[]
+            {
+                new AttachmentEffect { category = AttachmentCategory.Grip, variant = (int)GripKind.Vertical,
+                    modifiers = new[] { new StatModifier(WeaponStat.VerticalRecoil, 0.8f) } },
+                new AttachmentEffect { category = AttachmentCategory.Laser, variant = 1,
+                    modifiers = new[] { new StatModifier(WeaponStat.VerticalRecoil, 0.9f), new StatModifier(WeaponStat.HorizontalRecoil, 0.7f) } },
+                new AttachmentEffect { category = AttachmentCategory.Sight, variant = 12,
+                    modifiers = new[] { new StatModifier(WeaponStat.AimTime, 1.25f), new StatModifier(WeaponStat.MagazineSize, 0.8f) } },
+            };
+            rifle.attachmentCatalog = catalog;
+            WeaponAttachments both = WeaponAttachments.None.With(Rifle, 0, GripKind.Vertical, true, false);
+
+            AttachmentCatalog.RecoilFactors(catalog, both, Rifle, out float vertical, out float horizontal);
+            Assert.AreEqual(0.8f * 0.9f, vertical, 1e-6f, "La poignée et le laser retiennent le recul vertical : leurs facteurs se multiplient.");
+            Assert.AreEqual(0.7f, horizontal, 1e-6f, "Le recul horizontal ajouté au laser.");
+            AttachmentCatalog.RecoilFactors(catalog, both, Sniper, out vertical, out horizontal);
+            Assert.AreEqual(1f, vertical, 1e-6f, "Une autre place, sans ces accessoires : aucun effet.");
+            Assert.AreEqual(1f, horizontal, 1e-6f);
+
+            WeaponAttachments scoped = WeaponAttachments.None.WithSight(Rifle, 12);
+            Assert.AreEqual(rifle.aimTime * 1.25f, AttachmentCatalog.AimTime(rifle, scoped, Rifle), 1e-6f, "Un effet sur un viseur compte aussi.");
+            Assert.AreEqual(Mathf.RoundToInt(rifle.magazineSize * 0.8f), AttachmentCatalog.MagazineSize(rifle, scoped, Rifle),
+                "Le chargeur suit le facteur, arrondi.");
+
+            catalog.effects = new[] { catalog.effects[0] };
+            AttachmentCatalog.RecoilFactors(catalog, both, Rifle, out vertical, out horizontal);
+            Assert.AreEqual(0.8f, vertical, 1e-6f, "Les effets du laser retirés : il reste la poignée...");
+            Assert.AreEqual(1f, horizontal, 1e-6f, "... et plus rien sur le recul horizontal.");
+            Assert.AreEqual(rifle.magazineSize, AttachmentCatalog.MagazineSize(rifle, scoped, Rifle), "Le viseur sans effet : le chargeur d'origine.");
+        }
+        finally
+        {
+            Object.DestroyImmediate(rifle);
+            Object.DestroyImmediate(catalog);
+        }
+    }
+
+    /// <summary>L'armurerie et l'éditeur disent les effets en français, d'après les données : ce qui ne change rien
+    /// à une arme se tait (le rechargement d'un pompe), et chaque famille a ses mots (des cartouches, la vidange
+    /// d'une arme laser).</summary>
+    [Test]
+    public void LesEffets_SeDisentEnFrancais_SelonLArme()
+    {
+        IReadOnlyList<WeaponData> loadout = Loadout();
+        AttachmentEffect[] effects = AttachmentCatalog.DefaultEffects();
+        AttachmentEffect grip = System.Array.Find(effects, e => e.category == AttachmentCategory.Grip && e.variant == (int)GripKind.Vertical);
+        AttachmentEffect magazine = System.Array.Find(effects, e => e.category == AttachmentCategory.Magazine);
+        WeaponData laserWeapon = null;
+        foreach (WeaponData data in loadout)
+            if (data.UsesHeat && laserWeapon == null) laserWeapon = data;
+
+        Assert.AreEqual("Recul vertical −20 %", WeaponStats.Describe(grip, loadout[Rifle]));
+        Assert.AreEqual("Coups +50 %, recharge +15 %", WeaponStats.Describe(magazine, loadout[Rifle]));
+        Assert.AreEqual("Cartouches +50 %", WeaponStats.Describe(magazine, loadout[Shotgun]), "Une cartouche se glisse toujours aussi vite.");
+        Assert.IsNotNull(laserWeapon, "Il faut une arme laser à l'arsenal.");
+        Assert.AreEqual("Tirs avant surchauffe +50 %, vidange +15 %", WeaponStats.Describe(magazine, laserWeapon));
+        Assert.AreEqual("Aucun effet", WeaponStats.Describe(null, loadout[Rifle]));
+        var neutral = new AttachmentEffect { modifiers = new[] { new StatModifier(WeaponStat.HipSpread, 1f) } };
+        Assert.AreEqual("Aucun effet", WeaponStats.Describe(neutral, loadout[Rifle]), "Un facteur de 1 ne change rien.");
+        foreach (WeaponStat stat in WeaponStats.All)
+        {
+            Assert.IsFalse(string.IsNullOrEmpty(WeaponStats.Label(stat)), $"{stat} a un nom.");
+            Assert.IsFalse(string.IsNullOrEmpty(WeaponStats.Help(stat)), $"{stat} a une aide.");
+        }
     }
 
     // ------------------------------------------------------------------
@@ -388,7 +722,8 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(AttachmentSlots.All, loadout[Rifle].acceptedAttachments);
         Assert.AreEqual(AttachmentSlots.All, loadout[Sniper].acceptedAttachments, "Le sniper prend tout, sa lunette remplacée par une lunette.");
         Assert.AreEqual(AttachmentSlots.All, loadout[Shotgun].acceptedAttachments);
-        Assert.AreEqual(AttachmentSlots.Sight | AttachmentSlots.Laser | AttachmentSlots.Magazine, loadout[Pistol].acceptedAttachments);
+        Assert.AreEqual(AttachmentSlots.Sight | AttachmentSlots.Laser | AttachmentSlots.Magazine | AttachmentSlots.Barrel,
+                        loadout[Pistol].acceptedAttachments, "Un pistolet n'a ni poignée avant ni crosse ; ses émetteurs, si.");
         Assert.AreEqual(SightFamilies.Reflex, loadout[Pistol].acceptedSights);
     }
 
@@ -576,6 +911,126 @@ public class WeaponAttachmentsTests
         Assert.AreEqual("CG-FA30", AttachmentMount.Mounted(other, AttachmentCategory.Magazine).Code);
     }
 
+    /// <summary>Chaque arme a un modèle de chaque crosse, de chaque canon et du chargeur rapide qu'elle prend, fait
+    /// pour elle (2026-10-29, GDD § 6), sauf le chargeur rapide du FX-3 et du RV-30, qui n'ont pas de chargeur qui
+    /// dépasse (l'effet vaut quand même). Ce qu'il remplace existe sur l'arme (une pièce mal nommée resterait
+    /// visible sous lui), les points d'accroche qu'il déplace aussi, et ce qui va au canon porte sa bouche : plus
+    /// loin sur un canon long que sur un canon court.</summary>
+    [Test]
+    public void ChaqueCrosseChaqueCanonEtChaqueChargeurRapide_AUnModeleFaitPourSonArme()
+    {
+        AttachmentCatalog catalog = Catalog();
+        int models = 0;
+        foreach (WeaponData data in Loadout())
+        {
+            WeaponModel model = data.modelPrefab.GetComponent<WeaponModel>();
+            var muzzle = new Dictionary<int, float>();
+            foreach (AttachmentCategory category in new[] { AttachmentCategory.Stock, AttachmentCategory.Barrel, AttachmentCategory.Magazine })
+            {
+                for (int variant = 1; variant < WeaponAttachments.VariantCount(category); variant++)
+                {
+                    if (category == AttachmentCategory.Magazine && variant != (int)MagazineKind.Fast) continue;
+                    if (!WeaponAttachments.Accepts(data, category, variant)) continue;
+                    GameObject prefab = AttachmentMount.PrefabFor(catalog, model, category, variant);
+                    string what = $"{model.Designation}, {WeaponAttachments.ChoiceName(category, variant, data)}";
+                    if (category == AttachmentCategory.Magazine && model.Designation is "FX-3" or "RV-30")
+                    {
+                        Assert.IsNull(prefab, $"{what} : pas de modèle.");
+                        continue;
+                    }
+                    Assert.IsNotNull(prefab, $"{what} : pas de modèle.");
+                    var a = prefab.GetComponent<WeaponAttachment>();
+                    Assert.AreEqual(category, a.Category, what);
+                    Assert.AreEqual(model.Designation, a.WeaponDesignation, what);
+                    Assert.AreEqual(variant, a.Variant, what);
+                    foreach (string part in a.Hides)
+                        Assert.IsNotNull(model.transform.Find(part), $"{what} cache « {part} », que l'arme n'a pas.");
+                    Transform moved = prefab.transform.Find(AttachmentMount.SocketGroupName);
+                    if (moved != null)
+                        foreach (Transform socket in moved)
+                            Assert.IsNotNull(model.transform.Find($"{AttachmentMount.SocketGroupName}/{socket.name}"),
+                                $"{what} déplace un point d'accroche « {socket.name} » que l'arme n'a pas.");
+                    if (category == AttachmentCategory.Barrel)
+                    {
+                        Assert.IsNotNull(a.Muzzle, $"{what} : sans bouche, la flamme partirait de l'arme nue.");
+                        muzzle[variant] = a.Muzzle.localPosition.z;
+                    }
+                    models++;
+                }
+            }
+            if (muzzle.TryGetValue((int)BarrelKind.Long, out float longer))
+            {
+                Assert.Greater(longer, 0.03f, $"{model.Designation} : le canon long n'allonge pas l'arme.");
+                Assert.Less(muzzle[(int)BarrelKind.Short], longer - 0.01f, $"{model.Designation} : le canon court finit plus loin que le long.");
+            }
+        }
+        Assert.AreEqual(18 + 38 + 7, models, "18 crosses, 38 pour le canon, 7 chargeurs rapides.");
+    }
+
+    /// <summary>Un canon court ou long qui déplace la tête du FAP-30 emporte avec elle ce qui s'y accroche : le
+    /// laser et la rallonge du tube. Le canon parti, ils reviennent à leur place, sans doublon.</summary>
+    [Test]
+    public void UnCanonQuiDeplaceLaTete_EmporteLeLaserEtLaRallongeDuTube_EtLesRendQuandIlPart()
+    {
+        const int Fap30 = 8;
+        WeaponData data = Loadout()[Fap30];
+        Assert.AreEqual("FAP-30", data.Designation, "Garde : la neuvième arme est le FAP-30.");
+        Transform weapon = Instantiate("FAP30");
+        Transform ownLaser = weapon.Find("Accessoires/Laser"), ownTube = weapon.Find("Accessoires/Chargeur");
+        Assert.IsNotNull(ownLaser, "Garde : le FAP-30 a son point d'accroche du laser.");
+        Assert.IsNotNull(ownTube, "Garde : et celui de la rallonge du tube.");
+        WeaponAttachments chosen = WeaponAttachments.None.WithLaser(Fap30, true).WithMagazine(Fap30, MagazineKind.Extended);
+
+        // Sans canon d'abord : le canon court arrive sur un laser et une rallonge déjà montés à leur place.
+        foreach ((BarrelKind kind, float shift) in new[]
+                 { (BarrelKind.Standard, 0f), (BarrelKind.Short, -0.05f), (BarrelKind.Long, 0.10f), (BarrelKind.Standard, 0f) })
+        {
+            AttachmentMount.Apply(weapon, data, chosen.WithBarrel(Fap30, kind), Fap30, WeaponFinish.Origine);
+            Assert.AreEqual(kind != BarrelKind.Standard, AttachmentMount.Mounted(weapon, AttachmentCategory.Barrel) != null, $"{kind} : le canon.");
+            foreach ((AttachmentCategory category, Transform own) in new[] { (AttachmentCategory.Laser, ownLaser), (AttachmentCategory.Magazine, ownTube) })
+            {
+                WeaponAttachment mounted = AttachmentMount.Mounted(weapon, category);
+                Assert.IsNotNull(mounted, $"{kind} : {category} n'est plus monté.");
+                int count = 0;
+                foreach (WeaponAttachment a in weapon.GetComponentsInChildren<WeaponAttachment>())
+                    if (a.Category == category) count++;
+                Assert.AreEqual(1, count, $"{kind} : {category} en double (l'ancien resté à l'autre place).");
+                float moved = Vector3.Dot(mounted.transform.position - own.position, weapon.forward);
+                Assert.AreEqual(shift, moved, 0.002f, $"{kind} : {category} ne suit pas la tête.");
+            }
+        }
+    }
+
+    /// <summary>Un canon long ou court porte sa copie du guidon de l'arme, déplacée avec la bouche. Un viseur la
+    /// cache comme il cache celui de l'arme : elle se verrait dans sa fenêtre. Sans viseur, elle se voit, et celui
+    /// de l'arme reste caché tant que le canon est là.</summary>
+    [Test]
+    public void UnViseur_CacheAussiLeGuidonDUnCanonLong_QuiMontreLeSienSinon()
+    {
+        WeaponData data = Loadout()[Shotgun];
+        Transform weapon = Instantiate("FAP03");
+        WeaponAttachments longBarrel = WeaponAttachments.None.WithBarrel(Shotgun, BarrelKind.Long);
+
+        AttachmentMount.Apply(weapon, data, longBarrel, Shotgun, WeaponFinish.Origine);
+        WeaponAttachment barrel = AttachmentMount.Mounted(weapon, AttachmentCategory.Barrel);
+        Assert.AreEqual("CL-FAP03", barrel.Code, "Garde : le canon long du FAP-03.");
+        Assert.IsFalse(Shown(weapon, "Guidon"), "Le guidon de l'arme resterait à l'ancienne bouche.");
+        Assert.IsTrue(Shown(barrel.transform, "Guidon"), "Le canon long montre le sien, au bout du canon.");
+
+        AttachmentMount.Apply(weapon, data, longBarrel.WithSight(Shotgun, HoloA), Shotgun, WeaponFinish.Origine);
+        Assert.AreSame(barrel, AttachmentMount.Mounted(weapon, AttachmentCategory.Barrel), "Garde : le même canon.");
+        Assert.IsFalse(Shown(barrel.transform, "Guidon"), "Sous un viseur, le guidon du canon long se verrait dans la fenêtre.");
+        Assert.IsFalse(Shown(weapon, "Guidon"));
+
+        AttachmentMount.Apply(weapon, data, longBarrel, Shotgun, WeaponFinish.Origine);
+        Assert.IsTrue(Shown(barrel.transform, "Guidon"), "Le viseur parti, le guidon du canon long revient.");
+        Assert.IsFalse(Shown(weapon, "Guidon"), "Celui de l'arme reste caché : le canon long est toujours là.");
+
+        AttachmentMount.Apply(weapon, data, WeaponAttachments.None, Shotgun, WeaponFinish.Origine);
+        Assert.IsNull(AttachmentMount.Mounted(weapon, AttachmentCategory.Barrel));
+        Assert.IsTrue(Shown(weapon, "Guidon"), "Le canon parti, le guidon de l'arme revient.");
+    }
+
     [Test]
     public void UnPistolet_PrendLeLaserDePoingEtUnReflex_JamaisDePoignee()
     {
@@ -603,7 +1058,7 @@ public class WeaponAttachmentsTests
         Transform revolver = Instantiate("RV30");
         AttachmentMount.Apply(revolver, rv30, WeaponAttachments.None.WithMagazine(Revolver, true), Revolver, WeaponFinish.Origine);
         Assert.IsNull(AttachmentMount.Mounted(revolver, AttachmentCategory.Magazine));
-        Assert.AreEqual(9, AttachmentCatalog.MagazineSize(rv30, true, rv30.attachmentCatalog), "Six coups, neuf au grand chargeur.");
+        Assert.AreEqual(9, AttachmentCatalog.MagazineSize(rv30, true), "Six coups, neuf au grand chargeur.");
     }
 
     [Test]

@@ -2543,12 +2543,9 @@ public class PlayerLocomotion : NetworkBehaviour
         // Un spectateur, lui, n'est gelé par aucune phase : seul un étourdissement l'arrête, lu à
         // l'instant de simulation de l'input (comme une transition de posture) sur l'état publié par
         // le serveur. Le joueur l'apprend avec un peu de retard : le recalage rattrape l'écart.
+        // Allongé, on va aussi de côté depuis le 2026-10-29 (la reptation de côté, calculée dans Blender) :
+        // le pas de côté y est à ×0,85 comme ailleurs (DirectionMultiplier).
         Vector2 moveInput = movementAllowed ? snap.move : Vector2.zero;
-
-        // Allongé, on ne se déplace pas de côté (2026-10-10) : aucune animation ne le montre, et le
-        // corps glissait en pose d'attente. Aucune glissade n'est tolérée. À rouvrir avec un clip
-        // de reptation latérale.
-        if (stance == Stance.Prone) moveInput.x = 0f;
 
         Vector3 inputDir = new Vector3(moveInput.x, 0f, moveInput.y);
         inputDir = Vector3.ClampMagnitude(inputDir, 1f);

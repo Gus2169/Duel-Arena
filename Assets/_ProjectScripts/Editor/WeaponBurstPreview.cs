@@ -52,9 +52,14 @@ public struct TargetShape
 public struct BurstSetup
 {
     public int shots;
-    /// <summary>Ce que la posture, le déplacement, la visée et la poignée verticale laissent de la
-    /// poussée du motif (x horizontal, y vertical).</summary>
+    /// <summary>Ce que la posture, le déplacement, la visée et les accessoires laissent de la poussée du
+    /// motif (x horizontal, y vertical).</summary>
     public Vector2 recoilScale;
+    /// <summary>Les premiers coups, et ce que les accessoires leur font en plus (le frein de bouche).</summary>
+    public int firstShots;
+    public float firstShotsFactor;
+    /// <summary>Ce que les accessoires font à la portée des dégâts (le canon long ou court ; 1 sans).</summary>
+    public float falloffScale;
     public bool aiming;
     public PlayerLocomotion.Stance stance;
     /// <summary>L'allure du tireur (m/s), qui ouvre le cône à la hanche.</summary>
@@ -117,7 +122,8 @@ public sealed class BurstPreview
         Chains = RecoilPattern.Chains(data);
         if (Shots == 0) return;
 
-        RecoilPattern.Burst(data, Shots, setup.recoilScale, true, aim);
+        RecoilPattern.Burst(data, Shots, setup.recoilScale, true, aim, setup.firstShots,
+                            setup.firstShotsFactor > 0f ? setup.firstShotsFactor : 1f);
 
         Vector2 aimPoint = setup.target.AimPoint(setup.aimAtHead);
         float distance = Mathf.Max(0.1f, setup.distance);
@@ -145,7 +151,7 @@ public sealed class BurstPreview
                     case HitboxZoneType.Legs: LegHits++; break;
                     default: Misses++; break;
                 }
-                if (zone.HasValue) shotDamage += data.DamageAt(zone.Value, distance);
+                if (zone.HasValue) shotDamage += data.DamageAt(zone.Value, distance, 1f, setup.falloffScale > 0f ? setup.falloffScale : 1f);
             }
 
             dealt += shotDamage;

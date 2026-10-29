@@ -62,6 +62,8 @@ MonoBehaviour:
   beam: {fileID: 0}
   leftHand: {fileID: 5340773006834269479}
   weaponDesignation: 
+  variant: 1
+  muzzle: {fileID: 0}
   hides: []
 --- !u!114 &6457444807826501353
 MonoBehaviour:

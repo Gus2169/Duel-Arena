@@ -1,5 +1,9 @@
 """Les chargeurs grande capacité de Duel Arena (Blender 5.2, low poly) : un par arme, allongé dans la
-forme du chargeur de l'arme (bible § 12 ; GDD § 6 : la moitié de balles en plus).
+forme du chargeur de l'arme (bible § 12 ; GDD § 6 : la moitié de balles en plus). Et les chargeurs rapides
+(CR-, GDD § 6 : un rechargement plus court, moins de balles) : le même chargeur raccourci, une boucle de
+nylon sous sa semelle pour l'arracher du puits ; sous une cellule d'énergie, une anse d'acier. Pas sur les
+armes qu'on recharge cartouche par cartouche (les pompes et le FP-30), ni sur le FX-3 et le RV-30, qui n'ont
+pas de chargeur qui dépasse (l'effet de jeu vaut quand même).
 - les chargeurs courbes ou droits et les cellules d'énergie (FA-07, FP-12, FA-30, FX-1, FX-2) : les
   deux bords du chargeur de l'arme (ses courbes DOS et FACE) allongés depuis leur haut, dans le puits,
   avec le constructeur du chargeur de l'arme (ses nervures, sa semelle, sa jauge) ;
@@ -33,7 +37,11 @@ kit = acc.kit
 from kit_lowpoly import AVANT, GAUCHE, HAUT, P  # noqa: E402
 
 ALLONGEMENT = 1.45   # la longueur d'un chargeur, pour la moitié de balles en plus (son haut reste dans le puits)
+RACCOURCI = 0.80     # celle d'un chargeur rapide
 RALLONGE_POIGNEE = 0.045
+
+GRAND, RAPIDE = 1, 2   # MagazineKind dans le jeu
+RAPIDES = ("FA-07", "FP-12", "FA-30", "FX-1", "FX-2", "PA-05", "FX-4")
 
 CHARGEURS = [
     # (arme, son script, genre de chargeur, réglages)
@@ -64,24 +72,74 @@ def renommer(ob, a, nom):
     ob.data.name = a.nom(nom)
 
 
-def construire_chargeur(code_arme, genre, reglages, espace, point):
+def boucle(a, points, anse):
+    """Sous la semelle d'un chargeur rapide, ce qu'on tire pour l'arracher du puits : une boucle de nylon, ou
+    sous une cellule d'énergie une anse d'acier. points : son chemin (av, h), ses deux bouts dans la semelle."""
+    mat = "Acier" if anse else "Nylon"
+    pc = a.piece("Boucle", mat)
+    section = kit.section_cercle(0.0016, 6) if anse else kit.section_rect(0.012, 0.0026)
+    kit.balayage(pc, kit.lisser_chemin([P(av, h) for av, h in points], 3), section, mat, normale=GAUCHE)
+    a.objet(pc)
+
+
+FORME_BOUCLE = [(-0.0090, 0.003), (-0.0105, -0.008), (-0.0060, -0.017), (0.0, -0.019), (0.0060, -0.017),
+                (0.0105, -0.008), (0.0090, 0.003)]
+FORME_ANSE = [(-0.0095, 0.003), (-0.0100, -0.006), (-0.0065, -0.011), (0.0, -0.0125), (0.0065, -0.011),
+              (0.0100, -0.006), (0.0095, 0.003)]
+
+
+def sous_semelle(dos, face, ep_bas, forme):
+    """Le chemin d'une boucle sous la semelle d'un chargeur droit ou courbe (ca.semelle) : forme = [(le long de
+    la semelle, vers le haut du chargeur)], depuis le milieu de son dessous."""
+    bd, bf = Vector(dos[-1]), Vector(face[-1])
+    d = (bf - bd).normalized()
+    haut = Vector((-d.y, d.x))
+    m = (bd + bf) / 2 - haut * (ep_bas - 0.002)
+    return [tuple(m + d * u + haut * v) for u, v in forme]
+
+
+def construire_chargeur(code_arme, genre, reglages, espace, point, sorte=GRAND):
+    rapide = sorte == RAPIDE
+    k = RACCOURCI if rapide else ALLONGEMENT
+    nom = "Chargeur_Rapide" if rapide else "Chargeur_Grand"
+
     def construire(a):
         a.transformation = Matrix.Translation(-point)   # dessiné dans le repère de l'arme
         dos, face = espace.get("DOS"), espace.get("FACE")
-        if genre == "propre":   # le chargeur du script de l'arme, ses nervures comprises
-            espace["DOS"], espace["FACE"] = allonger(dos), allonger(face)
+        if rapide and genre in ("poignee", "cellule_poignee"):
+            # le chargeur reste dans la poignée : sa semelle, plus large, porte la boucle (ou l'anse)
+            pt, L = espace["pt"], espace["LONGUEUR"]
+            laser = genre == "cellule_poignee"
+            pc = a.piece(nom, "Peinture" if laser else "Acier")
+            corps = [pt(0.006, 0.016), pt(L, 0.016), pt(L, -0.016), pt(0.006, -0.016)]
+            kit.prisme(pc, corps, -0.0105, 0.0105, "Peinture" if laser else "Acier")
+            semelle = [pt(L - 0.002, 0.0262), pt(L + 0.0085, 0.0270), pt(L + 0.0085, -0.0258), pt(L - 0.002, -0.0252)]
+            f = kit.prisme(pc, semelle, -0.0172, 0.0172, "Acier" if laser else "Polymere")
+            kit.chanfreiner(pc, 0.0018, f)
+            a.objet(pc)
+            forme = FORME_ANSE if laser else FORME_BOUCLE
+            boucle(a, [pt(L + 0.0065 - v, u) for u, v in forme], laser)
+        elif genre == "propre":   # le chargeur du script de l'arme, ses nervures comprises
+            espace["DOS"], espace["FACE"] = allonger(dos, k), allonger(face, k)
             try:
                 espace["chargeur"](a)
             finally:
                 espace["DOS"], espace["FACE"] = dos, face
-            renommer(a.objets[-1], a, "Chargeur_Grand")
+            renommer(a.objets[-1], a, nom)
+            if rapide:
+                boucle(a, sous_semelle(allonger(dos, k), allonger(face, k), 0.0065, FORME_BOUCLE), False)
         elif genre == "chargeur":
-            ca.chargeur(a, allonger(dos), allonger(face), reglages["demi"], nom="Chargeur_Grand",
+            ca.chargeur(a, allonger(dos, k), allonger(face, k), reglages["demi"], nom=nom,
                         mat=reglages.get("mat", "Polymere"), mat_semelle=reglages.get("mat_semelle"),
                         bande=reglages.get("bande", True))
+            if rapide:
+                boucle(a, sous_semelle(allonger(dos, k), allonger(face, k), 0.0075, FORME_BOUCLE), False)
         elif genre == "cellule":
-            ca.cellule(a, allonger(dos), allonger(face), reglages["demi"], nom="Chargeur_Grand",
-                       segments=reglages["segments"], allumes=reglages["allumes"])
+            segments, allumes = (3, 3) if rapide else (reglages["segments"], reglages["allumes"])
+            ca.cellule(a, allonger(dos, k), allonger(face, k), reglages["demi"], nom=nom,
+                       segments=segments, allumes=allumes)
+            if rapide:
+                boucle(a, sous_semelle(allonger(dos, k), allonger(face, k), 0.009, FORME_ANSE), True)
         elif genre in ("poignee", "cellule_poignee"):
             pt, L, E = espace["pt"], espace["LONGUEUR"], RALLONGE_POIGNEE
             laser = genre == "cellule_poignee"
@@ -126,6 +184,9 @@ def construire_chargeur(code_arme, genre, reglages, espace, point):
             a.objet(pc)
         a.donnees["arme"] = code_arme
         a.donnees["genre"] = genre
+        a.donnees["variante"] = sorte
+        if rapide:
+            a.donnees["masque"] = ["Chargeur_Standard"]
     return construire
 
 
@@ -133,15 +194,17 @@ def principal():
     args = acc.arguments(globals().get("ARGS"))
     seuls = [c for c in args.seuls.split(",") if c]
     ateliers = []
-    for code_arme, script, genre, reglages in CHARGEURS:
-        code = "CG-" + code_arme.replace("-", "")
+    for code_arme, script, genre, reglages, sorte in [(*c, GRAND) for c in CHARGEURS] + \
+            [(*c, RAPIDE) for c in CHARGEURS if c[0] in RAPIDES]:
+        code = ("CR-" if sorte == RAPIDE else "CG-") + code_arme.replace("-", "")
         if seuls and code not in seuls:
             continue
         espace = acc.arme(script)
         point = acc.point_de(espace["ATELIER"], "Chargeur")
-        a = acc.construire_accessoire(code, f"Chargeur grande capacité {code_arme}", "Chargeur",
-                                      f"Chargeur grand — {code_arme}", construire_chargeur(code_arme, genre, reglages,
-                                                                                          espace, point),
+        cellule = genre.startswith("cellule")
+        titre = ("Cellule" if cellule else "Chargeur") + (" rapide" if sorte == RAPIDE else " grande capacité")
+        a = acc.construire_accessoire(code, f"{titre} {code_arme}", "Chargeur", f"{titre} — {code_arme}",
+                                      construire_chargeur(code_arme, genre, reglages, espace, point, sorte),
                                       args, args.usure or None)
         a.script_arme = script
         ateliers.append(a)

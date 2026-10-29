@@ -44,9 +44,15 @@ public partial class WeaponEditorWindow
         if (data.killKnockback > 0f) Field(so, "killKnockbackLift", "Soulèvement de l'épave (m/s)");
 
         Section("Accessoires acceptés");
-        Mask(so, "acceptedAttachments", "Emplacements", new[] { "Viseur", "Poignée", "Laser", "Grand chargeur" });
-        // Dans l'ordre des bits de SightFamilies.
+        // Dans l'ordre des bits d'AttachmentSlots, de SightFamilies, de MagazineKinds et de BarrelKinds.
+        Mask(so, "acceptedAttachments", "Emplacements", new[] { "Viseur", "Poignée", "Laser", "Chargeur", "Crosse", "Canon" });
         Mask(so, "acceptedSights", "Familles de viseurs", new[] { "Points rouges", "Holographiques", "Réflex", "Lunettes", "Réflex à grand cadre" });
+        Mask(so, "acceptedMagazines", data.UsesHeat ? "Cellules" : "Chargeurs", new[] { "Grande capacité", "Rapide" });
+        Mask(so, "acceptedBarrels", data.UsesHeat ? "Émetteurs" : "Canon",
+             data.UsesHeat ? new[] { "Stabilisateur", "Dissipateur", "Focaliseur long", "Focaliseur court" }
+                           : new[] { "Compensateur", "Frein de bouche", "Canon long", "Canon court" });
+        if ((data.acceptedBarrels & BarrelKinds.Barrels) != 0 && !data.HasFalloff)
+            Note("Ses dégâts ne baissent pas avec la distance : un canon long n'y aurait que sa contrepartie, un court que son avantage.");
 
         Section("Le tir se voit");
         Field(so, "shotIsBeam", "Rayon (arme laser), sinon flamme de bouche");
@@ -191,8 +197,8 @@ public partial class WeaponEditorWindow
             Field(so, "magazineSize", "Balles par chargeur");
             Field(so, "reloadPerRound", "Rechargement cartouche par cartouche");
             Field(so, "reloadDuration", data.reloadPerRound ? "Une cartouche (s)" : "Rechargement (s)");
-            int extended = AttachmentCatalog.MagazineSize(data, true, catalog);
-            float reload = AttachmentCatalog.ReloadDuration(data, true, catalog);
+            int extended = AttachmentCatalog.MagazineSize(data, true);
+            float reload = AttachmentCatalog.ReloadDuration(data, true);
             float full = data.reloadPerRound ? data.reloadDuration * data.magazineSize : data.reloadDuration;
             Note((data.reloadPerRound ? $"Recharger le chargeur vide : {N(full)} s. " : "")
                  + $"Avec le grand chargeur : {extended} balles, {(data.reloadPerRound ? $"{N(reload)} s par cartouche" : $"rechargement en {N(reload)} s")}.");
@@ -252,7 +258,7 @@ public partial class WeaponEditorWindow
         float still = HipFireSpread.Cone(data, 0f, PlayerLocomotion.Stance.Standing, 0f, 0f, 1f);
         float walking = HipFireSpread.Cone(data, HipFireSpread.ReferenceSpeed, PlayerLocomotion.Stance.Standing, 0f, 0f, 1f);
         float sprint = HipFireSpread.Cone(data, HipFireSpread.ReferenceSpeed * HipFireSpread.MaxSpeedFactor, PlayerLocomotion.Stance.Standing, 0f, 0f, 1f);
-        Note($"Debout : {N(still)}° à l'arrêt, {N(walking)}° en marchant, {N(sprint)}° dans l'élan d'un sprint ; accroupi ×{N(HipFireSpread.CrouchFactor)}, allongé ×{N(HipFireSpread.ProneFactor)}, laser ×{N(catalog != null ? catalog.laserHipSpread : 1f)}. Épaulée, la balle part dans l'axe.");
+        Note($"Debout : {N(still)}° à l'arrêt, {N(walking)}° en marchant, {N(sprint)}° dans l'élan d'un sprint ; accroupi ×{N(HipFireSpread.CrouchFactor)}, allongé ×{N(HipFireSpread.ProneFactor)}, laser ×{N(LaserHipFactor(data))}. Épaulée, la balle part dans l'axe.");
         if (data.hipSpreadPerShot > 0f)
             Note($"Une rafale ouvre le cône de {N(data.hipSpreadPerShot)}° par coup, jusqu'à {N(data.hipSpreadMaxBloom)}° de plus, refermé à {N(data.hipSpreadRecovery)}°/s après {N(HipFireSpread.BloomRecoveryDelay)} s sans tirer.");
     }
@@ -266,7 +272,7 @@ public partial class WeaponEditorWindow
         Field(so, "sprintToFireTime", "Sortie de sprint (s avant de tirer)");
         Field(so, "moveSpeedMultiplier", "Poids : vitesse de déplacement (×)");
         if (locomotion != null)
-            Note($"En marchant : {N(locomotion.NominalSpeed(PlayerLocomotion.Stance.Standing) * data.moveSpeedMultiplier)} m/s. Avec la poignée inclinée, épaulée en {N(AttachmentCatalog.AimTime(data, GripKind.Angled, catalog))} s.");
+            Note($"En marchant : {N(locomotion.NominalSpeed(PlayerLocomotion.Stance.Standing) * data.moveSpeedMultiplier)} m/s. Avec la poignée inclinée, épaulée en {N(AttachmentCatalog.AimTime(data, GripKind.Angled))} s.");
     }
 
     private void DrawRecoilSummarySection(SerializedObject so, WeaponData data)
@@ -275,7 +281,7 @@ public partial class WeaponEditorWindow
         Field(so, "recoilPerShotDegrees", "Force (° par coup du motif)");
         Field(so, "recoilRecoverySpeed", "Retour du regard (°/s)");
         Field(so, "recoilResetDelay", "Remise à zéro du motif (s sans tirer)");
-        Note(RecoilSummary(data, PlayerLocomotion.Stance.Standing, PreviewMovement.Still, true, false, false));
+        Note(RecoilSummary(data, PlayerLocomotion.Stance.Standing, PreviewMovement.Still, true, WeaponAttachments.None, false));
         if (GUILayout.Button("Dessiner le motif de recul →", GUILayout.Width(330f))) tab = Tab.Recoil;
     }
 

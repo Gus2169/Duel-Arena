@@ -75,6 +75,8 @@
 .ico-grip { background-image: url("project://database/Assets/_ProjectUI/Icons/grip.svg"); }
 .ico-laser { background-image: url("project://database/Assets/_ProjectUI/Icons/laser.svg"); }
 .ico-magazine { background-image: url("project://database/Assets/_ProjectUI/Icons/magazine.svg"); }
+.ico-barrel { background-image: url("project://database/Assets/_ProjectUI/Icons/barrel.svg"); }
+.ico-stock { background-image: url("project://database/Assets/_ProjectUI/Icons/stock.svg"); }
 .ico-rifle { background-image: url("project://database/Assets/_ProjectUI/Icons/rifle.svg"); }
 .ico-brush { background-image: url("project://database/Assets/_ProjectUI/Icons/brush.svg"); }
 .ico-target { background-image: url("project://database/Assets/_ProjectUI/Icons/target.svg"); }

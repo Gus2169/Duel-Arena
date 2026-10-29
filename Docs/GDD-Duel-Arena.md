@@ -190,16 +190,18 @@ Les modèles (2026-10-15, bible § 12) : le stock (FA-07, FP-12, FAP-03, PA-05) 
 - **Chargeur grande capacité** : la moitié de balles en plus. En contrepartie, un rechargement plus long de 15 % (une arme chargée cartouche par cartouche a seulement plus de cartouches à glisser). Proposition de Claude, validée le 2026-10-25. *Sur une arme laser, ce serait une cellule grande capacité : la moitié de chaleur en plus avant la surchauffe, une vidange 15 % plus longue (proposition de Claude, 2026-10-26).*
 - **Pas de silencieux** (tranché le 2026-10-25) : le son est une information de jeu, aucun accessoire n'y touche.
 
-Un accessoire monté prend la finition de son arme (validé le 2026-10-25). **D'autres accessoires viendront**, choisis le 2026-10-25 parmi les propositions de Claude (valeurs de départ, réglables dans l'éditeur des armes) :
+Un accessoire monté prend la finition de son arme (validé le 2026-10-25). **Sept autres**, choisis le 2026-10-25 parmi les propositions de Claude, **sont dans le jeu depuis le 2026-10-29** (valeurs de départ, réglables dans l'éditeur des armes) :
 - **crosse légère** : épaulement 15 % plus rapide, recul 10 % plus fort ;
 - **crosse lourde** : recul 15 % plus faible, épaulement 15 % plus lent ;
 - **compensateur** : recul horizontal 30 % plus faible, recul vertical 10 % plus fort ;
-- **frein de bouche** : premiers coups 25 % plus stables, flamme de bouche plus grande (on voit mieux le tireur) ;
+- **frein de bouche** : les trois premiers coups d'une rafale 25 % plus stables, une flamme de bouche plus grande de moitié (on voit mieux le tireur) ;
 - **canon long** : dégâts qui baissent 30 % plus loin, arme 10 % plus lente à sortir et à épauler ;
-- **canon court** : arme 10 % plus rapide à sortir et à épauler, dégâts qui baissent plus tôt ;
+- **canon court** : arme 10 % plus rapide à sortir et à épauler, dégâts qui baissent 30 % plus tôt ;
 - **chargeur rapide** : rechargement 25 % plus rapide, 20 % de balles en moins.
 
-Écartés : le cache-flamme et la bretelle. Comme les premiers, ils sont ouverts à tous, et chacun se paie d'une contrepartie. *Chaque arme accepterait ceux de sa famille, à régler dans l'éditeur (proposition de Claude, 2026-10-26).* Les armes sont modélisées nues, avec leurs rails et leurs points d'accroche.
+**Où ils vont** (l'utilisateur, 2026-10-29) : **un seul emplacement au canon**, comme dans *Rainbow Six* : un compensateur, un frein de bouche, un canon long ou un canon court. **Les armes laser prennent tout, avec des émetteurs à elles** : le stabilisateur (leur compensateur), le dissipateur (leur frein, dont la flamme devient un rayon plus épais), les focaliseurs long et court, la cellule rapide (une vidange plus courte, moins de tirs avant la surchauffe). **Pas de canon long ni court sur une arme dont les dégâts ne baissent pas avec la distance** (le FA-07, le FP-12, le FP-30 ; *et, pour la même raison, le FX-1 et le FX-2 : extension de Claude*) : l'un n'y aurait que sa contrepartie, l'autre que son avantage. *Propositions de Claude (2026-10-29) : pas de crosse sur les pistolets, qui n'en ont pas ; pas de chargeur rapide sur les armes chargées cartouche par cartouche (le FAP-03, le FAP-30, le FP-30), où il n'enlèverait que des cartouches.* Leur apparence est intégrée au jeu, à juger au stand de tir (l'utilisateur, 2026-10-29 ; bible § 12).
+
+Écartés : le cache-flamme et la bretelle. Comme les premiers, ils sont ouverts à tous, et chacun se paie d'une contrepartie. Les armes sont modélisées nues, avec leurs rails et leurs points d'accroche.
 
 **Les finitions de l'armurerie** (adoptées le 2026-10-15) : chaque arme se choisit aussi dans une **finition d'usure**, qui raconte depuis combien de temps elle sert et comment on l'a réparée : *d'origine*, *repeinte* (couche après couche, l'apprêt rouge au bord des éclats), *rouillée*, *dépareillée* (des pièces prises sur d'autres armes), *polie par les mains* (la peinture partie là où on la tient), *encrassée* (huile et poussière). Comme les accessoires, elles sont **purement cosmétiques** : aucun effet de jeu, ni sur la silhouette, les hitbox ou le son (§ 8). Le choix se fait arme par arme, dans l'armurerie. **Elles se voient en partie**, sur l'arme tenue, par tous les joueurs et les spectateurs, comme la peinture du robot. Les six existent pour les trois familles d'armes (le stock, la série 30, les armes laser). Comment on les obtient : § 14.
 
@@ -241,7 +243,7 @@ Un accessoire monté prend la finition de son arme (validé le 2026-10-25). **D'
 
 **Postures** Debout / Accroupi / Prone, chacune avec sa vitesse, sa hauteur de vue et son empreinte. Se relever est bloqué s'il n'y a pas la place. **On peut tirer en rampant.**
 
-**Allongé, on rampe lentement et seulement vers l'avant ou l'arrière** (2026-10-10, conséquence de « les pieds ne glissent jamais ») : environ 0,43 m/s à l'allure de marche, la vitesse de l'animation de reptation (1,25 m/s jusque-là, où le corps glissait trois fois plus vite que ses mains et ses genoux), et pas de déplacement de côté, faute d'animation. À rouvrir avec une reptation plus rapide et une reptation latérale. *Retour de l'utilisateur après un premier essai (2026-10-25) : la lenteur passe, mais ne pas pouvoir se déplacer de côté est frustrant. L'utilisateur cherche une animation de reptation de côté ; sur Mixamo, il n'y a qu'une roulade latérale, qui ne lui convient pas du tout. Autre piste : que Claude l'anime dans Blender.*
+**Allongé, on rampe lentement, dans toutes les directions** : environ 0,43 m/s à l'allure de marche, la vitesse de l'animation de reptation (2026-10-10, conséquence de « les pieds ne glissent jamais » : à 1,25 m/s, le corps glissait trois fois plus vite que ses mains et ses genoux) ; de côté, un peu moins vite, comme debout et accroupi (×0,85). *Le déplacement de côté manquait, faute d'animation : après un premier essai, l'utilisateur le trouvait frustrant (2026-10-25), et Mixamo n'avait qu'une roulade latérale, qu'il refusait. Claude a animé la reptation de côté dans Blender le 2026-10-29 : la jambe du côté où l'on va s'écarte, genou plié vers l'extérieur, puis tire ; l'autre pousse, puis revient. À juger en jouant. Reste à rouvrir : une reptation plus rapide.*
 
 **Changer de posture prend du temps**, même pour un robot : environ 0,3 s entre debout et accroupi, 0,65 s entre accroupi et allongé, 0,9 s entre debout et allongé. Pendant ce temps, le corps, la vue, la vitesse et l'endroit où l'on peut être touché passent progressivement d'une posture à l'autre ; on ne franchit pas d'obstacle à moitié relevé. Un plongeon au sol n'est donc pas une esquive instantanée. Valeurs de départ, à régler en jouant (2026-10-06).
 
@@ -463,7 +465,7 @@ Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touch
 
 **En attente de l'utilisateur** :
 - **Le compte rendu du premier essai** (§ 16).
-- **Une animation de reptation de côté** (§ 7) : l'utilisateur la cherche ; Claude peut essayer de la faire dans Blender.
+- **La reptation de côté** (§ 7), animée par Claude dans Blender le 2026-10-29 : à juger en jouant.
 
 **Claude propose, l'utilisateur choisit** :
 - **Le nom du jeu** : « Last Unit Standing » a de l'idée, « mais c'est pas encore ça » (2026-10-25).
@@ -479,6 +481,7 @@ Ce qu'on garde dans tous les cas : silhouettes claires, mouvement lisible, touch
 
 **À trancher** (relevé le 2026-10-25) :
 - **La glissade** (§ 7) : envisagée par l'utilisateur pour la fluidité et la nervosité, elle contredit « pas de mouvement à momentum ».
+- **Un silencieux pour l'Arène dans le noir ?** (l'utilisateur, 2026-10-29, en choisissant l'emplacement unique du canon : « surtout utilisé pour le mode dans le noir complet »). Le duel garde « pas de silencieux » (§ 6, § 8 : le son est une information de jeu). *Proposition de Claude : en faire une règle de ce mode (§ 11) plutôt qu'un accessoire de plus partout, le silencieux permis dans l'Arène dans le noir seulement ; l'emplacement du canon a la place d'une variante de plus.*
 
 **À préciser** (relevé le 2026-10-25) :
 - **Le mode Zone** (§ 11) : capturer une zone fixe. Comment se gagne la manche, et qu'est-ce qui le distingue de Capture (même idée dans le nom, jamais défini) et de Hack & Defend (un point à prendre) ?

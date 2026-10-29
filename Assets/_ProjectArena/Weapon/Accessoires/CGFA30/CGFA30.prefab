@@ -151,6 +151,8 @@ MonoBehaviour:
   beam: {fileID: 0}
   leftHand: {fileID: 0}
   weaponDesignation: FA-30
+  variant: 1
+  muzzle: {fileID: 0}
   hides:
   - Chargeur_Standard
 --- !u!114 &2096198666746065921

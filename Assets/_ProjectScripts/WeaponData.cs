@@ -78,11 +78,17 @@ public class WeaponData : ScriptableObject
     [Tooltip("Le modèle tenu en main droite (préfab : poignée à l'origine, canon vers +Z, repères « Mire » et « Bouche »). Le même sert au corps vu par les autres et aux bras de la vue subjective. Branché par l'importeur des armes de Blender, d'après la désignation du modèle (le FA-07 pour l'arme FA-07).")]
     public GameObject modelPrefab;
 
-    [Tooltip("Ce que cette arme prend à l'armurerie (GDD § 6) : le serveur fait tomber le reste (WeaponAttachments.Sanitized). Un pistolet n'a pas de poignée avant (propositions de Claude, 2026-10-16).")]
+    [Tooltip("Ce que cette arme prend à l'armurerie (GDD § 6) : le serveur fait tomber le reste (WeaponAttachments.Sanitized). Un pistolet n'a ni poignée avant ni crosse (propositions de Claude, 2026-10-16 et 2026-10-29). Se règle dans l'éditeur des armes.")]
     public AttachmentSlots acceptedAttachments = AttachmentSlots.All;
 
     [Tooltip("Les viseurs qu'elle prend, quand elle prend un viseur : une glissière de pistolet n'a la place que d'un petit réflex (proposition de Claude, 2026-10-16) ; les lunettes ne vont que sur les armes de précision, à la place de leur lunette d'origine (l'utilisateur, 2026-10-28).")]
     public SightFamilies acceptedSights = SightFamilies.NonMagnified;
+
+    [Tooltip("Les chargeurs qu'elle prend, quand elle prend un chargeur : pas le rapide sur une arme qui recharge cartouche par cartouche, il ne lui laisserait que sa contrepartie (2026-10-29).")]
+    public MagazineKinds acceptedMagazines = MagazineKinds.All;
+
+    [Tooltip("Ce qu'elle prend au canon, quand elle prend la rubrique : les canons long et court seulement si ses dégâts baissent avec la distance (l'utilisateur, 2026-10-29).")]
+    public BarrelKinds acceptedBarrels = BarrelKinds.All;
 
     [Tooltip("Le catalogue des accessoires (Accessoires.asset), le même pour toutes les armes : leurs préfabs et la valeur de leurs effets. Branché par l'importeur des armes de Blender.")]
     public AttachmentCatalog attachmentCatalog;
@@ -266,11 +272,12 @@ public class WeaponData : ScriptableObject
     }
 
     /// <summary>
-    /// Dégâts d'un impact, selon la zone touchée, la distance et la charge du tir (0 à 1 ; une arme qui
-    /// ne se charge pas l'ignore). Fonction pure, testée : c'est le serveur qui l'appelle, et elle ne
-    /// dépend que de l'asset.
+    /// Dégâts d'un impact, selon la zone touchée, la distance, la charge du tir (0 à 1 ; une arme qui ne se
+    /// charge pas l'ignore) et ce que les accessoires font à la portée des dégâts (`falloffScale` : le canon
+    /// long la repousse, le court la rapproche ; AttachmentCatalog.FalloffScale). Fonction pure, testée : c'est
+    /// le serveur qui l'appelle, et elle ne dépend que de l'asset et des accessoires publiés.
     /// </summary>
-    public float DamageAt(HitboxZoneType zone, float distance, float charge = 1f)
+    public float DamageAt(HitboxZoneType zone, float distance, float charge = 1f, float falloffScale = 1f)
     {
         float zoneMultiplier = zone switch
         {
@@ -278,15 +285,19 @@ public class WeaponData : ScriptableObject
             HitboxZoneType.Legs => legsMultiplier,
             _ => 1f,
         };
-        return damagePerHit * zoneMultiplier * RangeMultiplier(distance) * ChargeDamageScale(charge);
+        return damagePerHit * zoneMultiplier * RangeMultiplier(distance, falloffScale) * ChargeDamageScale(charge);
     }
 
+    /// <summary>Une arme dont les dégâts baissent avec la distance.</summary>
+    public bool HasFalloff => falloffEnd > falloffStart;
+
     /// <summary>Multiplicateur de portée : 1 jusqu'à falloffStart, minDamageMultiplier au-delà de
-    /// falloffEnd, en ligne droite entre les deux.</summary>
-    public float RangeMultiplier(float distance)
+    /// falloffEnd, en ligne droite entre les deux ; les deux distances multipliées par `falloffScale`.</summary>
+    public float RangeMultiplier(float distance, float falloffScale = 1f)
     {
-        if (falloffEnd <= falloffStart) return 1f;
-        float t = Mathf.InverseLerp(falloffStart, falloffEnd, distance);
+        if (!HasFalloff) return 1f;
+        float scale = falloffScale > 0f && float.IsFinite(falloffScale) ? falloffScale : 1f;
+        float t = Mathf.InverseLerp(falloffStart * scale, falloffEnd * scale, distance);
         return Mathf.Lerp(1f, minDamageMultiplier, t);
     }
 

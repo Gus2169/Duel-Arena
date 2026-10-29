@@ -282,26 +282,18 @@ public class WeaponController : NetworkBehaviour
     /// <summary>La taille du chargeur de la place `slot`, accessoires compris : le chargeur grande
     /// capacité y met la moitié de balles en plus (GDD § 6). Le joueur et le serveur la lisent sur les
     /// mêmes accessoires publiés : ils comptent le même chargeur.</summary>
-    public int MagazineSizeOf(int slot)
-    {
-        WeaponData data = DataOf(slot);
-        return AttachmentCatalog.MagazineSize(data, Attachments.ExtendedMagazine(slot), data != null ? data.attachmentCatalog : null);
-    }
+    public int MagazineSizeOf(int slot) => AttachmentCatalog.MagazineSize(DataOf(slot), Attachments, slot);
 
     /// <summary>La durée d'un rechargement de la place `slot` (d'une cartouche, à une arme qui recharge
     /// cartouche par cartouche), accessoires compris.</summary>
-    public float ReloadDurationOf(int slot)
-    {
-        WeaponData data = DataOf(slot);
-        return AttachmentCatalog.ReloadDuration(data, Attachments.ExtendedMagazine(slot), data != null ? data.attachmentCatalog : null);
-    }
+    public float ReloadDurationOf(int slot) => AttachmentCatalog.ReloadDuration(DataOf(slot), Attachments, slot);
 
     /// <summary>Le temps d'épaulement de la place `slot`, accessoires compris (la poignée inclinée).</summary>
-    public float AimTimeOf(int slot)
-    {
-        WeaponData data = DataOf(slot);
-        return AttachmentCatalog.AimTime(data, Attachments.Grip(slot), data != null ? data.attachmentCatalog : null);
-    }
+    public float AimTimeOf(int slot) => AttachmentCatalog.AimTime(DataOf(slot), Attachments, slot);
+
+    /// <summary>Le temps pour sortir l'arme de la place `slot`, accessoires compris (un canon long la ralentit,
+    /// un court la presse), le même chez le joueur et sur le serveur.</summary>
+    public float RaiseTimeOf(int slot) => AttachmentCatalog.RaiseTime(DataOf(slot), Attachments, slot);
 
     /// <summary>La chaleur d'une arme laser (WeaponData.heatPerShot), accessoires compris (HeatRulesOf) :
     /// ce qu'ajoute un tir (1 = la surchauffe), le refroidissement, les vidanges. `perShot` nul : une
@@ -317,23 +309,28 @@ public class WeaponController : NetworkBehaviour
     /// avant la surchauffe, et la vide 15 % plus lentement, comme un grand chargeur se recharge
     /// (GDD § 6). Rien pour une arme à chargeur. Le joueur et le serveur la lisent sur les mêmes
     /// accessoires publiés.</summary>
-    public HeatRules HeatRulesOf(int slot) => HeatRulesFor(DataOf(slot), Attachments.ExtendedMagazine(slot));
+    public HeatRules HeatRulesOf(int slot) => HeatRulesFor(DataOf(slot), Attachments, slot);
 
-    /// <summary>La chaleur d'une arme laser, avec ou sans la cellule grande capacité. Fonction pure.</summary>
-    public static HeatRules HeatRulesFor(WeaponData data, bool extended)
+    /// <summary>La chaleur d'une arme laser avec les accessoires de la place `slot` : ce qui fait la taille
+    /// d'un chargeur (WeaponStat.MagazineSize) divise la chaleur de chaque tir, ce qui allonge un
+    /// rechargement allonge ses vidanges. Fonction pure.</summary>
+    public static HeatRules HeatRulesFor(WeaponData data, WeaponAttachments attachments, int slot)
     {
         if (data == null || !data.UsesHeat) return default;
         AttachmentCatalog catalog = data.attachmentCatalog;
-        bool big = extended && catalog != null;
         return new HeatRules
         {
-            perShot = data.heatPerShot / (big ? catalog.extendedMagazineCapacity : 1f),
+            perShot = data.heatPerShot / AttachmentCatalog.Factor(catalog, WeaponStat.MagazineSize, attachments, slot),
             coolDelay = data.heatCoolDelay,
             coolTime = data.heatCoolTime,
-            vent = AttachmentCatalog.ReloadDuration(data, extended, catalog),
-            overheatVent = data.overheatVentDuration * (big ? catalog.extendedMagazineReload : 1f),
+            vent = AttachmentCatalog.ReloadDuration(data, attachments, slot),
+            overheatVent = data.overheatVentDuration * AttachmentCatalog.Factor(catalog, WeaponStat.ReloadTime, attachments, slot),
         };
     }
+
+    /// <summary>La chaleur d'une arme laser, avec ou sans la cellule grande capacité, et rien d'autre.</summary>
+    public static HeatRules HeatRulesFor(WeaponData data, bool extended)
+        => HeatRulesFor(data, AttachmentCatalog.Only(AttachmentCategory.Magazine, extended ? 1 : 0), 0);
 
     /// <summary>L'arme en main est-elle une arme laser, qui chauffe au lieu de compter des balles ?</summary>
     public bool DisplayedUsesHeat => Data != null && Data.UsesHeat;
@@ -436,9 +433,9 @@ public class WeaponController : NetworkBehaviour
     {
         get
         {
-            WeaponData data = Data;
-            if (data == null || data.raiseTime <= 0f) return 1f;
-            return Mathf.Clamp01(1f - (float)(ShownMagazine.readyAt - ShownClock) / data.raiseTime);
+            float raise = Data != null ? RaiseTimeOf(DataSlot(ShownMagazine.equipped)) : 0f;
+            if (raise <= 0f) return 1f;
+            return Mathf.Clamp01(1f - (float)(ShownMagazine.readyAt - ShownClock) / raise);
         }
     }
 
@@ -710,10 +707,9 @@ public class WeaponController : NetworkBehaviour
         if (!IsNetworked || IsOwner)
         {
             WeaponModel view = firstPersonView != null ? firstPersonView.ViewWeapon : null;
-            return view != null ? view.Muzzle : null;
+            return AttachmentMount.MuzzleOf(view);
         }
-        WeaponModel held = BodyWeapon();
-        return held != null ? held.Muzzle : null;
+        return AttachmentMount.MuzzleOf(BodyWeapon());
     }
 
     /// <summary>Chez le propriétaire : fait entendre ce que ses actions et le recalage ont changé au
@@ -764,7 +760,7 @@ public class WeaponController : NetworkBehaviour
         if (slot < 0) return;
 
         CompleteIfDue(ref localMagazine, DataSlot(localMagazine.equipped), MagazineClock);
-        ApplyPowerUp(ref localMagazine, slot, MagazineClock, DataOf(slot).raiseTime, MagazineSizeOf(slot));
+        ApplyPowerUp(ref localMagazine, slot, MagazineClock, RaiseTimeOf(slot), MagazineSizeOf(slot));
         reloadPending = false;
         cooldown = 0f;
         shotIndexInBurst = 0;
@@ -872,7 +868,7 @@ public class WeaponController : NetworkBehaviour
         {
             CompleteIfDue(ref magazine, DataSlot(magazine.equipped), action.serverTime + ReloadCompletionTolerance);
             bool switching = action.slot != magazine.equipped;
-            ApplyPowerUp(ref magazine, action.slot, action.serverTime, next.raiseTime, MagazineSizeOf(action.slot));
+            ApplyPowerUp(ref magazine, action.slot, action.serverTime, RaiseTimeOf(action.slot), MagazineSizeOf(action.slot));
             if (switching) ResetShotRateOnSwitch(ref serverLastFireCheck);
         }
         networkMagazine.Value = magazine;
@@ -916,7 +912,7 @@ public class WeaponController : NetworkBehaviour
         // à l'instant que MagazineClock annonce. Un rechargement en cours ou en attente est annulé ; la
         // nouvelle arme arrive pleine.
         CompleteIfDue(ref localMagazine, DataSlot(localMagazine.equipped), MagazineClock);
-        TrySwitchWeapon(ref localMagazine, wanted, MagazineClock, DataOf(wanted).raiseTime, MagazineSizeOf(wanted));
+        TrySwitchWeapon(ref localMagazine, wanted, MagazineClock, RaiseTimeOf(wanted), MagazineSizeOf(wanted));
         reloadPending = false;
         cooldown = 0f;
         shotIndexInBurst = 0;
@@ -1067,7 +1063,8 @@ public class WeaponController : NetworkBehaviour
                 {
                     // Le rayon des armes laser se voit (plus épais chargé) ; une arme à balles n'a que sa
                     // flamme de bouche.
-                    if (data.shotIsBeam) visualFeedback.SpawnTracer(origin, end, data.tracerColor, BeamWeight(data, charge));
+                    if (data.shotIsBeam)
+                        visualFeedback.SpawnTracer(origin, end, data.tracerColor, BeamWeight(data, charge) * FlashScaleOf(firedSlot));
                     if (hitSomething) visualFeedback.SpawnImpact(end, localNormal);
                 }
                 if (hitSomething) impacts.Add(end, onBody);
@@ -1077,7 +1074,7 @@ public class WeaponController : NetworkBehaviour
         {
             if (ownQueryable) ownHitbox.SetQueryable(true);
         }
-        if (visualFeedback != null && !data.shotIsBeam) SpawnOwnMuzzleFlash();
+        if (visualFeedback != null && !data.shotIsBeam) SpawnOwnMuzzleFlash(FlashScaleOf(firedSlot));
 
         if (NetworkObject != null)
         {
@@ -1109,7 +1106,7 @@ public class WeaponController : NetworkBehaviour
                 {
                     Vector3 pellet = PelletDirection(shot, data.PelletOffset(i, aiming, hipScale));
                     ResolveShot(data, origin, pellet, out _, out _, out Collider body, out float distance);
-                    AddDamage(damage, data, body, distance, charge);
+                    AddDamage(damage, data, body, distance, charge, AttachmentCatalog.FalloffScale(data.attachmentCatalog, Attachments, firedSlot));
                 }
             }
             finally
@@ -1617,6 +1614,7 @@ public class WeaponController : NetworkBehaviour
         // Le tir à la hanche (2026-10-16) : le cône est celui de l'état du serveur à l'input de
         // référence, le hasard celui de la balle que le serveur vient de compter.
         float hipScale = AttachmentCatalog.HipSpreadFactor(data.attachmentCatalog, Attachments, firedSlot);
+        float falloff = AttachmentCatalog.FalloffScale(data.attachmentCatalog, Attachments, firedSlot);
         Vector3 shot = PelletDirection(direction, ServerHipFireOffset(data, firedSlot, action.inputSequence, magazine.shotsFired, hipScale));
 
         // Le tireur ne doit pas se tirer dessus : son propre hitbox entoure sa caméra, et en lean
@@ -1711,14 +1709,14 @@ public class WeaponController : NetworkBehaviour
                     Debug.LogWarning($"[Serveur] {bodyHit.name} est sur le layer Hitbox mais n'a aucun Health parent — aucun dégât appliqué.", bodyHit);
                     continue;
                 }
-                AddDamage(damage, data, bodyHit, distance, charge);
+                AddDamage(damage, data, bodyHit, distance, charge, falloff);
                 if (!firstHitPoint.ContainsKey(target)) firstHitPoint[target] = ends[i];
                 PlayerHitboxZone zone = bodyHit.GetComponent<PlayerHitboxZone>();
                 if (zone != null && zone.Zone == HitboxZoneType.Head) headHit = true;
                 if (ServerHitRegistered != null)
                 {
                     HitboxZoneType zoneType = zone != null ? zone.Zone : HitboxZoneType.Torso;
-                    ServerHitRegistered(target, zoneType, data.DamageAt(zoneType, distance, charge), distance);
+                    ServerHitRegistered(target, zoneType, data.DamageAt(zoneType, distance, charge, falloff), distance);
                 }
                 zones.Append(zone != null ? zone.Zone.ToString() : "?").Append(' ');
             }
@@ -1830,15 +1828,16 @@ public class WeaponController : NetworkBehaviour
     /// La cible de la salle de précision du stand y marque ses impacts (AimRange) ; rien du jeu ne s'y fie.</summary>
     public static event System.Action<Vector3, Vector3> ServerWorldImpact;
 
-    /// <summary>Ajoute les dégâts d'un impact à sa cible : zone touchée (tête, buste, jambes), distance
-    /// et charge du tir (WeaponData.DamageAt).</summary>
-    private static void AddDamage(Dictionary<Health, float> damage, WeaponData data, Collider body, float distance, float charge)
+    /// <summary>Ajoute les dégâts d'un impact à sa cible : zone touchée (tête, buste, jambes), distance,
+    /// charge du tir et portée des dégâts que lui font les accessoires (WeaponData.DamageAt).</summary>
+    private static void AddDamage(Dictionary<Health, float> damage, WeaponData data, Collider body, float distance, float charge,
+                                  float falloffScale)
     {
         if (body == null) return;
         Health target = body.GetComponentInParent<Health>();
         if (target == null) return;
         PlayerHitboxZone zone = body.GetComponent<PlayerHitboxZone>();
-        float amount = data.DamageAt(zone != null ? zone.Zone : HitboxZoneType.Torso, distance, charge);
+        float amount = data.DamageAt(zone != null ? zone.Zone : HitboxZoneType.Torso, distance, charge, falloffScale);
         damage[target] = (damage.TryGetValue(target, out float sum) ? sum : 0f) + amount;
     }
 
@@ -1996,7 +1995,7 @@ public class WeaponController : NetworkBehaviour
         if (next != null && current != null)
         {
             CompleteIfDue(ref magazine, DataSlot(magazine.equipped), action.serverTime + ReloadCompletionTolerance);
-            if (TrySwitchWeapon(ref magazine, action.slot, action.serverTime, next.raiseTime, MagazineSizeOf(action.slot)))
+            if (TrySwitchWeapon(ref magazine, action.slot, action.serverTime, RaiseTimeOf(action.slot), MagazineSizeOf(action.slot)))
                 ResetShotRateOnSwitch(ref serverLastFireCheck);
         }
         else
@@ -2407,7 +2406,7 @@ public class WeaponController : NetworkBehaviour
 
         WeaponData data = DataOf(slot) ?? Data;
         PlayFireSound(data);
-        if (visualFeedback != null && data != null && !data.shotIsBeam) SpawnBodyMuzzleFlash();
+        if (visualFeedback != null && data != null && !data.shotIsBeam) SpawnBodyMuzzleFlash(FlashScaleOf(DataSlot(slot)));
 
         if (ends == null) return;
 
@@ -2428,7 +2427,9 @@ public class WeaponController : NetworkBehaviour
             }
             if (visualFeedback != null)
             {
-                if (data == null || data.shotIsBeam) visualFeedback.SpawnTracer(origin, end, data != null ? data.tracerColor : Color.yellow, BeamWeight(data, charge / 255f));
+                if (data == null || data.shotIsBeam)
+                    visualFeedback.SpawnTracer(origin, end, data != null ? data.tracerColor : Color.yellow,
+                                               BeamWeight(data, charge / 255f) * FlashScaleOf(DataSlot(slot)));
                 if (hit) visualFeedback.SpawnImpact(end, normal);
             }
             if (hit) impacts.Add(end, onBody);
@@ -2440,18 +2441,26 @@ public class WeaponController : NetworkBehaviour
     private Transform bodyRightHand;
 
     /// <summary>Chez le tireur : la flamme à la bouche de l'arme de ses bras (rien dans la lunette du
-    /// sniper, ni mort).</summary>
-    private void SpawnOwnMuzzleFlash()
+    /// sniper, ni mort), au bout de ce qui est monté au canon.</summary>
+    private void SpawnOwnMuzzleFlash(float scale)
     {
         WeaponModel model = firstPersonView != null ? firstPersonView.ViewWeapon : null;
-        if (model != null) visualFeedback.SpawnMuzzleFlash(model.Muzzle, model.transform.forward);
+        if (model != null) visualFeedback.SpawnMuzzleFlash(AttachmentMount.MuzzleOf(model), model.transform.forward, scale);
     }
 
     /// <summary>Chez les autres : la flamme à la bouche de l'arme que tient son corps.</summary>
-    private void SpawnBodyMuzzleFlash()
+    private void SpawnBodyMuzzleFlash(float scale)
     {
         WeaponModel held = BodyWeapon();
-        if (held != null) visualFeedback.SpawnMuzzleFlash(held.Muzzle, held.transform.forward);
+        if (held != null) visualFeedback.SpawnMuzzleFlash(AttachmentMount.MuzzleOf(held), held.transform.forward, scale);
+    }
+
+    /// <summary>Ce que les accessoires de l'arme de la place `slot` font à la flamme de bouche (au rayon d'une
+    /// arme laser) : le frein de bouche la grossit. Lu sur les accessoires publiés : le même chez tous.</summary>
+    private float FlashScaleOf(int slot)
+    {
+        WeaponData data = DataOf(slot);
+        return data != null ? AttachmentCatalog.MuzzleFlashScale(data.attachmentCatalog, Attachments, slot) : 1f;
     }
 
     /// <summary>L'arme que tient le corps de ce joueur (celle que voient les autres).</summary>
@@ -2630,9 +2639,10 @@ public class WeaponController : NetworkBehaviour
     private void ApplyRecoilKick(WeaponData data)
     {
         float recoilMultiplier = GetRecoilMultiplier();
-        // les accessoires (GDD § 6) : la poignée verticale retient le recul vertical (le laser, lui,
-        // resserre le cône à la hanche : HipFireSpread)
-        AttachmentCatalog.RecoilFactors(data.attachmentCatalog, Attachments, DataSlot(localMagazine.equipped),
+        // les accessoires (GDD § 6, leurs effets dans AttachmentCatalog) : la poignée verticale, la crosse
+        // lourde, le compensateur, le frein de bouche sur les premiers coups (le laser, lui, resserre le cône à
+        // la hanche : HipFireSpread)
+        AttachmentCatalog.RecoilFactors(data.attachmentCatalog, Attachments, DataSlot(localMagazine.equipped), shotIndexInBurst,
                                         out float verticalFactor, out float horizontalFactor);
         Vector2 kick = Vector2.Scale(RecoilPattern.Kick(data, shotIndexInBurst), new Vector2(horizontalFactor, verticalFactor))
                        * recoilMultiplier;

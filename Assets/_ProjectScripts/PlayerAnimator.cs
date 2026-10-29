@@ -391,9 +391,20 @@ public class PlayerAnimator : MonoBehaviour
     /// tracer. Aucun réseau supplémentaire n'a été nécessaire.</summary>
     private void DeclencherAnimationDeTir()
     {
-        if (animator != null) animator.SetTrigger(FireId);
-        Animator view = ViewAnimator;
-        if (view != null) view.SetTrigger(FireId);
+        FireGesture(animator, ViewAnimator, pistolHold > 0.5f, locomotion != null && locomotion.DisplayAiming);
+    }
+
+    /// <summary>
+    /// Le geste de tir, sur le corps et sur les bras de la vue subjective. Au pistolet, faute de clip de
+    /// tir, l'état « Tir » n'est que la pose de visée : il lève l'arme quand on tire de la hanche (vu des
+    /// autres). Épaulé, et toujours sur les bras, qui tiennent déjà l'arme en visée, il rejouait cette pose
+    /// d'attente depuis son début, à vitesse normale : les bras bougeaient, et le viseur avec, avant de
+    /// revenir en place (signalé par l'utilisateur le 2026-10-29). Sans état, testée.
+    /// </summary>
+    public static void FireGesture(Animator body, Animator view, bool pistol, bool aiming)
+    {
+        if (body != null && !(pistol && aiming)) body.SetTrigger(FireId);
+        if (view != null && !pistol) view.SetTrigger(FireId);
     }
 
     /// <summary>
@@ -1116,11 +1127,8 @@ public class PlayerAnimator : MonoBehaviour
                                  PlayerLocomotion.Stance stance, Vector2 measuredRootVelocity,
                                  float idleCadence, float fallbackCadence, float minCadence, float maxCadence, float dt)
     {
-        // Allongé, l'arbre ne connaît que l'avant et l'arrière : de côté, faute de clip, le corps
-        // garde la pose d'attente.
-        Vector2 driven = stance == PlayerLocomotion.Stance.Prone ? new Vector2(0f, move.y) : move;
-        float magnitude = driven.magnitude;
-        if (magnitude > 0.05f) state.direction = driven / magnitude;
+        float magnitude = move.magnitude;
+        if (magnitude > 0.05f) state.direction = move / magnitude;
         else if (state.direction == Vector2.zero) state.direction = Vector2.up;
         if (state.phaseEfficiency == null) state.phaseEfficiency = new Vector2[PhaseBins];
 
@@ -1210,7 +1218,12 @@ public class PlayerAnimator : MonoBehaviour
         // L'arbre de déplacement prend la vitesse telle quelle : sous l'anneau lent il joue l'anneau
         // lent, au-delà de l'anneau extérieur il joue l'extérieur (vérifié). La direction est tournée
         // de la correction mesurée, et gardée à l'arrêt.
-        float a = state.headingCorrection * Mathf.Deg2Rad;
+        //
+        // Allongé, pas de correction : chaque reptation va droit, et la reptation arrière de Mixamo se
+        // tortille de ±30° sur un demi-cycle. Depuis que l'arbre va aussi de côté (2026-10-29), la
+        // correction prenait ce tortillement pour un écart et y mêlait la reptation de côté : en
+        // avançant, la reptation partait de 10 à 17° de travers.
+        float a = stance == PlayerLocomotion.Stance.Prone ? 0f : state.headingCorrection * Mathf.Deg2Rad;
         Vector2 d = state.direction;
         Vector2 fed = new Vector2(d.x * Mathf.Cos(a) - d.y * Mathf.Sin(a), d.x * Mathf.Sin(a) + d.y * Mathf.Cos(a))
                       * Mathf.Max(magnitude, 0.05f);

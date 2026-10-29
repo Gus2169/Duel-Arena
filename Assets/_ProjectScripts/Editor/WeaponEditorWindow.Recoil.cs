@@ -15,6 +15,8 @@ public partial class WeaponEditorWindow
     [SerializeField] private bool previewGrip;
     [SerializeField] private bool previewLaser;
     [SerializeField] private bool previewExtended;
+    [SerializeField] private int previewStock;
+    [SerializeField] private int previewBarrel;
     [SerializeField] private bool previewAtHead;
     [SerializeField] private float previewDistance = 20f;
     [SerializeField] private bool showPattern = true;
@@ -46,15 +48,62 @@ public partial class WeaponEditorWindow
     private static bool AcceptsLaser(WeaponData data) => WeaponAttachments.Accepts(data, AttachmentCategory.Laser, 1);
     private static bool AcceptsMagazine(WeaponData data) => WeaponAttachments.Accepts(data, AttachmentCategory.Magazine, 1);
 
-    /// <summary>Ce que la posture, le déplacement, la visée et la poignée verticale laissent de la
-    /// poussée du motif (x horizontal, y vertical) : les réglages du préfab (WeaponController).</summary>
-    private Vector2 RecoilScale(WeaponData data, PlayerLocomotion.Stance stance, PreviewMovement movement, bool aiming, bool grip)
+    /// <summary>Les accessoires de l'aperçu, sur la place 0 (comme les lisent les fonctions du catalogue) : ceux
+    /// que l'arme prend parmi ceux qu'on a cochés.</summary>
+    private WeaponAttachments PreviewAttachments(WeaponData data)
+    {
+        WeaponAttachments a = WeaponAttachments.None;
+        if (previewGrip && AcceptsGrip(data)) a = a.WithGrip(0, GripKind.Vertical);
+        if (previewLaser && AcceptsLaser(data)) a = a.WithLaser(0, true);
+        if (previewExtended && AcceptsMagazine(data)) a = a.WithMagazine(0, MagazineKind.Extended);
+        if (WeaponAttachments.Accepts(data, AttachmentCategory.Stock, previewStock)) a = a.WithStock(0, (StockKind)previewStock);
+        if (WeaponAttachments.Accepts(data, AttachmentCategory.Barrel, previewBarrel)) a = a.WithBarrel(0, (BarrelKind)previewBarrel);
+        return a;
+    }
+
+    /// <summary>Ce que la posture, le déplacement, la visée et les accessoires laissent de la poussée du motif
+    /// (x horizontal, y vertical), hors des premiers coups : les réglages du préfab (WeaponController).</summary>
+    private Vector2 RecoilScale(WeaponData data, PlayerLocomotion.Stance stance, PreviewMovement movement, bool aiming, WeaponAttachments attachments)
     {
         float multiplier = controller != null
             ? controller.RecoilMultiplier(stance, movement != PreviewMovement.Still, movement == PreviewMovement.Sneak, aiming)
             : 1f;
-        float vertical = grip && catalog != null && AcceptsGrip(data) ? catalog.verticalGripRecoil : 1f;
-        return new Vector2(multiplier, multiplier * vertical);
+        AttachmentCatalog.RecoilFactors(catalog, attachments, 0, out float vertical, out float horizontal);
+        return new Vector2(multiplier * horizontal, multiplier * vertical);
+    }
+
+    /// <summary>Ce que les accessoires font en plus aux premiers coups (le frein de bouche).</summary>
+    private float FirstShotsFactor(WeaponAttachments attachments)
+        => AttachmentCatalog.Factor(catalog, WeaponStat.FirstShotsRecoil, attachments, 0);
+
+    private int FirstShots => catalog != null ? Mathf.Max(1, catalog.firstShots) : 0;
+
+    /// <summary>Ce que le laser seul fait à la dispersion à la hanche (ses effets dans le catalogue).</summary>
+    private float LaserHipFactor(WeaponData data)
+        => AcceptsLaser(data) ? AttachmentCatalog.HipSpreadFactor(catalog, AttachmentCatalog.Only(AttachmentCategory.Laser, 1), 0) : 1f;
+
+    /// <summary>Les effets d'un accessoire en une ligne (« Recul vertical −20 % »), pour les cases de l'aperçu.</summary>
+    private string EffectLine(WeaponData data, AttachmentCategory category, int variant)
+        => WeaponStats.Describe(catalog != null ? catalog.EffectOf(category, variant) : null, data);
+
+    /// <summary>Le choix d'une rubrique pour l'aperçu (la crosse, le canon) : ceux que l'arme prend, avec leurs
+    /// effets. Rend le choix fait (0 : celui de l'arme).</summary>
+    private int PreviewChoice(WeaponData data, AttachmentCategory category, int current)
+    {
+        var variants = new List<int> { 0 };
+        var labels = new List<string> { WeaponAttachments.ChoiceName(category, 0, data) };
+        for (int variant = 1; variant < WeaponAttachments.VariantCount(category); variant++)
+        {
+            if (!WeaponAttachments.Accepts(data, category, variant)) continue;
+            variants.Add(variant);
+            labels.Add($"{WeaponAttachments.ChoiceName(category, variant, data)} ({EffectLine(data, category, variant)})");
+        }
+        using (new EditorGUI.DisabledScope(variants.Count < 2 || catalog == null))
+        {
+            int shown = Mathf.Max(0, variants.IndexOf(current));
+            int chosen = EditorGUILayout.Popup(shown, labels.ToArray());
+            return variants[chosen];
+        }
     }
 
     /// <summary>L'allure du tireur (m/s) : la marche ou le sneak de la posture, alourdis par l'arme.</summary>
@@ -83,11 +132,14 @@ public partial class WeaponEditorWindow
     private BurstSetup Setup(WeaponData data, int shots) => new BurstSetup
     {
         shots = shots,
-        recoilScale = RecoilScale(data, previewStance, previewMovement, previewAiming, previewGrip),
+        recoilScale = RecoilScale(data, previewStance, previewMovement, previewAiming, PreviewAttachments(data)),
+        firstShots = FirstShots,
+        firstShotsFactor = FirstShotsFactor(PreviewAttachments(data)),
+        falloffScale = AttachmentCatalog.FalloffScale(catalog, PreviewAttachments(data), 0),
         aiming = previewAiming,
         stance = previewStance,
         speed = PreviewSpeed(data, previewStance, previewMovement),
-        laserFactor = previewLaser && catalog != null && AcceptsLaser(data) ? catalog.laserHipSpread : 1f,
+        laserFactor = previewLaser ? LaserHipFactor(data) : 1f,
         target = Target(),
         aimAtHead = previewAtHead,
         distance = previewDistance,
@@ -116,21 +168,23 @@ public partial class WeaponEditorWindow
     private static string Capitalized(string text) => string.IsNullOrEmpty(text) ? text : char.ToUpperInvariant(text[0]) + text.Substring(1);
 
     /// <summary>Ce que fait le recul d'une arme dans un contexte, en une phrase.</summary>
-    private string RecoilSummary(WeaponData data, PlayerLocomotion.Stance stance, PreviewMovement movement, bool aiming, bool grip, bool extended)
+    private string RecoilSummary(WeaponData data, PlayerLocomotion.Stance stance, PreviewMovement movement, bool aiming,
+                                 WeaponAttachments attachments, bool extended)
     {
-        Vector2 scale = RecoilScale(data, stance, movement, aiming, grip);
+        Vector2 scale = RecoilScale(data, stance, movement, aiming, attachments);
+        float first = FirstShotsFactor(attachments);
         string context = Capitalized(ContextLabel(stance, movement, aiming));
         float interval = RecoilPattern.ShotInterval(data);
         if (!RecoilPattern.Chains(data))
         {
-            Vector2 kick = Vector2.Scale(RecoilPattern.Kick(data, 0), scale);
+            Vector2 kick = Vector2.Scale(RecoilPattern.Kick(data, 0), scale) * first;
             float back = data.recoilRecoverySpeed > 0f ? Mathf.Max(Mathf.Abs(kick.x), Mathf.Abs(kick.y)) / data.recoilRecoverySpeed : float.PositiveInfinity;
             return $"{context} : un coup pousse le regard de {N(kick.y)}° vers le haut{(Mathf.Abs(kick.x) > 0.005f ? $" et de {N(Mathf.Abs(kick.x))}°{Side(kick.x)}" : "")}, qui revient en {N(back)} s. "
                    + $"Un coup toutes les {N(interval)} s, plus lent que la remise à zéro du motif ({N(data.recoilResetDelay)} s) : chaque coup reprend le motif au premier.";
         }
         int shots = RecoilPattern.BurstLength(data, extended);
         var points = new List<Vector2>();
-        RecoilPattern.Burst(data, shots, scale, true, points);
+        RecoilPattern.Burst(data, shots, scale, true, points, FirstShots, first);
         Vector2 last = points[points.Count - 1];
         return $"{context} : sur une rafale de {shots} coups ({N((shots - 1) * interval)} s), sans compenser, le dernier part {N(last.y)}° plus haut"
                + (Mathf.Abs(last.x) > 0.005f ? $" et {N(Mathf.Abs(last.x))}°{Side(last.x)}" : "") + " que le premier.";
@@ -384,7 +438,7 @@ public partial class WeaponEditorWindow
         EditorGUILayout.EndHorizontal();
 
         GUILayout.Space(6f);
-        Note(RecoilSummary(data, previewStance, previewMovement, previewAiming, previewGrip, previewExtended && AcceptsMagazine(data)));
+        Note(RecoilSummary(data, previewStance, previewMovement, previewAiming, PreviewAttachments(data), previewExtended && AcceptsMagazine(data)));
         Note(RecoveryWarning(data, chains, editShots, scaleDegrees));
         Note(HitsSummary(data, setup));
 
@@ -436,15 +490,17 @@ public partial class WeaponEditorWindow
         if (recoil)
         {
             using (new EditorGUI.DisabledScope(!AcceptsGrip(data) || catalog == null))
-                previewGrip = EditorGUILayout.ToggleLeft($"Poignée verticale (recul vertical ×{N(catalog != null ? catalog.verticalGripRecoil : 1f)})", previewGrip);
+                previewGrip = EditorGUILayout.ToggleLeft($"Poignée verticale ({EffectLine(data, AttachmentCategory.Grip, (int)GripKind.Vertical)})", previewGrip);
         }
         using (new EditorGUI.DisabledScope(!AcceptsLaser(data) || catalog == null))
-            previewLaser = EditorGUILayout.ToggleLeft($"Laser tactique (dispersion à la hanche ×{N(catalog != null ? catalog.laserHipSpread : 1f)})", previewLaser);
+            previewLaser = EditorGUILayout.ToggleLeft($"Laser tactique ({EffectLine(data, AttachmentCategory.Laser, 1)})", previewLaser);
         if (recoil)
         {
             using (new EditorGUI.DisabledScope(!AcceptsMagazine(data)))
                 previewExtended = EditorGUILayout.ToggleLeft(data.UsesHeat ? "Cellule grande capacité" : "Grand chargeur", previewExtended);
         }
+        previewStock = PreviewChoice(data, AttachmentCategory.Stock, previewStock);
+        previewBarrel = PreviewChoice(data, AttachmentCategory.Barrel, previewBarrel);
         float previous = EditorGUIUtility.labelWidth;
         EditorGUIUtility.labelWidth = 90f;
         previewDistance = EditorGUILayout.Slider("Cible à (m)", previewDistance, 2f, 100f);
@@ -452,7 +508,7 @@ public partial class WeaponEditorWindow
         previewAtHead = GUILayout.Toolbar(previewAtHead ? 1 : 0, new[] { "Visé au buste", "Visé à la tête" }) == 1;
         if (recoil && controller != null)
         {
-            Vector2 scale = RecoilScale(data, previewStance, previewMovement, previewAiming, previewGrip);
+            Vector2 scale = RecoilScale(data, previewStance, previewMovement, previewAiming, PreviewAttachments(data));
             Note($"Dans ce contexte, un coup pousse de {Mathf.RoundToInt(scale.y * 100f)} % de la force"
                  + (Mathf.Approximately(scale.x, scale.y) ? "." : $" vers le haut, {Mathf.RoundToInt(scale.x * 100f)} % de côté.")
                  + " La part de chaque posture se règle dans « Réglages communs ».");

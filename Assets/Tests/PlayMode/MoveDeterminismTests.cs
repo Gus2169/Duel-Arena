@@ -257,6 +257,43 @@ public class MoveDeterminismTests
     }
 
     /// <summary>
+    /// Allongé, on va de côté depuis le 2026-10-29 (la reptation de côté, calculée dans Blender), au pas
+    /// de côté des autres postures : ×0,85 de la reptation (DirectionMultiplier). Move() annulait le pas
+    /// de côté allongé, faute d'animation.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator Allonge_OnVaAussiDeCote_UnPeuMoinsViteQuEnAvant()
+    {
+        yield return null;
+        player.TestSetStance(new PlayerLocomotion.StanceState
+        {
+            current = PlayerLocomotion.Stance.Prone,
+            previous = PlayerLocomotion.Stance.Prone,
+            changedAt = double.NegativeInfinity,
+        });
+        Settle();
+        PlayerLocomotion.SimulationState depart = player.TestCaptureState();
+
+        Vector3 Vitesse(Vector2 move)
+        {
+            player.TestRestoreState(depart);
+            for (int i = 0; i < 120; i++) player.TestMove(move, 0f, false, false, false, false, 0, Dt);
+            Vector3 v = player.TestCaptureState().currentVelocity;
+            return new Vector3(v.x, 0f, v.z);
+        }
+
+        float avant = Vitesse(Vector2.up).magnitude;
+        Assert.Greater(avant, 0.3f, "Garde anti-vacuité : allongé, le joueur doit ramper.");
+        Assert.Less(avant, 0.6f, "Garde : c'est bien la reptation, pas la marche.");
+        foreach (Vector2 d in new[] { Vector2.left, Vector2.right })
+        {
+            Vector3 v = Vitesse(d);
+            Assert.AreEqual(avant * player.DirectionMultiplier(d), v.magnitude, avant * 0.02f, $"Allongé vers {d}, la vitesse ne suit pas le réglage.");
+            Assert.Greater(Vector3.Dot(v, player.transform.right * d.x), v.magnitude * 0.99f, $"Allongé vers {d}, on doit aller de côté.");
+        }
+    }
+
+    /// <summary>
     /// Le poids des armes (2026-10-11, façon Call of Duty) : chaque arme a sa vitesse de déplacement
     /// relative (`WeaponData.moveSpeedMultiplier`), appliquée dans `Move()` d'après l'arme de
     /// l'input. Lue dans les VRAIES armes du préfab : pistolet ×1, fusil et pompe ×0,95, sniper ×0,9.

@@ -2,10 +2,11 @@ using UnityEngine;
 
 /// <summary>
 /// Un accessoire d'arme (2026-10-16, GDD § 6), posé sur la racine de son préfab : un viseur, le laser
-/// tactique, une poignée ou un chargeur grande capacité, construit dans Blender et importé par Duel
-/// Arena > Armes > Importer les armes de Blender. Son origine est le point d'accroche de l'arme (les
-/// enfants « Accessoires/Viseur », « Laser », « Poignee », « Chargeur » de son préfab), dans les axes de
-/// l'arme : il s'y pose sans décalage.
+/// tactique, une poignée, un chargeur grand ou rapide, une crosse ou ce qui se monte au canon (2026-10-29),
+/// construit dans Blender et importé par Duel Arena > Armes > Importer les armes de Blender. Son origine est
+/// le point d'accroche de l'arme (les enfants « Accessoires/Viseur », « Laser », « Poignee », « Chargeur »,
+/// « Crosse » de son préfab ; la bouche de l'arme pour le canon), dans les axes de l'arme : il s'y pose sans
+/// décalage.
 ///
 /// Ce qu'il porte : ses repères (la mire d'un viseur, d'où part le faisceau d'un laser, où tient la
 /// main gauche sur une poignée), la vitre d'un viseur (le shader DuelArena/ViseurReticule y dessine
@@ -44,8 +45,13 @@ public class WeaponAttachment : MonoBehaviour
     [Tooltip("Poignée : là où la paume gauche la tient (repère « MainGauche ») : la cible de l'IK de la main gauche.")]
     [SerializeField] private Transform leftHand;
 
-    [Tooltip("Chargeur grande capacité : le modèle d'arme qui le prend (« FA-07 »).")]
+    [Tooltip("Chargeur, crosse, canon : le modèle d'arme qui le prend (« FA-07 ») ; chacun est fait sur son arme.")]
     [SerializeField] private string weaponDesignation = "";
+    [Tooltip("Son choix dans sa rubrique (WeaponAttachments.Variant) quand un modèle d'arme en a plusieurs : le chargeur grand (1) ou rapide (2), la crosse légère (1) ou lourde (2), le compensateur (1), le frein (2), le canon long (3) ou court (4).")]
+    [SerializeField] private int variant = 1;
+
+    [Tooltip("Canon : sa bouche (repère « Bouche »), d'où partent la flamme et l'éclat du tir chargé tant qu'il est monté.")]
+    [SerializeField] private Transform muzzle;
 
     [Tooltip("Les pièces de l'arme qu'il remplace, cachées tant qu'il est monté (AttachmentMount) : la hausse et le guidon sous un viseur, le chargeur d'origine sous un chargeur grande capacité.")]
     [SerializeField] private string[] hides = System.Array.Empty<string>();
@@ -68,6 +74,8 @@ public class WeaponAttachment : MonoBehaviour
     public Transform Beam => beam;
     public Transform LeftHand => leftHand;
     public string WeaponDesignation => weaponDesignation;
+    public int Variant => variant;
+    public Transform Muzzle => muzzle;
     public System.Collections.Generic.IReadOnlyList<string> Hides => hides ?? System.Array.Empty<string>();
 
     /// <summary>Ce qui reste visible d'une lunette dans sa vue grossie : sa vitre et son œilleton.</summary>
@@ -96,6 +104,14 @@ public class WeaponAttachment : MonoBehaviour
         beam = beamPoint;
         leftHand = leftHandPoint;
         weaponDesignation = forWeapon ?? "";
+    }
+
+    /// <summary>Réglage par l'importeur d'un accessoire fait pour une arme (Editor seulement) : son choix dans sa
+    /// rubrique, et la bouche d'un canon.</summary>
+    public void EditorSetupVariant(int choice, Transform muzzlePoint)
+    {
+        variant = Mathf.Max(1, choice);
+        muzzle = muzzlePoint;
     }
 
     /// <summary>Réglage par l'importeur de ce qu'un viseur montre (Editor seulement) : son réticule en mots,

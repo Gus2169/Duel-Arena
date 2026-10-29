@@ -66,7 +66,7 @@ public class ShootingRangePanel : MonoBehaviour
         for (int family = 0; family < slots.Length; family++) slots[family] = Arsenal.SlotsOf(loadout, (WeaponFamily)family);
         return slots;
     }
-    private Rect window = new Rect(0f, 0f, 980f, 830f);
+    private Rect window = new Rect(0f, 0f, 980f, 900f);
     [System.NonSerialized] private GUIStyle headerStyle;
     [System.NonSerialized] private GUIStyle smallStyle;
     [System.NonSerialized] private GUIStyle statStyle;
@@ -217,12 +217,19 @@ public class ShootingRangePanel : MonoBehaviour
         GUILayout.Label("VISEUR", headerStyle);
         OptionGrid(data, slot, attachments, AttachmentCategory.Sight, WeaponAttachments.SightCount + 1, 4,
                    v => v == 0 ? AttachmentCatalog.BaseSightTitle(data) : catalog != null ? catalog.SightTitle(v) : $"Viseur {v}", server);
+        GUILayout.Label(data.UsesHeat ? "ÉMETTEUR" : "CANON", headerStyle);
+        OptionGrid(data, slot, attachments, AttachmentCategory.Barrel, WeaponAttachments.VariantCount(AttachmentCategory.Barrel), 4,
+                   v => v == 0 ? "D'origine" : WeaponAttachments.ChoiceName(AttachmentCategory.Barrel, v, data), server);
         GUILayout.Label("POIGNÉE", headerStyle);
         OptionGrid(data, slot, attachments, AttachmentCategory.Grip, GripLabels.Length, 3, v => GripLabels[v], server);
         GUILayout.Label("LASER TACTIQUE", headerStyle);
         OptionGrid(data, slot, attachments, AttachmentCategory.Laser, 2, 2, v => v == 0 ? "Sans" : "Avec", server);
-        GUILayout.Label("CHARGEUR", headerStyle);
-        OptionGrid(data, slot, attachments, AttachmentCategory.Magazine, 2, 2, v => v == 0 ? "D'origine" : "Grande capacité", server);
+        GUILayout.Label(data.UsesHeat ? "CELLULE" : "CHARGEUR", headerStyle);
+        OptionGrid(data, slot, attachments, AttachmentCategory.Magazine, 3, 3,
+                   v => v == 0 ? "D'origine" : (MagazineKind)v == MagazineKind.Fast ? "Rapide" : "Grande capacité", server);
+        GUILayout.Label("CROSSE", headerStyle);
+        OptionGrid(data, slot, attachments, AttachmentCategory.Stock, 3, 3,
+                   v => v == 0 ? "D'origine" : (StockKind)v == StockKind.Light ? "Légère" : "Lourde", server);
         GUI.enabled = true;
         GUILayout.EndVertical();
 
@@ -235,7 +242,7 @@ public class ShootingRangePanel : MonoBehaviour
             float value = WeaponStatSheet.Value(stat, data, attachments, slot);
             GUILayout.Label($"{WeaponStatSheet.Label(stat)} : {WeaponStatSheet.Format(stat, data, value)}", statStyle);
         }
-        GUILayout.Label($"Portée : {WeaponStatSheet.EffectiveRange(data)}", statStyle);
+        GUILayout.Label($"Portée : {WeaponStatSheet.EffectiveRange(data, attachments, slot)}", statStyle);
         GUILayout.Label($"Rechargement : {WeaponStatSheet.Reload(data, attachments, slot)}", statStyle);
         GUILayout.Label($"Tir : {WeaponStatSheet.FireMode(data)}", statStyle);
         GUILayout.Label($"Zones : {WeaponStatSheet.Zones(data)}", statStyle);

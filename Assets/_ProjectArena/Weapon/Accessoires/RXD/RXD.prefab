@@ -278,6 +278,8 @@ MonoBehaviour:
   beam: {fileID: 0}
   leftHand: {fileID: 0}
   weaponDesignation: 
+  variant: 1
+  muzzle: {fileID: 0}
   hides:
   - Hausse
   - Guidon

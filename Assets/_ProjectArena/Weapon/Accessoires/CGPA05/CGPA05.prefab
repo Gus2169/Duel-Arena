@@ -152,6 +152,8 @@ MonoBehaviour:
   beam: {fileID: 0}
   leftHand: {fileID: 0}
   weaponDesignation: PA-05
+  variant: 1
+  muzzle: {fileID: 0}
   hides:
   - Chargeur_Standard
 --- !u!114 &4412284091522373407

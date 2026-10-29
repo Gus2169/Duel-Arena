@@ -51,7 +51,7 @@ public static class RecoilPattern
         if (data == null) return 0;
         if (data.UsesHeat)
             return Mathf.Max(1, WeaponController.ShotsBeforeOverheat(WeaponController.HeatRulesFor(data, extended), data.shotsPerSecond));
-        return Mathf.Max(1, AttachmentCatalog.MagazineSize(data, extended, data.attachmentCatalog));
+        return Mathf.Max(1, AttachmentCatalog.MagazineSize(data, extended));
     }
 
     /// <summary>
@@ -60,9 +60,11 @@ public static class RecoilPattern
     /// posture, la visée et les accessoires laissent de la poussée (x horizontal, y vertical). Sans
     /// `recovery`, le motif seul : le regard ne revient pas entre deux coups. Comme le tireur : la
     /// poussée d'un coup s'applique après son départ (elle déplace le suivant), et une arme qui ne
-    /// s'enchaîne pas (Chains) reprend son motif au premier coup.
+    /// s'enchaîne pas (Chains) reprend son motif au premier coup. Les `firstShots` premiers coups du motif
+    /// poussent encore de `firstShotsFactor` (le frein de bouche : AttachmentCatalog.RecoilFactors).
     /// </summary>
-    public static void Burst(WeaponData data, int shots, Vector2 scale, bool recovery, List<Vector2> points)
+    public static void Burst(WeaponData data, int shots, Vector2 scale, bool recovery, List<Vector2> points,
+                             int firstShots = 0, float firstShotsFactor = 1f)
     {
         points.Clear();
         if (data == null) return;
@@ -78,7 +80,8 @@ public static class RecoilPattern
                 accumulated -= back;
             }
             points.Add(aim);
-            Vector2 kick = Vector2.Scale(Kick(data, chains ? shot : 0), scale);
+            int index = chains ? shot : 0;
+            Vector2 kick = Vector2.Scale(Kick(data, index), scale) * (index < firstShots ? firstShotsFactor : 1f);
             aim += kick;
             accumulated += kick;
         }

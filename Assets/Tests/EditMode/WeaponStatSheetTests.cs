@@ -25,17 +25,22 @@ public class WeaponStatSheetTests
 
     private static float RobotHealth() => PlayerPrefab.GetComponent<Health>().Max;
 
-    /// <summary>Toutes les combinaisons d'accessoires qu'une place peut porter, telles que le serveur les
-    /// garde (Sanitized) : viseurs, poignées, laser, chargeur.</summary>
+    /// <summary>Les combinaisons d'accessoires qu'une place peut porter, telles que le serveur les garde
+    /// (Sanitized) : poignées, laser, chargeurs, crosses, canons, et un viseur de chaque famille (les viseurs
+    /// n'ont pas d'effet : tous les essayer multipliait le temps des tests par quatre).</summary>
     private static IEnumerable<WeaponAttachments> Configurations(IReadOnlyList<WeaponData> loadout, int slot)
     {
         var seen = new HashSet<string>();
-        for (int sight = 0; sight <= WeaponAttachments.SightCount; sight++)
+        foreach (int sight in new[] { 0, 1, 4, 8, 11, 12 })
         for (int grip = 0; grip < 3; grip++)
         for (int laser = 0; laser < 2; laser++)
-        for (int magazine = 0; magazine < 2; magazine++)
+        for (int magazine = 0; magazine < WeaponAttachments.VariantCount(AttachmentCategory.Magazine); magazine++)
+        for (int stock = 0; stock < WeaponAttachments.VariantCount(AttachmentCategory.Stock); stock++)
+        for (int barrel = 0; barrel < WeaponAttachments.VariantCount(AttachmentCategory.Barrel); barrel++)
         {
-            WeaponAttachments a = WeaponAttachments.None.With(slot, sight, (GripKind)grip, laser == 1, magazine == 1).Sanitized(loadout);
+            WeaponAttachments a = WeaponAttachments.None.WithSight(slot, sight).WithGrip(slot, (GripKind)grip).WithLaser(slot, laser == 1)
+                .WithMagazine(slot, (MagazineKind)magazine).WithStock(slot, (StockKind)stock).WithBarrel(slot, (BarrelKind)barrel)
+                .Sanitized(loadout);
             if (seen.Add(a.ToHex())) yield return a;
         }
     }
@@ -51,11 +56,16 @@ public class WeaponStatSheetTests
         {
             float best = 0f;
             int measured = 0;
+            // L'échelle se calcule une fois : Fraction la recalcule à chaque barre (Best, puis FractionOf).
+            float scale = WeaponStatSheet.Best(stat, loadout);
             for (int slot = 0; slot < loadout.Count; slot++)
             {
+                Assert.AreEqual(WeaponStatSheet.Fraction(stat, loadout, slot, WeaponAttachments.None, health),
+                                WeaponStatSheet.FractionOf(stat, WeaponStatSheet.Value(stat, loadout[slot], WeaponAttachments.None, slot), scale, health),
+                                1e-6f, "Fraction, c'est FractionOf sur le meilleur de la panoplie.");
                 foreach (WeaponAttachments a in Configurations(loadout, slot))
                 {
-                    float fraction = WeaponStatSheet.Fraction(stat, loadout, slot, a, health);
+                    float fraction = WeaponStatSheet.FractionOf(stat, WeaponStatSheet.Value(stat, loadout[slot], a, slot), scale, health);
                     Assert.That(fraction, Is.InRange(0f, 1f), $"{stat}, {loadout[slot].weaponName}, accessoires {a}.");
                     best = Mathf.Max(best, fraction);
                     measured++;
@@ -108,14 +118,45 @@ public class WeaponStatSheetTests
                 checks++;
             }
 
-            // GDD § 6 : aucun accessoire ne touche aux dégâts, à la cadence ni au poids de l'arme.
+            // Les crosses, les canons et le chargeur rapide (2026-10-29).
+            if (WeaponAttachments.Accepts(data, AttachmentCategory.Stock, (int)StockKind.Heavy))
+            {
+                WeaponAttachments heavy = none.WithStock(slot, StockKind.Heavy);
+                Assert.Greater(Bar(WeaponStatSheet.Stat.Control, heavy), Bar(WeaponStatSheet.Stat.Control, none), $"{data.weaponName} : la crosse lourde retient le recul...");
+                Assert.Less(Bar(WeaponStatSheet.Stat.Handling, heavy), Bar(WeaponStatSheet.Stat.Handling, none), "... et fait épauler moins vite.");
+                WeaponAttachments light = none.WithStock(slot, StockKind.Light);
+                Assert.Greater(Bar(WeaponStatSheet.Stat.Handling, light), Bar(WeaponStatSheet.Stat.Handling, none), $"{data.weaponName} : la crosse légère fait épauler plus vite...");
+                Assert.Less(Bar(WeaponStatSheet.Stat.Control, light), Bar(WeaponStatSheet.Stat.Control, none), "... et l'arme recule plus.");
+                checks++;
+            }
+            if (WeaponAttachments.Accepts(data, AttachmentCategory.Barrel, (int)BarrelKind.Long))
+            {
+                Assert.Less(Bar(WeaponStatSheet.Stat.Handling, none.WithBarrel(slot, BarrelKind.Long)), Bar(WeaponStatSheet.Stat.Handling, none),
+                            $"{data.weaponName} : le canon long fait épauler moins vite.");
+                Assert.Greater(Bar(WeaponStatSheet.Stat.Handling, none.WithBarrel(slot, BarrelKind.Short)), Bar(WeaponStatSheet.Stat.Handling, none),
+                               $"{data.weaponName} : le canon court fait épauler plus vite.");
+                checks++;
+            }
+            if (WeaponAttachments.Accepts(data, AttachmentCategory.Magazine, (int)MagazineKind.Fast))
+            {
+                // Une arme laser compte ses tirs avant la surchauffe : le tir qui la remplit part encore, et trois tirs
+                // du FX-2 restent trois avec la cellule rapide (elle chauffe plus vite : WeaponAttachmentsTests).
+                float fast = Bar(WeaponStatSheet.Stat.Capacity, none.WithMagazine(slot, MagazineKind.Fast));
+                if (data.UsesHeat) Assert.LessOrEqual(fast, Bar(WeaponStatSheet.Stat.Capacity, none), $"{data.weaponName} : la cellule rapide ne tient pas plus.");
+                else Assert.Less(fast, Bar(WeaponStatSheet.Stat.Capacity, none), $"{data.weaponName} : le chargeur rapide tient moins.");
+                checks++;
+            }
+
+            // GDD § 6 : aucun accessoire ne touche aux dégâts, à la cadence ni au poids de l'arme (comparé sur les
+            // valeurs, que les barres suivent : Fraction ne fait que les rapporter au meilleur).
             foreach (WeaponAttachments a in Configurations(loadout, slot))
             {
                 foreach (WeaponStatSheet.Stat stat in new[] { WeaponStatSheet.Stat.Damage, WeaponStatSheet.Stat.FireRate, WeaponStatSheet.Stat.Mobility })
-                    Assert.AreEqual(Bar(stat, none), Bar(stat, a), $"{data.weaponName}, {stat}, accessoires {a}.");
+                    Assert.AreEqual(WeaponStatSheet.Value(stat, data, none, slot), WeaponStatSheet.Value(stat, data, a, slot),
+                                    $"{data.weaponName}, {stat}, accessoires {a}.");
             }
         }
-        Assert.GreaterOrEqual(checks, 8, "Garde : chaque accessoire a été vérifié sur plusieurs armes.");
+        Assert.GreaterOrEqual(checks, 20, "Garde : chaque accessoire a été vérifié sur plusieurs armes.");
     }
 
     [Test]

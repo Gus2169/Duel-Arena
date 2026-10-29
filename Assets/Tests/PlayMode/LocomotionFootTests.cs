@@ -20,9 +20,12 @@ using UnityEngine;
 ///
 /// Depuis le 2026-10-10, aucune glissade n'est tolérée : le plafond de cadence couvre toutes les
 /// allures du jeu, et toutes sont couvertes, sprint, courses en diagonale, marche accroupie à
-/// pleine allure et reptation comprises. Restent hors du test les diagonales arrière en sneak ou en
-/// visée debout, en attendant les marches lentes du pack (dette n° 37) : le pas chassé et la course
-/// arrière de l'anneau lent n'ont pas la même foulée.
+/// pleine allure et reptation comprises, de côté aussi depuis le 2026-10-29. Restent hors du test les
+/// diagonales arrière en sneak ou en visée debout, en attendant les marches lentes du pack (dette
+/// n° 37) : le pas chassé et la course arrière de l'anneau lent n'ont pas la même foulée. Et les
+/// diagonales allongé (dette n° 42) : la reptation avant de Mixamo, lente, mêlée à angle droit à la
+/// reptation de côté, demande à pleine allure une cadence au-delà du plafond (les pieds à 75 à 92 %
+/// du corps), et en arrière à gauche le mélange part 12° de travers ; allongé, aucun pied n'est calé.
 ///
 /// Ce test juge la vitesse que l'Animator CALCULE pour le mélange. Ce que l'œil voit vraiment, les
 /// pieds dans le monde, est jugé par FootSlideTests.
@@ -151,7 +154,6 @@ public class LocomotionFootTests
         };
 
         var sprintable = new[] { Vector2.up, new Vector2(1f, 1f), new Vector2(-1f, 1f) };
-        var forwardAndBack = new[] { Vector2.up, Vector2.down };
         float prone = t.stanceMultiplier[2];
 
         var cases = new List<(string name, int stance, float speed, Vector2[] dirs)>
@@ -165,10 +167,11 @@ public class LocomotionFootTests
             ("accroupi sneak", 1, t.sneak * t.stanceMultiplier[1], all),
             ("accroupi visée", 1, t.walk * t.stanceMultiplier[1] * t.ads, all),
             ("accroupi marche", 1, t.walk * t.stanceMultiplier[1], all),
-            ("allongé sneak+visée", 2, t.sneak * prone * t.ads, forwardAndBack),
-            ("allongé sneak", 2, t.sneak * prone, forwardAndBack),
-            ("allongé visée", 2, t.walk * prone * t.ads, forwardAndBack),
-            ("allongé ramper", 2, t.walk * prone, forwardAndBack),
+            // Allongé, de côté aussi depuis le 2026-10-29 (la reptation de côté, calculée dans Blender).
+            ("allongé sneak+visée", 2, t.sneak * prone * t.ads, cardinals),
+            ("allongé sneak", 2, t.sneak * prone, cardinals),
+            ("allongé visée", 2, t.walk * prone * t.ads, cardinals),
+            ("allongé ramper", 2, t.walk * prone, cardinals),
         };
 
         var failures = new List<string>();

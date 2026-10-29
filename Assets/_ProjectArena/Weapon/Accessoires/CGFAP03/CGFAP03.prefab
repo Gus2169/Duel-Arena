@@ -152,6 +152,8 @@ MonoBehaviour:
   beam: {fileID: 0}
   leftHand: {fileID: 0}
   weaponDesignation: FAP-03
+  variant: 1
+  muzzle: {fileID: 0}
   hides: []
 --- !u!114 &974057661595732526
 MonoBehaviour:

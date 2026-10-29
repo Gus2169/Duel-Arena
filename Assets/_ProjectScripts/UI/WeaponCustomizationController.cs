@@ -51,12 +51,14 @@ public class WeaponCustomizationController : MonoBehaviour
     [Tooltip("Vitesse d'écriture des messages de l'IA de supervision (caractères par seconde).")]
     [SerializeField] private float aiTypingSpeed = 140f;
 
-    /// <summary>Les emplacements : les quatre rubriques d'accessoires, puis la finition (le modèle n'est
-    /// plus un choix depuis la refonte des armes : chaque modèle est une arme).</summary>
-    private enum Rubric { Sight, Grip, Laser, Magazine, Finish }
+    /// <summary>Les emplacements : les six rubriques d'accessoires (le canon et la crosse depuis le 2026-10-29),
+    /// puis la finition (le modèle n'est plus un choix depuis la refonte des armes : chaque modèle est une arme).</summary>
+    private enum Rubric { Sight, Barrel, Grip, Laser, Magazine, Stock, Finish }
 
-    private static readonly Rubric[] AttachmentRubrics = { Rubric.Sight, Rubric.Grip, Rubric.Laser, Rubric.Magazine };
-    private static readonly Rubric[] AllRubrics = { Rubric.Sight, Rubric.Grip, Rubric.Laser, Rubric.Magazine, Rubric.Finish };
+    private static readonly Rubric[] AttachmentRubrics =
+        { Rubric.Sight, Rubric.Barrel, Rubric.Grip, Rubric.Laser, Rubric.Magazine, Rubric.Stock };
+    private static readonly Rubric[] AllRubrics =
+        { Rubric.Sight, Rubric.Barrel, Rubric.Grip, Rubric.Laser, Rubric.Magazine, Rubric.Stock, Rubric.Finish };
 
     // Ce qu'on voit en visée : le double de l'image d'une carte de viseur (.choice-card--sight), pour un
     // réticule net, rendu sur le fond de la carte (.choice-card, MainMenu.uss).
@@ -512,31 +514,29 @@ public class WeaponCustomizationController : MonoBehaviour
     // Les rubriques et leurs choix
     // ------------------------------------------------------------------
 
-    private static bool IsAttachment(Rubric rubric) => rubric <= Rubric.Magazine;
+    private static bool IsAttachment(Rubric rubric) => rubric != Rubric.Finish;
 
     private static AttachmentCategory Category(Rubric rubric) => rubric switch
     {
         Rubric.Sight => AttachmentCategory.Sight,
+        Rubric.Barrel => AttachmentCategory.Barrel,
         Rubric.Grip => AttachmentCategory.Grip,
         Rubric.Laser => AttachmentCategory.Laser,
+        Rubric.Stock => AttachmentCategory.Stock,
         _ => AttachmentCategory.Magazine,
     };
 
-    private static string RubricLabel(Rubric rubric) => rubric switch
-    {
-        Rubric.Sight => "Viseur",
-        Rubric.Grip => "Poignée",
-        Rubric.Laser => "Laser",
-        Rubric.Magazine => "Chargeur",
-        _ => "Finition",
-    };
+    private static string RubricLabel(Rubric rubric)
+        => IsAttachment(rubric) ? WeaponAttachments.CategoryName(Category(rubric)) : "Finition";
 
     private static string RubricIcon(Rubric rubric) => rubric switch
     {
         Rubric.Sight => "ico-sight",
+        Rubric.Barrel => "ico-barrel",
         Rubric.Grip => "ico-grip",
         Rubric.Laser => "ico-laser",
         Rubric.Magazine => "ico-magazine",
+        Rubric.Stock => "ico-stock",
         _ => "ico-brush",
     };
 
@@ -581,7 +581,7 @@ public class WeaponCustomizationController : MonoBehaviour
         if (rubric == Rubric.Sight && data != null && data.scopeMagnification > 1f && data.acceptedSights == SightFamilies.None)
             return "Garde sa lunette";
         WeaponModel model = EquippedModel;
-        if (rubric == Rubric.Grip && model != null && model.PistolHold) return "Pas sur un pistolet";
+        if ((rubric == Rubric.Grip || rubric == Rubric.Stock) && model != null && model.PistolHold) return "Pas sur un pistolet";
         return "Pas sur cette arme";
     }
 
@@ -631,9 +631,32 @@ public class WeaponCustomizationController : MonoBehaviour
                 return variant == 0 ? "—" : CodeOf(catalog != null ? catalog.GripPrefab((GripKind)variant) : null, "P");
             case AttachmentCategory.Laser:
                 return variant == 0 ? "—" : CodeOf(catalog != null ? catalog.LaserPrefab(model != null && model.PistolHold) : null, "LT");
+            case AttachmentCategory.Stock:
+            case AttachmentCategory.Barrel:
+                // La désignation sans l'arme (« CL » pour « CL-FA30 ») : la place est petite.
+                if (variant == 0) return "—";
+                string full = CodeOf(AttachmentMount.PrefabFor(catalog, model, category, variant), ShortCode(category, variant, data));
+                int dash = full.IndexOf('-');
+                return dash > 0 ? full.Substring(0, dash) : full;
             default:
-                return AttachmentCatalog.MagazineSize(data, variant > 0, catalog).ToString();
+                return AttachmentCatalog.MagazineSize(data, (MagazineKind)Mathf.Clamp(variant, 0, 2)).ToString();
         }
+    }
+
+    /// <summary>La désignation d'une crosse ou de ce qui va au canon quand elle n'a pas de modèle : CS (crosse
+    /// squelette, légère), CP (crosse pleine, lourde), CM (compensateur), FB (frein de bouche), CL et CC (canons
+    /// long et court) ; sur une arme laser ST (stabilisateur), DS (dissipateur), FL et FC (focaliseurs).</summary>
+    public static string ShortCode(AttachmentCategory category, int variant, WeaponData data)
+    {
+        bool laser = data != null && data.UsesHeat;
+        if (category == AttachmentCategory.Stock) return (StockKind)variant == StockKind.Light ? "CS" : "CP";
+        return (BarrelKind)variant switch
+        {
+            BarrelKind.Compensator => laser ? "ST" : "CM",
+            BarrelKind.MuzzleBrake => laser ? "DS" : "FB",
+            BarrelKind.Long => laser ? "FL" : "CL",
+            _ => laser ? "FC" : "CC",
+        };
     }
 
     /// <summary>
@@ -649,14 +672,16 @@ public class WeaponCustomizationController : MonoBehaviour
         model = weaponModel != null ? $"{weaponModel.Designation} · {ModelTitle(weaponModel)}" : data != null ? data.weaponName : "";
 
         var parts = new List<string> { WeaponLooks.FinishLabel(looks.Finish(slot)) };
-        foreach (AttachmentCategory category in new[] { AttachmentCategory.Sight, AttachmentCategory.Grip, AttachmentCategory.Laser })
+        foreach (AttachmentCategory category in new[]
+                 { AttachmentCategory.Sight, AttachmentCategory.Barrel, AttachmentCategory.Grip, AttachmentCategory.Laser, AttachmentCategory.Stock })
         {
             int variant = attachments.Variant(slot, category);
             if (variant > 0 && WeaponAttachments.Accepts(data, category, variant))
                 parts.Add(AttachmentCode(data, weaponModel, category, variant));
         }
-        if (attachments.ExtendedMagazine(slot) && WeaponAttachments.Accepts(data, AttachmentCategory.Magazine, 1))
-            parts.Add($"chargeur {AttachmentCode(data, weaponModel, AttachmentCategory.Magazine, 1)}");
+        int magazine = attachments.Variant(slot, AttachmentCategory.Magazine);
+        if (magazine > 0 && WeaponAttachments.Accepts(data, AttachmentCategory.Magazine, magazine))
+            parts.Add($"chargeur {AttachmentCode(data, weaponModel, AttachmentCategory.Magazine, magazine)}");
         if (parts.Count == 1) parts.Add("sans accessoire");
         details = string.Join(" · ", parts);
     }
@@ -676,7 +701,13 @@ public class WeaponCustomizationController : MonoBehaviour
             case Rubric.Laser:
                 return variant == 0 ? "Aucun" : TitleOf(catalog != null ? catalog.LaserPrefab(PistolModel) : null, "Laser tactique");
             case Rubric.Magazine:
-                return variant == 0 ? "Chargeur d'origine" : "Grande capacité";
+                if (variant == 0) return WeaponAttachments.ChoiceName(AttachmentCategory.Magazine, 0, CurrentData);
+                return (MagazineKind)variant == MagazineKind.Fast ? "Rapide" : "Grande capacité";
+            case Rubric.Barrel:
+            case Rubric.Stock:
+                AttachmentCategory category = Category(rubric);
+                string name = WeaponAttachments.ChoiceName(category, variant, CurrentData);
+                return variant == 0 ? name : TitleOf(AttachmentMount.PrefabFor(catalog, EquippedModel, category, variant), name);
             default:
                 return WeaponLooks.FinishLabel((WeaponFinish)variant);
         }
@@ -697,16 +728,13 @@ public class WeaponCustomizationController : MonoBehaviour
                 float zoom = SightMagnification(variant);
                 return zoom > 1f ? $"×{WeaponStatSheet.Number(zoom)} · {reticleShape}" : reticleShape;
             case Rubric.Grip:
-                if (variant == (int)GripKind.Vertical) return $"Recul vertical −{Less(catalog != null ? catalog.verticalGripRecoil : 1f)}";
-                if (variant == (int)GripKind.Angled) return $"Épaulement −{Less(catalog != null ? catalog.angledGripAimTime : 1f)}";
-                return "Aucun effet";
             case Rubric.Laser:
-                return variant == 0 ? "Aucun effet" : $"Dispersion à la hanche −{Less(catalog != null ? catalog.laserHipSpread : 1f)}";
+            case Rubric.Barrel:
+            case Rubric.Stock:
+                return variant == 0 ? "Aucun effet" : WeaponStats.Describe(catalog != null ? catalog.EffectOf(Category(rubric), variant) : null, data);
             case Rubric.Magazine:
                 if (variant == 0) return $"Rechargement {WeaponStatSheet.Reload(data, WeaponAttachments.None, currentSlot)}";
-                string more = More(catalog != null ? catalog.extendedMagazineCapacity : 1f);
-                if (data != null && data.reloadPerRound) return $"Cartouches +{more}";
-                return $"Coups +{more}, recharge +{More(catalog != null ? catalog.extendedMagazineReload : 1f)}";
+                return WeaponStats.Describe(catalog != null ? catalog.EffectOf(AttachmentCategory.Magazine, variant) : null, data);
             default:
                 return "Apparence seulement";
         }
@@ -735,30 +763,33 @@ public class WeaponCustomizationController : MonoBehaviour
                            + "la vue grossit d'autant une fois épaulée. Le tir ne change pas.";
                 return $"{title} ({code}).{reticle} Viseur sans grossissement : il remplace la hausse et le guidon. Le tir ne change pas.";
             case Rubric.Grip:
-                if (variant == (int)GripKind.Vertical)
-                    return $"{title} ({code}). Recul vertical : −{Less(catalog != null ? catalog.verticalGripRecoil : 1f)}, épaulé comme à la hanche.";
-                if (variant == (int)GripKind.Angled)
-                {
-                    float before = AttachmentCatalog.AimTime(data, GripKind.None, catalog);
-                    float after = AttachmentCatalog.AimTime(data, GripKind.Angled, catalog);
-                    return $"{title} ({code}). Épaulement : {Milliseconds(before)} → {Milliseconds(after)}.";
-                }
-                return "Aucune poignée : le recul et l'épaulement de la classe.";
+                if (variant == 0) return "Aucune poignée : le recul et l'épaulement de la classe.";
+                return $"{title} ({code}). {EffectSentence(data, AttachmentCategory.Grip, variant)}";
             case Rubric.Laser:
                 if (variant == 0) return "Aucun laser.";
-                return $"{title} ({code}). Dispersion à la hanche : −{Less(catalog != null ? catalog.laserHipSpread : 1f)}. "
+                return $"{title} ({code}). {EffectSentence(data, AttachmentCategory.Laser, variant)} "
                        + "Son faisceau et son point se voient de loin, par l'adversaire aussi.";
             case Rubric.Magazine:
-                int standard = AttachmentCatalog.MagazineSize(data, false, catalog);
-                int extended = AttachmentCatalog.MagazineSize(data, true, catalog);
-                string rounds = data != null && data.reloadPerRound ? "cartouches" : "coups";
-                string reload = WeaponStatSheet.Reload(data, WeaponAttachments.None, currentSlot);
-                if (variant == 0) return $"Chargeur d'origine : {standard} {rounds}. Rechargement : {reload}.";
+                if (variant == 0)
+                {
+                    int standard = AttachmentCatalog.MagazineSize(data, WeaponAttachments.None, currentSlot);
+                    string rounds = data != null && data.reloadPerRound ? "cartouches" : "coups";
+                    return $"Chargeur d'origine : {standard} {rounds}. Rechargement : {WeaponStatSheet.Reload(data, WeaponAttachments.None, currentSlot)}.";
+                }
+                string sentence = $"{WeaponAttachments.ChoiceName(AttachmentCategory.Magazine, variant, data)}. "
+                                  + EffectSentence(data, AttachmentCategory.Magazine, variant);
                 if (data != null && data.reloadPerRound)
-                    return $"Chargeur grande capacité : {standard} → {extended} {rounds}. Chacune se glisse toujours en "
-                           + $"{WeaponStatSheet.Number(AttachmentCatalog.ReloadDuration(data, true, catalog))} s.";
-                string longer = WeaponStatSheet.Reload(data, WeaponAttachments.None.WithMagazine(currentSlot, true), currentSlot);
-                return $"Chargeur grande capacité : {standard} → {extended} {rounds}. Rechargement : {reload} → {longer}.";
+                    sentence += $" Chaque cartouche se glisse toujours en {WeaponStatSheet.Number(data.reloadDuration)} s.";
+                return sentence;
+            case Rubric.Barrel:
+                if (variant == 0)
+                    return data != null && data.UsesHeat
+                        ? "Émetteur d'origine : la portée et la maniabilité de l'arme."
+                        : "Canon d'origine : la portée et la maniabilité de l'arme.";
+                return $"{title} ({code}). {EffectSentence(data, AttachmentCategory.Barrel, variant)}";
+            case Rubric.Stock:
+                if (variant == 0) return "Crosse d'origine : le recul et l'épaulement de l'arme.";
+                return $"{title} ({code}). {EffectSentence(data, AttachmentCategory.Stock, variant)}";
             default:
                 var finish = (WeaponFinish)variant;
                 return $"Finition {WeaponLooks.FinishLabel(finish).ToLowerInvariant()}. {WeaponLooks.FinishDescription(finish)} "
@@ -780,13 +811,18 @@ public class WeaponCustomizationController : MonoBehaviour
                     return "Viseurs : onze modèles sans grossissement, points rouges, holographiques et réflex. Le tir ne change pas.";
                 return $"Viseurs sans grossissement. Cette arme ne prend que les {SightFamiliesLabel(families)}.";
             case Rubric.Grip:
-                return "Poignées : la verticale retient le recul vertical, l'inclinée fait épauler plus vite. Une seule à la fois.";
+                return $"Poignées, une seule à la fois : la verticale, {EffectWords(AttachmentCategory.Grip, (int)GripKind.Vertical)} ; "
+                       + $"l'inclinée, {EffectWords(AttachmentCategory.Grip, (int)GripKind.Angled)}.";
             case Rubric.Laser:
-                return "Laser tactique : moins de dispersion à la hanche. Son point se voit.";
+                return $"Laser tactique : {EffectWords(AttachmentCategory.Laser, 1)}. Son point se voit.";
             case Rubric.Magazine:
                 return data != null && data.reloadPerRound
-                    ? "Chargeur grande capacité : plus de cartouches, chacune glissée aussi vite."
-                    : "Chargeur grande capacité : plus de coups, un rechargement plus long.";
+                    ? $"{BigMagazineName(data)} : {EffectWords(AttachmentCategory.Magazine, 1)}, chaque cartouche glissée aussi vite."
+                    : $"{ChoicesSentence(AttachmentCategory.Magazine)}.";
+            case Rubric.Barrel:
+                return $"{(data != null && data.UsesHeat ? "Émetteur" : "Canon")}, un seul à la fois. {ChoicesSentence(AttachmentCategory.Barrel)}.";
+            case Rubric.Stock:
+                return $"Crosses. {ChoicesSentence(AttachmentCategory.Stock)}.";
             default:
                 return "Six finitions, vues par tous les joueurs. Apparence seulement.";
         }
@@ -826,10 +862,85 @@ public class WeaponCustomizationController : MonoBehaviour
         return names.Count == 0 ? "aucun" : string.Join(" et ", names);
     }
 
-    // Ce qu'un facteur retire (« 20 % » pour 0,8) ou ajoute (« 15 % » pour 1,15).
-    private static string Less(float factor) => $"{Mathf.RoundToInt((1f - factor) * 100f)} %";
-    private static string More(float factor) => $"{Mathf.RoundToInt((factor - 1f) * 100f)} %";
     private static string Milliseconds(float seconds) => $"{Mathf.RoundToInt(seconds * 1000f)} ms";
+
+    /// <summary>Le grand chargeur d'une arme, ou la cellule grande capacité d'une arme laser.</summary>
+    private static string BigMagazineName(WeaponData data)
+        => data != null && data.UsesHeat ? "Cellule grande capacité" : "Chargeur grande capacité";
+
+    /// <summary>Les effets d'un accessoire sur l'arme montrée, dans une phrase (« recul vertical −20 % ») : lus
+    /// dans le catalogue, comme le reste de ce que dit l'IA.</summary>
+    private string EffectWords(AttachmentCategory category, int variant)
+    {
+        AttachmentCatalog catalog = Catalog;
+        string words = WeaponStats.Describe(catalog != null ? catalog.EffectOf(category, variant) : null, CurrentData);
+        return char.ToLowerInvariant(words[0]) + words.Substring(1);
+    }
+
+    /// <summary>Chaque choix d'une rubrique que l'arme montrée prend, et ses effets lus dans le catalogue
+    /// (« Compensateur : recul horizontal −30 %, recul vertical +10 % ; frein de bouche : ... »).</summary>
+    private string ChoicesSentence(AttachmentCategory category)
+    {
+        WeaponData data = CurrentData;
+        var parts = new List<string>();
+        for (int variant = 1; variant < WeaponAttachments.VariantCount(category); variant++)
+        {
+            if (!WeaponAttachments.Accepts(data, category, variant)) continue;
+            string name = WeaponAttachments.ChoiceName(category, variant, data);
+            parts.Add($"{(parts.Count == 0 ? name : char.ToLowerInvariant(name[0]) + name.Substring(1))} : {EffectWords(category, variant)}");
+        }
+        return parts.Count == 0 ? "Aucun sur cette arme" : string.Join(" ; ", parts);
+    }
+
+    /// <summary>
+    /// Ce que change un accessoire à l'arme montrée, avec ses chiffres : « Épaulement : 300 ms → 240 ms. »,
+    /// « Coups : 30 → 45. Recharge : 2,2 s → 2,53 s. », « Recul vertical : −20 %. ». Tout est lu dans les effets
+    /// du catalogue et calculé comme en partie (l'IA ne se trompe jamais, Bible § 9) : un effet ajouté dans
+    /// l'éditeur des armes s'y lit sans rien d'autre.
+    /// </summary>
+    private string EffectSentence(WeaponData data, AttachmentCategory category, int variant)
+    {
+        AttachmentCatalog catalog = data != null ? data.attachmentCatalog : null;
+        AttachmentEffect effect = catalog != null ? catalog.EffectOf(category, variant) : null;
+        if (effect == null || effect.modifiers == null) return "Aucun effet.";
+        WeaponAttachments without = WeaponAttachments.None;
+        WeaponAttachments with = without.WithVariant(currentSlot, category, variant);
+        var said = new List<WeaponStat>();
+        var parts = new List<string>();
+        foreach (StatModifier modifier in effect.modifiers)
+        {
+            if (modifier.factor == 1f || !WeaponStats.Applies(modifier.stat, data) || said.Contains(modifier.stat)) continue;
+            said.Add(modifier.stat);
+            string label = WeaponStats.LabelFor(modifier.stat, data);
+            label = char.ToUpperInvariant(label[0]) + label.Substring(1);
+            switch (modifier.stat)
+            {
+                case WeaponStat.AimTime:
+                    parts.Add($"{label} : {Milliseconds(AttachmentCatalog.AimTime(data, without, currentSlot))} → "
+                              + $"{Milliseconds(AttachmentCatalog.AimTime(data, with, currentSlot))}");
+                    break;
+                case WeaponStat.MagazineSize:
+                    parts.Add($"{label} : {WeaponStatSheet.Value(WeaponStatSheet.Stat.Capacity, data, without, currentSlot)} → "
+                              + $"{WeaponStatSheet.Value(WeaponStatSheet.Stat.Capacity, data, with, currentSlot)}");
+                    break;
+                case WeaponStat.ReloadTime:
+                    parts.Add($"{label} : {WeaponStatSheet.Reload(data, without, currentSlot)} → {WeaponStatSheet.Reload(data, with, currentSlot)}");
+                    break;
+                case WeaponStat.RaiseTime:
+                    parts.Add($"{label} : {Milliseconds(AttachmentCatalog.RaiseTime(data, without, currentSlot))} → "
+                              + $"{Milliseconds(AttachmentCatalog.RaiseTime(data, with, currentSlot))}");
+                    break;
+                case WeaponStat.FalloffRange:
+                    parts.Add($"Dégâts pleins jusqu'à {WeaponStatSheet.Number(data.falloffStart * AttachmentCatalog.FalloffScale(catalog, without, currentSlot))} m → "
+                              + $"{WeaponStatSheet.Number(data.falloffStart * AttachmentCatalog.FalloffScale(catalog, with, currentSlot))} m");
+                    break;
+                default:
+                    parts.Add($"{label} : {WeaponStats.Percent(modifier.factor)}");
+                    break;
+            }
+        }
+        return parts.Count == 0 ? "Aucun effet sur cette arme." : string.Join(". ", parts) + ".";
+    }
 
     // ------------------------------------------------------------------
     // À gauche : l'arsenal, trois armes sous le nom de chaque famille (GDD § 15, 2026-10-26)
@@ -1003,6 +1114,12 @@ public class WeaponCustomizationController : MonoBehaviour
                 thumbnails.SightPicture(data, looks.Finish(currentSlot), GameSettings.WeaponAttachments.WithSight(currentSlot, variant),
                     currentSlot, SightPictureWidth, SightPictureHeight, ChoiceCardBackground, Show);
                 break;
+            case Rubric.Barrel:
+            case Rubric.Stock:
+                // L'arme entière, ce choix monté : un canon long ou court, une crosse, se jugent sur l'arme.
+                thumbnails.Weapon(data, looks.Finish(currentSlot),
+                    GameSettings.WeaponAttachments.WithVariant(currentSlot, Category(selectedRubric), variant), currentSlot, 300, 132, Show);
+                break;
             default:
                 if (variant == 0) return;
                 GameObject prefab = AttachmentMount.PrefabFor(Catalog, EquippedModel, Category(selectedRubric), variant);
@@ -1147,7 +1264,15 @@ public class WeaponCustomizationController : MonoBehaviour
             row.value.EnableInClassList("stat-row__value--loss", changed && !gain);
         }
 
-        rangeValue.text = WeaponStatSheet.EffectiveRange(data);
+        string rangeBefore = WeaponStatSheet.EffectiveRange(data, equipped, currentSlot);
+        string rangeAfter = WeaponStatSheet.EffectiveRange(data, shown, currentSlot);
+        bool rangeChanged = rangeBefore != rangeAfter;
+        rangeValue.text = rangeChanged ? $"{rangeBefore} → {rangeAfter}" : rangeAfter;
+        bool farther = rangeChanged && data != null
+            && AttachmentCatalog.FalloffScale(data.attachmentCatalog, shown, currentSlot)
+             > AttachmentCatalog.FalloffScale(data.attachmentCatalog, equipped, currentSlot);
+        rangeValue.EnableInClassList("stat-row__value--gain", rangeChanged && farther);
+        rangeValue.EnableInClassList("stat-row__value--loss", rangeChanged && !farther);
         fireModeValue.text = WeaponStatSheet.FireMode(data);
         zonesValue.text = WeaponStatSheet.Zones(data);
 
@@ -1156,12 +1281,12 @@ public class WeaponCustomizationController : MonoBehaviour
         bool reloadChanged = reloadBefore != reloadAfter;
         reloadValue.text = reloadChanged ? $"{reloadBefore} → {reloadAfter}" : reloadAfter;
         bool slower = reloadChanged && data != null
-            && AttachmentCatalog.ReloadDuration(data, shown.ExtendedMagazine(currentSlot), data.attachmentCatalog)
-             > AttachmentCatalog.ReloadDuration(data, equipped.ExtendedMagazine(currentSlot), data.attachmentCatalog);
+            && AttachmentCatalog.ReloadDuration(data, shown, currentSlot)
+             > AttachmentCatalog.ReloadDuration(data, equipped, currentSlot);
         reloadValue.EnableInClassList("stat-row__value--loss", reloadChanged && slower);
         reloadValue.EnableInClassList("stat-row__value--gain", reloadChanged && !slower);
 
-        statsLegend.text = anyChange || reloadChanged ? "APERÇU : CE QUI CHANGE" : "";
+        statsLegend.text = anyChange || reloadChanged || rangeChanged ? "APERÇU : CE QUI CHANGE" : "";
     }
 
     /// <summary>L'IA de supervision parle (Bible § 9) : l'heure de la machine, puis son message, écrit

@@ -105,6 +105,70 @@ public class FirstPersonViewTests
         Assert.Less(shift, 0.005f, $"Le fusil des bras se déplace de {shift * 100f:F1} cm : il suit les jambes, la posture ou la respiration.");
     }
 
+    /// <summary>
+    /// Un tir au pistolet ne fait pas bouger les bras de la vue subjective (2026-10-29, signalé par
+    /// l'utilisateur : les bras bougeaient un peu, le viseur avec, avant de se remettre droits et
+    /// immobiles). Faute de clip de tir au pistolet, l'état « Tir » rejouait la pose de visée depuis son
+    /// début, à vitesse normale, quand les bras la tiennent figée. Le geste reste sur le corps quand on
+    /// tire de la hanche (il lève le pistolet, vu des autres), et à toute arme d'épaule.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator UnTirAuPistolet_NeFaitPasBougerLesBras()
+    {
+        source = TestCharacter.InstantiateModel(out Animator body);
+        cameraGo = new GameObject("CameraTest");
+        yield return null;
+
+        float moved = MeasurePistolShots(body, (b, v) => PlayerAnimator.FireGesture(b, v, true, true));
+        float before = MeasurePistolShots(body, (b, v) => { b.SetTrigger("Fire"); v.SetTrigger("Fire"); });
+        Debug.Log($"[VUE-SUBJECTIVE] main droite des bras au tir du pistolet : {moved * 1000f:F2} mm au plus, contre {before * 1000f:F1} mm quand le geste partait sur les bras");
+        Assert.Greater(before, 0.003f, "Garde anti-vacuité : déclenché sur les bras, le geste de tir du pistolet les faisait bouger.");
+        Assert.Less(moved, 0.0005f, $"La main droite des bras bouge de {moved * 1000f:F2} mm au tir du pistolet : le viseur avec.");
+
+        // Où le geste part : au pistolet, sur le corps seulement de la hanche ; aux armes d'épaule, partout.
+        var arms = FirstPersonView.BuildView(source, cameraGo.transform, LayerMask.NameToLayer(FirstPersonView.LayerName),
+                                             out Animator view, out _);
+        foreach ((bool pistol, bool aiming, bool onBody, bool onView) in new[]
+                 { (true, true, false, false), (true, false, true, false), (false, true, true, true), (false, false, true, true) })
+        {
+            body.ResetTrigger("Fire");
+            view.ResetTrigger("Fire");
+            PlayerAnimator.FireGesture(body, view, pistol, aiming);
+            string what = (pistol ? "pistolet" : "arme d'épaule") + (aiming ? " épaulé" : " à la hanche");
+            Assert.AreEqual(onBody, body.GetBool("Fire"), $"{what} : le geste sur le corps.");
+            Assert.AreEqual(onView, view.GetBool("Fire"), $"{what} : le geste sur les bras.");
+        }
+        Object.DestroyImmediate(arms);
+    }
+
+    /// <summary>Tient le pistolet en visée, tire trois coups (fire), et relève de combien la main droite
+    /// des bras se déplace dans la copie.</summary>
+    private float MeasurePistolShots(Animator body, System.Action<Animator, Animator> fire)
+    {
+        int layer = LayerMask.NameToLayer(FirstPersonView.LayerName);
+        GameObject view = FirstPersonView.BuildView(source, cameraGo.transform, layer, out Animator arms, out _);
+        Transform hand = arms.GetBoneTransform(HumanBodyBones.RightHand);
+        body.Rebind();
+        const float dt = 1f / 60f;
+        Vector3 reference = Vector3.zero;
+        float max = 0f;
+        for (int i = 0; i < 300; i++)
+        {
+            body.SetBool("Aiming", true);
+            body.SetFloat("SpeedMult", 1f);
+            body.SetFloat("Pistolet", 1f);
+            body.Update(dt);
+            PlayerAnimator.MirrorWeaponGestures(body, arms, 0f);
+            if (i == 90 || i == 150 || i == 210) fire(body, arms);
+            arms.Update(dt);
+            Vector3 p = view.transform.InverseTransformPoint(hand.position);
+            if (i == 89) reference = p;
+            if (i >= 90) max = Mathf.Max(max, Vector3.Distance(reference, p));
+        }
+        Object.DestroyImmediate(view);
+        return max;
+    }
+
     /// <summary>Joue le corps (pas chassés visés, puis accroupi, allongé, debout), recopie vers une
     /// copie des bras, et relève de combien la mire du fusil tourne et se déplace dans la copie.</summary>
     private void Measure(Animator body, System.Action<Animator, Animator> mirror, out float maxAngle, out float maxShift)

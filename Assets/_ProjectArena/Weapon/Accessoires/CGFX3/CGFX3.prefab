@@ -61,6 +61,8 @@ MonoBehaviour:
   beam: {fileID: 0}
   leftHand: {fileID: 0}
   weaponDesignation: FX-3
+  variant: 1
+  muzzle: {fileID: 0}
   hides: []
 --- !u!114 &8456009886325911441
 MonoBehaviour:

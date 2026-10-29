@@ -60,6 +60,8 @@ MonoBehaviour:
   beam: {fileID: 0}
   leftHand: {fileID: 0}
   weaponDesignation: FP-12
+  variant: 1
+  muzzle: {fileID: 0}
   hides:
   - Chargeur_Standard
 --- !u!114 &9150918498888706742

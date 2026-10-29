@@ -3,7 +3,7 @@ using UnityEngine;
 /// <summary>
 /// Le laser tactique (2026-10-16, GDD § 6) : un faisceau qui sort de l'émetteur, droit dans l'axe du
 /// canon, et un point rouge là où il s'arrête. Il aide le tir au juger (le cône de la hanche et la gerbe
-/// d'un pompe se resserrent : AttachmentCatalog.laserHipSpread) et trahit qui le porte : le faisceau se
+/// d'un pompe se resserrent : ses effets dans AttachmentCatalog) et trahit qui le porte : le faisceau se
 /// voit de loin, le point sur le mur aussi. Un vrai choix, comme le voulait l'utilisateur.
 ///
 /// Un vrai laser (demandé par l'utilisateur le 2026-10-16 ; il suivait le regard) : il suit l'arme,

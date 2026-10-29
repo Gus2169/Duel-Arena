@@ -165,6 +165,116 @@ public partial class WeaponEditorWindow
         { "recoilPercentProneStatic", "recoilPercentProneSneaking", "recoilPercentProneMoving" },
     };
 
+    /// <summary>Les accessoires qui peuvent porter des effets, dans l'ordre de l'armurerie. Les viseurs n'en ont
+    /// pas : ils ne changent que l'image de visée (GDD § 6).</summary>
+    private static readonly (AttachmentCategory category, int variant, string name)[] EffectAccessories =
+    {
+        (AttachmentCategory.Barrel, (int)BarrelKind.Compensator, "Compensateur (ou stabilisateur d'une arme laser)"),
+        (AttachmentCategory.Barrel, (int)BarrelKind.MuzzleBrake, "Frein de bouche (ou dissipateur)"),
+        (AttachmentCategory.Barrel, (int)BarrelKind.Long, "Canon long (ou focaliseur long)"),
+        (AttachmentCategory.Barrel, (int)BarrelKind.Short, "Canon court (ou focaliseur court)"),
+        (AttachmentCategory.Grip, (int)GripKind.Vertical, "Poignée verticale"),
+        (AttachmentCategory.Grip, (int)GripKind.Angled, "Poignée inclinée"),
+        (AttachmentCategory.Laser, 1, "Laser tactique"),
+        (AttachmentCategory.Magazine, (int)MagazineKind.Extended, "Chargeur grande capacité (ou cellule grande capacité)"),
+        (AttachmentCategory.Magazine, (int)MagazineKind.Fast, "Chargeur rapide (ou cellule rapide)"),
+        (AttachmentCategory.Stock, (int)StockKind.Light, "Crosse légère"),
+        (AttachmentCategory.Stock, (int)StockKind.Heavy, "Crosse lourde"),
+    };
+
+    private static GUIContent[] statLabels;
+
+    /// <summary>
+    /// Les effets de chaque accessoire, en lignes « caractéristique × facteur » qu'on modifie, retire ou ajoute
+    /// (2026-10-29, demandé par l'utilisateur : « supprimer, ajouter, modifier, de façon super simple »). Écrits
+    /// dans le catalogue par SerializedObject (Undo compris) ; « Enregistrer » les met sur le disque.
+    /// </summary>
+    private void DrawEffects()
+    {
+        statLabels ??= System.Array.ConvertAll(WeaponStats.All, s => new GUIContent(WeaponStats.Label(s), WeaponStats.Help(s)));
+        SerializedObject so = Serialized(catalog);
+        so.Update();
+        SerializedProperty effects = so.FindProperty("effects");
+        foreach (var (category, variant, name) in EffectAccessories)
+        {
+            GUILayout.Space(6f);
+            GUILayout.Label(name, EditorStyles.boldLabel);
+            int index = FindEffect(effects, category, variant);
+            SerializedProperty modifiers = index >= 0 ? effects.GetArrayElementAtIndex(index).FindPropertyRelative("modifiers") : null;
+            int count = modifiers != null ? modifiers.arraySize : 0;
+            if (count == 0) Note("Aucun effet.");
+            for (int i = 0; i < count; i++)
+            {
+                SerializedProperty modifier = modifiers.GetArrayElementAtIndex(i);
+                SerializedProperty stat = modifier.FindPropertyRelative("stat");
+                SerializedProperty factor = modifier.FindPropertyRelative("factor");
+                EditorGUILayout.BeginHorizontal();
+                int shown = System.Array.IndexOf(WeaponStats.All, (WeaponStat)stat.intValue);
+                EditorGUI.BeginChangeCheck();
+                int chosen = EditorGUILayout.Popup(Mathf.Max(0, shown), statLabels, GUILayout.Width(190f));
+                if (EditorGUI.EndChangeCheck()) stat.intValue = (int)WeaponStats.All[chosen];
+                GUILayout.Label("×", GUILayout.Width(12f));
+                EditorGUI.BeginChangeCheck();
+                float value = EditorGUILayout.DelayedFloatField(factor.floatValue, GUILayout.Width(56f));
+                if (EditorGUI.EndChangeCheck()) factor.floatValue = Mathf.Clamp(value, 0.05f, 5f);
+                GUILayout.Label(WeaponStats.Percent(factor.floatValue), GUILayout.Width(64f));
+                bool remove = GUILayout.Button(new GUIContent("Retirer", "Retire cet effet de l'accessoire."), GUILayout.Width(64f));
+                EditorGUILayout.EndHorizontal();
+                if (remove)
+                {
+                    modifiers.DeleteArrayElementAtIndex(i);
+                    break;
+                }
+            }
+            if (GUILayout.Button(new GUIContent("+ Ajouter un effet", "Une caractéristique de plus, à ×1 (sans effet) : choisissez-la puis réglez son facteur."), GUILayout.Width(150f)))
+            {
+                if (index < 0)
+                {
+                    index = effects.arraySize;
+                    effects.InsertArrayElementAtIndex(index);
+                    SerializedProperty added = effects.GetArrayElementAtIndex(index);
+                    added.FindPropertyRelative("category").intValue = (int)category;
+                    added.FindPropertyRelative("variant").intValue = variant;
+                    added.FindPropertyRelative("modifiers").arraySize = 0;
+                }
+                modifiers = effects.GetArrayElementAtIndex(index).FindPropertyRelative("modifiers");
+                int n = modifiers.arraySize;
+                modifiers.InsertArrayElementAtIndex(n);
+                SerializedProperty fresh = modifiers.GetArrayElementAtIndex(n);
+                fresh.FindPropertyRelative("stat").intValue = (int)UnusedStat(modifiers, n);
+                fresh.FindPropertyRelative("factor").floatValue = 1f;
+            }
+        }
+        GUILayout.Space(8f);
+        Field(so, "firstShots", "« Recul des premiers coups » : combien de coups");
+        so.ApplyModifiedProperties();
+    }
+
+    /// <summary>L'effet de cet accessoire dans le catalogue, ou -1.</summary>
+    private static int FindEffect(SerializedProperty effects, AttachmentCategory category, int variant)
+    {
+        for (int i = 0; i < effects.arraySize; i++)
+        {
+            SerializedProperty effect = effects.GetArrayElementAtIndex(i);
+            if (effect.FindPropertyRelative("category").intValue == (int)category && effect.FindPropertyRelative("variant").intValue == variant)
+                return i;
+        }
+        return -1;
+    }
+
+    /// <summary>La première caractéristique que l'accessoire ne change pas encore (les `count` premiers effets).</summary>
+    private static WeaponStat UnusedStat(SerializedProperty modifiers, int count)
+    {
+        foreach (WeaponStat stat in WeaponStats.All)
+        {
+            bool used = false;
+            for (int i = 0; i < count && !used; i++)
+                used = modifiers.GetArrayElementAtIndex(i).FindPropertyRelative("stat").intValue == (int)stat;
+            if (!used) return stat;
+        }
+        return WeaponStats.All[0];
+    }
+
     private void DrawSharedTab()
     {
         sharedScroll = EditorGUILayout.BeginScrollView(sharedScroll);
@@ -174,15 +284,12 @@ public partial class WeaponEditorWindow
         Section("Les effets des accessoires (toutes les armes)");
         if (catalog != null)
         {
-            SerializedObject so = Serialized(catalog);
-            so.Update();
-            Field(so, "verticalGripRecoil", "Poignée verticale : recul vertical ×");
-            Field(so, "laserHipSpread", "Laser tactique : dispersion à la hanche ×");
-            Field(so, "angledGripAimTime", "Poignée inclinée : épaulement ×");
-            Field(so, "extendedMagazineCapacity", "Grand chargeur : balles ×");
-            Field(so, "extendedMagazineReload", "Grand chargeur : rechargement ×");
-            so.ApplyModifiedProperties();
-            Note("Une arme laser prend la cellule grande capacité à la place du grand chargeur : la chaleur d'un tir est divisée d'autant, ses vidanges durent d'autant plus.");
+            Note("Chaque effet multiplie une caractéristique de l'arme qui porte l'accessoire : ×0,8 en retire 20 %, ×1,5 en ajoute la moitié. "
+                 + "Deux effets sur la même caractéristique se multiplient. Une arme laser prend ses cellules à la place des chargeurs : "
+                 + "le chargeur y est la chaleur qu'elle tient avant la surchauffe, le rechargement ses vidanges ; et ses émetteurs à la place "
+                 + "de ce qui va au canon, avec les mêmes effets (la flamme de bouche y est l'épaisseur du rayon). Ce que chaque arme prend se "
+                 + "règle dans son onglet Caractéristiques.");
+            DrawEffects();
         }
         else
         {

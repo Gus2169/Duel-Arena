@@ -220,6 +220,33 @@ public class AnimatorStateTests
         StringAssert.Contains("Prone Position", ClipDominant(0), "En reculant allongé, les jambes doivent ramper.");
     }
 
+    /// <summary>
+    /// Allongé, on va aussi de côté (2026-10-29) : l'arbre de la reptation joue la reptation de côté
+    /// calculée dans Blender, à gauche ou à droite. Il ne connaissait que l'avant et l'arrière, et le
+    /// corps glissait de côté en pose d'attente : Move() interdisait le pas de côté allongé.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator Allonge_DeCote_RampeDeCote()
+    {
+        yield return Setup();
+
+        animator.SetFloat("SpeedMult", 1f);
+        animator.SetInteger("Stance", 2);
+        animator.SetFloat("StanceF", 2f);
+        animator.SetFloat("Marche", 1f);
+        PlayerAnimator.SetLocomotion(animator, new Vector2(0f, -1f));
+        yield return Settle(ProneSettle);
+        // Garde anti-vacuité : on est bien dans l'arbre de la reptation.
+        StringAssert.Contains("Prone Position", ClipDominant(0), "En reculant allongé, les jambes doivent ramper.");
+
+        PlayerAnimator.SetLocomotion(animator, new Vector2(-1f, 0f));
+        yield return Settle();
+        Assert.AreEqual("Reptation Gauche", ClipDominant(0), "Allongé vers la gauche, les jambes doivent ramper de côté.");
+        PlayerAnimator.SetLocomotion(animator, new Vector2(1f, 0f));
+        yield return Settle();
+        Assert.AreEqual("Reptation Droite", ClipDominant(0), "Allongé vers la droite, les jambes doivent ramper de côté.");
+    }
+
     [UnityTest]
     public IEnumerator Viser_BasculeLeHautDuCorpsEnPositionDeVisee()
     {

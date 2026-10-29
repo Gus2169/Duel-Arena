@@ -8,10 +8,14 @@ using UnityEngine.Rendering;
 ///
 /// Chaque accessoire est une copie de son préfab (AttachmentCatalog), posée sans décalage sur le point
 /// d'accroche de sa rubrique, enfant du groupe « Accessoires » du modèle (Viseur, Poignee, Laser,
-/// Chargeur) : les préfabs ont leur origine au point d'accroche, dans les axes de l'arme. Ce qu'il
-/// remplace se cache (WeaponAttachment.Hides : la hausse et le guidon sous un viseur, le chargeur
-/// d'origine sous un chargeur grande capacité) et revient quand il part. Il prend la finition de
-/// l'arme, son layer et ses ombres.
+/// Chargeur, Crosse), ou de sa bouche pour ce qui va au canon : les préfabs ont leur origine au point
+/// d'accroche, dans les axes de l'arme. Un canon long ou court qui déplace l'avant de l'arme porte les
+/// points d'accroche qu'il déplace (son propre groupe « Accessoires » : le laser et la rallonge du tube
+/// du FAP-30 suivent sa tête). Ce qu'un accessoire remplace se cache (WeaponAttachment.Hides : la hausse
+/// et le guidon sous un viseur, le chargeur d'origine sous un chargeur grande capacité, la crosse d'origine
+/// sous une crosse, le bout du canon sous un canon court), sur l'arme comme dans les copies qu'en portent
+/// les autres accessoires (le guidon d'un canon long sous un viseur), et revient quand il part. Il prend la
+/// finition de l'arme, son layer et ses ombres.
 ///
 /// Les effets ne sont pas ici (AttachmentCatalog, WeaponController) : un accessoire qui n'a pas de
 /// modèle pour cette arme (le chargeur du RV-30, un barillet) agit quand même.
@@ -23,38 +27,80 @@ public static class AttachmentMount
     /// <summary>Le groupe des points d'accroche dans le préfab d'un modèle d'arme.</summary>
     public const string SocketGroupName = "Accessoires";
 
-    private static readonly AttachmentCategory[] Categories =
-        { AttachmentCategory.Sight, AttachmentCategory.Grip, AttachmentCategory.Laser, AttachmentCategory.Magazine };
+    /// <summary>Le repère de la bouche d'un modèle d'arme (exporter_armes), où se monte ce qui va au canon.</summary>
+    public const string MuzzleName = "Bouche";
 
-    /// <summary>Le point d'accroche d'une rubrique (exporter_armes : les enfants de « Accessoires »).</summary>
+    /// <summary>Le point d'accroche d'une rubrique (exporter_armes : les enfants de « Accessoires » ; le canon se
+    /// monte à la bouche de l'arme).</summary>
     public static string SocketName(AttachmentCategory category) => category switch
     {
         AttachmentCategory.Grip => "Poignee",
         AttachmentCategory.Sight => "Viseur",
         AttachmentCategory.Laser => "Laser",
+        AttachmentCategory.Stock => "Crosse",
+        AttachmentCategory.Barrel => MuzzleName,
         _ => "Chargeur",
     };
 
-    /// <summary>Le point d'accroche d'une rubrique sur une copie de modèle, ou null s'il n'en a pas.</summary>
+    /// <summary>Le point d'accroche d'une rubrique sur une copie de modèle, ou null s'il n'en a pas : la bouche de
+    /// l'arme pour le canon ; celui que porte ce qui est monté au canon s'il le déplace.</summary>
     public static Transform Socket(Transform weapon, AttachmentCategory category)
     {
-        Transform group = weapon != null ? weapon.Find(SocketGroupName) : null;
+        if (weapon == null) return null;
+        if (category == AttachmentCategory.Barrel) return MuzzleSocket(weapon);
+        Transform moved = MovedSocket(weapon, category);
+        return moved != null ? moved : OwnSocket(weapon, category);
+    }
+
+    private static Transform MuzzleSocket(Transform weapon)
+    {
+        WeaponModel model = weapon.GetComponent<WeaponModel>();
+        return model != null && model.Muzzle != null ? model.Muzzle : weapon.Find(MuzzleName);
+    }
+
+    private static Transform OwnSocket(Transform weapon, AttachmentCategory category)
+    {
+        Transform group = weapon.Find(SocketGroupName);
         return group != null ? group.Find(SocketName(category)) : null;
+    }
+
+    /// <summary>Le point d'accroche que porte ce qui est monté au canon (un canon court qui fait reculer la tête
+    /// du FAP-30, et son laser avec elle), ou null.</summary>
+    private static Transform MovedSocket(Transform weapon, AttachmentCategory category)
+    {
+        WeaponAttachment barrel = MountedOn(MuzzleSocket(weapon));
+        return barrel != null ? barrel.transform.Find(SocketGroupName + "/" + SocketName(category)) : null;
     }
 
     /// <summary>Le préfab de l'accessoire choisi (`variant`, celui de WeaponAttachments.Variant) dans
     /// une rubrique, pour un modèle d'arme : null pour « aucun », ou quand il n'a pas de modèle pour
-    /// cette arme. Le laser d'un pistolet est le laser de poing, sous le canon.</summary>
+    /// cette arme. Le laser d'un pistolet est le laser de poing, sous le canon ; un chargeur, une crosse, un
+    /// canon sont faits pour leur modèle d'arme.</summary>
     public static GameObject PrefabFor(AttachmentCatalog catalog, WeaponModel model, AttachmentCategory category, int variant)
     {
         if (catalog == null || variant <= 0) return null;
+        string designation = model != null ? model.Designation : null;
         return category switch
         {
             AttachmentCategory.Sight => catalog.SightPrefab(variant),
             AttachmentCategory.Grip => catalog.GripPrefab((GripKind)variant),
             AttachmentCategory.Laser => catalog.LaserPrefab(model != null && model.PistolHold),
-            _ => catalog.MagazinePrefab(model != null ? model.Designation : null),
+            AttachmentCategory.Magazine => catalog.MagazinePrefab(designation, (MagazineKind)variant),
+            AttachmentCategory.Stock => catalog.StockPrefab((StockKind)variant, designation),
+            AttachmentCategory.Barrel => catalog.BarrelPrefab((BarrelKind)variant, designation),
+            _ => null,
         };
+    }
+
+    /// <summary>
+    /// La bouche d'où part le tir qu'on voit (la flamme, l'éclat du tir chargé) : celle de ce qui est monté au
+    /// canon s'il en a une (un compensateur, un canon long ou court la déplacent), sinon celle du modèle.
+    /// </summary>
+    public static Transform MuzzleOf(WeaponModel model)
+    {
+        if (model == null) return null;
+        WeaponAttachment barrel = Mounted(model.transform, AttachmentCategory.Barrel);
+        return barrel != null && barrel.Muzzle != null ? barrel.Muzzle : model.Muzzle;
     }
 
     /// <summary>
@@ -70,12 +116,20 @@ public static class AttachmentMount
         if (weapon == null) return;
         WeaponModel model = weapon.GetComponent<WeaponModel>();
         AttachmentCatalog catalog = data != null ? data.attachmentCatalog : null;
-        var hidden = new HashSet<string>();
+        var mountedAll = new List<WeaponAttachment>();
         var touched = new HashSet<string>();
 
-        foreach (AttachmentCategory category in Categories)
+        foreach (AttachmentCategory category in MountOrder)
         {
             Transform socket = Socket(weapon, category);
+            // Un point d'accroche déplacé par le canon (ou rendu à l'arme) : ce qui était monté à l'autre place part.
+            Transform own = category == AttachmentCategory.Barrel ? null : OwnSocket(weapon, category);
+            WeaponAttachment stale = own != null && own != socket ? MountedOn(own) : null;
+            if (stale != null)
+            {
+                touched.UnionWith(stale.Hides);
+                Remove(stale.gameObject);
+            }
             if (socket == null) continue;
             int variant = attachments.Variant(slot, category);
             GameObject prefab = WeaponAttachments.Accepts(data, category, variant) ? PrefabFor(catalog, model, category, variant) : null;
@@ -91,16 +145,41 @@ public static class AttachmentMount
             if (mounted == null) continue;
 
             if (mounted.TryGetComponent(out WeaponFinishes finishes) && finishes.Shown != finish) finishes.Apply(finish);
-            hidden.UnionWith(mounted.Hides);
+            mountedAll.Add(mounted);
+            touched.UnionWith(mounted.Hides);
         }
 
-        touched.UnionWith(hidden);
+        // Ce qu'un accessoire remplace se cache sur l'arme, et dans les autres accessoires qui en portent une
+        // copie (le guidon d'un canon long sous un viseur) ; jamais dans le sien, qui le montre à sa place.
         foreach (string part in touched)
         {
-            Transform piece = weapon.Find(part);
-            bool visible = !hidden.Contains(part);
-            if (piece != null && piece.gameObject.activeSelf != visible) piece.gameObject.SetActive(visible);
+            SetShown(weapon.Find(part), !HiddenByAnother(mountedAll, part, null));
+            foreach (WeaponAttachment owner in mountedAll)
+                SetShown(owner.transform.Find(part), !HiddenByAnother(mountedAll, part, owner));
         }
+    }
+
+    // Ce qui va au canon d'abord : il peut déplacer les points d'accroche des autres (Socket).
+    private static readonly AttachmentCategory[] MountOrder =
+    {
+        AttachmentCategory.Barrel, AttachmentCategory.Sight, AttachmentCategory.Grip, AttachmentCategory.Laser,
+        AttachmentCategory.Magazine, AttachmentCategory.Stock,
+    };
+
+    private static bool HiddenByAnother(List<WeaponAttachment> mounted, string part, WeaponAttachment owner)
+    {
+        foreach (WeaponAttachment a in mounted)
+        {
+            if (a == owner) continue;
+            foreach (string hidden in a.Hides)
+                if (hidden == part) return true;
+        }
+        return false;
+    }
+
+    private static void SetShown(Transform piece, bool visible)
+    {
+        if (piece != null && piece.gameObject.activeSelf != visible) piece.gameObject.SetActive(visible);
     }
 
     /// <summary>L'accessoire monté dans une rubrique, ou null.</summary>

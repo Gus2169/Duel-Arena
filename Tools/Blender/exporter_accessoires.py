@@ -11,7 +11,7 @@ Pour chaque accessoire, dans <dossier>/<CODE>/ (PRA, LT1, PV1, CGFA07...) :
   réticule dessiné des rendus de contrôle n'y est pas.
 - <CODE>_Occlusion.png : l'occlusion de ses pièces, cuite sans la vitre (elle n'arrête pas la lumière).
 - <CODE>_Finitions.json : la fiche des armes (matériaux de chaque finition), plus ce qu'Unity lit de
-  l'accessoire : sa rubrique (Viseur, Laser, Poignee, Chargeur), sa vitre, l'œilleton d'une lunette, et
+  l'accessoire : sa rubrique (Viseur, Laser, Poignee, Chargeur, Crosse, Canon), sa vitre, l'œilleton d'une lunette, et
   ses données (réticule et sa couleur, teinte de la vitre, hauteur de l'axe, distance de l'œil,
   grossissement ; arme d'un chargeur...).
 - <CODE>_Reticule.png, pour un viseur : l'image de son réticule (viseurs.ecrire_reticule).
@@ -34,7 +34,7 @@ if DOSSIER not in sys.path:
     sys.path.insert(0, DOSSIER)
 import exporter_armes as ex  # noqa: E402
 
-SCRIPTS = ["viseurs.py", "laser_tactique.py", "poignees.py", "chargeurs.py"]
+SCRIPTS = ["viseurs.py", "laser_tactique.py", "poignees.py", "chargeurs.py", "crosses.py", "canons.py"]
 
 
 def arguments():

@@ -67,17 +67,20 @@ public static class WeaponStatSheet
             case Stat.Damage: return data.damagePerHit * data.PelletCount;
             case Stat.FireRate: return data.shotsPerSecond;
             case Stat.Control:
-                AttachmentCatalog.RecoilFactors(catalog, attachments, slot, out float vertical, out _);
+                // Le recul d'un coup de rafale, passé les premiers ; d'un coup seul pour une arme qui ne s'enchaîne
+                // pas dans son motif (chacun de ses coups est un premier : le frein de bouche l'aide toujours).
+                int shot = RecoilPattern.Chains(data) && catalog != null ? catalog.firstShots : 0;
+                AttachmentCatalog.RecoilFactors(catalog, attachments, slot, shot, out float vertical, out _);
                 return data.recoilPerShotDegrees * vertical;
             case Stat.HipPrecision:
                 return HipDispersion(data) * AttachmentCatalog.HipSpreadFactor(catalog, attachments, slot);
-            case Stat.Handling: return AttachmentCatalog.AimTime(data, attachments.Grip(slot), catalog);
+            case Stat.Handling: return AttachmentCatalog.AimTime(data, attachments, slot);
             case Stat.Mobility: return data.moveSpeedMultiplier;
             default:
                 // Une arme laser n'a pas de chargeur : les tirs d'affilée avant la surchauffe en tiennent lieu.
                 if (data.UsesHeat)
-                    return WeaponController.ShotsBeforeOverheat(WeaponController.HeatRulesFor(data, attachments.ExtendedMagazine(slot)), data.shotsPerSecond);
-                return AttachmentCatalog.MagazineSize(data, attachments.ExtendedMagazine(slot), catalog);
+                    return WeaponController.ShotsBeforeOverheat(WeaponController.HeatRulesFor(data, attachments, slot), data.shotsPerSecond);
+                return AttachmentCatalog.MagazineSize(data, attachments, slot);
         }
     }
 
@@ -91,18 +94,31 @@ public static class WeaponStatSheet
         WeaponData data = loadout != null && slot >= 0 && slot < loadout.Count ? loadout[slot] : null;
         if (data == null) return 0f;
         float value = Value(stat, data, attachments, slot);
-        if (stat == Stat.Damage) return maxHealth > 0f ? Mathf.Clamp01(value / maxHealth) : 0f;
+        return FractionOf(stat, value, stat == Stat.Damage ? 0f : Best(stat, loadout), maxHealth);
+    }
 
+    /// <summary>Le meilleur de la panoplie pour une caractéristique (l'échelle de sa barre) : chaque arme avec
+    /// les accessoires qu'elle prend et qui la servent le mieux.</summary>
+    public static float Best(Stat stat, IReadOnlyList<WeaponData> loadout)
+    {
         bool higher = HigherIsBetter(stat);
         float best = higher ? 0f : float.PositiveInfinity;
+        if (loadout == null) return best;
         for (int i = 0; i < loadout.Count; i++)
         {
             if (loadout[i] == null) continue;
             float candidate = Value(stat, loadout[i], BestFor(stat, loadout[i], i), i);
             best = higher ? Mathf.Max(best, candidate) : Mathf.Min(best, candidate);
         }
+        return best;
+    }
 
-        if (higher) return best > 0f ? Mathf.Clamp01(value / best) : 0f;
+    /// <summary>La barre d'une valeur, `best` le meilleur de la panoplie (Best) ; les dégâts : la part de
+    /// `maxHealth`.</summary>
+    public static float FractionOf(Stat stat, float value, float best, float maxHealth)
+    {
+        if (stat == Stat.Damage) return maxHealth > 0f ? Mathf.Clamp01(value / maxHealth) : 0f;
+        if (HigherIsBetter(stat)) return best > 0f ? Mathf.Clamp01(value / best) : 0f;
         if (value <= 0f) return 1f;   // ni recul, ni temps d'épaulement : on ne fait pas mieux
         return float.IsInfinity(best) ? 0f : Mathf.Clamp01(best / value);
     }
@@ -121,27 +137,33 @@ public static class WeaponStatSheet
         return data.hipSpread + pellets;
     }
 
-    /// <summary>Les accessoires que l'arme prend et qui servent le mieux une caractéristique (l'échelle
-    /// des barres) : la poignée verticale pour le recul, le laser à la hanche, la poignée inclinée pour
-    /// l'épaulement, le chargeur grande capacité.</summary>
+    /// <summary>
+    /// Les accessoires que l'arme prend et qui servent le mieux une caractéristique (l'échelle des barres) :
+    /// rubrique par rubrique, le choix qui la sert le mieux (la poignée verticale et la crosse lourde pour le
+    /// recul, le laser à la hanche, la poignée inclinée pour l'épaulement, le grand chargeur...). Les effets se
+    /// multiplient d'une rubrique à l'autre : le meilleur de chacune fait le meilleur de tous. Lu dans les
+    /// effets du catalogue : un effet ajouté dans l'éditeur des armes y compte.
+    /// </summary>
     private static WeaponAttachments BestFor(Stat stat, WeaponData data, int slot)
     {
         WeaponAttachments best = WeaponAttachments.None;
-        bool vertical = WeaponAttachments.Accepts(data, AttachmentCategory.Grip, (int)GripKind.Vertical);
-        switch (stat)
+        bool higher = HigherIsBetter(stat);
+        foreach (AttachmentCategory category in WeaponAttachments.Categories)
         {
-            case Stat.Control:
-                if (vertical) best = best.WithGrip(slot, GripKind.Vertical);
-                break;
-            case Stat.HipPrecision:
-                if (WeaponAttachments.Accepts(data, AttachmentCategory.Laser, 1)) best = best.WithLaser(slot, true);
-                break;
-            case Stat.Handling:
-                if (WeaponAttachments.Accepts(data, AttachmentCategory.Grip, (int)GripKind.Angled)) best = best.WithGrip(slot, GripKind.Angled);
-                break;
-            case Stat.Capacity:
-                if (WeaponAttachments.Accepts(data, AttachmentCategory.Magazine, 1)) best = best.WithMagazine(slot, true);
-                break;
+            float bestValue = Value(stat, data, best, slot);
+            WeaponAttachments chosen = best;
+            for (int variant = 1; variant < WeaponAttachments.VariantCount(category); variant++)
+            {
+                if (!WeaponAttachments.Accepts(data, category, variant)) continue;
+                WeaponAttachments candidate = best.WithVariant(slot, category, variant);
+                float value = Value(stat, data, candidate, slot);
+                if (higher ? value > bestValue : value < bestValue)
+                {
+                    bestValue = value;
+                    chosen = candidate;
+                }
+            }
+            best = chosen;
         }
         return best;
     }
@@ -179,11 +201,16 @@ public static class WeaponStatSheet
 
     /// <summary>« 100 m » pour une arme qui ne perd rien avec la distance ; sinon la distance des dégâts
     /// pleins, puis ce qu'il en reste et où (« 8 m, puis ×0,3 à 20 m »).</summary>
-    public static string EffectiveRange(WeaponData data)
+    public static string EffectiveRange(WeaponData data) => EffectiveRange(data, WeaponAttachments.None, 0);
+
+    /// <summary>La même chose avec les accessoires de la place `slot` : un canon long repousse la baisse, un
+    /// court la rapproche.</summary>
+    public static string EffectiveRange(WeaponData data, WeaponAttachments attachments, int slot)
     {
         if (data == null) return "";
-        if (data.falloffEnd <= data.falloffStart) return $"{Number(data.maxRange)} m";
-        return $"{Number(data.falloffStart)} m, puis ×{Number(data.minDamageMultiplier)} à {Number(data.falloffEnd)} m";
+        if (!data.HasFalloff) return $"{Number(data.maxRange)} m";
+        float scale = AttachmentCatalog.FalloffScale(data.attachmentCatalog, attachments, slot);
+        return $"{Number(data.falloffStart * scale)} m, puis ×{Number(data.minDamageMultiplier)} à {Number(data.falloffEnd * scale)} m";
     }
 
     /// <summary>La durée d'un rechargement avec les accessoires de la place `slot` (une cartouche, pour
@@ -191,7 +218,7 @@ public static class WeaponStatSheet
     public static string Reload(WeaponData data, WeaponAttachments attachments, int slot)
     {
         if (data == null) return "";
-        float duration = AttachmentCatalog.ReloadDuration(data, attachments.ExtendedMagazine(slot), data.attachmentCatalog);
+        float duration = AttachmentCatalog.ReloadDuration(data, attachments, slot);
         return data.reloadPerRound ? $"{Number(duration)} s par cartouche" : $"{Number(duration)} s";
     }
 

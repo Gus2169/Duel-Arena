@@ -16,8 +16,10 @@ MonoBehaviour:
   family: 3
   role: semi-automatique, le plus mobile, sort le plus vite
   modelPrefab: {fileID: 976176385625153909, guid: 5445effcb65019746a842194260f2846, type: 3}
-  acceptedAttachments: 13
+  acceptedAttachments: 45
   acceptedSights: 4
+  acceptedMagazines: 3
+  acceptedBarrels: 15
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 26
   shotsPerSecond: 4.5

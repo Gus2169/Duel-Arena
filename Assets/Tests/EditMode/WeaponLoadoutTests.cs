@@ -147,8 +147,9 @@ public class WeaponLoadoutTests
     }
 
     /// <summary>Les accessoires (2026-10-16) se montent aux points posés sous `Accessoires` dans le
-    /// préfab de chaque arme (AttachmentMount) ; une arme sans point pour une rubrique ne l'a pas. Un
-    /// modèle remplacé sans ses points perdrait ses accessoires en silence.</summary>
+    /// préfab de chaque arme, et ce qui va au canon (2026-10-29) à sa bouche (AttachmentMount) ; une arme
+    /// sans point pour une rubrique ne l'a pas. Un modèle remplacé sans ses points perdrait ses accessoires
+    /// en silence.</summary>
     [Test]
     public void ChaqueArme_ASesPointsDAccroche_SaufLaPoigneeDuPistolet()
     {
@@ -161,12 +162,14 @@ public class WeaponLoadoutTests
                 bool pistol = prefab.GetComponent<WeaponModel>().PistolHold;
                 foreach (AttachmentCategory category in System.Enum.GetValues(typeof(AttachmentCategory)))
                 {
-                    Transform socket = group.Find(AttachmentMount.SocketName(category));
-                    if (category == AttachmentCategory.Grip && pistol)
+                    Transform socket = AttachmentMount.Socket(prefab.transform, category);
+                    if ((category == AttachmentCategory.Grip || category == AttachmentCategory.Stock) && pistol)
                     {
-                        Assert.IsNull(socket, $"{prefab.name} est un pistolet : pas de poignée avant.");
+                        Assert.IsNull(socket, $"{prefab.name} est un pistolet : ni poignée avant ni crosse.");
                         continue;
                     }
+                    if (category == AttachmentCategory.Barrel)
+                        Assert.AreSame(prefab.GetComponent<WeaponModel>().Muzzle, socket, $"{prefab.name} : ce qui va au canon se monte à sa bouche.");
                     Assert.IsNotNull(socket, $"{prefab.name} n'a pas de point d'accroche pour {category}.");
                     Assert.AreEqual(0, socket.childCount, $"Le point {socket.name} de {prefab.name} doit rester vide : l'accessoire y est monté au lancement.");
                 }
