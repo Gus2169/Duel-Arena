@@ -177,6 +177,93 @@ public class RenderStyleTests
         Assert.Greater(glowingMaterials, 0, $"{context} : des matériaux luisent d'eux-mêmes (sans quoi le test ne prouverait rien).");
     }
 
+    /// <summary>Au loin, le contour du cel-shading ne fait plus d'un robot une tache noire (2026-10-29, l'utilisateur :
+    /// « plus les cibles sont loin, plus il y a un contour noir », qui les montrait de plus loin) : de près, il entoure le
+    /// robot ; à 45 m, dans la vue du jeu (90°, 1080p), il n'ajoute presque rien à sa silhouette, quand un contour de 2,5
+    /// pixels la doublait. Mesuré sur des rendus, la passe du contour allumée puis coupée.</summary>
+    [Test]
+    public void LeContourDuCelShading_EntoureLeRobotDePres_EtSEffaceAuLoin()
+    {
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        Transform assetModel = prefab.transform.Find("Model");
+        var holder = new GameObject("Essai du contour au loin");
+        var view = new GameObject("Caméra d'essai du contour");
+        var sun = new GameObject("Lumière d'essai du contour");
+        var target = new RenderTexture(1920, 1080, 24) { antiAliasing = 1 };
+        var owned = new List<Material>();
+        try
+        {
+            GameObject copy = RobotAppearance.Copy(assetModel.gameObject, holder.transform, "Robot");
+            RobotAppearance.Paint(prefab, assetModel, copy, new Color32(40, 120, 230, 255));
+            RenderStyle.Set(RenderStyleMode.Meles);
+            // Des matériaux à la copie seule : on y coupe la passe du contour sans toucher aux fichiers.
+            foreach (Renderer r in copy.GetComponentsInChildren<Renderer>(true))
+            {
+                Material[] own = r.sharedMaterials.Select(m => m != null ? new Material(m) : null).ToArray();
+                owned.AddRange(own.Where(m => m != null));
+                r.sharedMaterials = own;
+                if (r is SkinnedMeshRenderer skin) skin.forceMatrixRecalculationPerRender = true;
+            }
+            Assert.Greater(owned.Count(m => m.shader.name == CelShader), 10, "Garde : le robot est en cel-shading.");
+
+            var light = sun.AddComponent<Light>();
+            light.type = LightType.Directional;
+            sun.transform.rotation = Quaternion.Euler(35f, 20f, 0f);
+            var camera = view.AddComponent<Camera>();
+            camera.enabled = false;
+            camera.fieldOfView = 90f;
+            camera.nearClipPlane = 0.05f;
+            camera.farClipPlane = 200f;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = Color.magenta;
+            view.transform.position = new Vector3(0f, 1.65f, 0f);
+
+            // Les pixels du robot (ce qui n'est pas le fond), à `distance` mètres devant la caméra, face à elle.
+            int Silhouette(float distance, bool outline)
+            {
+                holder.transform.SetPositionAndRotation(new Vector3(0f, 0f, distance), Quaternion.Euler(0f, 180f, 0f));
+                foreach (Material m in owned) m.SetShaderPassEnabled("SRPDefaultUnlit", outline);
+                var request = new RenderPipeline.StandardRequest { destination = target };
+                if (RenderPipeline.SupportsRenderRequest(camera, request)) RenderPipeline.SubmitRenderRequest(camera, request);
+                else
+                {
+                    camera.targetTexture = target;
+                    camera.Render();
+                    camera.targetTexture = null;
+                }
+                RenderTexture previous = RenderTexture.active;
+                var read = new Texture2D(target.width, target.height, TextureFormat.RGBA32, false);
+                try
+                {
+                    RenderTexture.active = target;
+                    read.ReadPixels(new Rect(0, 0, target.width, target.height), 0, 0);
+                    return read.GetPixels32().Count(p => Mathf.Abs(p.r - 255) + p.g + Mathf.Abs(p.b - 255) > 24);
+                }
+                finally
+                {
+                    RenderTexture.active = previous;
+                    Object.DestroyImmediate(read);
+                }
+            }
+
+            int nearBody = Silhouette(6f, false), nearAll = Silhouette(6f, true);
+            int farBody = Silhouette(45f, false), farAll = Silhouette(45f, true);
+            Assert.Greater(farBody, 40, "Garde : le robot se voit à 45 m.");
+            float nearExtra = (nearAll - nearBody) / (float)nearBody, farExtra = (farAll - farBody) / (float)farBody;
+            Assert.Greater(nearExtra, 0.03f, $"De près, le contour entoure le robot ({nearExtra:P0} de sa silhouette).");
+            Assert.Less(farExtra, 0.05f, $"À 45 m, le contour ajoute {farExtra:P0} à la silhouette du robot ({farBody} pixels) : une tache noire.");
+        }
+        finally
+        {
+            Object.DestroyImmediate(holder);
+            Object.DestroyImmediate(view);
+            Object.DestroyImmediate(sun);
+            foreach (Material m in owned) Object.DestroyImmediate(m);
+            target.Release();
+            Object.DestroyImmediate(target);
+        }
+    }
+
     // La couleur posée sur chaque emplacement « Peinture » des pièces peintes.
     private static Dictionary<(Renderer, int), Color> PaintOf(Renderer[] parts)
     {

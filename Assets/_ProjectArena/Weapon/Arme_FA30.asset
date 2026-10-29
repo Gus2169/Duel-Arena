@@ -17,7 +17,7 @@ MonoBehaviour:
   role: "cadence \xE9lev\xE9e, \xE9paule vite"
   modelPrefab: {fileID: 3508787465862713915, guid: e6aa5e2e6b3e0ff45bc724f1e29e1bbf, type: 3}
   acceptedAttachments: 15
-  acceptedSights: 7
+  acceptedSights: 23
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 17
   shotsPerSecond: 9

@@ -87,7 +87,7 @@ public static class AttachmentMount
                 Remove(mounted.gameObject);
                 mounted = null;
             }
-            if (mounted == null && prefab != null) mounted = Mount(prefab, socket, weapon, renderLike);
+            if (mounted == null && prefab != null) mounted = Mount(prefab, socket, weapon, renderLike, model != null && model.PistolHold);
             if (mounted == null) continue;
 
             if (mounted.TryGetComponent(out WeaponFinishes finishes) && finishes.Shown != finish) finishes.Apply(finish);
@@ -134,7 +134,7 @@ public static class AttachmentMount
     private static bool SameAttachment(WeaponAttachment mounted, GameObject prefab)
         => prefab.TryGetComponent(out WeaponAttachment wanted) && wanted.Code == mounted.Code;
 
-    private static WeaponAttachment Mount(GameObject prefab, Transform socket, Transform weapon, Renderer renderLike)
+    private static WeaponAttachment Mount(GameObject prefab, Transform socket, Transform weapon, Renderer renderLike, bool pistol)
     {
         GameObject copy = Object.Instantiate(prefab, socket, false);
         copy.name = prefab.name;
@@ -158,7 +158,12 @@ public static class AttachmentMount
                 r.receiveShadows = like.receiveShadows;
             }
         }
-        if (attachment != null && attachment.Lens != null) SetUpLens(attachment.Lens, like);
+        if (attachment != null && attachment.Lens != null)
+        {
+            SetUpLens(attachment.Lens, like);
+            // Sur un pistolet, un petit réflex ne montre que le centre de son réticule (WeaponAttachment.PistolLens).
+            if (pistol && attachment.PistolLens != null) attachment.Lens.sharedMaterial = attachment.PistolLens;
+        }
         return attachment;
     }
 

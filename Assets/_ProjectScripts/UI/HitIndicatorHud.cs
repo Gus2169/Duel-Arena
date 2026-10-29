@@ -6,15 +6,18 @@ using UnityEngine.UIElements;
 
 /// <summary>
 /// La vue d'un robot touché par un caillou (2026-10-27, demandé par l'utilisateur, d'après le sang et la zone
-/// rouge circulaire de Call of Duty) : une zone rouge sur un cercle autour du réticule, tournée vers l'endroit
-/// d'où le caillou est parti, et un grésillement électrique au bord de l'écran, du même côté. Sur /GameUI, à
-/// côté de SpectatorHud ; HitIndicatorOverlay dessine.
+/// rouge circulaire de Call of Duty) ou par une balle (2026-10-29, « comme les cailloux ») : une zone rouge sur un
+/// cercle autour du réticule, tournée vers l'endroit d'où le coup est parti, et un grésillement électrique au bord
+/// de l'écran, du même côté. Sur /GameUI, à côté de SpectatorHud ; HitIndicatorOverlay dessine.
 ///
 /// Catégorie C, chez le robot touché seulement : le serveur lui envoie d'où partait le caillou
 /// (SpectatorController.RockHitClientRpc), un duelliste à chaque caillou, un spectateur quand sa garde ne l'a
-/// pas arrêté. L'indicateur pointe vers ce point du monde et tourne avec la vue tant qu'il dure, comme celui de
-/// Call of Duty. Il sonde le compteur des cailloux reçus (SpectatorController.RockHitCount) au lieu de s'y
-/// abonner : le robot du joueur peut changer sous le HUD.
+/// pas arrêté, et d'où partait chaque tir qui le touche sans le tuer (WeaponController.HitTakenClientRpc).
+/// L'indicateur pointe vers ce point du monde et tourne avec la vue tant qu'il dure, comme celui de Call of Duty.
+/// Un coup venu du même endroit qu'une marque encore affichée la relance au lieu d'en ajouter une : une rafale
+/// reçue ne fait qu'une marque, qui grésille à chaque balle. Il sonde les compteurs des coups reçus
+/// (SpectatorController.RockHitCount, WeaponController.HitTakenCount) au lieu de s'y abonner : le robot du joueur
+/// peut changer sous le HUD.
 /// </summary>
 [DisallowMultipleComponent]
 public class HitIndicatorHud : MonoBehaviour
@@ -48,11 +51,18 @@ public class HitIndicatorHud : MonoBehaviour
     [Min(1)]
     [SerializeField] private int maxMarks = 4;
 
+    [Tooltip("Un coup parti à moins de tant de mètres du départ d'une marque encore affichée la relance au lieu d'en ajouter une (une rafale, un même lanceur).")]
+    [Min(0f)]
+    [SerializeField] private float sameSourceRadius = 2f;
+
     private HitIndicatorOverlay overlay;
     private NetworkObject shownPlayer;
     private SpectatorController spectator;
+    private WeaponController weapon;
+    private Health health;
     private FirstPersonView firstPersonView;
     private int seenHits;
+    private int seenBullets;
     private bool drawn;
     // D'où partait chaque caillou montré, dans l'ordre des marques de l'élément.
     private readonly List<Vector3> sources = new List<Vector3>();
@@ -71,24 +81,25 @@ public class HitIndicatorHud : MonoBehaviour
         NetworkObject local = GameHud.LocalPlayerObject;
         if (local != shownPlayer) Follow(local);
         Camera view = firstPersonView != null ? firstPersonView.PlayerCamera : null;
-        if (spectator == null || view == null)
+        // Mort, la vue quitte les yeux du robot (PlayerDeath) : plus rien ne pointe.
+        if ((spectator == null && weapon == null) || view == null || (health != null && health.IsDead))
         {
             Clear();
             return;
         }
 
-        // Un caillou de plus : une marque de plus, la plus ancienne s'efface s'il y en a trop.
-        int hits = spectator.RockHitCount;
+        // Un caillou ou une balle de plus : une marque, ou celle du même départ relancée.
+        int hits = spectator != null ? spectator.RockHitCount : seenHits;
         if (hits != seenHits)
         {
             seenHits = hits;
-            if (overlay.Marks.Count >= maxMarks)
-            {
-                overlay.Marks.RemoveAt(0);
-                sources.RemoveAt(0);
-            }
-            overlay.Marks.Add(new HitIndicatorOverlay.Mark { seed = ElectricArc.Hash((uint)hits * 0x9e3779b9U) });
-            sources.Add(spectator.LastRockHitFrom);
+            AddMark(spectator.LastRockHitFrom, ElectricArc.Hash((uint)hits * 0x9e3779b9U));
+        }
+        int bullets = weapon != null ? weapon.HitTakenCount : seenBullets;
+        if (bullets != seenBullets)
+        {
+            seenBullets = bullets;
+            AddMark(weapon.LastHitTakenFrom, ElectricArc.Hash((uint)bullets * 0x85ebca6bU + 0x27d4eb2fU));
         }
 
         // Chaque marque vieillit, et suit le regard : elle pointe toujours vers le point du lancer.
@@ -123,10 +134,54 @@ public class HitIndicatorHud : MonoBehaviour
     {
         shownPlayer = local;
         spectator = local != null ? local.GetComponent<SpectatorController>() : null;
+        weapon = local != null ? local.GetComponentInChildren<WeaponController>(true) : null;
+        health = local != null ? local.GetComponent<Health>() : null;
         firstPersonView = local != null ? local.GetComponent<FirstPersonView>() : null;
         // Ce qu'il avait déjà reçu ne se montre pas : seulement ce qui arrive maintenant.
         seenHits = spectator != null ? spectator.RockHitCount : 0;
+        seenBullets = weapon != null ? weapon.HitTakenCount : 0;
         Clear();
+    }
+
+    /// <summary>Un coup parti de `source` : il relance la marque d'un coup parti du même endroit, encore
+    /// affichée (une rafale, un même lanceur) ; sinon une marque de plus, la plus ancienne s'effaçant s'il y en a
+    /// trop.</summary>
+    private void AddMark(Vector3 source, uint seed)
+    {
+        var mark = new HitIndicatorOverlay.Mark { seed = seed };
+        int same = SameSourceMark(sources, source, sameSourceRadius);
+        if (same >= 0)
+        {
+            overlay.Marks[same] = mark;
+            sources[same] = source;
+            return;
+        }
+        if (overlay.Marks.Count >= maxMarks)
+        {
+            overlay.Marks.RemoveAt(0);
+            sources.RemoveAt(0);
+        }
+        overlay.Marks.Add(mark);
+        sources.Add(source);
+    }
+
+    /// <summary>
+    /// La marque affichée dont le coup est parti à moins de `radius` mètres de `source` (la plus proche), ou -1.
+    /// Une rafale reçue ne fait ainsi qu'une marque, relancée à chaque balle, au lieu d'en empiler qui
+    /// rougiraient l'anneau. Fonction pure, testée.
+    /// </summary>
+    public static int SameSourceMark(IReadOnlyList<Vector3> sources, Vector3 source, float radius)
+    {
+        int found = -1;
+        float best = radius * radius;
+        for (int i = 0; i < sources.Count; i++)
+        {
+            float distance = (sources[i] - source).sqrMagnitude;
+            if (distance > best) continue;
+            best = distance;
+            found = i;
+        }
+        return found;
     }
 
     private void Clear()

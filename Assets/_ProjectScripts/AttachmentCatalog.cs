@@ -12,7 +12,7 @@ using UnityEngine;
 [CreateAssetMenu(fileName = "Accessoires", menuName = "Duel Arena/Catalogue des accessoires")]
 public class AttachmentCatalog : ScriptableObject
 {
-    [Tooltip("Les dix viseurs sans grossissement de Rainbow Six, dans l'ordre de WeaponAttachments (1 à 10) : points rouges A à C, holographiques A à D, réflex A à C.")]
+    [Tooltip("Les quinze viseurs, dans l'ordre de WeaponAttachments (1 à 15) : points rouges A à C, holographiques A à D, réflex A à C, le réflex à grand cadre D, puis les lunettes ×2, ×2,5 (A et B) et ×3.")]
     public GameObject[] sights = new GameObject[0];
 
     [Tooltip("Le laser tactique des armes d'épaule (LT-1), sur le rail du flanc droit.")]
@@ -80,6 +80,13 @@ public class AttachmentCatalog : ScriptableObject
         GameObject prefab = SightPrefab(sight);
         return prefab != null && prefab.TryGetComponent(out WeaponAttachment a) ? a.Title : sight == 0 ? "Mire de l'arme" : $"Viseur {sight}";
     }
+
+    /// <summary>Ce qu'une arme a sans viseur (le viseur 0) : sa lunette d'origine (« Lunette d'origine ×4 »)
+    /// sur une arme de précision, sa mire sinon.</summary>
+    public static string BaseSightTitle(WeaponData data)
+        => data != null && data.scopeMagnification > 1f
+            ? $"Lunette d'origine ×{data.scopeMagnification.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))}"
+            : "Mire de l'arme";
 
     // ------------------------------------------------------------------
     // Les effets, lus par le joueur et par le serveur. Fonctions pures, testées.

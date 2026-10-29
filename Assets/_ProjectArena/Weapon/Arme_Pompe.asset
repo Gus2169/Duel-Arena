@@ -17,7 +17,7 @@ MonoBehaviour:
   role: "\xE0 pompe, gerbe de 8 plombs, la r\xE9f\xE9rence"
   modelPrefab: {fileID: 634769849560242409, guid: 4636e0e53e39c894cb9ffd81ad3e0c9f, type: 3}
   acceptedAttachments: 15
-  acceptedSights: 7
+  acceptedSights: 23
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 18
   shotsPerSecond: 1.1

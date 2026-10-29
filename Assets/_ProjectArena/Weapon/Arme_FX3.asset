@@ -17,7 +17,7 @@ MonoBehaviour:
   role: "\xE9ventail : 8 rayons \xE0 plat"
   modelPrefab: {fileID: 6432783213821724603, guid: bd92be7c8e9d58d4ea0ab81b9b8b38a0, type: 3}
   acceptedAttachments: 15
-  acceptedSights: 7
+  acceptedSights: 23
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 20
   shotsPerSecond: 1.4

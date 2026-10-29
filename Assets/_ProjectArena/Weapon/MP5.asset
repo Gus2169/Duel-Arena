@@ -17,7 +17,7 @@ MonoBehaviour:
   role: "polyvalent, la r\xE9f\xE9rence"
   modelPrefab: {fileID: 6230278374698882433, guid: d318b24d85c7840488012a61a2bc6ba4, type: 3}
   acceptedAttachments: 15
-  acceptedSights: 7
+  acceptedSights: 23
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 17
   shotsPerSecond: 7

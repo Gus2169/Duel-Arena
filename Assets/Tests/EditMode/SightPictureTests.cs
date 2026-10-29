@@ -11,15 +11,17 @@ using UnityEngine;
 /// de la vue subjective, ou qui regarde de travers, montre un viseur sans réticule (il n'est dessiné qu'à
 /// travers la vitre, dans l'axe du viseur) ou un réticule décentré ; un viseur dont le corps bouche la fenêtre
 /// vue de l'œil ; une mire dont le guidon n'est plus dans l'axe ; une image vide (l'arme hors du layer de la
-/// caméra) ; une forme de réticule ajoutée dans Blender sans nom dans l'armurerie.
+/// caméra) ; un viseur ajouté dans Blender sans le nom ni l'image de son réticule. Une lunette (2026-10-28) se
+/// voit par son seul œilleton, comme dans sa vue grossie.
 /// </summary>
 public class SightPictureTests
 {
     private const string PlayerPrefabPath = "Assets/_ProjectArena/PlayerPrefab/Player.prefab";
-    private const int Rifle = 0, Pistol = 10;   // le FA-07, le PA-05 (tenu à bout de bras)
+    private const int Rifle = 0, Sniper = 1, Pistol = 10;   // le FA-07, le FP-12, le PA-05 (tenu à bout de bras)
     private const int Width = 640, Height = 320;
-    private static readonly int ReticleShapeId = Shader.PropertyToID("_Forme");
     private static readonly int ReticleColorId = Shader.PropertyToID("_CouleurReticule");
+    private static readonly int ReticleTextureId = Shader.PropertyToID("_Reticule");
+    private static readonly int ReticleExtentId = Shader.PropertyToID("_Etendue");
 
     private GameObject host;
     private MenuThumbnails thumbnails;
@@ -94,11 +96,14 @@ public class SightPictureTests
         var cases = new List<(int slot, int sight)>();
         for (int sight = 1; sight <= WeaponAttachments.SightCount; sight++)
         {
-            cases.Add((Rifle, sight));
-            // Le pistolet, à bout de bras : l'œil est à 40 cm de la mire.
+            // Sur le fusil d'assaut, ou sur le sniper pour une lunette ; et sur le pistolet, à bout de bras
+            // (l'œil est à 40 cm de la mire), ce qu'il prend.
+            int carrier = WeaponAttachments.Accepts(loadout[Rifle], AttachmentCategory.Sight, sight) ? Rifle : Sniper;
+            cases.Add((carrier, sight));
             if (WeaponAttachments.Accepts(loadout[Pistol], AttachmentCategory.Sight, sight)) cases.Add((Pistol, sight));
         }
         Assert.Greater(cases.Count, WeaponAttachments.SightCount, "Le pistolet ne prend plus aucun viseur : le bout de bras n'est plus vérifié.");
+        Assert.IsTrue(cases.Exists(c => c.slot == Sniper), "Garde : les lunettes sont vues sur le sniper.");
 
         foreach ((int slot, int sight) in cases)
         {
@@ -131,8 +136,8 @@ public class SightPictureTests
         for (int slot = 0; slot < loadout.Count; slot++)
         {
             WeaponData data = loadout[slot];
-            // Une arme à lunette n'a pas de bande des viseurs.
-            if (!WeaponAttachments.AcceptsAny(data, AttachmentCategory.Sight)) continue;
+            // Une arme à lunette n'a pas de mire : sans viseur, on regarde par sa lunette d'origine (le HUD).
+            if (!WeaponAttachments.AcceptsAny(data, AttachmentCategory.Sight) || data.scopeMagnification > 1f) continue;
             weapons++;
 
             Color[] pixels = Picture(data, slot, 0);
@@ -148,16 +153,40 @@ public class SightPictureTests
         Assert.GreaterOrEqual(weapons, 6, "Moins de six armes prennent un viseur : le test ne voit plus grand-chose.");
     }
 
+    /// <summary>Sans viseur, une arme de précision se vise par sa lunette d'origine, que le HUD dessine
+    /// (CrosshairUI) : la carte la montre comme en jeu, du noir autour d'un disque clair barré de la croix, et non
+    /// le modèle de la lunette vu de l'œil (un tube sombre, sans réticule).</summary>
     [Test]
-    public void ChaqueReticule_ASonNomDansLArmurerie()
+    public void SansViseur_UneArmeDePrecision_MontreLaLunetteDuHud()
+    {
+        IReadOnlyList<WeaponData> loadout = Loadout();
+        Assert.Greater(loadout[Sniper].scopeMagnification, 1f, "Garde : le FP-12 a sa lunette d'origine.");
+        Color[] pixels = Picture(loadout[Sniper], Sniper, 0);
+        float Brightness(int x, int y) => pixels[y * Width + x].maxColorComponent;
+        int cx = Width / 2, cy = Height / 2, off = Height / 6;
+
+        Assert.Less(Brightness(2, Height - 3), 0.05f, "Autour du disque, le noir.");
+        Assert.Greater(Brightness(cx + off, cy + off), 0.4f, "Le disque est clair.");
+        float line = 1f;
+        for (int y = cy - 2; y <= cy + 2; y++) line = Mathf.Min(line, Brightness(cx + off, y));
+        Assert.Less(line, 0.15f, "La croix barre le disque à hauteur du centre.");
+    }
+
+    [Test]
+    public void ChaqueReticule_ASonNomEtSonImage()
     {
         WeaponData rifle = Loadout()[Rifle];
+        var labels = new HashSet<string>();
         for (int sight = 1; sight <= WeaponAttachments.SightCount; sight++)
         {
             WeaponAttachment attachment = Sight(rifle, sight);
-            int shape = Mathf.RoundToInt(attachment.Lens.sharedMaterial.GetFloat(ReticleShapeId));
-            Assert.IsNotEmpty(WeaponCustomizationController.ReticleShapeLabel(shape),
-                $"{attachment.Code} : son réticule (forme {shape}) n'a pas de nom dans l'armurerie.");
+            Assert.IsNotEmpty(attachment.ReticleLabel, $"{attachment.Code} : son réticule n'a pas de nom dans l'armurerie.");
+            Assert.IsTrue(labels.Add(attachment.ReticleLabel), $"{attachment.Code} : son réticule a le nom d'un autre ({attachment.ReticleLabel}).");
+            Material lens = attachment.Lens.sharedMaterial;
+            var image = lens.GetTexture(ReticleTextureId) as Texture2D;
+            Assert.IsNotNull(image, $"{attachment.Code} : sa vitre n'a pas l'image de son réticule.");
+            Assert.AreEqual($"{attachment.Code.Replace("-", "")}_Reticule", image.name, $"{attachment.Code} : sa vitre porte le réticule d'un autre.");
+            Assert.Greater(lens.GetFloat(ReticleExtentId), 0f, $"{attachment.Code} : l'image de son réticule ne couvre rien.");
         }
     }
 }

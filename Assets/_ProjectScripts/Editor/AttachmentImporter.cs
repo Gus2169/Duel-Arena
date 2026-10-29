@@ -11,15 +11,17 @@ using Object = UnityEngine.Object;
 /// dans Assets/_ProjectArena/Weapon/Accessoires/&lt;CODE&gt;/ (le FBX, l'occlusion cuite, la fiche)
 /// devient le préfab &lt;CODE&gt;.prefab : WeaponAttachment (rubrique, repères, vitre), WeaponFinishes
 /// (les matériaux de ses pièces dans les six finitions, comme une arme : il prend celle de son arme),
-/// et la vitre d'un viseur au shader du réticule (DuelArena/ViseurReticule), avec la forme, la couleur
-/// et la taille de son réticule.
+/// et la vitre d'un viseur au shader du réticule (DuelArena/ViseurReticule), avec l'image de son réticule
+/// (&lt;CODE&gt;_Reticule.png, la distance au réticule autour du point visé, faite par viseurs.py) et sa
+/// couleur ; pour une lunette, son grossissement et son œilleton.
 ///
 /// Puis le catalogue (Accessoires.asset) : les préfabs, et les matériaux du faisceau et du point du
 /// laser tactique (DuelArena/FaisceauLaser). Il est branché sur les WeaponData de la panoplie.
 ///
 /// Réimporter refait tout à partir de l'export, sauf ce qui se règle au ressenti dans le préfab ou le
-/// catalogue : la distance de l'œil d'un viseur (WeaponAttachment.aimEyeDistance), les valeurs des
-/// effets et du faisceau. La taille et l'éclat des réticules se règlent ici, pour tous.
+/// catalogue : les valeurs des effets et du faisceau. La distance de l'œil d'un viseur vient de sa fiche
+/// quand elle la donne (viseurs.py la calcule : la même fenêtre utile pour tous, 2026-10-28) ; sinon le
+/// préfab garde la sienne. L'éclat des réticules se règle ici, pour tous.
 /// </summary>
 public static class AttachmentImporter
 {
@@ -29,23 +31,23 @@ public static class AttachmentImporter
     public const string BeamShaderName = "DuelArena/FaisceauLaser";
     private const string PlayerPrefabPath = "Assets/_ProjectArena/PlayerPrefab/Player.prefab";
 
-    /// <summary>Les viseurs, dans l'ordre de WeaponAttachments (1 à 10) : celui de Rainbow Six.</summary>
-    public static readonly string[] SightOrder = { "PR-A", "PR-B", "PR-C", "HO-A", "HO-B", "HO-C", "HO-D", "RX-A", "RX-B", "RX-C" };
+    /// <summary>Les viseurs, dans l'ordre de WeaponAttachments (1 à 15 : WeaponAttachments.FamilyOf). Le rang
+    /// est enregistré chez les joueurs : les dix premiers gardent celui d'avant la refonte (2026-10-28), un
+    /// nouveau viseur prend une place à la fin.</summary>
+    public static readonly string[] SightOrder =
+    {
+        "PR-A", "PR-B", "PR-C", "HO-A", "HO-B", "HO-C", "HO-D", "RX-A", "RX-B", "RX-C",
+        "RX-D", "L2-A", "L25-A", "L25-B", "L3-A",
+    };
 
-    /// <summary>Les formes du réticule, dans l'ordre de commun_accessoires.FORMES_RETICULE : la
-    /// propriété _Forme du shader de la vitre.</summary>
-    public static readonly string[] ReticleShapes =
-        { "point", "cercle_point", "cercle_chevron", "losange_point", "tirets_point", "cercle_croix", "triangle", "tirets_chevron" };
-
-    // La taille des réticules à l'écran, en milliradians par mètre du rayon dessiné dans Blender : le
-    // cercle de HO-A (10,5 mm) fait 63 mrad, 34 px de rayon en 1080p sous les 90° du champ, comme les
-    // holographiques de Rainbow Six ; le point de PR-A, 4,5 mrad. Ressenti.
-    private const float ReticleMilliradiansPerMetre = 6000f;
     // L'éclat du réticule : un rouge franc sous le tonemapping neutre de l'arène, qui déborde un peu
     // en halo (bloom au-dessus de 1).
     private const float ReticleIntensity = 1.6f;
     private const float LensOpacity = 0.12f;
-    // En visée, la distance de l'œil à la mire d'un viseur, au premier import (ressenti, dans le préfab).
+    // La vitre d'une lunette couvre le centre de la vue grossie : à 12 %, sa teinte ajoutée voilait la cible
+    // dans la pénombre du stand (vu le 2026-10-28). Une optique traitée laisse presque tout passer.
+    public const float ScopeLensOpacity = 0.04f;
+    // En visée, la distance de l'œil à la mire d'un viseur dont la fiche ne la donne pas, au premier import.
     private const float SightEyeDistance = 0.08f;
 
     // Les couleurs de commun_accessoires (sRGB), celles de Blender.
@@ -100,8 +102,16 @@ public static class AttachmentImporter
         WeaponImporter.ConfigureOcclusion(aoPath);
         var ao = AssetDatabase.LoadAssetAtPath<Texture2D>(aoPath);
         Dictionary<(string, int), Material> materials = WeaponImporter.BuildMaterials(sheet, dir, ao);
-        Material lens = sheet.vitres != null && sheet.vitres.Length > 0 ? BuildLensMaterial(sheet, dir) : null;
-        GameObject prefab = BuildPrefab(sheet, dir, fbxPath, materials, lens);
+        Material lens = null, pistolLens = null;
+        if (sheet.vitres != null && sheet.vitres.Length > 0)
+        {
+            AttachmentData d = sheet.donnees ?? new AttachmentData();
+            lens = BuildLensMaterial(sheet, dir, d.reticuleTexture, d.etendueReticule, "Vitre");
+            // Un petit réflex : sur un pistolet, son réticule réduit à son centre (viseurs.PETITS_REFLEX).
+            if (!string.IsNullOrEmpty(d.reticuleCentreTexture))
+                pistolLens = BuildLensMaterial(sheet, dir, d.reticuleCentreTexture, d.etendueReticuleCentre, "Vitre_Pistolet");
+        }
+        GameObject prefab = BuildPrefab(sheet, dir, fbxPath, materials, lens, pistolLens);
         Debug.Log($"[Accessoires] {sheet.code} ({sheet.titre}) : {sheet.triangles} triangles, {sheet.pieces} pièces.");
         return prefab;
     }
@@ -110,16 +120,19 @@ public static class AttachmentImporter
     // La vitre d'un viseur et son réticule
     // ------------------------------------------------------------------
 
-    private static Material BuildLensMaterial(AttachmentSheet sheet, string dir)
+    /// <summary>Le matériau d'une vitre (`<racine>_<nom>.mat`), qui dessine le réticule de l'image `texture`
+    /// (d'étendue `etendue`, en mrad).</summary>
+    private static Material BuildLensMaterial(AttachmentSheet sheet, string dir, string texture, float etendue, string nom)
     {
         Shader shader = Shader.Find(LensShaderName);
         if (shader == null) throw new InvalidOperationException($"Shader {LensShaderName} introuvable.");
         AttachmentData d = sheet.donnees ?? new AttachmentData();
-        int shape = Array.IndexOf(ReticleShapes, d.reticule);
-        if (shape < 0) throw new InvalidOperationException($"{sheet.code} : réticule inconnu « {d.reticule} ».");
-        if (d.rayonReticule <= 0f) throw new InvalidOperationException($"{sheet.code} : la fiche n'a pas le rayon de son réticule.");
+        if (string.IsNullOrEmpty(texture) || etendue <= 0f || d.plageReticule <= 0f)
+            throw new InvalidOperationException($"{sheet.code} : la fiche n'a pas l'image de son réticule.");
+        Texture2D reticle = ConfigureReticle($"{dir}/{texture}");
+        if (reticle == null) throw new InvalidOperationException($"{sheet.code} : il manque {dir}/{texture}.");
 
-        string path = $"{dir}/Materiaux/{sheet.racine}_Vitre.mat";
+        string path = $"{dir}/Materiaux/{sheet.racine}_{nom}.mat";
         var material = AssetDatabase.LoadAssetAtPath<Material>(path);
         if (material == null)
         {
@@ -128,33 +141,56 @@ public static class AttachmentImporter
         }
         material.shader = shader;
         Color tint = GlassTints.TryGetValue(d.teinte ?? "", out Color t) ? t : GlassTints["neutre"];
-        tint.a = LensOpacity;
+        tint.a = d.grossissement > 1f ? ScopeLensOpacity : LensOpacity;
         material.SetColor("_CouleurVitre", tint);
         material.SetColor("_CouleurReticule", d.couleurReticule == "vert" ? GreenReticle : RedReticle);
         material.SetFloat("_Intensite", ReticleIntensity);
-        material.SetFloat("_Forme", shape);
-        material.SetFloat("_Rayon", ReticleRadius(d.rayonReticule));
-        material.SetFloat("_Trait", ReticleRadius(d.traitReticule > 0f ? d.traitReticule : d.rayonReticule * 0.075f));
+        material.SetTexture("_Reticule", reticle);
+        material.SetFloat("_Etendue", etendue);
+        material.SetFloat("_Plage", d.plageReticule);
         material.SetFloat("_AxeCamera", 0f);   // la vue subjective le pose sur sa copie (FirstPersonView)
         material.enableInstancing = false;
         EditorUtility.SetDirty(material);
         return material;
     }
 
-    /// <summary>Le rayon d'un réticule à l'écran (mrad), d'après celui dessiné dans Blender (m).</summary>
-    public static float ReticleRadius(float blenderRadius) => blenderRadius * ReticleMilliradiansPerMetre;
+    /// <summary>L'image d'un réticule : des distances (en canaux rouge et vert), lues telles quelles (sans
+    /// conversion sRGB ni compression), bornées au bord (au-delà, le réticule est loin).</summary>
+    private static Texture2D ConfigureReticle(string path)
+    {
+        if (!File.Exists(path)) return null;
+        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+        if (AssetImporter.GetAtPath(path) is TextureImporter importer)
+        {
+            importer.textureType = TextureImporterType.Default;
+            importer.sRGBTexture = false;
+            importer.alphaSource = TextureImporterAlphaSource.None;
+            importer.mipmapEnabled = true;
+            importer.wrapMode = TextureWrapMode.Clamp;
+            importer.filterMode = FilterMode.Trilinear;
+            importer.npotScale = TextureImporterNPOTScale.None;
+            importer.textureCompression = TextureImporterCompression.Uncompressed;
+            TextureImporterPlatformSettings standalone = importer.GetPlatformTextureSettings("Standalone");
+            standalone.overridden = true;
+            standalone.format = TextureImporterFormat.RG16;
+            importer.SetPlatformTextureSettings(standalone);
+            importer.SaveAndReimport();
+        }
+        return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+    }
 
     // ------------------------------------------------------------------
     // Préfab
     // ------------------------------------------------------------------
 
     private static GameObject BuildPrefab(AttachmentSheet sheet, string dir, string fbxPath,
-                                          Dictionary<(string, int), Material> materials, Material lens)
+                                          Dictionary<(string, int), Material> materials, Material lens, Material pistolLens)
     {
         string prefabPath = $"{dir}/{sheet.racine}.prefab";
         float eye = SightEyeDistance;
         var existing = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
-        if (existing != null && existing.TryGetComponent(out WeaponAttachment previous)) eye = previous.AimEyeDistance;
+        if (sheet.donnees != null && sheet.donnees.distanceOeil > 0f) eye = sheet.donnees.distanceOeil;
+        else if (existing != null && existing.TryGetComponent(out WeaponAttachment previous)) eye = previous.AimEyeDistance;
 
         var model = AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath);
         var instance = (GameObject)PrefabUtility.InstantiatePrefab(model);
@@ -168,11 +204,14 @@ public static class AttachmentImporter
             var keyOfName = new Dictionary<string, string>();
             foreach (WeaponImporter.MaterialSheet entry in sheet.materiaux) keyOfName[entry.nom] = entry.cle;
             var glass = new HashSet<string>(sheet.vitres ?? Array.Empty<string>());
+            var eyepieceNames = new HashSet<string>(sheet.oculaire ?? Array.Empty<string>());
 
             Renderer lensRenderer = null;
+            var eyepiece = new List<Renderer>();
             var pieces = new List<WeaponFinishes.Piece>();
             foreach (MeshRenderer renderer in instance.GetComponentsInChildren<MeshRenderer>(true))
             {
+                if (eyepieceNames.Contains(renderer.name)) eyepiece.Add(renderer);
                 if (glass.Contains(renderer.name))
                 {
                     // La vitre n'a pas de finition : elle prend le shader du réticule, sans ombre.
@@ -203,9 +242,15 @@ public static class AttachmentImporter
             if (category == AttachmentCategory.Grip && leftHand == null)
                 throw new InvalidOperationException($"{sheet.code} : une poignée sans repère « MainGauche ».");
 
+            float zoom = sheet.donnees != null ? Mathf.Max(1f, sheet.donnees.grossissement) : 1f;
+            if (zoom > 1f && eyepiece.Count == 0)
+                throw new InvalidOperationException($"{sheet.code} : une lunette sans œilleton (la fiche n'en nomme aucun).");
+
             var attachment = instance.AddComponent<WeaponAttachment>();
             attachment.EditorSetup(sheet.code, sheet.titre, category, sight, eye, lensRenderer, beam, leftHand,
                                    sheet.donnees != null ? sheet.donnees.arme : "", HiddenParts(sheet));
+            attachment.EditorSetupOptics(sheet.donnees != null ? sheet.donnees.descriptionReticule : "", zoom, eyepiece.ToArray(),
+                                         pistolLens, sheet.donnees != null ? sheet.donnees.descriptionReticuleCentre : "");
             var finishes = instance.AddComponent<WeaponFinishes>();
             finishes.EditorSetup(pieces.ToArray());
             return PrefabUtility.SaveAsPrefabAsset(instance, prefabPath);
@@ -218,11 +263,13 @@ public static class AttachmentImporter
 
     // Les pièces d'un modèle d'arme qu'un viseur remplace (exporter_armes : « à masquer sous un viseur »),
     // et la tour du guidon du FA-07, qu'on voyait dans la fenêtre du viseur, sous le réticule : comme
-    // dans Rainbow Six, un viseur monté efface les organes de visée.
-    private static readonly string[] IronSights = { "Hausse", "Guidon", "Guidon_Base", "Points_Hausse" };
+    // dans Rainbow Six, un viseur monté efface les organes de visée. Sur une arme de précision, c'est sa
+    // lunette d'origine (le groupe « Lunette_Standard ») qu'une lunette remplace (2026-10-28).
+    private static readonly string[] IronSights = { "Hausse", "Guidon", "Guidon_Base", "Points_Hausse", "Lunette_Standard" };
 
-    /// <summary>Ce que l'accessoire cache de l'arme : les organes de visée sous un viseur, le chargeur
-    /// d'origine sous un chargeur grande capacité, sauf la rallonge d'un tube (elle s'y ajoute).</summary>
+    /// <summary>Ce que l'accessoire cache de l'arme : les organes de visée (ou la lunette d'origine) sous un
+    /// viseur, le chargeur d'origine sous un chargeur grande capacité, sauf la rallonge d'un tube (elle s'y
+    /// ajoute).</summary>
     public static string[] HiddenParts(AttachmentSheet sheet)
     {
         switch (sheet.Category)
@@ -323,6 +370,7 @@ public static class AttachmentImporter
     {
         public string categorie;
         public string[] vitres;
+        public string[] oculaire;        // lunette : les pièces de son œilleton
         public AttachmentData donnees;
 
         public AttachmentCategory Category => categorie switch
@@ -340,11 +388,17 @@ public static class AttachmentImporter
     public class AttachmentData
     {
         public string teinte;            // viseur : la teinte de la vitre
-        public string reticule;          // viseur : la forme du réticule (ReticleShapes)
         public string couleurReticule;   // « rouge » ou « vert »
-        public float rayonReticule;      // m, tel que dessiné dans Blender
-        public float traitReticule;      // m, l'épaisseur de ses traits (0 : 7,5 % du rayon, comme avant le 2026-10-26)
+        public string reticuleTexture;   // l'image du réticule (viseurs.ecrire_reticule), dans le dossier de l'accessoire
+        public float etendueReticule;    // mrad, la demi-largeur de cette image autour du point visé
+        public string reticuleCentreTexture; // petit réflex : l'image de son centre seul, pour un pistolet
+        public float etendueReticuleCentre;  // mrad, la demi-largeur de cette image
+        public string descriptionReticuleCentre; // ce centre en quelques mots (« triangle »)
+        public float plageReticule;      // mrad, la distance codée de part et d'autre du bord
+        public string descriptionReticule; // le réticule en quelques mots
         public float hauteurAxe;         // m, l'axe optique au-dessus du rail
+        public float distanceOeil;       // m, l'œil derrière la mire en visée (0 : la fiche ne la donne pas)
+        public float grossissement;      // lunette (0 ou 1 : sans)
         public string couleurFaisceau;   // laser
         public string effet;             // poignée : « recul » ou « epaulement »
         public string arme;              // chargeur : la désignation du modèle d'arme

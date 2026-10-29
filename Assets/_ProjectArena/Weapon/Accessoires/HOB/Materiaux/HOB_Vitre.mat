@@ -22,18 +22,24 @@ Material:
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
-    m_TexEnvs: []
+    m_TexEnvs:
+    - _Reticule:
+        m_Texture: {fileID: 2800000, guid: 64eb2868da5faf34783dddbd8707c6f6, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
     - _AxeCamera: 0
     - _Douceur: 0.2
+    - _Etendue: 65
     - _Forme: 3
     - _Intensite: 1.6
+    - _Plage: 6
     - _Rayon: 57
     - _Reflet: 0.35
     - _Trait: 4.275
     m_Colors:
     - _CouleurReticule: {r: 1, g: 0.13333334, b: 0.09411765, a: 1}
-    - _CouleurVitre: {r: 0.5176471, g: 0.6745098, b: 0.8392157, a: 0.12}
+    - _CouleurVitre: {r: 0.72156864, g: 0.76862746, b: 0.78431374, a: 0.12}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

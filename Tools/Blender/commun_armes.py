@@ -198,6 +198,14 @@ def materiaux(code, bouche, variante=None, mains=None, fabrique=None):
     # … et son accent, un laiton terni (ailettes, bagues, chien, détente)
     M["Laiton"] = mat("DA_Laiton", srgb(122, 106, 80), "laiton", rug=0.4, metal=0.7, dessous=srgb(170, 152, 116),
                                rug_dessous=0.3, bords=0.6, salete=0.6, graine=18)
+    # les viseurs (viseurs.py) : le noir mat de l'intérieur d'une optique, et les afficheurs. Dans Blender,
+    # viseurs.completer_materiaux les refait à l'identique (sans reflet, hologrammes à demi transparents) ;
+    # l'export vers Unity n'en lit que ces paramètres (opaques, lumineux)
+    M["NoirMat"] = mat("DA_Noir_Mat", srgb(9, 9, 10), rug=1.0, salete=0.0, variation=0.0)
+    M["Holo"] = mat("DA_Hologramme", srgb(14, 16, 18), rug=0.4, salete=0.0, variation=0.0,
+                             emission=srgb(214, 232, 255), force_emission=1.4)
+    M["HoloRouge"] = mat("DA_Hologramme_Rouge", srgb(30, 6, 4), rug=0.4, salete=0.0, variation=0.0,
+                                  emission=ROUGE_LUEUR, force_emission=2.4)
     if variante == "depareillee":   # une carcasse d'un autre lot, d'un gris plus clair
         M["PeintureGrise"] = mat("DA_Peinture_Grise", srgb(96, 99, 102), "peinture", rug=0.58, dessous=acier_nu,
                                  rug_dessous=0.4, metal_dessous=0.6, bords=0.75, eclats=0.5, rayures=0.6, salete=0.6,
@@ -333,9 +341,11 @@ def hausse(a, av, h_rail, h_visee, r_int=0.0042, r_ext=0.0063, nom="Hausse", mat
     return a.objet(pc)
 
 
-def guidon(a, av, h_rail, h_visee, nom="Guidon", mat="Peinture", demi_base=0.0125, mat_pointe="Marquage"):
-    """Guidon à lame fine entre deux oreilles, pointe claire côté tireur (on la voit dans l'anneau).
-    demi_base : demi-largeur de l'embase (0,0125 sur un rail ; moins sur une bande de pompe)."""
+def guidon(a, av, h_rail, h_visee, nom="Guidon", mat="Peinture", demi_base=0.0125):
+    """Guidon à lame fine entre deux oreilles. Un petit point rouge lumineux, côté tireur, marque la ligne
+    de mire, là où part la balle, comme sur les pistolets (2026-10-29, demandé par l'utilisateur) : la
+    lame monte 2 mm au-dessus pour le porter. demi_base : demi-largeur de l'embase (0,0125 sur un rail ;
+    moins sur une bande de pompe)."""
     pc = a.piece(nom, mat)
     hb = h_rail
     f = kit.boite(pc, av - 0.010, av + 0.010, hb - 0.0015, hb + 0.0055, -demi_base, demi_base, mat)
@@ -348,11 +358,13 @@ def guidon(a, av, h_rail, h_visee, nom="Guidon", mat="Peinture", demi_base=0.012
     f = kit.prisme(pc, [(av - 0.006, hb + 0.004), (av + 0.006, hb + 0.004), (av + 0.0025, hb + 0.010),
                         (av - 0.0025, hb + 0.010)], -0.0026, 0.0026, mat)
     kit.chanfreiner(pc, 0.0006, f)
-    kit.prisme(pc, [(av - 0.0016, hb + 0.009), (av + 0.0016, hb + 0.009), (av + 0.0010, h_visee),
-                    (av - 0.0010, h_visee)], -0.0009, 0.0009, mat)
-    kit.quad(pc, [P(av - 0.00112, h_visee - 0.0024, -0.0008), P(av - 0.00112, h_visee - 0.0024, 0.0008),
-                  P(av - 0.00112, h_visee - 0.0003, 0.0008), P(av - 0.00112, h_visee - 0.0003, -0.0008)],
-             mat_pointe, normale=Vector((0, 1, 0)))
+    sommet = h_visee + 0.0020
+    kit.prisme(pc, [(av - 0.0016, hb + 0.009), (av + 0.0016, hb + 0.009), (av + 0.0010, sommet),
+                    (av - 0.0010, sommet)], -0.0009, 0.0009, mat)
+    # Le point, de la largeur de la lame (1,8 mm, 3 à 4 mrad vus de l'œil en visée) : le bout d'une fibre qui sort de
+    # la lame vers l'œil. La face arrière de la lame penche (av - 0,0016 en bas, av - 0,0010 en haut) : un disque posé
+    # à av - 0,00115 s'y retrouvait dedans, invisible (2026-10-29).
+    kit.cylindre(pc, P(av - 0.0018, h_visee), P(av - 0.0006, h_visee), 0.0009, 8, mat="Lueur")
     return a.objet(pc)
 
 

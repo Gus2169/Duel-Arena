@@ -376,8 +376,10 @@ public class MenuThumbnails : MonoBehaviour
     {
         GameObject prefab = data.modelPrefab;
         if (prefab == null) return null;
-        EnsureRig();
         ClampSize(ref width, ref height);
+        // Sans viseur, une arme de précision se vise par sa lunette d'origine, que le HUD dessine.
+        if (attachments.Sight(slot) == 0 && data.scopeMagnification > 1f) return DrawBuiltInScope(width, height);
+        EnsureRig();
         GameObject weapon = Instantiate(prefab, stage, false);
         try
         {
@@ -397,6 +399,12 @@ public class MenuThumbnails : MonoBehaviour
             if (mounted != null && mounted.Lens != null)
             {
                 tangent = FrameTangent(new[] { mounted.Lens }, eye.worldToLocalMatrix, aspect, LensFill);
+                // Une lunette se voit comme dans sa vue grossie (FirstPersonView.EyepieceScoped) : son seul
+                // œilleton autour de la vitre. Le grossissement ne change rien d'autre à l'image : la vitre et
+                // le réticule, dans la même caméra, grossissent ensemble.
+                if (mounted.Magnification > 1f)
+                    foreach (Renderer r in mounted.GetComponentsInChildren<Renderer>(true))
+                        if (!mounted.ShownWhenScoped(r)) r.forceRenderingOff = true;
             }
             else
             {
@@ -417,6 +425,53 @@ public class MenuThumbnails : MonoBehaviour
             shotCamera.backgroundColor = Color.clear;
             DestroyImmediate(weapon);
         }
+    }
+
+    /// <summary>
+    /// La lunette d'origine d'une arme de précision telle que le HUD la dessine en jeu (ScopeOverlay) :
+    /// du noir autour d'un disque de 92 % de la hauteur, et une croix noire fine, aux branches épaissies vers le
+    /// bord, sauf celle du haut. Dessinée, pas rendue : en jeu, on ne regarde pas son modèle. Le disque montre un
+    /// ciel clair au-dessus d'un sol sombre, pour que la croix se lise comme sur l'arène. Traits élargis à
+    /// l'échelle d'une vignette (2 et 6 pixels en 1080p y seraient invisibles).
+    /// </summary>
+    private static RenderTexture DrawBuiltInScope(int width, int height)
+    {
+        var pixels = new Color32[width * height];
+        float cx = width * 0.5f, cy = height * 0.5f;
+        float r = height * 0.46f;
+        float thin = Mathf.Max(1.5f, height * 2f / 1080f), thick = Mathf.Max(4f, height * 6f / 1080f), gap = thin * 3f;
+        var sky = new Color(0.62f, 0.68f, 0.74f);
+        var horizon = new Color(0.78f, 0.80f, 0.80f);
+        var ground = new Color(0.34f, 0.33f, 0.31f);
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+        {
+            float dx = x + 0.5f - cx, dy = y + 0.5f - cy;
+            float d = Mathf.Sqrt(dx * dx + dy * dy) / r;
+            Color scene = dy >= 0f ? Color.Lerp(horizon, sky, dy / r) : Color.Lerp(horizon, ground, Mathf.Clamp01(-dy / (r * 0.25f)));
+            // La croix : fine jusqu'à 55 % du rayon, épaisse au-delà (pas en haut), coupée au centre.
+            float ax = Mathf.Abs(dx), ay = Mathf.Abs(dy);
+            bool horizontal = ax > gap && (ay <= thin * 0.5f || (ax >= r * 0.55f && ay <= thick * 0.5f));
+            bool vertical = ay > gap && (ax <= thin * 0.5f || (dy < 0f && ay >= r * 0.55f && ax <= thick * 0.5f));
+            bool dot = ax <= thin && ay <= thin;
+            if (horizontal || vertical || dot) scene = Color.Lerp(scene, Color.black, 0.9f);
+            // Le bord du disque s'assombrit (le masque du HUD), puis le noir.
+            float shade = d >= 1f ? 1f : Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.86f, 1f, d)) * 0.85f;
+            float edge = Mathf.Clamp01((d - 1f) * r + 0.5f);   // un pixel de fondu sur le bord
+            shade = Mathf.Lerp(shade, 1f, edge);
+            pixels[y * width + x] = (Color32)Color.Lerp(scene, Color.black, shade);
+        }
+        var image = new Texture2D(width, height, TextureFormat.RGBA32, false) { name = "Lunette d'origine" };
+        try
+        {
+            image.SetPixels32(pixels);
+            image.Apply();
+            var result = new RenderTexture(width, height, 0) { name = "Vignette" };
+            result.Create();
+            Graphics.Blit(image, result);
+            return result;
+        }
+        finally { DestroyImmediate(image); }
     }
 
     /// <summary>Les pièces de l'arme qu'un viseur cache (WeaponAttachment.Hides) : sa hausse et son guidon.</summary>

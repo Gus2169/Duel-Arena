@@ -216,7 +216,7 @@ public class ShootingRangePanel : MonoBehaviour
 
         GUILayout.Label("VISEUR", headerStyle);
         OptionGrid(data, slot, attachments, AttachmentCategory.Sight, WeaponAttachments.SightCount + 1, 4,
-                   v => v == 0 ? "Mire de l'arme" : catalog != null ? catalog.SightTitle(v) : $"Viseur {v}", server);
+                   v => v == 0 ? AttachmentCatalog.BaseSightTitle(data) : catalog != null ? catalog.SightTitle(v) : $"Viseur {v}", server);
         GUILayout.Label("POIGNÉE", headerStyle);
         OptionGrid(data, slot, attachments, AttachmentCategory.Grip, GripLabels.Length, 3, v => GripLabels[v], server);
         GUILayout.Label("LASER TACTIQUE", headerStyle);

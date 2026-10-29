@@ -27,6 +27,16 @@ public class WeaponAttachment : MonoBehaviour
     [SerializeField] private float aimEyeDistance = 0.08f;
     [Tooltip("Viseur : la vitre, où le réticule est dessiné à l'infini (DuelArena/ViseurReticule).")]
     [SerializeField] private Renderer lens;
+    [Tooltip("Viseur : son réticule en quelques mots (« point et quatre arcs »), sous son image à l'armurerie.")]
+    [SerializeField] private string reticleLabel = "";
+    [Tooltip("Lunette : son grossissement (1 : un viseur sans grossissement).")]
+    [SerializeField] private float magnification = 1f;
+    [Tooltip("Lunette : les pièces de son œilleton, seules visibles dans la vue grossie (FirstPersonView) : le reste du tube boucherait la vue.")]
+    [SerializeField] private Renderer[] eyepiece = System.Array.Empty<Renderer>();
+    [Tooltip("Petit réflex : la vitre posée sur un pistolet (AttachmentMount), son réticule réduit à son centre (le triangle, le chevron, le point). Tenu à bout de bras, le pistolet balance, et sa petite fenêtre coupait tour à tour les traits des côtés, qui semblaient bouger (l'utilisateur, 2026-10-29).")]
+    [SerializeField] private Material pistolLens;
+    [Tooltip("Petit réflex : son réticule sur un pistolet, en quelques mots (« triangle »).")]
+    [SerializeField] private string pistolReticleLabel = "";
 
     [Tooltip("Laser : l'émetteur, d'où part le faisceau (repère « Faisceau »).")]
     [SerializeField] private Transform beam;
@@ -46,10 +56,30 @@ public class WeaponAttachment : MonoBehaviour
     public Transform Sight => sight;
     public float AimEyeDistance => aimEyeDistance;
     public Renderer Lens => lens;
+    public string ReticleLabel => reticleLabel ?? "";
+    public float Magnification => Mathf.Max(1f, magnification);
+    public System.Collections.Generic.IReadOnlyList<Renderer> Eyepiece => eyepiece ?? System.Array.Empty<Renderer>();
+    public Material PistolLens => pistolLens;
+
+    /// <summary>Le réticule en quelques mots, sur un pistolet ou non : sur un pistolet, un petit réflex ne
+    /// montre que son centre.</summary>
+    public string ReticleLabelOn(bool pistol)
+        => pistol && pistolLens != null && !string.IsNullOrEmpty(pistolReticleLabel) ? pistolReticleLabel : ReticleLabel;
     public Transform Beam => beam;
     public Transform LeftHand => leftHand;
     public string WeaponDesignation => weaponDesignation;
     public System.Collections.Generic.IReadOnlyList<string> Hides => hides ?? System.Array.Empty<string>();
+
+    /// <summary>Ce qui reste visible d'une lunette dans sa vue grossie : sa vitre et son œilleton.</summary>
+    public bool ShownWhenScoped(Renderer r)
+    {
+        if (r == null) return false;
+        if (r == lens) return true;
+        if (eyepiece != null)
+            foreach (Renderer part in eyepiece)
+                if (part == r) return true;
+        return false;
+    }
 
 #if UNITY_EDITOR
     /// <summary>Réglage par l'importeur des accessoires (Editor seulement).</summary>
@@ -66,6 +96,18 @@ public class WeaponAttachment : MonoBehaviour
         beam = beamPoint;
         leftHand = leftHandPoint;
         weaponDesignation = forWeapon ?? "";
+    }
+
+    /// <summary>Réglage par l'importeur de ce qu'un viseur montre (Editor seulement) : son réticule en mots,
+    /// pour une lunette son grossissement et son œilleton, pour un petit réflex sa vitre sur un pistolet.</summary>
+    public void EditorSetupOptics(string reticle, float zoom, Renderer[] eyepieceRenderers, Material lensOnPistol,
+                                  string reticleOnPistol)
+    {
+        reticleLabel = reticle ?? "";
+        magnification = Mathf.Max(1f, zoom);
+        eyepiece = eyepieceRenderers ?? System.Array.Empty<Renderer>();
+        pistolLens = lensOnPistol;
+        pistolReticleLabel = reticleOnPistol ?? "";
     }
 #endif
 }

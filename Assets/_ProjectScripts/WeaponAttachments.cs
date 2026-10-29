@@ -23,8 +23,9 @@ public enum AttachmentSlots : byte
     All = Sight | Grip | Laser | Magazine,
 }
 
-/// <summary>Les familles des viseurs de Rainbow Six (WeaponData.acceptedSights) : les points rouges
-/// (viseurs 1 à 3), les holographiques (4 à 7), les réflex (8 à 10).</summary>
+/// <summary>Les familles des viseurs (WeaponData.acceptedSights) : les points rouges (viseurs 1 à 3), les
+/// holographiques (4 à 7), les réflex (8 à 10), le réflex à grand cadre (11, le « Vintage », trop large pour
+/// la glissière d'un pistolet) et les lunettes (12 à 15, grossissantes : les armes de précision).</summary>
 [Flags]
 public enum SightFamilies : byte
 {
@@ -32,14 +33,19 @@ public enum SightFamilies : byte
     RedDot = 1,
     Holographic = 2,
     Reflex = 4,
-    All = RedDot | Holographic | Reflex,
+    Scope = 8,
+    WideReflex = 16,
+    /// <summary>Les viseurs sans grossissement.</summary>
+    NonMagnified = RedDot | Holographic | Reflex | WideReflex,
+    All = NonMagnified | Scope,
 }
 
 /// <summary>
 /// Les accessoires des armes d'un joueur (2026-10-16, GDD § 6) : pour chaque arme de l'arsenal, le
-/// viseur (0 : la mire de l'arme ; 1 à 10 : les dix viseurs de Rainbow Six, dans l'ordre du
-/// catalogue), la poignée, le laser tactique et le chargeur grande capacité (la cellule grande capacité
-/// d'une arme laser). Chaque arme garde les siens (2026-10-26) : en match, elle arrive configurée.
+/// viseur (0 : la mire de l'arme, ou la lunette d'origine d'une arme de précision ; 1 à 15 : les quinze
+/// viseurs, dans l'ordre du catalogue : SightCount les prend tous), la poignée, le laser tactique et le
+/// chargeur grande capacité (la cellule grande capacité d'une arme laser). Chaque arme garde les siens
+/// (2026-10-26) : en match, elle arrive configurée.
 ///
 /// Contrairement à l'apparence (WeaponLooks), ils CHANGENT l'arme : le chargeur, le recul, le temps
 /// d'épaulement (AttachmentCatalog en porte les valeurs). Le joueur les annonce en se connectant
@@ -55,8 +61,9 @@ public enum SightFamilies : byte
 public struct WeaponAttachments : IEquatable<WeaponAttachments>, Unity.Netcode.INetworkSerializeByMemcpy
 {
     public const int Slots = WeaponController.MaxSlots;
-    /// <summary>Les viseurs du catalogue (la mire de l'arme, 0, en plus).</summary>
-    public const int SightCount = 10;
+    /// <summary>Les viseurs du catalogue (la mire de l'arme, 0, en plus). 🚨 Quatre bits : quinze au plus, tous
+    /// pris depuis la refonte des viseurs (2026-10-28) ; un seizième demandera d'élargir le codage.</summary>
+    public const int SightCount = 15;
     private const int BitsPerSlot = 8;
     private const int SlotsInLow = 8;
 
@@ -110,7 +117,8 @@ public struct WeaponAttachments : IEquatable<WeaponAttachments>, Unity.Netcode.I
         return new WeaponAttachments(low, (high & ~(0xFFu << highShift)) | ((bits & 0xFFu) << highShift));
     }
 
-    /// <summary>Le viseur de la place `slot` : 0 la mire de l'arme, 1 à 10 un viseur du catalogue.</summary>
+    /// <summary>Le viseur de la place `slot` : 0 la mire de l'arme (ou sa lunette d'origine), 1 à 15 un
+    /// viseur du catalogue.</summary>
     public int Sight(int slot) => (int)(Bits(slot) & 0xFu);
 
     public GripKind Grip(int slot) => (GripKind)((Bits(slot) >> 4) & 0x3u);
@@ -151,8 +159,8 @@ public struct WeaponAttachments : IEquatable<WeaponAttachments>, Unity.Netcode.I
 
     /// <summary>
     /// Ce qu'un serveur accepte d'un client qui ne fait pas foi : ce que l'arme de chaque place ne
-    /// prend pas (WeaponData.acceptedAttachments et acceptedSights : pas de viseur sur le sniper, que
-    /// les réflex sur un pistolet, pas de poignée sur un pistolet), un viseur ou une poignée qui
+    /// prend pas (WeaponData.acceptedAttachments et acceptedSights : que les lunettes sur une arme de
+    /// précision, que les petits réflex sur un pistolet, pas de poignée sur un pistolet), un viseur ou une poignée qui
     /// n'existe pas, tombent ; les bits sans place sont effacés.
     /// </summary>
     public WeaponAttachments Sanitized(IReadOnlyList<WeaponData> loadout)
@@ -170,12 +178,15 @@ public struct WeaponAttachments : IEquatable<WeaponAttachments>, Unity.Netcode.I
         return result;
     }
 
-    /// <summary>La famille d'un viseur du catalogue (None pour la mire de l'arme ou hors catalogue).</summary>
+    /// <summary>La famille d'un viseur du catalogue (None pour la mire de l'arme ou hors catalogue). Le rang
+    /// d'un viseur est enregistré chez les joueurs : un nouveau prend une place à la fin.</summary>
     public static SightFamilies FamilyOf(int sight) => sight switch
     {
         >= 1 and <= 3 => SightFamilies.RedDot,
         >= 4 and <= 7 => SightFamilies.Holographic,
-        >= 8 and <= SightCount => SightFamilies.Reflex,
+        >= 8 and <= 10 => SightFamilies.Reflex,
+        11 => SightFamilies.WideReflex,
+        >= 12 and <= SightCount => SightFamilies.Scope,
         _ => SightFamilies.None,
     };
 

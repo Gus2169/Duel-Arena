@@ -52,7 +52,8 @@ def main():
         with open(FICHE, encoding="utf-8") as f:
             fiche = json.load(f)
     except OSError:
-        print("Pont absent : lancer pont_blender.py dans la console Python de Blender.", file=sys.stderr)
+        print("Pont absent : Blender n'est pas ouvert, ou le pont n'y est pas lancé "
+              "(pont_demarrage.py au démarrage, ou pont_blender.py dans la console Python).", file=sys.stderr)
         return 2
 
     requete = {"jeton": fiche["jeton"], "delai": a.delai, "args": args_script}

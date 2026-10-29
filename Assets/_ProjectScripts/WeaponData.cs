@@ -78,11 +78,11 @@ public class WeaponData : ScriptableObject
     [Tooltip("Le modèle tenu en main droite (préfab : poignée à l'origine, canon vers +Z, repères « Mire » et « Bouche »). Le même sert au corps vu par les autres et aux bras de la vue subjective. Branché par l'importeur des armes de Blender, d'après la désignation du modèle (le FA-07 pour l'arme FA-07).")]
     public GameObject modelPrefab;
 
-    [Tooltip("Ce que cette arme prend à l'armurerie (GDD § 6) : le serveur fait tomber le reste (WeaponAttachments.Sanitized). Le sniper garde sa lunette, un pistolet n'a pas de poignée avant (propositions de Claude, 2026-10-16).")]
+    [Tooltip("Ce que cette arme prend à l'armurerie (GDD § 6) : le serveur fait tomber le reste (WeaponAttachments.Sanitized). Un pistolet n'a pas de poignée avant (propositions de Claude, 2026-10-16).")]
     public AttachmentSlots acceptedAttachments = AttachmentSlots.All;
 
-    [Tooltip("Les viseurs qu'elle prend, quand elle prend un viseur : une glissière de pistolet n'a la place que d'un réflex (proposition de Claude, 2026-10-16).")]
-    public SightFamilies acceptedSights = SightFamilies.All;
+    [Tooltip("Les viseurs qu'elle prend, quand elle prend un viseur : une glissière de pistolet n'a la place que d'un petit réflex (proposition de Claude, 2026-10-16) ; les lunettes ne vont que sur les armes de précision, à la place de leur lunette d'origine (l'utilisateur, 2026-10-28).")]
+    public SightFamilies acceptedSights = SightFamilies.NonMagnified;
 
     [Tooltip("Le catalogue des accessoires (Accessoires.asset), le même pour toutes les armes : leurs préfabs et la valeur de leurs effets. Branché par l'importeur des armes de Blender.")]
     public AttachmentCatalog attachmentCatalog;

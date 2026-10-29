@@ -16,8 +16,8 @@ MonoBehaviour:
   family: 1
   role: "\xE0 levier, plus rapide et plus mobile"
   modelPrefab: {fileID: 3395265809683361253, guid: 307ff8850836d6a4b9b7daad2dea6a76, type: 3}
-  acceptedAttachments: 14
-  acceptedSights: 7
+  acceptedAttachments: 15
+  acceptedSights: 8
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 55
   shotsPerSecond: 1.6

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
@@ -8,7 +9,7 @@ using UnityEngine;
 /// nombre d'impacts qu'il a fallu. De quoi juger une arme et ses accessoires en chiffres.
 ///
 /// Les dégâts viennent du serveur (WeaponController.ServerHitRegistered) : le stand tourne chez l'hôte,
-/// seul. HUD OnGUI, placeholder assumé comme CrosshairUI. Rien ne relit ces chiffres.
+/// seul. HUD OnGUI, placeholder assumé. Rien ne relit ces chiffres.
 /// </summary>
 [DisallowMultipleComponent]
 public class ShootingRangeHud : MonoBehaviour
@@ -199,6 +200,12 @@ public class ShootingRangeHud : MonoBehaviour
         // la barre de vie, elle, se dessine toujours.
         Vector3 eye = cam.transform.position;
         Vector3 forward = cam.transform.forward;
+        // Dans la lunette d'origine d'un fusil de précision, le HUD noircit tout autour du disque (ScopeOverlay) :
+        // une étiquette hors du disque y flottait sur le noir.
+        NetworkObject local = GameHud.LocalPlayerObject;
+        bool scoped = local != null && local.TryGetComponent(out FirstPersonView view) && view.Scoped;
+        var screenCenter = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+        float scopeRadius = ScopeRadius * Screen.height;
         entries.Clear();
         int aimed = -1;
         float aimedAngle = AimedAngle;
@@ -208,6 +215,10 @@ public class ShootingRangeHud : MonoBehaviour
             // chiffres de dégâts restent.
             if (dummy == null || dummy.Health == null || !dummy.Regenerates) continue;
             if (!OnScreen(cam, dummy.LabelPoint, out Vector2 p)) continue;
+            if (scoped && (p - screenCenter).sqrMagnitude > scopeRadius * scopeRadius) continue;
+            // L'étiquette laisse au-dessus de la tête la place du marqueur de touche (HitMarker, jusqu'à 25 unités
+            // au-dessus du point visé) : de loin, elle tombait sur ses branches du haut quand on visait la tête.
+            if (OnScreen(cam, dummy.HeadPoint, out Vector2 head)) p.y = Mathf.Min(p.y, head.y - MarkerClearance * Screen.height / 1080f);
             // Un mannequin caché par un mur n'a pas d'étiquette : depuis la Fosse, on voyait celles du
             // stand à travers la cloison.
             if (Physics.Linecast(eye, dummy.HeadPoint, 1, QueryTriggerInteraction.Ignore)) continue;
@@ -277,6 +288,14 @@ public class ShootingRangeHud : MonoBehaviour
 
     /// <summary>Un mannequin est « visé » à moins de tant de degrés du réticule (son buste).</summary>
     private const float AimedAngle = 4f;
+
+    /// <summary>Entre la tête et le bas de son étiquette, au moins tant de pixels en 1080p : la place des
+    /// branches du haut du marqueur de touche quand on vise la tête.</summary>
+    private const float MarkerClearance = 30f;
+
+    /// <summary>Le rayon de l'ouverture de la lunette d'origine, en part de la hauteur de l'écran (CrosshairUI :
+    /// 92 % de diamètre).</summary>
+    private const float ScopeRadius = 0.46f;
 
     private static Rect BarRect(Entry e)
     {

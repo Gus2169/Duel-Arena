@@ -560,6 +560,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CrosshairUI
   aimCamera: {fileID: 8366488429288959033}
   inputReader: {fileID: 6943044066884809316}
+  hudTree: {fileID: 9197481963319205126, guid: 1a3b30c93a1ad204794d93b8e0dab70e, type: 3}
+  panelSettings: {fileID: 11400000, guid: 815cc47e49b916f4c867fcef8be12274, type: 2}
+  sortingOrder: -10
   hipGap: 6
   hipLineLength: 8
   lineThickness: 2
@@ -567,9 +570,12 @@ MonoBehaviour:
   showCenterDot: 1
   centerDotSize: 2
   weapon: {fileID: 0}
-  ammoEmptyColor: {r: 1, g: 0.4, b: 0.3, a: 1}
-  ammoPanelColor: {r: 0.039215688, g: 0.050980393, b: 0.06666667, a: 0.8}
   chargeFullColor: {r: 1, g: 0.3, b: 0.22, a: 1}
+  staticDuration: 0.45
+  staticFullDamage: 40
+  staticMinStrength: 0.4
+  flinchPerDamage: 0.025
+  flinchMax: 1.2
   scopeDiameter: 0.92
   scopeReticleColor: {r: 0, g: 0, b: 0, a: 0.9}
 --- !u!114 &4778785776251366436
@@ -1312,7 +1318,7 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   strikeDuration: 0.6
   contactDelay: 0.18
-  range: 2
+  range: 1
   radius: 0.3
   hitboxMask:
     serializedVersion: 2

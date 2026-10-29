@@ -109,7 +109,8 @@ public class PlayerCameraLook : MonoBehaviour
     }
 
     // ------------------------------------------------------------------
-    // Secousses (2026-10-13, catégorie C) : un duelliste touché par un caillou, un spectateur étourdi.
+    // Secousses (2026-10-13, catégorie C) : un duelliste touché par un caillou ou par une balle (le sursaut,
+    // 2026-10-29), un spectateur étourdi.
     // Elles tournent la caméra elle-même, donc la visée (le tir part de la caméra) : c'est voulu, un
     // caillou « déstabilise » (GDD § 9). Jamais le corps : son lacet appartient à la simulation.
     // ------------------------------------------------------------------
@@ -136,6 +137,48 @@ public class PlayerCameraLook : MonoBehaviour
         wobbleSetAt = Time.time;
     }
 
+    // Le sursaut d'un robot touché (2026-10-29, GDD § 6 : « un très léger sursaut de caméra », qui punit déjà le
+    // joueur touché en premier) : la vue monte d'un rien en 30 ms et revient, sans hasard. Le tangage déplace
+    // le point visé le temps du sursaut ; le roulis, d'un côté puis de l'autre, ne le déplace pas.
+    private float flinchAmplitude;
+    private float flinchStartedAt = float.NegativeInfinity;
+    private float flinchSide = 1f;
+
+    /// <summary>Le temps que met la vue à monter (s).</summary>
+    public const float FlinchRise = 0.03f;
+    /// <summary>Le temps du sursaut entier, retour compris (s).</summary>
+    public const float FlinchDuration = 0.3f;
+
+    /// <summary>Un sursaut de `degrees` degrés vers le haut. Un coup qui tombe pendant un autre reprend le
+    /// sursaut là où il en est, sans additionner : il reste léger.</summary>
+    public void Flinch(float degrees)
+    {
+        if (!(degrees > 0f)) return;
+        float current = FlinchPitch(Time.time - flinchStartedAt, flinchAmplitude);
+        flinchAmplitude = Mathf.Max(degrees, current);
+        // Repris à la hauteur où il en est : la vue ne retombe pas d'un coup avant de remonter.
+        flinchStartedAt = Time.time - FlinchRise * (current / flinchAmplitude);
+        flinchSide = -flinchSide;
+    }
+
+    /// <summary>La montée de la vue (degrés) `t` secondes après un sursaut de `amplitude` : elle monte en
+    /// FlinchRise, puis revient en douceur ; rien avant ni après. Fonction pure, testée.</summary>
+    public static float FlinchPitch(float t, float amplitude)
+    {
+        if (!(amplitude > 0f) || !(t >= 0f) || t >= FlinchDuration) return 0f;
+        if (t < FlinchRise) return amplitude * t / FlinchRise;
+        float rest = 1f - (t - FlinchRise) / (FlinchDuration - FlinchRise);
+        return amplitude * rest * rest;
+    }
+
+    /// <summary>Le sursaut (degrés) d'un coup de `damage` PV : `perDamage` par point, jamais plus de `max`.
+    /// Fonction pure, testée.</summary>
+    public static float FlinchDegrees(float damage, float perDamage, float max)
+    {
+        if (!(damage > 0f)) return 0f; // NaN compris
+        return Mathf.Min(max, damage * perDamage);
+    }
+
     /// <summary>La rotation ajoutée par les secousses : tangage, lacet, roulis (degrés).</summary>
     private Vector3 CurrentJolt()
     {
@@ -147,6 +190,8 @@ public class PlayerCameraLook : MonoBehaviour
             float wave = Mathf.Sin(t * 38f) * decay * decay;
             jolt += new Vector3(0f, shakeAmplitude * wave, shakeAmplitude * 0.8f * wave);
         }
+        float flinch = FlinchPitch(Time.time - flinchStartedAt, flinchAmplitude);
+        if (flinch > 0f) jolt += new Vector3(-flinch, 0f, flinchSide * 0.6f * flinch);
         if (Time.time - wobbleSetAt < 0.1f && wobbleWeight > 0f)
         {
             float time = Time.time;

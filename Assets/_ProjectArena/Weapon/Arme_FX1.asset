@@ -17,7 +17,7 @@ MonoBehaviour:
   role: "le FA-07 en rayons, recul \xD70,6"
   modelPrefab: {fileID: 9060819362404915580, guid: 93f0ff89c2d73f84aaa7c42a797c46f3, type: 3}
   acceptedAttachments: 15
-  acceptedSights: 7
+  acceptedSights: 23
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 17
   shotsPerSecond: 7

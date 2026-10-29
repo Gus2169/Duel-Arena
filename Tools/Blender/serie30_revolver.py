@@ -153,7 +153,8 @@ def poignee(a):
 
 
 def mire(a):
-    """Hausse à cran et guidon, trois points blancs : deux de part et d'autre du cran, un sur le guidon."""
+    """Hausse à cran et guidon : deux points blancs de part et d'autre du cran, un point rouge lumineux
+    sur le guidon, sur la ligne de mire."""
     pc = a.piece("Hausse", "Peinture")
     f = kit.boite(pc, -0.032, -0.016, 0.0975, 0.1125, -0.0085, 0.0085)
     kit.chanfreiner(pc, 0.0008, f)
@@ -164,7 +165,7 @@ def mire(a):
     pc = a.piece("Guidon", "Peinture")
     f = kit.boite(pc, 0.180, 0.188, 0.1035, 0.1110, -0.0016, 0.0016)
     kit.chanfreiner(pc, 0.0004, f)
-    kit.disque(pc, P(0.1799, 0.1085), Vector((0, 1, 0)), 0.0010, 6, mat="Marquage")
+    kit.disque(pc, P(0.1799, 0.1085), Vector((0, 1, 0)), 0.0010, 6, mat="Lueur")
     for x in (0.0042, -0.0042):
         kit.disque(pc, P(-0.0322, 0.1085, x), Vector((0, 1, 0)), 0.0010, 6, mat="Marquage")
     a.objet(pc)

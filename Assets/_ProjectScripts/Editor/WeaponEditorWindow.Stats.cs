@@ -45,7 +45,8 @@ public partial class WeaponEditorWindow
 
         Section("Accessoires acceptés");
         Mask(so, "acceptedAttachments", "Emplacements", new[] { "Viseur", "Poignée", "Laser", "Grand chargeur" });
-        Mask(so, "acceptedSights", "Familles de viseurs", new[] { "Points rouges", "Holographiques", "Réflex" });
+        // Dans l'ordre des bits de SightFamilies.
+        Mask(so, "acceptedSights", "Familles de viseurs", new[] { "Points rouges", "Holographiques", "Réflex", "Lunettes", "Réflex à grand cadre" });
 
         Section("Le tir se voit");
         Field(so, "shotIsBeam", "Rayon (arme laser), sinon flamme de bouche");

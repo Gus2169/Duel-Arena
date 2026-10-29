@@ -17,7 +17,7 @@ MonoBehaviour:
   role: "slug : une seule balle lourde, \xE0 \xE9pauler"
   modelPrefab: {fileID: 2267903643973397799, guid: f0981ead843020e4f8039258feac85f2, type: 3}
   acceptedAttachments: 15
-  acceptedSights: 7
+  acceptedSights: 23
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 100
   shotsPerSecond: 1

@@ -1,7 +1,7 @@
 """Pistolet PA-05 de Duel Arena (Blender 5.2, low poly).
 
 Un pistolet de service lourd, tenu à deux mains (WeaponModel.pistolHold). Le chargeur est dans la
-poignée, comme celui du raygun du jeu. Hausse à cran et guidon à point clair ; une plaque
+poignée, comme celui du raygun du jeu. Hausse à cran et guidon à point rouge lumineux ; une plaque
 d'adaptation sur la culasse (viseur point rouge) et un rail sous le canon (laser tactique)
 attendent les accessoires.
 
@@ -85,7 +85,7 @@ def culasse(a):
     pc = a.piece("Guidon", "Peinture")
     f = kit.boite(pc, 0.148, 0.156, 0.0835, 0.0932, -0.0016, 0.0016)
     kit.chanfreiner(pc, 0.0004, f)
-    kit.disque(pc, P(0.1479, 0.0912), Vector((0, 1, 0)), 0.0010, 6, mat="Marquage")
+    kit.disque(pc, P(0.1479, 0.0912), Vector((0, 1, 0)), 0.0010, 6, mat="Lueur")   # sur la ligne de mire
     a.objet(pc)
 
 

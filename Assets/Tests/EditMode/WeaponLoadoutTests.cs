@@ -438,4 +438,102 @@ public class WeaponLoadoutTests
         Assert.Less(sprintStart, Sprint, "Le champ de sprint s'installe en douceur.");
         Assert.Greater(sprintStart, Base);
     }
+
+    /// <summary>La mire de chaque arme porte un petit point rouge lumineux là où part la balle (2026-10-29,
+    /// l'utilisateur : « pour indiquer où on tire, comme pour le pistolet ») : sur le guidon, centré sur la ligne de mire
+    /// (le repère « Mire », que la vue subjective met dans l'axe de l'œil), devant l'œil, de 2 mm au plus.</summary>
+    [Test]
+    public void LaMireDeChaqueArme_PorteUnPointRougeSurSaLigneDeVisee()
+    {
+        WeaponController weapon = PrefabWeapon();
+        int sights = 0;
+        for (int slot = 0; slot < weapon.SlotCount; slot++)
+        {
+            WeaponData data = weapon.DataOf(slot);
+            if (data.scopeMagnification > 1f) continue;   // une lunette d'origine, pas de mire
+            GameObject model = data.modelPrefab;
+            Transform front = model.transform.Find("Guidon");
+            Assert.IsNotNull(front, $"{data.Designation} n'a pas de guidon.");
+            Mesh mesh = front.GetComponent<MeshFilter>().sharedMesh;
+            Material[] materials = front.GetComponent<MeshRenderer>().sharedMaterials;
+            int dot = System.Array.FindIndex(materials, m => m != null && m.name.Contains("Lueur"));
+            Assert.GreaterOrEqual(dot, 0, $"{data.Designation} : son guidon n'a pas de point lumineux.");
+
+            Vector3[] vertices = mesh.vertices;
+            int[] triangles = mesh.GetTriangles(dot);
+            Matrix4x4 toModel = model.transform.worldToLocalMatrix * front.localToWorldMatrix;
+            var bounds = new Bounds(toModel.MultiplyPoint3x4(vertices[triangles[0]]), Vector3.zero);
+            foreach (int i in triangles) bounds.Encapsulate(toModel.MultiplyPoint3x4(vertices[i]));
+            Vector3 mire = model.transform.InverseTransformPoint(model.GetComponent<WeaponModel>().Sight.position);
+
+            Assert.Less(Mathf.Abs(bounds.center.x - mire.x), 0.0005f, $"{data.Designation} : le point n'est pas dans l'axe (de côté).");
+            Assert.Less(Mathf.Abs(bounds.center.y - mire.y), 0.0005f,
+                $"{data.Designation} : le point est à {(bounds.center.y - mire.y) * 1000f:0.0} mm de la ligne de mire (en hauteur).");
+            Assert.Greater(bounds.center.z, mire.z, $"{data.Designation} : le point est derrière la mire.");
+            Assert.LessOrEqual(Mathf.Max(bounds.size.x, bounds.size.y), 0.0021f, $"{data.Designation} : le point fait plus de 2 mm.");
+            sights++;
+        }
+        Assert.AreEqual(9, sights, "Garde : les neuf armes à mire ont été vues.");
+    }
+
+    /// <summary>Le point rouge de la mire se voit de l'œil qui vise, au centre exact : rendu dans l'axe de la mire, à la
+    /// distance de l'œil, au champ de 1,5°. Le premier essai (2026-10-29) le posait dans la lame, dont la face arrière est
+    /// inclinée : il était à sa place, et invisible.</summary>
+    [Test]
+    public void LePointRougeDeLaMire_SeVoitDeLOeil_AuCentre()
+    {
+        WeaponController weapon = PrefabWeapon();
+        var target = new RenderTexture(256, 256, 24) { antiAliasing = 1 };
+        var eye = new GameObject("Œil d'essai de la mire");
+        var camera = eye.AddComponent<Camera>();
+        camera.enabled = false;
+        camera.fieldOfView = 1.5f;
+        camera.nearClipPlane = 0.01f;
+        camera.farClipPlane = 3f;
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.backgroundColor = Color.green;
+        camera.targetTexture = target;
+        var read = new Texture2D(256, 256, TextureFormat.RGBA32, false);
+        int sights = 0;
+        try
+        {
+            for (int slot = 0; slot < weapon.SlotCount; slot++)
+            {
+                WeaponData data = weapon.DataOf(slot);
+                if (data.scopeMagnification > 1f) continue;
+                GameObject copy = Object.Instantiate(data.modelPrefab);
+                try
+                {
+                    var model = copy.GetComponent<WeaponModel>();
+                    Transform mire = model.Sight;
+                    eye.transform.SetPositionAndRotation(mire.position - mire.forward * model.AimEyeDistance,
+                                                         Quaternion.LookRotation(mire.forward, mire.up));
+                    camera.Render();
+                    RenderTexture previous = RenderTexture.active;
+                    RenderTexture.active = target;
+                    read.ReadPixels(new Rect(0, 0, 256, 256), 0, 0);
+                    read.Apply();
+                    RenderTexture.active = previous;
+                    int red = 0;
+                    for (int y = 108; y < 148; y++)
+                    for (int x = 108; x < 148; x++)
+                    {
+                        Color.RGBToHSV(read.GetPixel(x, y), out float h, out float s, out float v);
+                        if ((h < 0.05f || h > 0.95f) && s > 0.6f && v > 0.4f) red++;
+                    }
+                    Assert.Greater(red, 60, $"{data.Designation} : le point rouge de sa mire ne se voit pas de l'œil ({red} pixels rouges au centre).");
+                    sights++;
+                }
+                finally { Object.DestroyImmediate(copy); }
+            }
+        }
+        finally
+        {
+            Object.DestroyImmediate(eye);
+            Object.DestroyImmediate(read);
+            target.Release();
+            Object.DestroyImmediate(target);
+        }
+        Assert.AreEqual(9, sights, "Garde : les neuf armes à mire ont été vues.");
+    }
 }

@@ -32,8 +32,8 @@ public class TaserController : NetworkBehaviour
     [Tooltip("De l'appui au contact (s) : le moment où le bras est tendu dans l'animation. Le coup est résolu à cet instant. Plus court, le taser devient un coup sans parade possible ; plus long, il devient lent.")]
     [SerializeField] private float contactDelay = 0.18f;
 
-    [Tooltip("Portée depuis l'œil (m). Bras tendu plus un petit pas en avant.")]
-    [SerializeField] private float range = 2.0f;
+    [Tooltip("Longueur du volume du coup depuis l'œil (m). Avec son rayon, il touche un robot debout jusqu'à 1,44 m entre les deux à 1 m (2,44 m à 2 m : trop loin pour l'utilisateur, 2026-10-29).")]
+    [SerializeField] private float range = 1.0f;
 
     [Tooltip("Rayon du volume balayé (m). Un coup au corps à corps n'exige pas la précision d'une balle.")]
     [SerializeField] private float radius = 0.3f;

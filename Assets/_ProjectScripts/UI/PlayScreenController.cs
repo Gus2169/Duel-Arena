@@ -399,7 +399,7 @@ public class PlayScreenController : MonoBehaviour
             default:
             {
                 SetDetail("ico-target", "STAND DE TIR ET FOSSE",
-                    "Essaie chaque arme et ses accessoires sur quatorze mannequins, de 5 à 60 m, d'un mur à l'autre du stand. À droite du poste de tir, la Fosse, le parcours chronométré, où des cibles se lèvent sur ton passage, hostiles à neutraliser, civils à épargner ; à gauche, la salle de précision, une grande cible ronde que son pupitre envoie de 5 à 50 m. B ouvre la fenêtre des armes, Échap la pause et les Options.",
+                    "Essaie chaque arme et ses accessoires sur dix-sept mannequins, de 5 à 59 m, d'un mur à l'autre du stand. À droite du poste de tir, la Fosse, le parcours chronométré, où des cibles se lèvent sur ton passage, hostiles à neutraliser, civils à épargner ; à gauche, la salle de précision, une grande cible ronde que son pupitre envoie de 5 à 50 m. B ouvre la fenêtre des armes, Échap la pause et les Options.",
                     artwork != null ? artwork.rangeImage : null);
                 AddFact("JOUEURS", "Seul, hors ligne");
                 AddFact("MANNEQUINS", "14, de 5 à 60 m");

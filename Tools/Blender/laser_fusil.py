@@ -215,7 +215,7 @@ def construire(a):
     emetteur(a)
     montages(a)
     ca.hausse(a, AV_HAUSSE, 0.1695, H_VISEE, cotes=6)
-    ca.guidon(a, AV_GUIDON, 0.1675, H_VISEE, mat_pointe="Lueur")
+    ca.guidon(a, AV_GUIDON, 0.1675, H_VISEE)
     crosse(a)
     rafistolages(a)
     marquages(a)

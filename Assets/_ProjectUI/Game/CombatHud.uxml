@@ -1,0 +1,34 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:da="DuelArena.UI">
+    <!-- Le HUD de combat du joueur (2026-10-29, en UI Toolkit à la place de l'OnGUI provisoire) : la lunette
+         d'origine d'un fusil de précision, les parasites quand on est touché, le réticule et le marqueur de
+         touche, l'invite du rechargement, les munitions ou la chaleur. Piloté par CrosshairUI, qui en fait un
+         document à lui, sous ceux des scènes : le même dans l'arène et au stand.
+         L'ordre compte : chaque bloc se dessine par-dessus les précédents. Les parasites passent sur la lunette :
+         plus forts sur les bords, ils disparaissaient sous son noir. -->
+    <ui:Style src="../Shared/Theme.uss" />
+    <ui:Style src="GameHud.uss" />
+    <ui:Style src="CombatHud.uss" />
+
+    <ui:VisualElement name="combatHud" class="hud-root da-vars hidden" picking-mode="Ignore">
+        <da:ScopeOverlay name="scope" class="combat-layer hidden" picking-mode="Ignore" />
+        <da:DamageStaticOverlay name="damageStatic" class="combat-layer hidden" picking-mode="Ignore" />
+        <da:CombatReticle name="reticle" class="combat-layer" picking-mode="Ignore" />
+        <ui:Label name="emptyHint" class="combat-hint hidden" picking-mode="Ignore" />
+
+        <!-- En face de la vie (GameHud), sur le même fond sombre : le nom de l'arme, ses balles, ou la chaleur d'une
+             arme laser. -->
+        <ui:VisualElement name="ammoPanel" class="combat-ammo hidden" picking-mode="Ignore">
+            <ui:Label name="weaponName" class="combat-ammo__name" picking-mode="Ignore" />
+            <ui:VisualElement name="ammoRow" class="combat-ammo__row" picking-mode="Ignore">
+                <ui:Label name="ammoValue" class="combat-ammo__value" picking-mode="Ignore" />
+                <ui:Label name="ammoSize" class="combat-ammo__size" picking-mode="Ignore" />
+            </ui:VisualElement>
+            <ui:VisualElement name="heatRow" class="combat-heat hidden" picking-mode="Ignore">
+                <ui:Label name="heatLabel" class="combat-heat__label" picking-mode="Ignore" />
+                <ui:VisualElement class="combat-heat__bar" picking-mode="Ignore">
+                    <ui:VisualElement name="heatFill" class="combat-heat__fill" picking-mode="Ignore" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

@@ -1,0 +1,122 @@
+/* Le HUD de combat du joueur (2026-10-29, CombatHud.uxml, piloté par CrosshairUI). Les munitions reprennent le
+   panneau de la vie (GameHud.uss) : même fond sombre, même chiffre, en bas à droite. */
+
+.combat-layer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* L'invite du rechargement, sous le réticule : CrosshairUI la place sous le point visé. */
+.combat-hint {
+    position: absolute;
+    width: 300px;
+    margin: 0;
+    padding: 0;
+    font-size: 26px;
+    -unity-font-style: bold;
+    -unity-text-align: upper-center;
+    color: rgb(255, 110, 90);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.75);
+}
+
+.combat-ammo {
+    position: absolute;
+    right: 28px;
+    bottom: 24px;
+    min-width: 200px;
+    padding: 6px 14px 12px 14px;
+    align-items: flex-end;
+    background-color: rgba(10, 13, 17, 0.5);
+    border-radius: 6px;
+}
+
+.combat-ammo__name {
+    font-size: 18px;
+    -unity-font-style: bold;
+    letter-spacing: 2px;
+    color: rgba(240, 242, 245, 0.85);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.6);
+    padding: 0;
+    margin: 0;
+}
+
+.combat-ammo__row {
+    flex-direction: row;
+    align-items: flex-end;
+}
+
+.combat-ammo__value {
+    font-size: 48px;
+    -unity-font-style: bold;
+    color: rgb(240, 242, 245);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.7);
+    padding: 0;
+    margin: 0;
+}
+
+.combat-ammo__size {
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: rgba(240, 242, 245, 0.7);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.6);
+    margin-left: 8px;
+    margin-bottom: 9px;
+    padding: 0;
+}
+
+.combat-ammo--empty .combat-ammo__value {
+    color: rgb(255, 110, 90);
+}
+
+/* La chaleur d'une arme laser, à la place des balles (GDD § 15) : la jauge se remplit en tirant, se vide en
+   refroidissant, rouge surchauffée. */
+.combat-heat {
+    width: 200px;
+    align-items: flex-end;
+    margin-top: 4px;
+}
+
+.combat-heat__label {
+    font-size: 20px;
+    -unity-font-style: bold;
+    letter-spacing: 2px;
+    color: rgba(240, 242, 245, 0.85);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.6);
+    margin: 0 0 6px 0;
+    padding: 0;
+}
+
+.combat-heat__bar {
+    width: 100%;
+    height: 12px;
+    background-color: rgba(10, 13, 17, 0.6);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.28);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.combat-heat__fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    background-color: rgb(240, 242, 245);
+}
+
+.combat-heat--overheated .combat-heat__label {
+    color: rgb(255, 110, 90);
+}
+
+.combat-heat--overheated .combat-heat__fill {
+    background-color: rgb(255, 110, 90);
+}

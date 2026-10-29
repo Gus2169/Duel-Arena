@@ -143,8 +143,13 @@ MonoBehaviour:
   title: "R\xE9flex A"
   category: 1
   sight: {fileID: 881703927429534456}
-  aimEyeDistance: 0.08
+  aimEyeDistance: 0.0489
   lens: {fileID: 3319353569069770211}
+  reticleLabel: triangle et traits de niveau
+  magnification: 1
+  eyepiece: []
+  pistolLens: {fileID: 2100000, guid: b77405111e08a674c90386149ed3294e, type: 2}
+  pistolReticleLabel: triangle
   beam: {fileID: 0}
   leftHand: {fileID: 0}
   weaponDesignation: 
@@ -153,6 +158,7 @@ MonoBehaviour:
   - Guidon
   - Guidon_Base
   - Points_Hausse
+  - Lunette_Standard
 --- !u!114 &1472265745725789989
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -168,50 +174,56 @@ MonoBehaviour:
   pieces:
   - renderer: {fileID: 1332122559721522255}
     materials:
-    - {fileID: 2100000, guid: f7951b83a0f023448b186bdffe56988c, type: 2}
-    - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
     - {fileID: 2100000, guid: 528efa89eed443143ac79c7d1f68d328, type: 2}
+    - {fileID: 2100000, guid: 58a5ba358cd165644a0600226ae1962b, type: 2}
+    - {fileID: 2100000, guid: 61a5a507df549f14cbd06d5a839c2c20, type: 2}
     - {fileID: 2100000, guid: f7951b83a0f023448b186bdffe56988c, type: 2}
-    - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
+    - {fileID: 2100000, guid: f66882939cfe3944d9ffe73d8dc546e1, type: 2}
     - {fileID: 2100000, guid: 7505537d4dccb264f95f537bb8fa3e60, type: 2}
+    - {fileID: 2100000, guid: 58a5ba358cd165644a0600226ae1962b, type: 2}
+    - {fileID: 2100000, guid: fc70b25d69acf5546b856f9a2aa33594, type: 2}
     - {fileID: 2100000, guid: f7951b83a0f023448b186bdffe56988c, type: 2}
-    - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
+    - {fileID: 2100000, guid: f66882939cfe3944d9ffe73d8dc546e1, type: 2}
     - {fileID: 2100000, guid: 61a28168c9443b844898ce6278021526, type: 2}
+    - {fileID: 2100000, guid: 58a5ba358cd165644a0600226ae1962b, type: 2}
+    - {fileID: 2100000, guid: 4e5005f616b8eb34fb9ebfb36d0ad7ac, type: 2}
     - {fileID: 2100000, guid: f7951b83a0f023448b186bdffe56988c, type: 2}
-    - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
+    - {fileID: 2100000, guid: f66882939cfe3944d9ffe73d8dc546e1, type: 2}
     - {fileID: 2100000, guid: c75924374cd6dd545b1de5ef75bd7741, type: 2}
+    - {fileID: 2100000, guid: 58a5ba358cd165644a0600226ae1962b, type: 2}
+    - {fileID: 2100000, guid: 61a5a507df549f14cbd06d5a839c2c20, type: 2}
     - {fileID: 2100000, guid: f7951b83a0f023448b186bdffe56988c, type: 2}
-    - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
+    - {fileID: 2100000, guid: f66882939cfe3944d9ffe73d8dc546e1, type: 2}
     - {fileID: 2100000, guid: 18bed21e5e6f2d7489d99776924f8cf4, type: 2}
-    - {fileID: 2100000, guid: 89aa1534b9b3afe4986dd26b0ff918df, type: 2}
-    - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
+    - {fileID: 2100000, guid: 58a5ba358cd165644a0600226ae1962b, type: 2}
+    - {fileID: 2100000, guid: bd78ce0fa5a336f49a3d0665392d7416, type: 2}
+    - {fileID: 2100000, guid: f7951b83a0f023448b186bdffe56988c, type: 2}
+    - {fileID: 2100000, guid: f66882939cfe3944d9ffe73d8dc546e1, type: 2}
     - {fileID: 2100000, guid: 0d33a3ecae003fc46b8483d8a0b41162, type: 2}
+    - {fileID: 2100000, guid: 58a5ba358cd165644a0600226ae1962b, type: 2}
+    - {fileID: 2100000, guid: 9a4af63ca07f0c94eb671c1b908ddfcc, type: 2}
+    - {fileID: 2100000, guid: 89aa1534b9b3afe4986dd26b0ff918df, type: 2}
+    - {fileID: 2100000, guid: f66882939cfe3944d9ffe73d8dc546e1, type: 2}
   - renderer: {fileID: 7684112136738301265}
     materials:
     - {fileID: 2100000, guid: 47b9d0cf9b67f2d41996f49073c424d4, type: 2}
     - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
     - {fileID: 2100000, guid: 528efa89eed443143ac79c7d1f68d328, type: 2}
-    - {fileID: 2100000, guid: 7158ed543d1630f4d9c38c9d89c06977, type: 2}
     - {fileID: 2100000, guid: 47b9d0cf9b67f2d41996f49073c424d4, type: 2}
     - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
     - {fileID: 2100000, guid: 7505537d4dccb264f95f537bb8fa3e60, type: 2}
-    - {fileID: 2100000, guid: 7158ed543d1630f4d9c38c9d89c06977, type: 2}
     - {fileID: 2100000, guid: 674b30f3e6d203c47a8047d1c504f862, type: 2}
     - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
     - {fileID: 2100000, guid: 61a28168c9443b844898ce6278021526, type: 2}
-    - {fileID: 2100000, guid: 7158ed543d1630f4d9c38c9d89c06977, type: 2}
     - {fileID: 2100000, guid: 47b9d0cf9b67f2d41996f49073c424d4, type: 2}
     - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
     - {fileID: 2100000, guid: c75924374cd6dd545b1de5ef75bd7741, type: 2}
-    - {fileID: 2100000, guid: 7158ed543d1630f4d9c38c9d89c06977, type: 2}
     - {fileID: 2100000, guid: 61d3812e20351384b8077219d480e48c, type: 2}
     - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
     - {fileID: 2100000, guid: 18bed21e5e6f2d7489d99776924f8cf4, type: 2}
-    - {fileID: 2100000, guid: 7158ed543d1630f4d9c38c9d89c06977, type: 2}
     - {fileID: 2100000, guid: 1eb74157aaf416d409a0751044653ad9, type: 2}
     - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
     - {fileID: 2100000, guid: 0d33a3ecae003fc46b8483d8a0b41162, type: 2}
-    - {fileID: 2100000, guid: 7158ed543d1630f4d9c38c9d89c06977, type: 2}
   shown: 0
 --- !u!1 &825274435698544604
 GameObject:
@@ -279,9 +291,11 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: f7951b83a0f023448b186bdffe56988c, type: 2}
-  - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
   - {fileID: 2100000, guid: 528efa89eed443143ac79c7d1f68d328, type: 2}
+  - {fileID: 2100000, guid: 58a5ba358cd165644a0600226ae1962b, type: 2}
+  - {fileID: 2100000, guid: 61a5a507df549f14cbd06d5a839c2c20, type: 2}
+  - {fileID: 2100000, guid: f7951b83a0f023448b186bdffe56988c, type: 2}
+  - {fileID: 2100000, guid: f66882939cfe3944d9ffe73d8dc546e1, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -330,7 +344,7 @@ Transform:
   m_GameObject: {fileID: 1244011447277899771}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0, y: 0.028999997, z: -0.022000002}
+  m_LocalPosition: {x: -0, y: 0.028499998, z: -0.022000002}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -405,7 +419,6 @@ MeshRenderer:
   - {fileID: 2100000, guid: 47b9d0cf9b67f2d41996f49073c424d4, type: 2}
   - {fileID: 2100000, guid: 5622765a39d516e4f83fca57f9d9e1bc, type: 2}
   - {fileID: 2100000, guid: 528efa89eed443143ac79c7d1f68d328, type: 2}
-  - {fileID: 2100000, guid: 7158ed543d1630f4d9c38c9d89c06977, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

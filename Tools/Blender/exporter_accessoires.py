@@ -11,8 +11,10 @@ Pour chaque accessoire, dans <dossier>/<CODE>/ (PRA, LT1, PV1, CGFA07...) :
   réticule dessiné des rendus de contrôle n'y est pas.
 - <CODE>_Occlusion.png : l'occlusion de ses pièces, cuite sans la vitre (elle n'arrête pas la lumière).
 - <CODE>_Finitions.json : la fiche des armes (matériaux de chaque finition), plus ce qu'Unity lit de
-  l'accessoire : sa rubrique (Viseur, Laser, Poignee, Chargeur), sa vitre, et ses données (réticule et
-  sa couleur, teinte de la vitre, hauteur de l'axe ; arme d'un chargeur...).
+  l'accessoire : sa rubrique (Viseur, Laser, Poignee, Chargeur), sa vitre, l'œilleton d'une lunette, et
+  ses données (réticule et sa couleur, teinte de la vitre, hauteur de l'axe, distance de l'œil,
+  grossissement ; arme d'un chargeur...).
+- <CODE>_Reticule.png, pour un viseur : l'image de son réticule (viseurs.ecrire_reticule).
 
 L'importeur d'Unity (Duel Arena > Armes > Importer les armes de Blender) en fait les préfabs et le
 catalogue des accessoires.
@@ -93,9 +95,14 @@ def exporter(a, args):
     ex.exporter_fbx(scene, a, objets, os.path.join(dossier, f"{a.prefixe}_Modele.fbx"))
 
     triangles = sum(ex.ca_kit().triangles(o) for o in objets_mesh)
+    if hasattr(a, "avant_fiche"):    # ce que l'accessoire écrit de plus (l'image du réticule d'un viseur)
+        a.avant_fiche(dossier)
     fiche = {
         "code": a.code, "racine": a.prefixe, "titre": a.titre, "categorie": a.categorie,
-        "vitres": [ex.nom_final(a, o) for o in vitres], "donnees": a.donnees,
+        "vitres": [ex.nom_final(a, o) for o in vitres],
+        # l'œilleton d'une lunette : seul visible en visée, la vue grossie (FirstPersonView)
+        "oculaire": [ex.nom_final(a, o) for o in getattr(a, "oculaire", [])],
+        "donnees": a.donnees,
         "triangles": triangles, "pieces": len(objets_mesh), "resolution": args.resolution,
         "finitions": ex.FINITIONS, "materiaux": materiaux, "remplacements": remplacements,
     }

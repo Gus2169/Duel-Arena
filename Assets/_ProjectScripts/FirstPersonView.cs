@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -114,6 +115,8 @@ public class FirstPersonView : NetworkBehaviour
     private WeaponData shownWeapon;   // l'arme dont le modèle est en main sur la copie
     private WeaponModel shownModel;   // … et ce modèle
     private WeaponAttachment shownSight; // … et le viseur qui y est monté
+    private WeaponAttachment eyepieceOnly;   // la lunette dont seul l'œilleton se voit (dans sa vue grossie)
+    private readonly List<Renderer> tubeHidden = new List<Renderer>();
     private PlayerWeaponLooks weaponLooks;
     private PlayerChassis chassis;
     private PlayerWeaponAttachments weaponAttachments;
@@ -145,14 +148,51 @@ public class FirstPersonView : NetworkBehaviour
     public bool SightOnAxis => view != null && !hidden && !spectatorMode && aimBlend > 0.9f && shownModel != null
                                && (shownSight != null || (viewSight != null && viewSight.gameObject == shownModel.gameObject));
 
+    /// <summary>Par où l'on regarde une fois l'arme épaulée.</summary>
+    public enum ScopeView
+    {
+        /// <summary>La mire de l'arme, ou un viseur sans grossissement.</summary>
+        None,
+        /// <summary>La lunette d'origine d'une arme de précision, dessinée par le HUD.</summary>
+        BuiltIn,
+        /// <summary>L'œilleton d'une lunette d'accessoire (2026-10-28).</summary>
+        Eyepiece,
+    }
+
+    /// <summary>Par où l'on regarde avec l'arme `weapon` et le viseur `sight` qui y est monté (null : aucun) :
+    /// une lunette d'accessoire remplace la lunette d'origine (AttachmentMount la cache), un viseur sans
+    /// grossissement ne grossit rien. Sans état, testée.</summary>
+    public static ScopeView ScopeViewOf(WeaponData weapon, WeaponAttachment sight)
+    {
+        if (sight != null) return sight.Magnification > 1f ? ScopeView.Eyepiece : ScopeView.None;
+        return weapon != null && weapon.scopeMagnification > 1f ? ScopeView.BuiltIn : ScopeView.None;
+    }
+
+    /// <summary>Le grossissement de la vue par où l'on regarde (1 sans lunette). Sans état, testée.</summary>
+    public static float ScopeMagnification(WeaponData weapon, WeaponAttachment sight) => ScopeViewOf(weapon, sight) switch
+    {
+        ScopeView.BuiltIn => weapon.scopeMagnification,
+        ScopeView.Eyepiece => sight.Magnification,
+        _ => 1f,
+    };
+
+    /// <summary>L'arme est épaulée au point d'entrer dans sa lunette (pas pendant un rechargement).</summary>
+    private bool InScope => view != null && !hidden && !spectatorMode && aimBlend >= scopeInThreshold
+                            && weaponController != null && !weaponController.IsReloading;
+
     /// <summary>Dans la lunette plein écran du sniper (2026-10-11) : la vue zoome du grossissement de
     /// l'arme, l'arme disparaît, la lunette couvre l'écran (CrosshairUI). Comme dans Call of Duty,
-    /// seulement une fois l'arme épaulée.</summary>
-    public bool Scoped => view != null && !hidden && !spectatorMode && shownWeapon != null && shownWeapon.scopeMagnification > 1f
-                          && aimBlend >= scopeInThreshold && weaponController != null && !weaponController.IsReloading;
+    /// seulement une fois l'arme épaulée. Pas quand une lunette d'accessoire la remplace.</summary>
+    public bool Scoped => InScope && ScopeViewOf(shownWeapon, shownSight) == ScopeView.BuiltIn;
+
+    /// <summary>Dans une lunette d'accessoire (2026-10-28 : les quatre lunettes des armes de précision) : la
+    /// vue et les bras grossissent de son grossissement, et seul son œilleton reste visible, comme si son
+    /// optique le remplissait (le reste du tube boucherait la vue) ; le réticule de sa vitre grossit avec la
+    /// vue. Comme la lunette d'origine, une fois l'arme épaulée.</summary>
+    public bool EyepieceScoped => InScope && ScopeViewOf(shownWeapon, shownSight) == ScopeView.Eyepiece;
 
     /// <summary>Grossissement de la vue : celui de la lunette quand on y est, 1 sinon.</summary>
-    public float ScopeZoom => Scoped ? shownWeapon.scopeMagnification : 1f;
+    public float ScopeZoom => InScope ? ScopeMagnification(shownWeapon, shownSight) : 1f;
 
     /// <summary>Sensibilité de la souris : réduite dans la lunette comme le champ de vision, pour que
     /// le réticule se déplace à l'écran comme sans zoom.</summary>
@@ -403,14 +443,35 @@ public class FirstPersonView : NetworkBehaviour
         if (striking && viewLeftUpperArm != null && viewFist != null)
             AimStrike(viewLeftUpperArm, viewFist, playerCamera.transform.TransformPoint(strikeFistTarget), dip);
 
-        // Dans la lunette, l'arme disparaît : la lunette dessinée par le HUD prend tout l'écran.
+        // Dans la lunette d'origine, l'arme disparaît : la lunette dessinée par le HUD prend tout l'écran. Dans
+        // une lunette d'accessoire, les bras grossissent avec la vue, et seul son œilleton reste.
+        bool eyepiece = EyepieceScoped;
         if (armsCamera != null)
         {
-            armsCamera.fieldOfView = armsFieldOfView;
+            armsCamera.fieldOfView = eyepiece ? PlayerCameraLook.ZoomedFov(armsFieldOfView, shownSight.Magnification) : armsFieldOfView;
             armsCamera.enabled = !Scoped;
         }
+        ShowEyepieceOnly(eyepiece ? shownSight : null);
         bool screenWeapon = viewSight != null && viewSight.gameObject.activeInHierarchy;
         if (viewSight != null) viewSight.UpdateScreen(playerCamera, armsCamera, screenWeapon ? aimBlend : 0f);
+    }
+
+    /// <summary>Dans une lunette d'accessoire, ne montre que son œilleton et sa vitre (le reste de son tube
+    /// boucherait la vue grossie) ; ailleurs, la rend entière. Ne rallume que ce qu'elle a éteint.</summary>
+    private void ShowEyepieceOnly(WeaponAttachment scope)
+    {
+        if (scope == eyepieceOnly) return;
+        foreach (Renderer r in tubeHidden)
+            if (r != null) r.forceRenderingOff = false;
+        tubeHidden.Clear();
+        eyepieceOnly = scope;
+        if (scope == null) return;
+        foreach (Renderer r in scope.GetComponentsInChildren<Renderer>(true))
+        {
+            if (r.forceRenderingOff || scope.ShownWhenScoped(r)) continue;
+            r.forceRenderingOff = true;
+            tubeHidden.Add(r);
+        }
     }
 
     /// <summary>

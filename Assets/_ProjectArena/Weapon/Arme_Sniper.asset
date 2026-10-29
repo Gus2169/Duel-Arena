@@ -16,8 +16,8 @@ MonoBehaviour:
   family: 1
   role: "\xE0 verrou, lunette \xD74, la r\xE9f\xE9rence"
   modelPrefab: {fileID: 2057814579988173868, guid: cfd87888a032a4143b13a715a7a5016b, type: 3}
-  acceptedAttachments: 14
-  acceptedSights: 7
+  acceptedAttachments: 15
+  acceptedSights: 8
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 100
   shotsPerSecond: 0.8

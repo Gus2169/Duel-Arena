@@ -1742,6 +1742,14 @@ public class WeaponController : NetworkBehaviour
                     Vector3 point = firstHitPoint.TryGetValue(pair.Key, out Vector3 p) ? p : pair.Key.transform.position + Vector3.up;
                     death.ServerNotifyKilled(point, KillImpulse(data, shot, pair.Value));
                 }
+
+                // Le robot touché voit d'où vient le tir, comme un caillou (2026-10-29, HitIndicatorHud) : le
+                // serveur lui envoie le point du tir. Pas au coup qui tue : la vue du mort quitte ses yeux.
+                if (!pair.Key.IsDead && pair.Key.TryGetComponent(out PlayerLocomotion victim))
+                {
+                    WeaponController victimWeapon = victim.GetComponentInChildren<WeaponController>();
+                    if (victimWeapon != null) victimWeapon.ServerNotifyHitTaken(origin);
+                }
             }
 
             // Statistiques du match (GDD § 14), comptées ici, par le serveur, et seulement pendant la
@@ -2555,6 +2563,36 @@ public class WeaponController : NetworkBehaviour
     {
         if (!IsOwner) return;
         OnHitConfirmed?.Invoke(kind);
+    }
+
+    private int hitTakenCount;
+    private Vector3 lastHitTakenFrom;
+
+    /// <summary>Chez le joueur : les tirs qui l'ont touché sans le tuer depuis qu'il est apparu (2026-10-29). Sa
+    /// vue montre d'où ils viennent, comme un caillou (HitIndicatorHud, qui sonde ce compte).</summary>
+    public int HitTakenCount => hitTakenCount;
+
+    /// <summary>Chez le joueur : d'où partait le dernier tir qui l'a touché (le point du tir, pas le tireur s'il a
+    /// bougé depuis).</summary>
+    public Vector3 LastHitTakenFrom => lastHitTakenFrom;
+
+    /// <summary>Serveur : un tir parti de `from` vient de toucher ce robot ; il le voit, chez lui seulement
+    /// (catégorie C, déclenchée par le serveur, comme SpectatorController.RockHitClientRpc).</summary>
+    public void ServerNotifyHitTaken(Vector3 from)
+    {
+        if (!IsServer || !IsSpawned) return;
+        HitTakenClientRpc(from, new ClientRpcParams
+        {
+            Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
+        });
+    }
+
+    [ClientRpc]
+    private void HitTakenClientRpc(Vector3 from, ClientRpcParams clientRpcParams = default)
+    {
+        if (!IsOwner) return;
+        hitTakenCount++;
+        lastHitTakenFrom = from;
     }
 
     /// <summary>Ce que pousse une balle (ou un plomb) sur une épave, en N·s : de quoi la faire

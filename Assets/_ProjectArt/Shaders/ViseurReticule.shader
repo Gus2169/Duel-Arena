@@ -1,4 +1,5 @@
-// Vitre de viseur avec réticule « à l'infini » (2026-10-09 ; formes de Rainbow Six le 2026-10-16).
+// Vitre de viseur avec réticule « à l'infini » (2026-10-09 ; dessiné d'après une image depuis la refonte
+// des viseurs, 2026-10-28).
 //
 // La réticule n'est pas peinte sur la vitre : elle est calculée à partir de la DIRECTION du regard.
 // Chaque pixel de la vitre regarde dans une direction ; la réticule s'allume quand cette direction
@@ -12,14 +13,11 @@
 //   le réticule doit marquer le centre de l'écran, même quand l'arme balance au rythme des pas.
 //   FirstPersonView pose ce mode sur la copie des bras.
 //
-// Les formes (_Forme) sont celles de commun_accessoires.FORMES_RETICULE, dans le même ordre et aux
-// mêmes proportions que le réticule des rendus de contrôle de Blender, rapportées à _Rayon (le
-// rayon du cercle du réticule, ou sa demi-largeur) :
-//   0 point, 1 cercle et point, 2 cercle et chevron, 3 losange et point, 4 tirets et point,
-//   5 cercle et croix, 6 triangle, 7 tirets et chevron.
-// Les traits ont l'épaisseur _Trait, quelle que soit la taille du réticule. Le chevron et le
-// triangle visent par leur pointe, posée au centre exact (2026-10-26 : la pointe du chevron était
-// au-dessus du point visé, le triangle centré sur lui).
+// Le réticule vient d'une image (_Reticule, faite par Tools/Blender/viseurs.py d'après le même motif que
+// ses rendus) : la distance signée au réticule, en milliradians autour du point visé, au centre de
+// l'image ; rouge, les traits qui luisent ; vert, les traits gravés, noirs (ceux des lunettes). Codée sur
+// 0,5 ± 0,5 pour ±_Plage, l'image couvrant ±_Etendue. Le bord se tire de la distance, net à toute taille :
+// une lunette grossit la vue, et le réticule avec elle (ses milliradians sont ceux de la scène).
 //
 // Unités : milliradians (1 mrad = 1 cm à 10 m). Purement visuel, catégorie C.
 Shader "DuelArena/ViseurReticule"
@@ -29,9 +27,9 @@ Shader "DuelArena/ViseurReticule"
         _CouleurVitre ("Teinte de la vitre (alpha = opacité)", Color) = (0.45, 0.72, 0.80, 0.10)
         _CouleurReticule ("Couleur de la réticule", Color) = (1.0, 0.16, 0.10, 1.0)
         _Intensite ("Intensité de la réticule", Float) = 4
-        _Forme ("Forme (0 à 7, voir l'en-tête)", Float) = 0
-        _Rayon ("Rayon du réticule (mrad) : son cercle, ou sa demi-largeur", Float) = 40
-        _Trait ("Épaisseur des traits (mrad)", Float) = 3
+        [NoScaleOffset] _Reticule ("Image du réticule (distances : rouge lumineux, vert gravé)", 2D) = "white" {}
+        _Etendue ("Demi-largeur de l'image (mrad)", Float) = 60
+        _Plage ("Distance codée de part et d'autre du bord (mrad)", Float) = 6
         _Douceur ("Douceur minimale du bord (mrad)", Float) = 0.2
         _Reflet ("Reflet sur les bords de la vitre", Range(0, 1)) = 0.35
         [Toggle] _AxeCamera ("Réticule sur l'axe de la caméra (vue subjective)", Float) = 0
@@ -60,13 +58,14 @@ Shader "DuelArena/ViseurReticule"
                 half4 _CouleurVitre;
                 half4 _CouleurReticule;
                 float _Intensite;
-                float _Forme;
-                float _Rayon;
-                float _Trait;
+                float _Etendue;
+                float _Plage;
                 float _Douceur;
                 float _Reflet;
                 float _AxeCamera;
             CBUFFER_END
+            TEXTURE2D(_Reticule);
+            SAMPLER(sampler_Reticule);
 
             struct Attributes
             {
@@ -91,87 +90,15 @@ Shader "DuelArena/ViseurReticule"
                 return output;
             }
 
-            // Distances signées (négatives à l'intérieur), dans les unités du réticule (_Rayon = 1).
-            float Disque(float2 p, float r)
+            // Les distances signées (mrad, négatives dans le réticule) aux traits qui luisent (x) et aux
+            // traits gravés (y), à l'écart `ecart` (mrad) du point visé. Hors de l'image, loin de tout.
+            float2 Distances(float2 ecart)
             {
-                return length(p) - r;
-            }
-
-            float Cercle(float2 p, float r, float demiLargeur)
-            {
-                return abs(length(p) - r) - demiLargeur;
-            }
-
-            // Un trait à bouts carrés de a à b, comme commun_accessoires.trait.
-            float Trait(float2 p, float2 a, float2 b, float demiLargeur)
-            {
-                float2 ab = b - a;
-                float longueur = length(ab);
-                float2 axe = ab / max(longueur, 1e-5);
-                float2 ap = p - (a + b) * 0.5;
-                float2 q = abs(float2(dot(ap, axe), dot(ap, float2(-axe.y, axe.x)))) - float2(longueur * 0.5, demiLargeur);
-                return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
-            }
-
-            // Triangle plein (Inigo Quilez, sdTriangle).
-            float Triangle(float2 p, float2 p0, float2 p1, float2 p2)
-            {
-                float2 e0 = p1 - p0, e1 = p2 - p1, e2 = p0 - p2;
-                float2 v0 = p - p0, v1 = p - p1, v2 = p - p2;
-                float2 pq0 = v0 - e0 * saturate(dot(v0, e0) / dot(e0, e0));
-                float2 pq1 = v1 - e1 * saturate(dot(v1, e1) / dot(e1, e1));
-                float2 pq2 = v2 - e2 * saturate(dot(v2, e2) / dot(e2, e2));
-                float s = sign(e0.x * e2.y - e0.y * e2.x);
-                float2 d = min(min(float2(dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x)),
-                                   float2(dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x))),
-                                   float2(dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x)));
-                return -sqrt(d.x) * sign(d.y);
-            }
-
-            // Le chevron (commun_accessoires.chevron) : un « ^ » dont la pointe est le point visé, en
-            // (0, 0). Ses branches descendent de `chute` en s'écartant de `demi`, d'épaisseur `ep` ; leur
-            // face extérieure passe par la pointe, leurs bouts sont coupés d'équerre.
-            float Chevron(float2 p, float demi, float chute, float ep)
-            {
-                float2 q = float2(abs(p.x), p.y);                  // la branche droite, par symétrie
-                float longueur = length(float2(demi, chute));
-                float2 le_long = float2(demi, -chute) / longueur;  // de la pointe vers le bout
-                float2 normale = float2(chute, demi) / longueur;   // vers l'extérieur du « ^ »
-                float s = dot(q, normale);                         // 0 sur la face extérieure
-                return max(max(s, -ep - s), dot(q, le_long) - longueur);
-            }
-
-            float Tirets(float2 p, float demiLargeur)
-            {
-                return min(Trait(p, float2(0.32, 0.0), float2(0.95, 0.0), demiLargeur),
-                           Trait(p, float2(-0.32, 0.0), float2(-0.95, 0.0), demiLargeur));
-            }
-
-            // `ep` : l'épaisseur des traits, dans les unités du réticule (_Trait / _Rayon).
-            float Reticule(float2 p, int forme, float ep)
-            {
-                float d = 1e5;
-                if (forme == 0) d = Disque(p, 0.13);
-                if (forme == 1 || forme == 3 || forme == 4 || forme == 5) d = Disque(p, 0.07);
-                if (forme == 1 || forme == 2 || forme == 5) d = min(d, Cercle(p, 1.0, ep * 0.5));
-                if (forme == 5)
-                {
-                    float2 q = abs(p);   // les quatre branches de la croix, par symétrie
-                    d = min(d, Trait(q, float2(0.62, 0.0), float2(0.86, 0.0), ep * 0.5));
-                    d = min(d, Trait(q, float2(0.0, 0.62), float2(0.0, 0.86), ep * 0.5));
-                }
-                if (forme == 3)
-                {
-                    float2 q = abs(p);   // le losange : un côté, par symétrie
-                    d = min(d, Trait(q, float2(0.0, 0.75), float2(0.75, 0.0), ep * 0.5));
-                }
-                if (forme == 4 || forme == 7) d = min(d, Tirets(p, ep * 1.3 * 0.5));
-                // Les chevrons, aux proportions de commun_accessoires.CHEVRONS.
-                if (forme == 2) d = min(d, Chevron(p, 0.22, 0.18, ep));
-                if (forme == 7) d = min(d, Chevron(p, 0.20, 0.16, ep));
-                // Plein, sa pointe en haut au point visé ; _Rayon est sa demi-largeur.
-                if (forme == 6) d = Triangle(p, float2(0.0, 0.0), float2(-1.0, -1.6), float2(1.0, -1.6));
-                return d;
+                float etendue = max(_Etendue, 1e-3);
+                float2 uv = 0.5 + ecart / (2.0 * etendue);
+                float2 d = (SAMPLE_TEXTURE2D(_Reticule, sampler_Reticule, uv).rg - 0.5) * (2.0 * _Plage);
+                float dehors = step(0.5, max(abs(uv.x - 0.5), abs(uv.y - 0.5)));
+                return lerp(d, float2(_Plage, _Plage), dehors);
             }
 
             half4 frag(Varyings input) : SV_Target
@@ -198,18 +125,21 @@ Shader "DuelArena/ViseurReticule"
                 // Calculé sans branche : la douceur du bord lit ses dérivées d'un pixel à l'autre.
                 float profondeur = dot(regard, avant);
                 float2 ecart = float2(dot(regard, droite), dot(regard, haut)) / max(profondeur, 1e-3) * 1000.0;
-                float rayon = max(_Rayon, 1e-3);
-                float d = Reticule(ecart / rayon, (int)round(_Forme), max(_Trait, 1e-3) / rayon) * rayon;
-                float douceur = max(_Douceur, fwidth(d));
-                float reticule = (1.0 - smoothstep(-douceur, douceur, d)) * step(0.0, profondeur);
+                float2 d = Distances(ecart);
+                float2 douceur = max(float2(_Douceur, _Douceur), fwidth(d));
+                float devant = step(0.0, profondeur);
+                float reticule = (1.0 - smoothstep(-douceur.x, douceur.x, d.x)) * devant;
+                float gravure = (1.0 - smoothstep(-douceur.y, douceur.y, d.y)) * devant * (1.0 - reticule);
 
                 // Un léger reflet quand on regarde la vitre de biais : elle se lit comme du verre.
                 float biais = 1.0 - saturate(abs(dot(normalize(input.normalWS), -regard)));
                 half vitre = saturate(_CouleurVitre.a + biais * _Reflet * 0.5);
                 // Le réticule couvre ce qu'il y a derrière lui : ajouté à la lumière d'un mur blanc ou
-                // du ciel, il virait au rose (vu à deux instances le 2026-10-16). Il reste rouge.
-                half alpha = saturate(vitre + reticule);
-                half3 couleur = _CouleurVitre.rgb * vitre * (1.0 - reticule) + _CouleurReticule.rgb * (_Intensite * reticule);
+                // du ciel, il virait au rose (vu à deux instances le 2026-10-16). Il reste rouge. Les
+                // traits gravés sont noirs : ils couvrent, sans lumière.
+                half couvert = saturate(reticule + gravure);
+                half alpha = saturate(vitre + couvert);
+                half3 couleur = _CouleurVitre.rgb * vitre * (1.0 - couvert) + _CouleurReticule.rgb * (_Intensite * reticule);
                 return half4(couleur, alpha);
             }
             ENDHLSL

@@ -1,0 +1,82 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: L25B_Peinture
+  m_Shader: {fileID: 4800000, guid: b6fc440ccea30f74a8257c031041610b, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _Occlusion:
+        m_Texture: {fileID: 2800000, guid: 5453a5ca13a389a45addbf596dd865d1, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _ACouche: 0
+    - _ADessous: 1
+    - _Bords: 0.75
+    - _Coat: 0
+    - _Delavage: 0
+    - _EchelleEclats: 42
+    - _Eclats: 0.5
+    - _ForceEmission: 0
+    - _Huile: 0
+    - _Metal: 0
+    - _MetalDessous: 0.6
+    - _Poussiere: 0
+    - _Rayures: 0.6
+    - _Retouches: 0
+    - _Rouille: 0
+    - _Rug: 0.58
+    - _RugCouche: 0
+    - _RugDessous: 0.4
+    - _Salete: 0.6
+    - _Variation: 0.08
+    m_Colors:
+    - _Base: {r: 0.21568623, g: 0.2313725, b: 0.25098035, a: 1}
+    - _Couche: {r: 0, g: 0, b: 0, a: 1}
+    - _DecBords: {r: -24.493097, g: -0.4564913, b: -5.0508933, a: 0}
+    - _DecCloques: {r: 0, g: 0, b: 0, a: 0}
+    - _DecCoulures: {r: 0, g: 0, b: 0, a: 0}
+    - _DecDelavage: {r: 0, g: 0, b: 0, a: 0}
+    - _DecEclats: {r: 15.159297, g: 28.872335, b: -40.61404, a: 0}
+    - _DecHuile: {r: 0, g: 0, b: 0, a: 0}
+    - _DecHuileDetail: {r: 0, g: 0, b: 0, a: 0}
+    - _DecPoussiere: {r: 0, g: 0, b: 0, a: 0}
+    - _DecRayures1: {r: 22.154003, g: -27.123777, b: 44.52707, a: 0}
+    - _DecRayures2: {r: 40.142746, g: -46.941, b: -47.455414, a: 0}
+    - _DecRetouches: {r: 0, g: 0, b: 0, a: 0}
+    - _DecRouille: {r: 0, g: 0, b: 0, a: 0}
+    - _DecSuie: {r: 0, g: 0, b: 0, a: 0}
+    - _DecVariation: {r: -36.563576, g: 34.743374, b: 26.377462, a: 0}
+    - _DecZoneCloques: {r: 0, g: 0, b: 0, a: 0}
+    - _DecZoneCoulures: {r: 0, g: 0, b: 0, a: 0}
+    - _DecZoneEclats: {r: -47.165253, g: 33.57651, b: -6.7232933, a: 0}
+    - _DecZoneRayures: {r: 26.228008, g: -49.789394, b: -5.461281, a: 0}
+    - _Dessous: {r: 0.61960775, g: 0.6274509, b: 0.6392156, a: 1}
+    - _EmissionCouleur: {r: 0, g: 0, b: 0, a: 1}
+    - _ForcesZones: {r: 0, g: 0, b: 0, a: 0}
+    - _Suie: {r: 0, g: 0, b: 0, a: 0}
+    - _TeinteRetouches: {r: 0, g: 0, b: 0, a: 1}
+    - _TeinteRouille: {r: 0, g: 0, b: 0, a: 1}
+    - _Zone0: {r: 0, g: 0, b: 0, a: 0}
+    - _Zone1: {r: 0, g: 0, b: 0, a: 0}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

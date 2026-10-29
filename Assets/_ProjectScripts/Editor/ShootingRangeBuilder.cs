@@ -44,19 +44,24 @@ public static class ShootingRangeBuilder
     /// <summary>Le poste de tir où l'on apparaît (pieds) : le poste du milieu, face au pare-balles.</summary>
     public static readonly Vector3 FiringPost = new(10f, 0f, -2f);
 
-    /// <summary>Les mannequins à découvert : (x, distance au poste de tir). Depuis le 2026-10-28 (demandé par l'utilisateur :
-    /// « ils sont tous au centre, un peu en ligne ») ils vont d'un mur à l'autre du stand (x -1,5 à 21,5), cinq de chaque
-    /// côté, quatre au milieu (deux couverts), chacun à sa distance, de 5 à 60 m. Placés par le calcul : depuis le poste du
-    /// milieu, à la ligne de tir, aucune ligne de visée ne passe à moins d'un mètre d'un autre mannequin (40 cm depuis les
-    /// autres postes) ; ShootingRangeTests le vérifie sur la scène.</summary>
+    /// <summary>Les mannequins à découvert : (x, distance au poste de tir). Le 2026-10-28 (demandé par l'utilisateur : « ils
+    /// sont tous au centre, un peu en ligne »), ils sont allés d'un mur à l'autre ; le 2026-10-29 (« rajoutes-en un peu plus
+    /// au milieu »), ils sont dix-sept : cinq de chaque côté (à 2 m des murs, hors des pilastres et des distances peintes),
+    /// sept au milieu (x 7 à 13, dont trois avant 25 m, deux couverts), chacun à sa distance, de 5 à 59 m, deux au moins
+    /// par tranche de 10 m, à 3 m les uns des autres au moins. Placés par le calcul (une recherche par recuit) : depuis le
+    /// poste du milieu, à la ligne de tir, aucune ligne de visée ne passe à moins d'un mètre d'un autre mannequin (24 cm au
+    /// moins depuis les autres postes) ; ShootingRangeTests le vérifie sur la scène. Tous regardent le poste du milieu,
+    /// d'où l'on tire.</summary>
     public static readonly Vector2[] OpenDummies =
     {
-        new(3f, 5f), new(18.5f, 10f), new(5.5f, 13f), new(1f, 17f), new(16f, 20f), new(19.5f, 24f),
-        new(8f, 33f), new(1f, 35f), new(3.5f, 46f), new(20f, 49f), new(12.5f, 57f), new(20f, 60f),
+        new(19.5f, 5f), new(0.5f, 6f), new(3f, 8f), new(17.5f, 9f), new(13f, 11f), new(1f, 21f), new(19.5f, 23f),
+        new(7.5f, 24f), new(12.5f, 25f), new(5f, 27f), new(1f, 35f), new(8f, 49f), new(17.5f, 53f), new(19.5f, 56f),
+        new(10.5f, 59f),
     };
 
-    /// <summary>Les mannequins derrière une barricade de 1,25 m : la tête seule dépasse.</summary>
-    public static readonly Vector2[] CoveredDummies = { new(13f, 29f), new(10.5f, 51f) };
+    /// <summary>Les mannequins derrière une barricade de 1,25 m : la tête seule dépasse. Une barricade cache aussi ce qui
+    /// la suit de peu dans sa ligne (à 49 m, elle cachait le buste du mannequin de 54 m) : ShootingRangeTests le voit.</summary>
+    public static readonly Vector2[] CoveredDummies = { new(11.5f, 39f), new(9f, 54f) };
 
     /// <summary>Les postes de tir : leur milieu (x), le long de la ligne de tir (z = 0). Le poste 3 est celui où l'on
     /// apparaît.</summary>

@@ -16,8 +16,8 @@ MonoBehaviour:
   family: 1
   role: "tir charg\xE9, lunette \xD74"
   modelPrefab: {fileID: 548841584845377886, guid: 7531b2aea3090224bbf22386d9b8b2d6, type: 3}
-  acceptedAttachments: 14
-  acceptedSights: 7
+  acceptedAttachments: 15
+  acceptedSights: 8
   attachmentCatalog: {fileID: 11400000, guid: 5a00e6f42680b794f8df69979e954576, type: 2}
   damagePerHit: 100
   shotsPerSecond: 2.5

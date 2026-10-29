@@ -143,6 +143,11 @@ MonoBehaviour:
   sight: {fileID: 0}
   aimEyeDistance: 0.08
   lens: {fileID: 0}
+  reticleLabel: 
+  magnification: 1
+  eyepiece: []
+  pistolLens: {fileID: 0}
+  pistolReticleLabel: 
   beam: {fileID: 0}
   leftHand: {fileID: 0}
   weaponDesignation: FAP-30

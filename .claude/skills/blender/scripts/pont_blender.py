@@ -1,6 +1,8 @@
 """Pont local entre Claude Code et une instance de Blender ouverte.
 
-À lancer une fois par session de Blender, dans la console Python (onglet Scripting) :
+Lancé à chaque ouverture de Blender par pont_demarrage.py, installé dans le dossier de
+démarrage de Blender (voir ce fichier). Sans lui, à lancer une fois par session de
+Blender, dans la console Python (onglet Scripting) :
 
     exec(open(r"D:\\Documents\\Unity\\FPS Claude\\.claude\\skills\\blender\\scripts\\pont_blender.py", encoding="utf-8").read())
 
@@ -8,7 +10,8 @@ Le pont écoute sur 127.0.0.1 seulement (jamais sur le réseau) et n'exécute qu
 requêtes qui portent le jeton tiré à son lancement, écrit dans
 %LOCALAPPDATA%\\ClaudeBlender\\pont.json (lu par blender_exec.py). Le code reçu
 s'exécute dans le fil principal de Blender, par une minuterie : c'est le seul
-endroit où bpy est sûr. Relancer le script remplace l'ancien pont.
+endroit où bpy est sûr. Il survit à l'ouverture d'un autre fichier, et relancer le
+script remplace l'ancien pont.
 
 Arrêt : bpy.app.driver_namespace["pont_claude"].arreter()
 """
@@ -25,6 +28,7 @@ import time
 import traceback
 
 import bpy
+from bpy.app.handlers import persistent
 
 PORT = 9877
 TAILLE_MAX_REQUETE = 32 * 1024 * 1024
@@ -72,6 +76,16 @@ class PontClaude:
 
         self._minuterie = minuterie
         bpy.app.timers.register(minuterie, first_interval=0.1, persistent=True)
+
+        @persistent
+        def apres_chargement(*_):
+            # Blender vide driver_namespace à chaque ouverture de fichier, le pont
+            # continue (minuterie persistante) : sans sa référence, ni l'arrêter ni le
+            # remplacer (le port resterait pris).
+            bpy.app.driver_namespace["pont_claude"] = self
+
+        self._apres_chargement = apres_chargement
+        bpy.app.handlers.load_post.append(apres_chargement)
         self._ecrire_fiche()
         print(f"[Pont Claude] à l'écoute sur 127.0.0.1:{port}")
 
@@ -198,6 +212,8 @@ class PontClaude:
             pass
         if bpy.app.timers.is_registered(self._minuterie):
             bpy.app.timers.unregister(self._minuterie)
+        if self._apres_chargement in bpy.app.handlers.load_post:
+            bpy.app.handlers.load_post.remove(self._apres_chargement)
         print("[Pont Claude] arrêté")
 
 

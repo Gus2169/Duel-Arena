@@ -3,21 +3,24 @@ using NUnit.Framework;
 using UnityEngine;
 
 /// <summary>
-/// Les accessoires des armes (2026-10-16, GDD § 6) : les dix viseurs de Rainbow Six, la poignée
-/// verticale ou inclinée, le laser tactique et le chargeur grande capacité, choisis à l'armurerie,
-/// annoncés en se connectant, bornés par le serveur, et qui CHANGENT l'arme.
+/// Les accessoires des armes (2026-10-16, GDD § 6) : les quinze viseurs (ceux de Rainbow Six refaits, et
+/// quatre lunettes pour les armes de précision, 2026-10-28), la poignée verticale ou inclinée, le laser
+/// tactique et le chargeur grande capacité, choisis à l'armurerie, annoncés en se connectant, bornés par le
+/// serveur, et qui CHANGENT l'arme.
 ///
-/// Ce qui casse ici ne lève aucune erreur : un serveur qui laisse un client modifié poser un viseur
-/// sur le sniper ou une poignée sur un pistolet, un chargeur que le joueur et le serveur ne comptent
-/// pas pareil, une ancienne build lue de travers, une poignée qui retient le mauvais recul, un viseur
-/// rangé à la place d'un autre, une hausse qui reste dans la fenêtre du viseur, un chargeur d'origine
-/// qui dépasse sous le grand.
+/// Ce qui casse ici ne lève aucune erreur : un serveur qui laisse un client modifié poser un point rouge
+/// sur le sniper, une lunette sur un fusil d'assaut ou une poignée sur un pistolet, un chargeur que le
+/// joueur et le serveur ne comptent pas pareil, une ancienne build lue de travers, une poignée qui retient
+/// le mauvais recul, un viseur rangé à la place d'un autre, une hausse qui reste dans la fenêtre du viseur,
+/// la lunette d'origine qui reste sous une lunette d'accessoire, un chargeur d'origine qui dépasse sous le
+/// grand, un viseur qui n'a pas la distance de l'œil mesurée dans Blender.
 /// </summary>
 public class WeaponAttachmentsTests
 {
     private const string PlayerPrefabPath = "Assets/_ProjectArena/PlayerPrefab/Player.prefab";
     private const int Rifle = 0, Sniper = 1, Shotgun = 2, Pistol = 3;
-    private const int RedDotA = 1, HoloA = 4, ReflexA = 8, ReflexC = 10;
+    private const int Carbine = 6, ChargedRifle = 7;   // le FP-30 et le FX-2 : avec le FP-12, les armes de précision
+    private const int RedDotA = 1, HoloA = 4, ReflexA = 8, ReflexC = 10, ReflexD = 11, ScopeL2A = 12, ScopeL3A = 15;
 
     private readonly List<GameObject> created = new List<GameObject>();
 
@@ -85,6 +88,10 @@ public class WeaponAttachmentsTests
         Assert.IsTrue(a.ExtendedMagazine(Pistol));
         Assert.AreEqual(GripKind.Angled, a.Grip(Sniper));
         Assert.AreEqual(0, a.Sight(Sniper), "Une rubrique change sans toucher aux autres.");
+        WeaponAttachments last = a.WithSight(Sniper, ScopeL3A);
+        Assert.AreEqual(ScopeL3A, last.Sight(Sniper), "Le quinzième viseur remplit ses quatre bits...");
+        Assert.AreEqual(GripKind.Angled, last.Grip(Sniper), "... sans déborder sur la poignée.");
+        Assert.AreEqual(0, last.Sight(Shotgun), "... ni sur l'arme suivante.");
         Assert.AreEqual(0, a.Sight(Shotgun), "La place 3 n'a rien reçu.");
         Assert.AreEqual(GripKind.None, a.Grip(Shotgun));
         Assert.IsFalse(a.Laser(Shotgun) || a.ExtendedMagazine(Shotgun));
@@ -112,12 +119,12 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(a, a.With(WeaponAttachments.Slots, HoloA, GripKind.Angled, true, true));
         Assert.AreEqual(0, a.Sight(-1));
         Assert.AreEqual(WeaponAttachments.SightCount + 1, WeaponAttachments.VariantCount(AttachmentCategory.Sight),
-            "Dix viseurs, plus la mire de l'arme.");
+            "Quinze viseurs, plus la mire de l'arme.");
     }
 
-    /// <summary>Le serveur ne publie que ce que l'arme prend : un client modifié qui demande un viseur
-    /// sur le sniper, un point rouge sur un pistolet, une poignée sur un pistolet ou un accessoire qui
-    /// n'existe pas n'a que ce qu'il pouvait avoir.</summary>
+    /// <summary>Le serveur ne publie que ce que l'arme prend : un client modifié qui demande un point rouge
+    /// sur le sniper, une lunette sur le fusil d'assaut, un point rouge ou le réflex à grand cadre sur un
+    /// pistolet, une poignée sur un pistolet ou un accessoire qui n'existe pas n'a que ce qu'il pouvait avoir.</summary>
     [Test]
     public void LeServeur_FaitTomberCeQueLArmeNePrendPas()
     {
@@ -130,7 +137,11 @@ public class WeaponAttachmentsTests
         WeaponAttachments kept = asked.Sanitized(loadout);
 
         Assert.IsTrue(SameSlot(asked, kept, Rifle), "Le fusil d'assaut prend tout.");
-        Assert.AreEqual(0, kept.Sight(Sniper), "Le sniper garde sa lunette : pas de viseur.");
+        Assert.AreEqual(0, kept.Sight(Sniper), "Le sniper ne prend qu'une lunette : pas de point rouge, il garde la sienne.");
+        Assert.AreEqual(ScopeL2A, asked.WithSight(Sniper, ScopeL2A).Sanitized(loadout).Sight(Sniper), "Une lunette, si.");
+        Assert.AreEqual(0, asked.WithSight(Rifle, ScopeL2A).Sanitized(loadout).Sight(Rifle), "Une lunette ne va pas sur le fusil d'assaut.");
+        Assert.AreEqual(ReflexD, asked.WithSight(Rifle, ReflexD).Sanitized(loadout).Sight(Rifle), "Le réflex à grand cadre, si.");
+        Assert.AreEqual(0, asked.WithSight(Pistol, ReflexD).Sanitized(loadout).Sight(Pistol), "Le grand cadre ne tient pas sur une glissière de pistolet.");
         Assert.AreEqual(GripKind.Vertical, kept.Grip(Sniper), "Mais il prend une poignée...");
         Assert.IsTrue(kept.Laser(Sniper), "... un laser...");
         Assert.IsTrue(kept.ExtendedMagazine(Sniper), "... et le chargeur.");
@@ -144,11 +155,14 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(ReflexA, reflex.Sanitized(loadout).Sight(Pistol), "Un réflex, si.");
         Assert.AreEqual(ReflexC, reflex.WithSight(Pistol, ReflexC).Sanitized(loadout).Sight(Pistol));
 
-        // Tous les bits levés : des viseurs et des poignées qui n'existent pas.
+        // Tous les bits levés : le viseur 15 (la lunette ×3), qui ne reste que sur les armes de précision, et
+        // une poignée qui n'existe pas.
         WeaponAttachments all = new WeaponAttachments(ulong.MaxValue, uint.MaxValue).Sanitized(loadout);
         for (int slot = 0; slot < WeaponAttachments.Slots; slot++)
         {
-            Assert.AreEqual(0, all.Sight(slot), $"Place {slot + 1} : le viseur 15 n'existe pas.");
+            bool precision = slot == Sniper || slot == Carbine || slot == ChargedRifle;
+            Assert.AreEqual(precision ? ScopeL3A : 0, all.Sight(slot),
+                $"Place {slot + 1} ({loadout[slot].Designation}) : la lunette ×3 ne va que sur une arme de précision.");
             Assert.AreEqual(GripKind.None, all.Grip(slot), $"Place {slot + 1} : la poignée 3 n'existe pas.");
         }
         Assert.AreEqual(kept, kept.Sanitized(loadout), "Le serveur ne touche pas à un choix valable.");
@@ -321,15 +335,37 @@ public class WeaponAttachmentsTests
             Assert.IsNotNull(a.Lens, $"{a.Code} n'a pas de vitre.");
             Material lens = a.Lens.sharedMaterial;
             Assert.AreEqual(AttachmentImporter.LensShaderName, lens.shader.name, $"La vitre de {a.Code} ne dessine pas de réticule.");
-            Assert.Greater(lens.GetFloat("_Rayon"), 0f);
-            CollectionAssert.IsSubsetOf(new[] { "Hausse", "Guidon" }, new List<string>(a.Hides), $"{a.Code} doit cacher la hausse et le guidon.");
+            Assert.IsNotNull(lens.GetTexture("_Reticule"), $"La vitre de {a.Code} n'a pas l'image de son réticule.");
+            Assert.Greater(lens.GetFloat("_Etendue"), 0f);
+            CollectionAssert.IsSubsetOf(new[] { "Hausse", "Guidon", "Lunette_Standard" }, new List<string>(a.Hides),
+                $"{a.Code} doit cacher la hausse et le guidon, ou la lunette d'origine d'une arme de précision.");
+
+            // Une lunette grossit, et ne montre que son œilleton dans sa vue grossie ; un viseur, non.
+            bool scope = WeaponAttachments.FamilyOf(sight) == SightFamilies.Scope;
+            Assert.AreEqual(scope, a.Magnification > 1f, $"{a.Code} : {(scope ? "une lunette sans grossissement" : "un viseur qui grossit")}.");
+            Assert.AreEqual(scope, a.Eyepiece.Count > 0, $"{a.Code} : {(scope ? "une lunette sans œilleton" : "un œilleton sur un viseur")}.");
+            if (!scope) continue;
+            int tube = 0;
+            foreach (Renderer r in a.GetComponentsInChildren<Renderer>(true))
+                if (!a.ShownWhenScoped(r)) tube++;
+            Assert.Greater(tube, 0, $"{a.Code} : rien de son tube ne se cache dans la vue grossie.");
+            Assert.IsTrue(a.ShownWhenScoped(a.Lens), $"{a.Code} : sa vitre reste, avec le réticule.");
+            Assert.Less(lens.GetColor("_CouleurVitre").a, 0.06f, $"{a.Code} : sa vitre teinte toute la vue grossie, elle voilerait la cible.");
         }
         Assert.AreEqual("PR-A", catalog.SightPrefab(RedDotA).GetComponent<WeaponAttachment>().Code);
         Assert.AreEqual("RX-A", catalog.SightPrefab(ReflexA).GetComponent<WeaponAttachment>().Code);
         Assert.AreEqual(SightFamilies.RedDot, WeaponAttachments.FamilyOf(RedDotA));
         Assert.AreEqual(SightFamilies.Holographic, WeaponAttachments.FamilyOf(HoloA));
         Assert.AreEqual(SightFamilies.Reflex, WeaponAttachments.FamilyOf(ReflexA));
+        Assert.AreEqual(SightFamilies.WideReflex, WeaponAttachments.FamilyOf(ReflexD));
+        Assert.AreEqual(SightFamilies.Scope, WeaponAttachments.FamilyOf(ScopeL2A));
+        Assert.AreEqual(SightFamilies.Scope, WeaponAttachments.FamilyOf(ScopeL3A));
+        Assert.AreEqual(2f, catalog.SightPrefab(ScopeL2A).GetComponent<WeaponAttachment>().Magnification, 1e-6f, "La L2-A grossit deux fois.");
+        Assert.AreEqual(3f, catalog.SightPrefab(ScopeL3A).GetComponent<WeaponAttachment>().Magnification, 1e-6f, "La L3-A, trois fois.");
         Assert.AreEqual("Mire de l'arme", catalog.SightTitle(0));
+        Assert.AreEqual("Mire de l'arme", AttachmentCatalog.BaseSightTitle(Loadout()[Rifle]));
+        Assert.AreEqual("Lunette d'origine ×4", AttachmentCatalog.BaseSightTitle(Loadout()[Sniper]),
+            "Sans viseur, le sniper a sa lunette : l'armurerie la nomme.");
 
         Assert.AreEqual(AttachmentCategory.Laser, catalog.laser.GetComponent<WeaponAttachment>().Category);
         Assert.IsNotNull(catalog.laser.GetComponent<WeaponAttachment>().Beam, "Le laser n'a pas d'émetteur.");
@@ -350,16 +386,83 @@ public class WeaponAttachmentsTests
             else Assert.IsNotNull(magazine, $"{m.Designation} n'a pas de chargeur grande capacité.");
         }
         Assert.AreEqual(AttachmentSlots.All, loadout[Rifle].acceptedAttachments);
-        Assert.AreEqual(AttachmentSlots.Grip | AttachmentSlots.Laser | AttachmentSlots.Magazine, loadout[Sniper].acceptedAttachments);
+        Assert.AreEqual(AttachmentSlots.All, loadout[Sniper].acceptedAttachments, "Le sniper prend tout, sa lunette remplacée par une lunette.");
         Assert.AreEqual(AttachmentSlots.All, loadout[Shotgun].acceptedAttachments);
         Assert.AreEqual(AttachmentSlots.Sight | AttachmentSlots.Laser | AttachmentSlots.Magazine, loadout[Pistol].acceptedAttachments);
         Assert.AreEqual(SightFamilies.Reflex, loadout[Pistol].acceptedSights);
     }
 
-    /// <summary>La mire de chaque viseur passe par le milieu de sa vitre, devant elle : en visée, on
-    /// regarde au travers, et le réticule (à l'infini, sur l'axe) tombe au centre de la fenêtre.</summary>
+    /// <summary>Qui prend quel viseur (2026-10-28, l'utilisateur) : les lunettes ne vont que sur les trois armes
+    /// de précision (FP-12, FX-2 et la carabine FP-30), qui gardent sinon leur lunette d'origine et ne prennent
+    /// aucun viseur sans grossissement ; une glissière de pistolet n'a la place que des trois petits réflex ;
+    /// les autres prennent les onze viseurs sans grossissement, le réflex à grand cadre compris.</summary>
     [Test]
-    public void LaMireDeChaqueViseur_PasseParLeMilieuDeSaVitre()
+    public void LesLunettes_NeVontQueSurLesArmesDePrecision()
+    {
+        IReadOnlyList<WeaponData> loadout = Loadout();
+        int precision = 0, pistols = 0, others = 0;
+        for (int slot = 0; slot < loadout.Count; slot++)
+        {
+            WeaponData data = loadout[slot];
+            bool isPrecision = data.Designation is "FP-12" or "FX-2" or "FP-30";
+            bool isPistol = data.modelPrefab.GetComponent<WeaponModel>().PistolHold;
+            if (isPrecision) precision++; else if (isPistol) pistols++; else others++;
+            if (isPrecision) Assert.Greater(data.scopeMagnification, 1f, $"{data.Designation} : une arme de précision a sa lunette d'origine.");
+            for (int sight = 1; sight <= WeaponAttachments.SightCount; sight++)
+            {
+                SightFamilies family = WeaponAttachments.FamilyOf(sight);
+                bool expected = isPrecision ? family == SightFamilies.Scope
+                              : isPistol ? family == SightFamilies.Reflex
+                              : family != SightFamilies.Scope;
+                Assert.AreEqual(expected, WeaponAttachments.Accepts(data, AttachmentCategory.Sight, sight),
+                    $"{data.Designation} et le viseur {sight} ({family}).");
+            }
+        }
+        Assert.AreEqual(3, precision, "Trois armes de précision.");
+        Assert.AreEqual(3, pistols, "Trois pistolets.");
+        Assert.AreEqual(6, others);
+    }
+
+    /// <summary>Ce que Blender a mesuré de chaque viseur arrive dans son préfab (AttachmentImporter) : la
+    /// distance de l'œil qui donne à tous les viseurs sans grossissement la même fenêtre utile, le nom de son
+    /// réticule, et le grossissement d'une lunette. Une distance unique pour tous (0,08 m) fausserait l'équité
+    /// des fenêtres voulue par l'utilisateur.</summary>
+    [Test]
+    public void ChaqueViseur_PrendDeSaFicheLaDistanceDeLOeil_EtSonGrossissement()
+    {
+        AttachmentCatalog catalog = Catalog();
+        var distances = new HashSet<float>();
+        for (int sight = 1; sight <= WeaponAttachments.SightCount; sight++)
+        {
+            WeaponAttachment a = catalog.SightPrefab(sight).GetComponent<WeaponAttachment>();
+            string folder = a.Code.Replace("-", "");
+            var sheet = UnityEditor.AssetDatabase.LoadAssetAtPath<TextAsset>($"{AttachmentImporter.Root}/{folder}/{folder}_Finitions.json");
+            Assert.IsNotNull(sheet, $"{a.Code} n'a pas de fiche.");
+            float eye = Number(sheet.text, "distanceOeil");
+            float zoom = Number(sheet.text, "grossissement", 1f);   // absent : sans grossissement
+            Assert.AreEqual(eye, a.AimEyeDistance, 1e-5f, $"{a.Code} : la distance de l'œil de sa fiche.");
+            Assert.AreEqual(zoom, a.Magnification, 1e-5f, $"{a.Code} : le grossissement de sa fiche.");
+            StringAssert.Contains($"\"descriptionReticule\": \"{a.ReticleLabel}\"", sheet.text, $"{a.Code} : le nom du réticule de sa fiche.");
+            if (zoom <= 1f) distances.Add(Mathf.Round(eye * 1000f));
+        }
+        Assert.Greater(distances.Count, 5, "Garde : les viseurs sans grossissement n'ont pas tous la même distance de l'œil.");
+    }
+
+    /// <summary>Un nombre de la fiche d'un accessoire (JSON de Blender), par son nom ; `absent` s'il n'y est
+    /// pas (NaN : il doit y être).</summary>
+    private static float Number(string json, string key, float absent = float.NaN)
+    {
+        System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(json, $"\"{key}\":\\s*(-?[0-9.]+(?:[eE]-?[0-9]+)?)");
+        if (!m.Success && !float.IsNaN(absent)) return absent;
+        Assert.IsTrue(m.Success, $"La fiche n'a pas de « {key} ».");
+        return float.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>La mire de chaque viseur passe par sa vitre, devant elle, loin de ses bords : en visée, on
+    /// regarde au travers, et le réticule (à l'infini, sur l'axe) tombe dans la fenêtre. Pas forcément au
+    /// milieu : la fenêtre du RX-A monte plus haut que l'axe (la refonte du 2026-10-28).</summary>
+    [Test]
+    public void LaMireDeChaqueViseur_PasseParSaVitre()
     {
         AttachmentCatalog catalog = Catalog();
         for (int sight = 1; sight <= WeaponAttachments.SightCount; sight++)
@@ -374,7 +477,8 @@ public class WeaponAttachmentsTests
             Vector3 mire = prefab.transform.InverseTransformPoint(a.Sight.position);
 
             Assert.Less(Mathf.Abs(mire.x - pane.center.x), 0.001f, $"{a.Code} : la mire n'est pas au milieu de la vitre (horizontalement).");
-            Assert.Less(Mathf.Abs(mire.y - pane.center.y), 0.001f, $"{a.Code} : la mire n'est pas au milieu de la vitre (verticalement).");
+            Assert.Greater(Mathf.Min(mire.y - pane.min.y, pane.max.y - mire.y), 0.004f,
+                $"{a.Code} : la mire passe à moins de 4 mm du bord de la vitre (de {pane.min.y * 1000f:0.0} à {pane.max.y * 1000f:0.0} mm, mire à {mire.y * 1000f:0.0}).");
             Assert.Greater(pane.size.x, 0.012f, $"{a.Code} : une vitre de moins de 12 mm.");
             Assert.Less(mire.z, pane.center.z, $"{a.Code} : la vitre doit être devant la mire.");
             Assert.Less(Quaternion.Angle(Quaternion.identity, a.Sight.localRotation), 0.01f, $"{a.Code} : la mire doit regarder dans l'axe du canon.");
@@ -523,5 +627,110 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(WeaponFinish.Polie, AttachmentMount.Mounted(weapon, AttachmentCategory.Laser).GetComponent<WeaponFinishes>().Shown,
             "Une autre finition passe aux accessoires déjà montés.");
         Assert.AreEqual(3, weapon.GetComponentsInChildren<WeaponAttachment>().Length, "Rien n'est monté en double.");
+    }
+
+    /// <summary>Une lunette d'accessoire prend la place de la lunette d'origine de chaque arme de précision
+    /// (2026-10-28) : celle-ci se cache (elle serait dans le tube de la nouvelle), l'œil va derrière l'œilleton
+    /// de la nouvelle, et la lunette d'origine revient quand l'autre part.</summary>
+    [Test]
+    public void UneLunette_RemplaceCelleDOrigine_EtLaRendQuandEllePart()
+    {
+        IReadOnlyList<WeaponData> loadout = Loadout();
+        foreach (int slot in new[] { Sniper, Carbine, ChargedRifle })
+        {
+            WeaponData data = loadout[slot];
+            Transform weapon = Instantiate(data.Designation.Replace("-", ""));
+            WeaponModel model = weapon.GetComponent<WeaponModel>();
+            Assert.IsTrue(Shown(weapon, "Lunette_Standard"), $"Garde : sans viseur, le {data.Designation} a sa lunette d'origine.");
+
+            AttachmentMount.Apply(weapon, data, WeaponAttachments.None.WithSight(slot, ScopeL2A), slot, WeaponFinish.Origine);
+            WeaponAttachment scope = AttachmentMount.Mounted(weapon, AttachmentCategory.Sight);
+            Assert.IsNotNull(scope, $"La L2-A n'est pas montée sur le {data.Designation}.");
+            Assert.AreEqual("L2-A", scope.Code);
+            Assert.IsFalse(Shown(weapon, "Lunette_Standard"), $"{data.Designation} : la lunette d'origine resterait dans le tube de la nouvelle.");
+            Assert.AreSame(scope.Sight, AttachmentMount.SightOf(model, out float eye), $"{data.Designation} : en visée, l'œil va derrière son œilleton...");
+            Assert.AreEqual(scope.AimEyeDistance, eye, 1e-6f, "... à sa distance.");
+
+            AttachmentMount.Apply(weapon, data, WeaponAttachments.None, slot, WeaponFinish.Origine);
+            Assert.IsNull(AttachmentMount.Mounted(weapon, AttachmentCategory.Sight));
+            Assert.IsTrue(Shown(weapon, "Lunette_Standard"), $"{data.Designation} : la lunette d'origine revient.");
+            Assert.AreSame(model.Sight, AttachmentMount.SightOf(model, out _));
+        }
+    }
+
+    /// <summary>Sur un pistolet, un petit réflex ne montre que le centre de son réticule (2026-10-29, l'utilisateur : tenu à
+    /// bout de bras, le pistolet balance, et sa petite fenêtre coupait tour à tour les traits des côtés, qui semblaient
+    /// bouger quand on se déplace de côté) : le triangle, le chevron, le point. Sur une arme d'épaule, le réticule entier.</summary>
+    [Test]
+    public void UnPetitReflex_SurUnPistolet_NeMontreQueLeCentreDeSonReticule()
+    {
+        IReadOnlyList<WeaponData> loadout = Loadout();
+        AttachmentCatalog catalog = Catalog();
+        const int PistolPA05 = 10;
+        Assert.AreEqual("PA-05", loadout[PistolPA05].Designation, "Garde : la onzième arme est le PA-05.");
+        for (int sight = ReflexA; sight <= ReflexC; sight++)
+        {
+            WeaponAttachment prefab = catalog.SightPrefab(sight).GetComponent<WeaponAttachment>();
+            string root = prefab.Code.Replace("-", "");
+            Transform pistol = Instantiate("PA05");
+            AttachmentMount.Apply(pistol, loadout[PistolPA05], WeaponAttachments.None.WithSight(PistolPA05, sight), PistolPA05, WeaponFinish.Origine);
+            WeaponAttachment onPistol = AttachmentMount.Mounted(pistol, AttachmentCategory.Sight);
+            Assert.IsNotNull(onPistol, $"{prefab.Code} n'est pas monté sur le PA-05.");
+            Assert.AreEqual($"{root}_Reticule_Centre", onPistol.Lens.sharedMaterial.GetTexture("_Reticule").name,
+                $"{prefab.Code} sur le PA-05 : le réticule entier, ses traits des côtés compris.");
+
+            Transform rifle = Instantiate("FA07");
+            AttachmentMount.Apply(rifle, loadout[Rifle], WeaponAttachments.None.WithSight(Rifle, sight), Rifle, WeaponFinish.Origine);
+            Assert.AreEqual($"{root}_Reticule", AttachmentMount.Mounted(rifle, AttachmentCategory.Sight).Lens.sharedMaterial.GetTexture("_Reticule").name,
+                $"{prefab.Code} sur le FA-07 : le réticule entier.");
+            Assert.AreNotEqual(prefab.ReticleLabel, prefab.ReticleLabelOn(true), $"{prefab.Code} : l'armurerie nomme ce qu'il en reste sur un pistolet.");
+        }
+        Assert.IsNull(catalog.SightPrefab(ReflexD).GetComponent<WeaponAttachment>().PistolLens, "Le RX-D ne va pas sur un pistolet.");
+    }
+
+    /// <summary>Dans la vue grossie d'une lunette, rien ne luit ni n'affiche autour de la vue (2026-10-29, l'utilisateur) :
+    /// le cercle rouge de l'œilleton de la 2,0x cernait toute la vue, et l'afficheur « 3× » de la 3,0x y restait. Seule la
+    /// vitre, avec son réticule, peut luire.</summary>
+    [Test]
+    public void DansUneLunette_RienNeLuitAutourDeLaVue()
+    {
+        AttachmentCatalog catalog = Catalog();
+        int scopes = 0;
+        for (int sight = 1; sight <= WeaponAttachments.SightCount; sight++)
+        {
+            WeaponAttachment a = catalog.SightPrefab(sight).GetComponent<WeaponAttachment>();
+            if (a.Magnification <= 1f) continue;
+            scopes++;
+            foreach (Renderer r in a.Eyepiece)
+                foreach (Material m in r.sharedMaterials)
+                    Assert.IsFalse(m != null && (m.name.Contains("Lueur") || m.name.Contains("Holo")),
+                        $"{a.Code} : {r.name} montre {m?.name} autour de la vue grossie.");
+        }
+        Assert.AreEqual(4, scopes, "Garde : les quatre lunettes ont été vues.");
+    }
+
+    /// <summary>Par où l'on regarde, épaulé (FirstPersonView.ScopeViewOf) : la lunette d'origine du sniper, dessinée
+    /// par le HUD, tant qu'aucune lunette d'accessoire ne la remplace ; avec une lunette d'accessoire, son œilleton,
+    /// à SON grossissement (×2, pas le ×4 de la lunette d'origine) ; avec un viseur sans grossissement, ni l'un ni
+    /// l'autre.</summary>
+    [Test]
+    public void UneLunetteDAccessoire_GrossitDeSonGrossissement_PasDeCeluiDeLArme()
+    {
+        IReadOnlyList<WeaponData> loadout = Loadout();
+        AttachmentCatalog catalog = Catalog();
+        WeaponAttachment l2a = catalog.SightPrefab(ScopeL2A).GetComponent<WeaponAttachment>();
+        WeaponAttachment l3a = catalog.SightPrefab(ScopeL3A).GetComponent<WeaponAttachment>();
+        WeaponAttachment holo = catalog.SightPrefab(HoloA).GetComponent<WeaponAttachment>();
+        WeaponData sniper = loadout[Sniper], rifle = loadout[Rifle];
+        Assert.AreEqual(4f, sniper.scopeMagnification, 1e-6f, "Garde : la lunette d'origine du FP-12 grossit quatre fois.");
+
+        Assert.AreEqual(FirstPersonView.ScopeView.BuiltIn, FirstPersonView.ScopeViewOf(sniper, null));
+        Assert.AreEqual(4f, FirstPersonView.ScopeMagnification(sniper, null), 1e-6f);
+        Assert.AreEqual(FirstPersonView.ScopeView.Eyepiece, FirstPersonView.ScopeViewOf(sniper, l2a), "La lunette d'accessoire remplace celle du HUD.");
+        Assert.AreEqual(2f, FirstPersonView.ScopeMagnification(sniper, l2a), 1e-6f, "×2, le grossissement de la L2-A.");
+        Assert.AreEqual(3f, FirstPersonView.ScopeMagnification(sniper, l3a), 1e-6f);
+        Assert.AreEqual(FirstPersonView.ScopeView.None, FirstPersonView.ScopeViewOf(rifle, null), "La mire du fusil d'assaut ne grossit pas.");
+        Assert.AreEqual(FirstPersonView.ScopeView.None, FirstPersonView.ScopeViewOf(rifle, holo));
+        Assert.AreEqual(1f, FirstPersonView.ScopeMagnification(rifle, holo), 1e-6f);
     }
 }

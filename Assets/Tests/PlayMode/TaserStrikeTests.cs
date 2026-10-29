@@ -14,8 +14,9 @@ using UnityEngine.TestTools;
 /// </summary>
 public class TaserStrikeTests
 {
-    private const float Range = 2.0f;
+    private const float Range = 1.0f;
     private const float Radius = 0.3f;
+    private const string PlayerPrefabPath = "Assets/_ProjectArena/PlayerPrefab/Player.prefab";
     private static readonly Vector3 Eye = new Vector3(0f, 1.65f, 0f);
 
     private readonly List<GameObject> spawned = new List<GameObject>();
@@ -68,15 +69,37 @@ public class TaserStrikeTests
     [UnityTest]
     public IEnumerator HorsDePortee_RienNEstTouche()
     {
-        Opponent(3.0f);
+        Opponent(1.8f);
         yield return null;
-        Assert.IsNull(Strike(), "Un adversaire à 3 m est hors de portée du taser.");
+        Assert.IsNull(Strike(), "Un adversaire à 1,8 m est hors de portée du taser.");
     }
+
+#if UNITY_EDITOR
+    /// <summary>Le gant tel qu'il est réglé dans le préfab joueur (2026-10-29) : il touchait jusqu'à 2,44 m entre
+    /// les deux robots, trop loin pour l'utilisateur (« 1,5 ou 1 m »). Un adversaire à 1,3 m est touché, à 1,6 m
+    /// non.</summary>
+    [UnityTest]
+    public IEnumerator LeGantDuJeu_NeToucheQuAMoinsDUnMetreEtDemi()
+    {
+        var player = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        var taser = new UnityEditor.SerializedObject(player.GetComponentInChildren<TaserController>(true));
+        float range = taser.FindProperty("range").floatValue, radius = taser.FindProperty("radius").floatValue;
+        PlayerHitbox target = Opponent(1.3f);
+        yield return null;
+        Physics.SyncTransforms();
+        Assert.IsTrue(Belongs(TaserController.QueryStrike(Eye, Vector3.forward, range, radius, hitboxMask, 1, buffer), target),
+                      "À 1,3 m, le coup du gant doit toucher.");
+        target.transform.position = new Vector3(0f, 0f, 1.6f);
+        Physics.SyncTransforms();
+        Assert.IsNull(TaserController.QueryStrike(Eye, Vector3.forward, range, radius, hitboxMask, 1, buffer),
+                      $"À 1,6 m, le coup du gant ne doit plus toucher (portée réglée : {range} m).");
+    }
+#endif
 
     [UnityTest]
     public IEnumerator DerriereUnMur_RienNEstTouche()
     {
-        PlayerHitbox target = Opponent(1.5f);
+        PlayerHitbox target = Opponent(1.2f);
         var wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
         spawned.Add(wall);
         wall.transform.position = new Vector3(0f, 1.5f, 0.7f);

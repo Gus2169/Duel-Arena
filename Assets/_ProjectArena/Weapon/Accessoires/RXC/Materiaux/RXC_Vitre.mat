@@ -22,13 +22,19 @@ Material:
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
-    m_TexEnvs: []
+    m_TexEnvs:
+    - _Reticule:
+        m_Texture: {fileID: 2800000, guid: e5a37c4cf59e79942ad0eea6a40f7097, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
     - _AxeCamera: 0
     - _Douceur: 0.2
+    - _Etendue: 50
     - _Forme: 6
     - _Intensite: 1.6
+    - _Plage: 6
     - _Rayon: 5.52
     - _Reflet: 0.35
     - _Trait: 0.414

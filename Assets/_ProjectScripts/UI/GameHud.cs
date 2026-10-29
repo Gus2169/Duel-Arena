@@ -36,7 +36,7 @@ public class GameHud : MonoBehaviour
     [Tooltip("Vitesse (PV/s) à laquelle la part rouge rejoint la vie restante.")]
     [SerializeField] private float healthTrailSpeed = 90f;
 
-    /// <summary>Un écran couvre le jeu ou le noir est tombé : le réticule (CrosshairUI, OnGUI) se tait.</summary>
+    /// <summary>Un écran couvre le jeu ou le noir est tombé : le HUD de combat (CrosshairUI) se tait.</summary>
     public static bool HidesCrosshair { get; private set; }
 
     private VisualElement scoreBar;

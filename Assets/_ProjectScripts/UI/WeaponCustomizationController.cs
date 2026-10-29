@@ -62,7 +62,6 @@ public class WeaponCustomizationController : MonoBehaviour
     // réticule net, rendu sur le fond de la carte (.choice-card, MainMenu.uss).
     private const int SightPictureWidth = 392, SightPictureHeight = 192;
     private static readonly Color32 ChoiceCardBackground = new Color32(16, 22, 29, 255);
-    private static readonly int ReticleShapeId = Shader.PropertyToID("_Forme");
     private static readonly int ReticleColorId = Shader.PropertyToID("_CouleurReticule");
 
     private sealed class Slot
@@ -579,7 +578,8 @@ public class WeaponCustomizationController : MonoBehaviour
     private string UnavailableReason(Rubric rubric)
     {
         WeaponData data = CurrentData;
-        if (rubric == Rubric.Sight && data != null && data.scopeMagnification > 1f) return "Garde sa lunette";
+        if (rubric == Rubric.Sight && data != null && data.scopeMagnification > 1f && data.acceptedSights == SightFamilies.None)
+            return "Garde sa lunette";
         WeaponModel model = EquippedModel;
         if (rubric == Rubric.Grip && model != null && model.PistolHold) return "Pas sur un pistolet";
         return "Pas sur cette arme";
@@ -616,14 +616,17 @@ public class WeaponCustomizationController : MonoBehaviour
     }
 
     /// <summary>La désignation d'un accessoire monté sur le modèle `model` d'une arme (« HO-A », « PV-1 »,
-    /// « LT-P » sous un pistolet), les balles du chargeur, « MIRE » ou « — » sans accessoire.</summary>
+    /// « LT-P » sous un pistolet), les balles du chargeur, « MIRE » (ou le grossissement de la lunette d'origine,
+    /// « ×4 ») ou « — » sans accessoire.</summary>
     public static string AttachmentCode(WeaponData data, WeaponModel model, AttachmentCategory category, int variant)
     {
         AttachmentCatalog catalog = data != null ? data.attachmentCatalog : null;
         switch (category)
         {
             case AttachmentCategory.Sight:
-                return variant == 0 ? "MIRE" : CodeOf(catalog != null ? catalog.SightPrefab(variant) : null, $"V{variant}");
+                if (variant == 0)
+                    return data != null && data.scopeMagnification > 1f ? $"×{WeaponStatSheet.Number(data.scopeMagnification)}" : "MIRE";
+                return CodeOf(catalog != null ? catalog.SightPrefab(variant) : null, $"V{variant}");
             case AttachmentCategory.Grip:
                 return variant == 0 ? "—" : CodeOf(catalog != null ? catalog.GripPrefab((GripKind)variant) : null, "P");
             case AttachmentCategory.Laser:
@@ -664,7 +667,8 @@ public class WeaponCustomizationController : MonoBehaviour
         switch (rubric)
         {
             case Rubric.Sight:
-                return variant == 0 || catalog == null ? "Mire de l'arme" : catalog.SightTitle(variant);
+                if (variant == 0) return AttachmentCatalog.BaseSightTitle(CurrentData);
+                return catalog == null ? $"Viseur {variant}" : catalog.SightTitle(variant);
             case Rubric.Grip:
                 if (variant == 0) return "Aucune";
                 return TitleOf(catalog != null ? catalog.GripPrefab((GripKind)variant) : null,
@@ -686,8 +690,12 @@ public class WeaponCustomizationController : MonoBehaviour
         switch (rubric)
         {
             case Rubric.Sight:
-                if (variant == 0) return "Hausse et guidon";
-                return TryReticle(variant, out string shape, out _) ? Capitalized(shape) : "Sans grossissement";
+                if (variant == 0)
+                    return data != null && data.scopeMagnification > 1f
+                        ? $"×{WeaponStatSheet.Number(data.scopeMagnification)} · plein écran" : "Hausse et guidon";
+                string reticleShape = TryReticle(variant, out string shape, out _) ? Capitalized(shape) : "Sans grossissement";
+                float zoom = SightMagnification(variant);
+                return zoom > 1f ? $"×{WeaponStatSheet.Number(zoom)} · {reticleShape}" : reticleShape;
             case Rubric.Grip:
                 if (variant == (int)GripKind.Vertical) return $"Recul vertical −{Less(catalog != null ? catalog.verticalGripRecoil : 1f)}";
                 if (variant == (int)GripKind.Angled) return $"Épaulement −{Less(catalog != null ? catalog.angledGripAimTime : 1f)}";
@@ -714,9 +722,17 @@ public class WeaponCustomizationController : MonoBehaviour
         switch (rubric)
         {
             case Rubric.Sight:
-                if (variant == 0) return "Mire de l'arme : sa hausse et son guidon d'origine.";
+                bool scoped = data != null && data.scopeMagnification > 1f;
+                if (variant == 0)
+                    return scoped ? $"{title} : la lunette de l'arme, en plein écran une fois épaulée."
+                                  : "Mire de l'arme : sa hausse et son guidon d'origine.";
                 string reticle = TryReticle(variant, out string shape, out string color)
                     ? $" Réticule {(color.Length > 0 ? color + " " : "")}: {shape}." : "";
+                float zoom = SightMagnification(variant);
+                if (zoom > 1f)
+                    return $"{title} ({code}).{reticle} Lunette ×{WeaponStatSheet.Number(zoom)} : elle remplace "
+                           + $"{(scoped ? $"la lunette d'origine (×{WeaponStatSheet.Number(data.scopeMagnification)})" : "la mire")}, "
+                           + "la vue grossit d'autant une fois épaulée. Le tir ne change pas.";
                 return $"{title} ({code}).{reticle} Viseur sans grossissement : il remplace la hausse et le guidon. Le tir ne change pas.";
             case Rubric.Grip:
                 if (variant == (int)GripKind.Vertical)
@@ -757,9 +773,12 @@ public class WeaponCustomizationController : MonoBehaviour
         switch (rubric)
         {
             case Rubric.Sight:
-                if (data != null && data.acceptedSights != SightFamilies.All)
-                    return $"Viseurs sans grossissement. Cette arme ne prend que les {SightFamiliesLabel(data.acceptedSights)}.";
-                return "Viseurs : dix modèles sans grossissement, points rouges, holographiques et réflex. Le tir ne change pas.";
+                SightFamilies families = data != null ? data.acceptedSights : SightFamilies.All;
+                if ((families & SightFamilies.NonMagnified) == 0)
+                    return "Lunettes : quatre modèles, de ×2 à ×3, ou la lunette d'origine de l'arme. Le tir ne change pas.";
+                if ((families & SightFamilies.NonMagnified) == SightFamilies.NonMagnified)
+                    return "Viseurs : onze modèles sans grossissement, points rouges, holographiques et réflex. Le tir ne change pas.";
+                return $"Viseurs sans grossissement. Cette arme ne prend que les {SightFamiliesLabel(families)}.";
             case Rubric.Grip:
                 return "Poignées : la verticale retient le recul vertical, l'inclinée fait épauler plus vite. Une seule à la fois.";
             case Rubric.Laser:
@@ -773,34 +792,25 @@ public class WeaponCustomizationController : MonoBehaviour
         }
     }
 
-    /// <summary>Le réticule d'un viseur, lu sur sa vitre (DuelArena/ViseurReticule) : sa forme en mots
-    /// (« cercle et point ») et sa couleur (« rouge »).</summary>
+    /// <summary>Le réticule d'un viseur : sa forme en mots (« point et quatre arcs », WeaponAttachment, de la
+    /// fiche de Blender) et sa couleur (« rouge », lue sur sa vitre).</summary>
     private bool TryReticle(int variant, out string shape, out string color)
     {
         shape = color = "";
         GameObject prefab = Catalog != null ? Catalog.SightPrefab(variant) : null;
-        Material lens = prefab != null && prefab.TryGetComponent(out WeaponAttachment sight) && sight.Lens != null
-            ? sight.Lens.sharedMaterial : null;
-        if (lens == null || !lens.HasProperty(ReticleShapeId)) return false;
-        shape = ReticleShapeLabel(Mathf.RoundToInt(lens.GetFloat(ReticleShapeId)));
-        if (lens.HasProperty(ReticleColorId)) color = PaletteNames.NameOf(lens.GetColor(ReticleColorId)).ToLowerInvariant();
+        if (prefab == null || !prefab.TryGetComponent(out WeaponAttachment sight)) return false;
+        shape = sight.ReticleLabelOn(PistolModel);
+        Material lens = sight.Lens != null ? sight.Lens.sharedMaterial : null;
+        if (lens != null && lens.HasProperty(ReticleColorId)) color = PaletteNames.NameOf(lens.GetColor(ReticleColorId)).ToLowerInvariant();
         return shape.Length > 0;
     }
 
-    /// <summary>Les formes du réticule, dans l'ordre de _Forme (DuelArena/ViseurReticule, celui de
-    /// commun_accessoires.FORMES_RETICULE dans Blender) ; vide pour une forme inconnue.</summary>
-    public static string ReticleShapeLabel(int shape) => shape switch
+    /// <summary>Le grossissement d'un viseur du catalogue (1 sans).</summary>
+    private float SightMagnification(int variant)
     {
-        0 => "point",
-        1 => "cercle et point",
-        2 => "cercle et chevron",
-        3 => "losange et point",
-        4 => "tirets et point",
-        5 => "cercle et croix",
-        6 => "triangle",
-        7 => "tirets et chevron",
-        _ => "",
-    };
+        GameObject prefab = Catalog != null ? Catalog.SightPrefab(variant) : null;
+        return prefab != null && prefab.TryGetComponent(out WeaponAttachment sight) ? sight.Magnification : 1f;
+    }
 
     private static string Capitalized(string text)
         => string.IsNullOrEmpty(text) ? text : char.ToUpperInvariant(text[0]) + text.Substring(1);
@@ -810,7 +820,9 @@ public class WeaponCustomizationController : MonoBehaviour
         var names = new List<string>();
         if ((families & SightFamilies.RedDot) != 0) names.Add("points rouges");
         if ((families & SightFamilies.Holographic) != 0) names.Add("holographiques");
-        if ((families & SightFamilies.Reflex) != 0) names.Add("réflex");
+        if ((families & (SightFamilies.Reflex | SightFamilies.WideReflex)) == SightFamilies.Reflex) names.Add("petits réflex");
+        else if ((families & (SightFamilies.Reflex | SightFamilies.WideReflex)) != 0) names.Add("réflex");
+        if ((families & SightFamilies.Scope) != 0) names.Add("lunettes");
         return names.Count == 0 ? "aucun" : string.Join(" et ", names);
     }
 

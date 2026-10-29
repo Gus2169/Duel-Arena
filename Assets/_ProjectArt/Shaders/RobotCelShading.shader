@@ -3,8 +3,9 @@
 //
 // La lumière ne se dégrade pas : elle tombe en aplats. Trois tons (lumière, demi-teinte, ombre teintée),
 // l'ombre portée du soleil en aplat elle aussi, un reflet franc, un liseré sur le bord éclairé, et un
-// contour sombre d'épaisseur constante à l'écran (coque inversée, passe « SRPDefaultUnlit »).
-// Purement visuel, catégorie C.
+// contour sombre (coque inversée, passe « SRPDefaultUnlit »), d'épaisseur constante à l'écran de près ; de loin,
+// il s'amincit avec le robot puis s'efface (2026-10-29, l'utilisateur : constant, il faisait d'un robot lointain
+// une tache noire, et le montrait de plus loin). Purement visuel, catégorie C.
 Shader "DuelArena/RobotCelShading"
 {
     Properties
@@ -20,6 +21,9 @@ Shader "DuelArena/RobotCelShading"
         _Lisere ("Liseré du bord éclairé", Range(0, 1)) = 0.35
         _Ambiance ("Part de la lumière ambiante", Range(0, 1)) = 0.35
         _Contour ("Épaisseur du contour (pixels en 1080p)", Float) = 2.5
+        _ContourDistance ("Distance (m, vue normale de 90°) où le contour commence à s'amincir avec le robot", Float) = 10
+        _ContourEffaceDebut ("Distance (m, vue normale) où le contour commence à s'effacer", Float) = 20
+        _ContourEffaceFin ("Distance (m, vue normale) où il a disparu", Float) = 40
         _CouleurContour ("Couleur du contour", Color) = (0.04, 0.04, 0.06, 1)
         [ToggleUI] _ContourLisse ("Contour gonflé le long des tangentes (normales lissées, OutlineNormalsPostprocessor)", Float) = 0
         [HDR] _Emission ("Lueur ajoutée (un écran, un voyant)", Color) = (0, 0, 0, 1)
@@ -44,6 +48,9 @@ Shader "DuelArena/RobotCelShading"
             float _Lisere;
             float _Ambiance;
             float _Contour;
+            float _ContourDistance;
+            float _ContourEffaceDebut;
+            float _ContourEffaceFin;
             half4 _CouleurContour;
             float _ContourLisse;
             half4 _Emission;
@@ -138,7 +145,8 @@ Shader "DuelArena/RobotCelShading"
             ENDHLSL
         }
 
-        // Le contour : la coque retournée, gonflée le long des normales d'une épaisseur constante à l'écran.
+        // Le contour : la coque retournée, gonflée le long des normales, d'une épaisseur à l'écran qui suit la
+        // taille du robot au-delà de _ContourDistance.
         Pass
         {
             Name "Contour"
@@ -162,6 +170,7 @@ Shader "DuelArena/RobotCelShading"
             {
                 float4 positionCS : SV_POSITION;
                 float fog : TEXCOORD0;
+                float present : TEXCOORD1;   // 1 de près, 0 une fois effacé
             };
 
             Varyings vert(Attributes input)
@@ -173,18 +182,27 @@ Shader "DuelArena/RobotCelShading"
                 float3 normalOS = _ContourLisse > 0.5 ? input.tangentOS.xyz : input.normalOS;
                 float3 normalWS = TransformObjectToWorldNormal(normalOS);
                 float2 normalCS = mul((float3x3)UNITY_MATRIX_VP, normalWS).xy;
-                // Une épaisseur en pixels, la même de près comme de loin, proportionnelle à la définition.
                 float2 direction = normalize(normalCS * _ScreenParams.xy + 1e-5);
-                float pixels = _Contour * _ScreenParams.y / 1080.0;
+                // La distance « vue normale » : celle où le robot paraîtrait aussi grand sous le champ de 90° du
+                // jeu (la profondeur divisée par la pente de la projection) ; une lunette le rapproche d'autant.
+                float distanceVue = positionCS.w / max(abs(UNITY_MATRIX_P[1][1]), 1e-3);
+                float present = 1.0 - smoothstep(_ContourEffaceDebut, _ContourEffaceFin, distanceVue);
+                // Une épaisseur en pixels, proportionnelle à la définition ; au-delà de _ContourDistance, elle
+                // décroît comme le robot à l'écran, puis s'efface.
+                float pixels = _Contour * _ScreenParams.y / 1080.0
+                               * min(1.0, _ContourDistance / max(distanceVue, 1e-3)) * present;
                 positionCS.xy += direction * pixels * 2.0 / _ScreenParams.xy * positionCS.w;
                 output.positionCS = positionCS;
                 output.fog = ComputeFogFactor(positionCS.z);
+                output.present = present;
                 return output;
             }
 
             half4 frag(Varyings input) : SV_Target
             {
-                return half4(MixFog(_CouleurContour.rgb, input.fog), 1.0);
+                // En s'effaçant, il prend le ton de l'ombre du robot : plus de liseré noir sous le pixel.
+                half3 couleur = lerp(_BaseColor.rgb * _CouleurOmbre.rgb, _CouleurContour.rgb, saturate(input.present));
+                return half4(MixFog(couleur, input.fog), 1.0);
             }
             ENDHLSL
         }

@@ -288,7 +288,7 @@ def construire(a):
     tete(a)
     montages(a)
     ca.hausse(a, AV_HAUSSE, H_RAIL, H_VISEE, r_int=0.0052, r_ext=0.0072, cotes=6)
-    ca.guidon(a, AV_GUIDON, 0.1505, H_VISEE, demi_base=0.0090, mat_pointe="Lueur")
+    ca.guidon(a, AV_GUIDON, 0.1505, H_VISEE, demi_base=0.0090)
     crosse(a)
     rafistolages(a)
     marquages(a)

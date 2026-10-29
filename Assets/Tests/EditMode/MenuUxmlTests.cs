@@ -116,6 +116,18 @@ public class MenuUxmlTests
         Assert.AreEqual(PickingMode.Ignore, indicator.pickingMode, "Il ne prend jamais la souris.");
     }
 
+    [Test]
+    public void LeHudDeCombat_PorteChaqueElementQueCrosshairUICherche()
+    {
+        VisualElement root = Clone("Assets/_ProjectUI/Game/CombatHud.uxml");
+        AssertNames(root, "CrosshairUI",
+            "combatHud", "damageStatic", "scope", "reticle", "emptyHint", "ammoPanel", "weaponName", "ammoRow",
+            "ammoValue", "ammoSize", "heatRow", "heatLabel", "heatFill");
+        Assert.IsInstanceOf<DuelArena.UI.CombatReticle>(root.Q("reticle"));
+        Assert.IsInstanceOf<DuelArena.UI.ScopeOverlay>(root.Q("scope"));
+        Assert.IsInstanceOf<DuelArena.UI.DamageStaticOverlay>(root.Q("damageStatic"));
+    }
+
     private static void AssertOptionsPanel(VisualElement root)
     {
         AssertNames(root, "OptionsController",

@@ -60,6 +60,22 @@ public class HitIndicatorTests
     }
 
     [Test]
+    public void UneRafaleRecue_NeFaitQuUneMarque_RelanceeAChaqueBalle()
+    {
+        var shown = new System.Collections.Generic.List<Vector3> { new Vector3(10f, 1.6f, 20f), new Vector3(-5f, 6f, 3f) };
+        Assert.AreEqual(0, HitIndicatorHud.SameSourceMark(shown, new Vector3(10.6f, 1.6f, 20.3f), 2f),
+            "Le tireur a fait un pas entre deux balles : la même marque, relancée.");
+        Assert.AreEqual(1, HitIndicatorHud.SameSourceMark(shown, new Vector3(-5f, 6f, 4f), 2f),
+            "Le même lanceur sur la passerelle : sa marque.");
+        Assert.AreEqual(-1, HitIndicatorHud.SameSourceMark(shown, new Vector3(0f, 1.6f, 20f), 2f),
+            "Un coup parti d'ailleurs : une marque de plus.");
+        Assert.AreEqual(-1, HitIndicatorHud.SameSourceMark(new System.Collections.Generic.List<Vector3>(), Vector3.zero, 2f),
+            "Rien d'affiché : une marque de plus.");
+        var close = new System.Collections.Generic.List<Vector3> { Vector3.zero, new Vector3(1.5f, 0f, 0f) };
+        Assert.AreEqual(1, HitIndicatorHud.SameSourceMark(close, new Vector3(1.2f, 0f, 0f), 2f), "Deux marques proches : la plus proche.");
+    }
+
+    [Test]
     public void UnEclairPlat_VaDuDepartALArrivee_SansJamaisEtreDroit()
     {
         var points = new Vector2[ElectricArc.PointCount(4)];
