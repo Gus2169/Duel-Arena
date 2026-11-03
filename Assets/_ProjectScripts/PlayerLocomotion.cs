@@ -1284,7 +1284,8 @@ public class PlayerLocomotion : NetworkBehaviour
             if (corpseLayer >= 0) gameObject.layer = dead ? corpseLayer : aliveLayer;
         }
 
-        bool queryable = !dead && !IsSpectator;
+        // Au Tournoi, la salle d'attente n'a pas de surface touchable : on y tire sur les mannequins (TO5).
+        bool queryable = !dead && !IsSpectator && RoundManager.HitboxLiveFor(OwnerClientId);
         if (queryable == hitboxShown) return;
         hitboxShown = queryable;
         if (hitbox != null) hitbox.SetQueryable(queryable);
@@ -1619,7 +1620,12 @@ public class PlayerLocomotion : NetworkBehaviour
     /// Sans `PlayerSpawnPoints` dans la scène, ne fait rien : le joueur garde la position que lui a
     /// donnée le NetworkManager.
     /// </summary>
-    public void ServerMoveToSpawnPoint()
+    public void ServerMoveToSpawnPoint() => ServerMoveToSpawnPoint(-1);
+
+    /// <summary>Comme ServerMoveToSpawnPoint, mais un duelliste va au poste `post` de l'arène (0 : A, 1 : B), quand il
+    /// existe : la boucle de manches les échange à chaque manche (RoundManager.SidePost). -1 : le point le plus éloigné
+    /// des autres.</summary>
+    public void ServerMoveToSpawnPoint(int post)
     {
         if (!IsServer) return;
 
@@ -1628,27 +1634,69 @@ public class PlayerLocomotion : NetworkBehaviour
         // second voit bien le premier. Seuls comptent ceux du même rôle (2026-10-13) : un duelliste
         // apparaît dans l'arène, loin de l'autre duelliste ; un spectateur sur la tribune, loin des
         // autres spectateurs.
+        // Au Tournoi (2026-11-03), chacun dans l'arène de son match (sa copie), ou dans la salle d'attente ; seuls
+        // comptent ceux du même match.
         bool spectating = IsSpectator;
+        bool inArena = RoundManager.TryGetArenaOf(OwnerClientId, out int arena);
+        RoundManager match = RoundManager.For(OwnerClientId);
         var occupied = new List<Vector3>();
         foreach (PlayerLocomotion other in spawnedPlayers)
         {
             if (other == null || other == this || other.IsSpectator != spectating) continue;
+            if (RoundManager.For(other.OwnerClientId) != match) continue;
             occupied.Add(other.transform.position);
         }
 
         Vector3 spawnPosition;
         float spawnYaw;
-        if (spectating)
+        TournamentSite site = TournamentSite.Instance;
+        if (!inArena && site != null)
+        {
+            if (!site.TryGetWaitingSpawn(occupied, out spawnPosition, out spawnYaw)) return;
+        }
+        else if (spectating)
         {
             Tribune tribune = Tribune.Instance;
             if (tribune == null || !tribune.TryGetSpectatorSpawn(occupied, out spawnPosition, out spawnYaw)) return;
         }
         else
         {
+            // Les points de l'arène, décalés vers la copie du match (aucun décalage hors du Tournoi).
+            Vector3 offset = site != null ? site.ArenaOffset(arena) : Vector3.zero;
+            for (int i = 0; i < occupied.Count; i++) occupied[i] -= offset;
             PlayerSpawnPoints points = PlayerSpawnPoints.Instance;
-            if (points == null || !points.TryGetSpawnPointFarthestFrom(occupied, out spawnPosition, out spawnYaw)) return;
+            if (points == null) return;
+            if (!points.TryGetPost(post, out spawnPosition, out spawnYaw)
+                && !points.TryGetSpawnPointFarthestFrom(occupied, out spawnPosition, out spawnYaw)) return;
+            spawnPosition += offset;
         }
+        ServerTeleportTo(spawnPosition, spawnYaw);
+    }
 
+    /// <summary>
+    /// La réapparition d'un duelliste mort, dans un mode qui en a (le Gun Game, GDD § 11, T2) : au point le plus
+    /// éloigné des autres duellistes parmi ceux qu'ils ne voient pas, choisi par le serveur ; à plus de `avoidRadius`
+    /// des points de `avoid` (à l'Élimination confirmée, ses modules). Sans point de réapparition dans la scène, il
+    /// garde sa place.
+    /// </summary>
+    public void ServerRespawnAwayFromOpponents(IReadOnlyList<Vector3> avoid = null, float avoidRadius = 0f)
+    {
+        if (!IsServer) return;
+        var eyes = new List<Vector3>();
+        foreach (PlayerLocomotion other in spawnedPlayers)
+        {
+            if (other == null || other == this || other.IsSpectator) continue;
+            eyes.Add(other.DisplayEyePosition);
+        }
+        PlayerSpawnPoints points = PlayerSpawnPoints.Instance;
+        if (points == null || !points.TryGetRespawnPoint(eyes, avoid, avoidRadius, out Vector3 position, out float yaw)) return;
+        ServerTeleportTo(position, yaw);
+    }
+
+    /// <summary>Serveur : pose ce joueur là, debout, sans élan ni lean, regard au cap `yaw`, et publie la pose
+    /// (le propriétaire s'y recale, les autres le voient s'y rendre d'un coup).</summary>
+    private void ServerTeleportTo(Vector3 spawnPosition, float spawnYaw)
+    {
         // Le CharacterController doit être désactivé pour un repositionnement direct, sinon il
         // écrase la nouvelle position au Move() suivant (même raison que dans la réconciliation).
         controller.enabled = false;
@@ -1832,9 +1880,10 @@ public class PlayerLocomotion : NetworkBehaviour
     /// visée reprend d'elle-même à la fin du rechargement si la touche est toujours tenue ; tirer au
     /// pompe interrompt son rechargement, comme avant. Décidé chez le joueur avant le snapshot, comme le
     /// sprint (GateSprint) : Move() reste une fonction du seul snapshot, et le serveur ne voit pas de
-    /// visée pendant un rechargement. Fonction pure, testée.
+    /// visée pendant un rechargement. Rien à épauler non plus au gant seul, la dernière marche du Gun Game
+    /// (`unarmed`, 2026-11-02). Fonction pure, testée.
     /// </summary>
-    public static bool GateAim(bool aimHeld, bool reloading) => aimHeld && !reloading;
+    public static bool GateAim(bool aimHeld, bool reloading, bool unarmed = false) => aimHeld && !reloading && !unarmed;
 
     private MovementInputSnapshot ReadLocalInput()
     {
@@ -1845,9 +1894,11 @@ public class PlayerLocomotion : NetworkBehaviour
         // c'est le coup, l'élan d'un lancer, la garde ou l'étourdissement qui arrêtent son sprint.
         bool spectating = IsSpectator;
         bool guard = spectating && spectator != null && spectator.LocalGuardHeld;
+        // Au gant seul (la dernière marche du Gun Game), ni visée ni tir : rien qui arrête le sprint.
+        bool unarmed = weapon != null && weapon.LocalUnarmed;
         bool intent = spectating
             ? WantsToSprint(input.SprintHeld, input.MoveInput, guard, false)
-            : WantsToSprint(input.SprintHeld, input.MoveInput, input.AimHeld, input.FireHeld);
+            : WantsToSprint(input.SprintHeld, input.MoveInput, input.AimHeld && !unarmed, input.FireHeld && !unarmed);
         // Un rechargement en attente (sortie de sprint, franchissement) arrête le sprint comme un
         // rechargement en cours : il partira dès que l'arme sera remontée.
         bool reloading = !spectating && weapon != null && (weapon.IsReloading || weapon.ReloadPending);
@@ -1886,7 +1937,7 @@ public class PlayerLocomotion : NetworkBehaviour
             sprintHeld = input.SprintHeld && sprintAllowed,
             sneakHeld = input.SneakHeld,
             // Un spectateur n'épaule rien : son clic droit lève sa garde, quand ses poings sont sortis.
-            aimHeld = spectating ? guard : GateAim(input.AimHeld, weapon != null && weapon.IsReloading),
+            aimHeld = spectating ? guard : GateAim(input.AimHeld, weapon != null && weapon.IsReloading, unarmed),
             aimPitch = cameraLook != null ? cameraLook.Pitch : 0f,
             fireHeld = input.FireHeld,
             firePressedThisFrame = input.FirePressedThisFrame,
@@ -2522,7 +2573,7 @@ public class PlayerLocomotion : NetworkBehaviour
         // on ne franchit pas un obstacle à moitié relevé. (Un spectateur ne franchit jamais : son
         // saut est filtré, SpectatorInputFilter.)
         bool spectating = IsSpectator;
-        bool movementAllowed = spectating ? SpectatorMovementAllowed(simTime) : RoundManager.MovementAllowedFor(IsAlive);
+        bool movementAllowed = spectating ? SpectatorMovementAllowed(simTime) : RoundManager.MovementAllowedFor(OwnerClientId, IsAlive);
         if (snap.jumpPressed && !spectating && movementAllowed && stanceProgress >= 1f
             && TryFindVaultTarget(out Vector3 vaultLanding, out float vaultTop, false))
         {

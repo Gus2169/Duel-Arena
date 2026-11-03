@@ -37,8 +37,20 @@ public class WeaponController : NetworkBehaviour
     /// de chaque input). L'apparence et les accessoires en gardent une par arme.</summary>
     public const int MaxSlots = 12;
 
+    /// <summary>La place de l'arme du Golden Gun (GDD § 11, G1), la première après l'arsenal. Les armes des
+    /// modes n'en font pas partie : ni l'armurerie, ni la préparation, ni une demande d'un joueur ne les
+    /// donnent (TrySwitchWeapon s'arrête à MaxSlots) ; le serveur seul les met en main (ServerForceWeapon).</summary>
+    public const int GoldenGunSlot = MaxSlots;
+
+    /// <summary>La place du gant seul, la dernière marche du Gun Game (GDD § 11, GG4) : une « arme » sans arme à
+    /// feu (WeaponData.unarmed), sans balle ni modèle, qui ne tire ni ne recharge ; il ne reste que le taser.</summary>
+    public const int GloveSlot = MaxSlots + 1;
+
     [Tooltip("L'arsenal : les douze armes, dans cet ordre (le rang d'une arme voyage sur le réseau et dans les réglages du joueur : ne pas réordonner, ajouter à la fin). Les quatre premières sont celles d'avant la refonte : FA-07, FP-12, FAP-03, FX-4 ; puis FA-30, FX-1, FP-30, FX-2, FAP-30, FX-3, PA-05, RV-30.")]
     [SerializeField] private WeaponData[] loadout = new WeaponData[0];
+
+    [Tooltip("Les armes des modes, après l'arsenal (places MaxSlots, puis les suivantes) : celle du Golden Gun, puis le gant seul du Gun Game. Aucun joueur ne les choisit : le serveur les met en main quand le mode l'impose.")]
+    [SerializeField] private WeaponData[] modeWeapons = new WeaponData[0];
     [SerializeField] private Camera aimCamera;
     [SerializeField] private PlayerCameraLook cameraLook;
     [SerializeField] private WeaponVisualFeedback visualFeedback;
@@ -198,6 +210,10 @@ public class WeaponController : NetworkBehaviour
         /// tir ou de sa dernière vidange ; elle refroidit ensuite seule (HeatAt).</summary>
         public float heat;
         public double heatAt;
+        /// <summary>Les armes que le serveur a mises en main de lui-même (ServerForceWeapon : un mode qui l'impose),
+        /// comptées : le joueur prend la nouvelle dès qu'il voit ce compte changer, même avec des tirs encore en
+        /// route (ReconcileMagazine). Au Gun Game, l'arme suivante arrive en pleine rafale (2026-11-02).</summary>
+        public byte forced;
     }
 
     private readonly NetworkVariable<MagazineState> networkMagazine = new NetworkVariable<MagazineState>(
@@ -243,7 +259,32 @@ public class WeaponController : NetworkBehaviour
 
     public IReadOnlyList<WeaponData> Loadout => loadout;
     public int SlotCount => loadout == null ? 0 : Mathf.Min(loadout.Length, MaxSlots);
-    public WeaponData DataOf(int slot) => slot >= 0 && slot < SlotCount ? loadout[slot] : null;
+
+    /// <summary>L'arme de la place `slot` : une arme de l'arsenal, ou une arme d'un mode (GoldenGunSlot).</summary>
+    public WeaponData DataOf(int slot)
+    {
+        if (slot >= 0 && slot < SlotCount) return loadout[slot];
+        int modeIndex = slot - MaxSlots;
+        return modeWeapons != null && modeIndex >= 0 && modeIndex < modeWeapons.Length ? modeWeapons[modeIndex] : null;
+    }
+
+    [System.NonSerialized] private List<WeaponData> allWeapons;
+
+    /// <summary>L'arsenal puis les armes des modes, chacune à l'indice de sa place : ce que la main du robot
+    /// doit pouvoir montrer (HeldWeapons).</summary>
+    public IReadOnlyList<WeaponData> AllWeapons
+    {
+        get
+        {
+            int count = MaxSlots + (modeWeapons != null ? modeWeapons.Length : 0);
+            if (allWeapons == null || allWeapons.Count != count)
+            {
+                allWeapons = new List<WeaponData>(count);
+                for (int slot = 0; slot < count; slot++) allWeapons.Add(DataOf(slot));
+            }
+            return allWeapons;
+        }
+    }
 
     /// <summary>Place de l'arme en main, telle que cette machine doit la montrer.</summary>
     public int DisplayedSlot => ShownMagazine.equipped;
@@ -255,6 +296,9 @@ public class WeaponController : NetworkBehaviour
     /// l'arme pèse sur la vitesse dans Move()).</summary>
     public byte LocalSlot => localMagazine.equipped;
 
+    /// <summary>L'arme en main selon l'état publié par le serveur (sa place).</summary>
+    public byte PublishedSlot => networkMagazine.Value.equipped;
+
     private WeaponData LocalData => DataOf(localMagazine.equipped) ?? DataOf(0);
     private WeaponData ServerData => DataOf(networkMagazine.Value.equipped) ?? DataOf(0);
 
@@ -265,6 +309,13 @@ public class WeaponController : NetworkBehaviour
         WeaponData data = DataOf(slot);
         return data != null ? data.moveSpeedMultiplier : 1f;
     }
+
+    /// <summary>L'arme en main n'est-elle que le gant (la dernière marche du Gun Game), telle que cette machine doit
+    /// la montrer ? Le corps passe alors à mains nues, la vue subjective aussi, et le HUD dit « Gant ».</summary>
+    public bool DisplayedUnarmed => Data != null && Data.unarmed;
+
+    /// <summary>Chez le propriétaire : n'a-t-il que le gant ? (ni visée ni tir : PlayerLocomotion.GateAim)</summary>
+    public bool LocalUnarmed => LocalData != null && LocalData.unarmed;
 
     /// <summary>Balles dans le chargeur de l'arme en main, telles que cette machine doit les montrer.</summary>
     public int DisplayedAmmo => ShownMagazine.ammo;
@@ -480,7 +531,7 @@ public class WeaponController : NetworkBehaviour
     {
         WeaponData data = LocalData;
         if (!fireHeld || data == null || IsSpectatorRole) return false;
-        if (!RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead)) return false;
+        if (!RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead)) return false;
         if (locomotion != null && locomotion.TimeSinceSprint < data.sprintToFireTime) return false;
         return CanFireBy(localMagazine, DataSlot(localMagazine.equipped), MagazineClock);
     }
@@ -492,7 +543,7 @@ public class WeaponController : NetworkBehaviour
     {
         WeaponData data = ServerData;
         if (!fireHeld || data == null || IsSpectatorRole) return false;
-        if (!RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead)) return false;
+        if (!RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead)) return false;
         if (locomotion != null && locomotion.ServerTimeSinceSprint < data.sprintToFireTime - SprintOutTolerance) return false;
         MagazineState magazine = networkMagazine.Value;
         double now = IsNetworked ? NetworkManager.ServerTime.Time : Time.timeAsDouble;
@@ -662,8 +713,17 @@ public class WeaponController : NetworkBehaviour
         // écran) tirerait à chaque clic. On ne traite l'input que pour SON PROPRE joueur.
         // (NetworkObject == null : composant testé hors contexte réseau, on laisse passer.)
         if (NetworkObject != null && !IsOwner) return;
-        // Un spectateur n'a pas d'arme (2026-10-13) : son clic gauche frappe ou lance (SpectatorController).
-        if (IsSpectatorRole) return;
+        // Un spectateur n'a pas d'arme (2026-10-13) : son clic gauche frappe ou lance (SpectatorController). Au Tag
+        // Team, celui qui attend son tour sur la tribune choisit pourtant la sienne à la préparation, pour son entrée.
+        if (IsSpectatorRole)
+        {
+            if (InTeam && LocalData != null)
+            {
+                UpdateLocalMagazine();
+                HandleSwitchInput();
+            }
+            return;
+        }
         WeaponData data = LocalData;
         if (data == null || input == null) return;
 
@@ -724,6 +784,9 @@ public class WeaponController : NetworkBehaviour
     /// <summary>Ce joueur est-il spectateur (rôle publié par le serveur) ? Il n'a alors pas d'arme.</summary>
     private bool IsSpectatorRole => matchState != null && matchState.IsSpectator;
 
+    /// <summary>Est-il dans une équipe du Tag Team ? Sur la tribune, il choisit quand même son arme à la préparation.</summary>
+    private bool InTeam => matchState != null && matchState.Team != PlayerTeam.None;
+
     // ------------------------------------------------------------------
     // Prendre une arme lancée par un spectateur (2026-10-13, GDD § 9)
     // ------------------------------------------------------------------
@@ -755,7 +818,8 @@ public class WeaponController : NetworkBehaviour
 #endif
         if (PowerUpCandidate == null || !wants) return;
         if (ownHealth != null && ownHealth.IsDead) return;
-        if (!RoundManager.FiringAllowedFor(true)) return;
+        if (!RoundManager.WeaponPickupAllowed) return;
+        if (!RoundManager.FiringAllowedFor(OwnerClientId, true)) return;
         int slot = SlotOfPowerUp(PowerUpCandidate);
         if (slot < 0) return;
 
@@ -828,7 +892,7 @@ public class WeaponController : NetworkBehaviour
         action.refused = true;
 
         bool alive = ownHealth == null || !ownHealth.IsDead;
-        if (!IsSpectatorRole && alive && RoundManager.FiringAllowedFor(true)
+        if (!IsSpectatorRole && alive && RoundManager.FiringAllowedFor(OwnerClientId, true) && RoundManager.WeaponPickupAllowed
             && itemReference.TryGet(out NetworkObject itemObject) && itemObject.TryGetComponent(out ArenaItem item)
             && item.ServerIsPickable && item.Kind == ArenaItemKind.PowerUp)
         {
@@ -881,10 +945,10 @@ public class WeaponController : NetworkBehaviour
 
     /// <summary>
     /// Le joueur peut-il encore changer d'arme ? Seulement avant la manche (2026-10-12) : pendant la
-    /// préparation tant qu'il n'a pas validé, et en attendant un adversaire. Le serveur applique la
-    /// même règle à chaque demande (SwitchWeaponServerRpc).
+    /// préparation tant qu'il n'a pas validé, et en attendant un adversaire. Un spectateur n'en a pas, sauf au Tag
+    /// Team celui d'une équipe, qui entrera. Le serveur applique la même règle à chaque demande (SwitchWeaponServerRpc).
     /// </summary>
-    public bool CanChooseWeapon => !IsSpectatorRole && RoundManager.WeaponSwitchAllowedFor(matchState != null && matchState.ReadyOrRequested);
+    public bool CanChooseWeapon => (!IsSpectatorRole || InTeam) && RoundManager.WeaponSwitchAllowedFor(OwnerClientId, matchState != null && matchState.ReadyOrRequested);
 
     /// <summary>Le panneau de préparation (ou la fenêtre du stand de tir) demande l'arme de la place
     /// `slot` : prédite chez le joueur, puis contrôlée par le serveur.</summary>
@@ -906,7 +970,7 @@ public class WeaponController : NetworkBehaviour
         }
 #endif
         if (wanted < 0 || wanted == localMagazine.equipped || DataOf(wanted) == null) return;
-        if (!CanChooseWeapon) return;
+        if (!CanChooseWeapon || !RoundManager.WeaponAllowedFor(OwnerClientId, DataOf(wanted))) return;
 
         // Prédit : l'arme change tout de suite chez le joueur, et le serveur la changera à réception,
         // à l'instant que MagazineClock annonce. Un rechargement en cours ou en attente est annulé ; la
@@ -961,9 +1025,10 @@ public class WeaponController : NetworkBehaviour
         // (2026-10-13) : le tireur sait qu'il doit recharger. Rien n'est envoyé au serveur.
         int slot = DataSlot(localMagazine.equipped);
         HeatRules heat = HeatRulesOf(slot);
-        bool dry = heat.Active ? IsOverheated(localMagazine, MagazineClock, heat) : localMagazine.ammo == 0;
+        // Le gant seul n'a pas de gâchette : rien ne claque.
+        bool dry = !data.unarmed && (heat.Active ? IsOverheated(localMagazine, MagazineClock, heat) : localMagazine.ammo == 0);
         bool emptyTrigger = input.FireHeld && dry && localMagazine.reloadEndsAt <= 0.0
-                            && RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead);
+                            && RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead);
         if (emptyTrigger && !emptyTriggerHeard && weaponAudio != null) weaponAudio.PlayDryFire(data);
         emptyTriggerHeard = emptyTrigger;
 
@@ -977,7 +1042,7 @@ public class WeaponController : NetworkBehaviour
         if (PlayerLocomotion.DebugVaultIgnoresRules) vaulting = false; // client tricheur simulé
 #endif
         if (wantsToFire && cooldown <= 0f && armed && !locomotion.IsSprinting && !vaulting
-            && ReadyAfterSprint && RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead)
+            && ReadyAfterSprint && RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead)
             && (taser == null || !taser.IsStriking))
         {
             // Le cooldown doit être posé AVANT Fire() : si Fire() lève une exception (ex.
@@ -1043,6 +1108,7 @@ public class WeaponController : NetworkBehaviour
         PlayerHitbox ownHitbox = locomotion != null ? locomotion.Hitbox : null;
         bool ownQueryable = ownHitbox != null && ownHitbox.IsQueryable;
         if (ownQueryable) ownHitbox.SetQueryable(false);
+        shownEnds.Clear();
         try
         {
             for (int i = 0; i < data.PelletCount; i++)
@@ -1059,6 +1125,7 @@ public class WeaponController : NetworkBehaviour
                     onBody = true;
                 }
                 Debug.DrawLine(origin, end, hitSomething ? Color.red : Color.gray, 0.5f);
+                shownEnds.Add(end);
                 if (visualFeedback != null)
                 {
                     // Le rayon des armes laser se voit (plus épais chargé) ; une arme à balles n'a que sa
@@ -1075,6 +1142,7 @@ public class WeaponController : NetworkBehaviour
             if (ownQueryable) ownHitbox.SetQueryable(true);
         }
         if (visualFeedback != null && !data.shotIsBeam) SpawnOwnMuzzleFlash(FlashScaleOf(firedSlot));
+        ShotShown?.Invoke(this, origin, shownEnds);
 
         if (NetworkObject != null)
         {
@@ -1169,6 +1237,14 @@ public class WeaponController : NetworkBehaviour
     /// Le tir était déjà diffusé à tout le monde pour le son et le tracer : aucun réseau
     /// supplémentaire n'a été nécessaire, seulement un point d'accroche.</summary>
     public event System.Action OnShotFired;
+
+    /// <summary>Levé à chaque tir MONTRÉ par cette machine (chez le tireur depuis Fire(), chez les autres depuis
+    /// BroadcastShotClientRpc), avec son origine et le point d'arrivée de chaque balle ou plomb tels qu'elle les a
+    /// montrés (2026-11-03). Le replay du coup mortel y retrouve le coup (KillReplay) ; rien du jeu ne s'y fie.</summary>
+    public static event System.Action<WeaponController, Vector3, IReadOnlyList<Vector3>> ShotShown;
+
+    // Les points d'arrivée d'un tir montré, pour ShotShown (sans allouer à chaque tir).
+    private static readonly List<Vector3> shownEnds = new List<Vector3>(16);
 
     /// <summary>Joue le son de tir de l'arme (coup, queue de réverbération, mécanique : WeaponAudio).
     /// Appelé localement par le tireur dans Fire(), et rediffusé aux autres clients par
@@ -1379,7 +1455,8 @@ public class WeaponController : NetworkBehaviour
         // validation du joueur (PlayerMatchState) voyage après ses changements d'arme : un choix fait
         // avant de valider est donc toujours accepté, même s'il n'est appliqué qu'au début du
         // décompte (la file attend l'input qui le précède).
-        action.refused = IsSpectatorRole || !RoundManager.WeaponSwitchAllowedFor(matchState != null && matchState.Ready);
+        action.refused = (IsSpectatorRole && !InTeam) || !RoundManager.WeaponSwitchAllowedFor(OwnerClientId, matchState != null && matchState.Ready)
+                         || !RoundManager.WeaponAllowedFor(OwnerClientId, DataOf(slot));
         if (!action.refused && slot < SlotCount && DataOf(slot) != null && locomotion != null)
             locomotion.ServerScheduleWeaponSlot(action.inputSequence + 1, slot);
         serverArmsActions.Enqueue(action);
@@ -1511,7 +1588,7 @@ public class WeaponController : NetworkBehaviour
         // Garde-fou anti-triche : hors manche, aucun tir n'est accepté. Sans ce test serveur, un
         // client modifié tirerait pendant le décompte ou après la mort de son adversaire — le test
         // dans HandleFireInput n'est qu'une convention côté client.
-        if (!RoundManager.FiringAllowedFor(true)) // la mort du tireur est refusée plus haut
+        if (!RoundManager.FiringAllowedFor(OwnerClientId, true)) // la mort du tireur est refusée plus haut
         {
 #if UNITY_EDITOR
             diagRejectedPhase++;
@@ -1686,9 +1763,11 @@ public class WeaponController : NetworkBehaviour
             int bodyMask = 0; // les plombs arrêtés par un robot (le son de l'impact, 2026-10-13)
             var damage = new Dictionary<Health, float>();
             var firstHitPoint = new Dictionary<Health, Vector3>();
+            var headTargets = new HashSet<Health>();
             bool headHit = false;
             bool killed = false;
             var zones = new System.Text.StringBuilder();
+            bool headshotsOnly = RoundManager.HeadshotsOnlyFor(OwnerClientId);
             for (int i = 0; i < count; i++)
             {
                 Vector3 pellet = PelletDirection(shot, data.PelletOffset(i, aiming, hipScale));
@@ -1709,10 +1788,20 @@ public class WeaponController : NetworkBehaviour
                     Debug.LogWarning($"[Serveur] {bodyHit.name} est sur le layer Hitbox mais n'a aucun Health parent — aucun dégât appliqué.", bodyHit);
                     continue;
                 }
+                PlayerHitboxZone zone = bodyHit.GetComponent<PlayerHitboxZone>();
+                // Tête seulement (GDD § 11) : un impact ailleurs qu'à la tête ne blesse pas.
+                if (!Hurts(zone != null ? zone.Zone : HitboxZoneType.Torso, headshotsOnly))
+                {
+                    zones.Append(zone != null ? zone.Zone.ToString() : "?").Append("(sans effet) ");
+                    continue;
+                }
                 AddDamage(damage, data, bodyHit, distance, charge, falloff);
                 if (!firstHitPoint.ContainsKey(target)) firstHitPoint[target] = ends[i];
-                PlayerHitboxZone zone = bodyHit.GetComponent<PlayerHitboxZone>();
-                if (zone != null && zone.Zone == HitboxZoneType.Head) headHit = true;
+                if (zone != null && zone.Zone == HitboxZoneType.Head)
+                {
+                    headHit = true;
+                    headTargets.Add(target);
+                }
                 if (ServerHitRegistered != null)
                 {
                     HitboxZoneType zoneType = zone != null ? zone.Zone : HitboxZoneType.Torso;
@@ -1724,8 +1813,12 @@ public class WeaponController : NetworkBehaviour
             float dealt = 0f;
             foreach (var pair in damage)
             {
+                // Au Tournoi, on ne blesse que son adversaire (la salle d'attente n'a pas de surface touchable).
+                if (!RoundManager.MayHurt(OwnerClientId, pair.Key)) continue;
                 float before = pair.Key.Current;
-                pair.Key.ApplyDamage(pair.Value, transform.root.gameObject);
+                // Un tir qui a touché la tête de sa cible est retenu comme tel s'il la tue (le Tag Team le compte plus).
+                pair.Key.ApplyDamage(pair.Value, transform.root.gameObject,
+                                     headTargets.Contains(pair.Key) ? Health.DamageCause.HeadShot : Health.DamageCause.Shot);
                 dealt += Mathf.Max(0f, before - pair.Key.Current);
 #if UNITY_EDITOR
                 diagHits++;
@@ -1753,7 +1846,7 @@ public class WeaponController : NetworkBehaviour
             // Statistiques du match (GDD § 14), comptées ici, par le serveur, et seulement pendant la
             // manche : ni l'échauffement, ni les tirs sur l'épave de l'adversaire. Un tir de pompe
             // compte pour un tir, touché si un plomb a touché.
-            if (matchState != null && RoundManager.StatsRecording) matchState.ServerRecordShot(damage.Count > 0, headHit, dealt);
+            if (matchState != null && RoundManager.StatsRecordingFor(OwnerClientId)) matchState.ServerRecordShot(damage.Count > 0, headHit, dealt);
 
             // Le retour de touche (GDD § 6) : décidé ici, entendu par le tireur seul.
             if (damage.Count > 0) ServerConfirmHit(ClassifyHit(headHit, killed));
@@ -1828,6 +1921,10 @@ public class WeaponController : NetworkBehaviour
     /// La cible de la salle de précision du stand y marque ses impacts (AimRange) ; rien du jeu ne s'y fie.</summary>
     public static event System.Action<Vector3, Vector3> ServerWorldImpact;
 
+    /// <summary>Un impact dans cette zone blesse-t-il ? Toujours, sauf à Tête seulement (GDD § 11, I3) : la tête seule.
+    /// Fonction pure, testée.</summary>
+    public static bool Hurts(HitboxZoneType zone, bool headshotsOnly) => !headshotsOnly || zone == HitboxZoneType.Head;
+
     /// <summary>Ajoute les dégâts d'un impact à sa cible : zone touchée (tête, buste, jambes), distance,
     /// charge du tir et portée des dégâts que lui font les accessoires (WeaponData.DamageAt).</summary>
     private static void AddDamage(Dictionary<Health, float> damage, WeaponData data, Collider body, float distance, float charge,
@@ -1853,19 +1950,22 @@ public class WeaponController : NetworkBehaviour
     /// Le rechargement automatique (2026-10-27, demandé par l'utilisateur, comme dans les FPS classiques) : la
     /// gâchette pressée chargeur vide recharge, et une arme automatique dont on tient la gâchette sur sa
     /// dernière balle recharge aussitôt. Pas une arme laser, dont la surchauffe se vide d'elle-même, ni pendant
-    /// un rechargement. La demande suit ensuite le chemin de la touche de rechargement (sortie de sprint,
-    /// franchissement, arme pas encore sortie : elle attend). Fonction pure, testée.
+    /// un rechargement. Une arme rechargée après chaque tir (`afterEachShot`, le Golden Gun) recharge dès
+    /// qu'elle est vide, sans rien presser. La demande suit ensuite le chemin de la touche de rechargement
+    /// (sortie de sprint, franchissement, arme pas encore sortie : elle attend). Fonction pure, testée.
     /// </summary>
-    public static bool AutoReloadWanted(bool firePressed, bool fireHeld, bool automatic, bool usesHeat, int ammo, bool reloading)
-        => !usesHeat && ammo <= 0 && !reloading && (firePressed || (automatic && fireHeld));
+    public static bool AutoReloadWanted(bool firePressed, bool fireHeld, bool automatic, bool usesHeat, int ammo, bool reloading,
+                                        bool afterEachShot = false)
+        => !usesHeat && ammo <= 0 && !reloading && (afterEachShot || firePressed || (automatic && fireHeld));
 
     private void HandleReloadInput()
     {
         WeaponData data = LocalData;
         bool wantsReload = input.ReloadPressedThisFrame;
         if (AutoReloadWanted(input.FireWasPressedThisFrame, input.FireHeld, data.isAutomatic,
-                             HeatRulesOf(DataSlot(localMagazine.equipped)).Active, localMagazine.ammo, localMagazine.reloadEndsAt > 0.0)
-            && RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead))
+                             HeatRulesOf(DataSlot(localMagazine.equipped)).Active, localMagazine.ammo, localMagazine.reloadEndsAt > 0.0,
+                             data.reloadsAfterEachShot)
+            && RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead))
             wantsReload = true;
 #if UNITY_EDITOR
         // Le banc de tir automatique garde la gâchette enfoncée : il recharge à vide.
@@ -1932,7 +2032,7 @@ public class WeaponController : NetworkBehaviour
             MagazineState s = networkMagazine.Value;
             Debug.Log($"[DIAG-CHARGEUR] arme={localMagazine.equipped + 1} predit={localMagazine.ammo} recharge={localMagazine.reloadEndsAt > 0.0} envoyees={actionsSent} | " +
                       $"serveur: arme={s.equipped + 1} balles={s.ammo} traitees={s.actionsProcessed} fin_recharge={s.reloadEndsAt:F2} | " +
-                      $"gachette={input.FireHeld} tir_permis={RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead)} sprint={locomotion.IsSprinting} cooldown={cooldown:F2}");
+                      $"gachette={input.FireHeld} tir_permis={RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead)} sprint={locomotion.IsSprinting} cooldown={cooldown:F2}");
         }
 #endif
     }
@@ -1997,6 +2097,8 @@ public class WeaponController : NetworkBehaviour
             CompleteIfDue(ref magazine, DataSlot(magazine.equipped), action.serverTime + ReloadCompletionTolerance);
             if (TrySwitchWeapon(ref magazine, action.slot, action.serverTime, RaiseTimeOf(action.slot), MagazineSizeOf(action.slot)))
                 ResetShotRateOnSwitch(ref serverLastFireCheck);
+            // L'arme est celle que le joueur a choisie : un mode qui la lui reprendrait la lui rendra.
+            serverHoldsImposed = false;
         }
         else
         {
@@ -2040,6 +2142,43 @@ public class WeaponController : NetworkBehaviour
             Debug.Log("[DIAG-CHARGEUR] rechargement annulé par le franchissement (serveur)");
 #endif
         }
+    }
+
+    // Serveur : l'arme de l'arsenal que tenait le joueur avant qu'un mode ne lui en impose une autre.
+    private int serverArsenalSlot;
+    // L'arme en main vient-elle du mode (ServerForceWeapon) plutôt que du choix du joueur ?
+    private bool serverHoldsImposed;
+
+    /// <summary>
+    /// Serveur : met l'arme `slot` en main, chargeur plein, sans demande du joueur, parce que le mode
+    /// l'impose (le Golden Gun, au début de chaque manche ; le Gun Game, à chaque marche). Le joueur se recale
+    /// sur l'état publié dès que plus aucune de ses demandes n'est en route (ReconcileMagazine) ; ses inputs
+    /// suivants portent le poids de cette arme (ServerScheduleWeaponSlot). L'arme qu'il avait choisie est retenue,
+    /// pour la lui rendre quand le mode change (ServerReturnToArsenal) : pas celles que le mode lui a données
+    /// depuis, même de l'arsenal (les marches du Gun Game).
+    /// </summary>
+    public void ServerForceWeapon(int slot)
+    {
+        if (!IsServer || DataOf(slot) == null) return;
+        MagazineState magazine = networkMagazine.Value;
+        if (!serverHoldsImposed && magazine.equipped < MaxSlots) serverArsenalSlot = magazine.equipped;
+        serverHoldsImposed = true;
+        bool switching = slot != magazine.equipped;
+        ForceWeapon(ref magazine, slot, NetworkManager.ServerTime.Time, RaiseTimeOf(slot), MagazineSizeOf(slot));
+        unchecked { magazine.forced++; }
+        networkMagazine.Value = magazine;
+        if (switching) ResetShotRateOnSwitch(ref serverLastFireCheck);
+        // Le robot d'un client : le serveur fixe l'arme de ses inputs (le Host simule lui-même le sien).
+        if (locomotion != null && !IsOwner) locomotion.ServerScheduleWeaponSlot(locomotion.ServerLastReceivedInput + 1, (byte)slot);
+    }
+
+    /// <summary>Serveur : un joueur qui tient encore l'arme d'un mode (le mode a changé au salon) reprend
+    /// l'arme de l'arsenal qu'il avait choisie avant.</summary>
+    public void ServerReturnToArsenal()
+    {
+        if (!IsServer || !serverHoldsImposed) return;
+        ServerForceWeapon(DataOf(serverArsenalSlot) != null ? serverArsenalSlot : 0);
+        serverHoldsImposed = false;
     }
 
     /// <summary>Le chargeur plein (une arme laser froide) et le rechargement annulé. Serveur
@@ -2217,6 +2356,21 @@ public class WeaponController : NetworkBehaviour
         return true;
     }
 
+    /// <summary>L'arme de la place `slot` en main parce que le mode l'impose (le Golden Gun) : pleine, sortie
+    /// en `raiseTime` si elle change, le rechargement abandonné, comme une arme ramassée, mais aussi hors de
+    /// l'arsenal. Fonction pure, testée.</summary>
+    public static void ForceWeapon(ref MagazineState magazine, int slot, double now, float raiseTime, int magazineSize)
+    {
+        if (slot < 0 || slot > byte.MaxValue) return;
+        if (slot != magazine.equipped)
+        {
+            magazine.equipped = (byte)slot;
+            magazine.readyAt = now + Mathf.Max(0f, raiseTime);
+        }
+        magazine.reloadEndsAt = 0.0;
+        Refill(ref magazine, magazineSize);
+    }
+
     /// <summary>Prend l'arme de la place `slot` : elle sort en `raiseTime` à partir de `now`, pleine
     /// (`magazineSize` balles, ou froide pour une arme laser : l'inventaire ne garde qu'une arme), et
     /// le rechargement en cours est abandonné. Refusé pour l'arme déjà en main ou une place hors de
@@ -2344,9 +2498,19 @@ public class WeaponController : NetworkBehaviour
     /// Ce qui se recale ainsi : un tir refusé par le serveur (cadence, hors manche), un
     /// rechargement refusé ou annulé par un début de manche, une fin de rechargement arrivée
     /// quelques millisecondes plus tôt sur le serveur, un changement d'arme refusé.
+    ///
+    /// Une arme que le serveur a mise en main de lui-même (`forced` a changé : un mode qui l'impose) se prend
+    /// tout de suite, sans attendre ce qui est en route : ces tirs-là partaient de l'arme d'avant, et le
+    /// serveur les refuse. Sans ça, au Gun Game, un tueur qui ne lâchait pas la gâchette gardait l'arme d'avant
+    /// tant qu'un tir était en route (à 300 ms d'aller-retour, toute la rafale). Fonction pure, testée.
     /// </summary>
     public static void ReconcileMagazine(MagazineState server, ushort actionsSent, ref MagazineState local)
     {
+        if (server.forced != local.forced)
+        {
+            local = server;
+            return;
+        }
         if (server.actionsProcessed != actionsSent) return;
         if (server.reloadEndsAt > 0.0) return;
         local = server;
@@ -2411,6 +2575,7 @@ public class WeaponController : NetworkBehaviour
         if (ends == null) return;
 
         var impacts = new ShotImpactSounds(data);
+        shownEnds.Clear();
         for (int i = 0; i < ends.Length; i++)
         {
             Vector3 end = ends[i];
@@ -2425,6 +2590,7 @@ public class WeaponController : NetworkBehaviour
                 hit = true;
                 onBody = true;
             }
+            shownEnds.Add(end);
             if (visualFeedback != null)
             {
                 if (data == null || data.shotIsBeam)
@@ -2434,6 +2600,7 @@ public class WeaponController : NetworkBehaviour
             }
             if (hit) impacts.Add(end, onBody);
         }
+        ShotShown?.Invoke(this, origin, shownEnds);
 
         PlayFlyby(data, origin, ends, bodyMask);
     }

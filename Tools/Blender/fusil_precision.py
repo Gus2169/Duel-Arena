@@ -88,8 +88,11 @@ def chassis(a):
     kit.vis_six_pans(pc, bout - Vector((0.002, 0, 0)), GAUCHE, r=0.0068, h=0.0070, mat="AcierBrut", phase=0.0)
     anneau = kit.cercle(bout + Vector((0.0005, 0, 0)), GAUCHE, 0.0042, 10)
     kit.soudure(pc, anneau + [anneau[0]], r=0.0013, mat="Soudure", rng=a.rng, pas=0.0016, cotes=5)
-    # sûreté et bouton de chargeur
-    f = kit.boite(pc, -0.004, 0.010, 0.097, 0.104, -0.0225, -0.0190, "Acier")      # sûreté (droite)
+    a.objet(pc)
+
+    # Sûreté et bouton de chargeur, hors de la culasse : elle seule recule au rechargement (rechargement_chargeur.py).
+    pc = a.piece("Commandes", "Acier")
+    kit.boite(pc, -0.004, 0.010, 0.097, 0.104, -0.0225, -0.0190, "Acier")          # sûreté (droite)
     kit.cylindre(pc, P(0.252, 0.040, 0.0235), P(0.252, 0.040, 0.0270), 0.0042, 8)
     a.objet(pc)
 

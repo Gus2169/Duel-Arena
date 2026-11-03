@@ -498,8 +498,13 @@ public class AnimatorStateTests
         animator.SetLayerWeight(2, 1f); // en jeu, PlayerAnimator pilote ce poids pendant le geste
         yield return Settle(0.3f);
 
+        // Pas de temps figé : mesuré en temps réel, l'instant du contact dépendait de la charge de la machine (0,51 m
+        // d'habitude, 0,496 une fois en série complète, le 2026-11-03).
+        Time.captureDeltaTime = 1f / 120f;
+        yield return null;
         animator.SetTrigger("Taser");
         yield return new WaitForSeconds(0.18f); // contact : TaserController.contactDelay
+        Time.captureDeltaTime = 0f;
         AssertStateSurCouche(2, "Coup");
         Assert.AreEqual("Taser Punch", ClipDominant(2), "Le coup de taser joue le Taser Punch (2026-10-11).");
 

@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -45,6 +46,138 @@ public class FirstPersonViewTests
         Assert.AreEqual(Vector3.zero, animator.GetBoneTransform(HumanBodyBones.Neck).localScale, "Le cou n'est pas replié : au pistolet, ses pièces passent devant l'œil.");
         Assert.AreEqual(Vector3.zero, animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg).localScale);
         Assert.AreEqual(Vector3.zero, animator.GetBoneTransform(HumanBodyBones.RightUpperLeg).localScale);
+    }
+
+    /// <summary>
+    /// La copie ne montre que ses bras (2026-10-29, demandé par l'utilisateur) : sur chaque châssis, ses pièces du buste et
+    /// des clavicules, rendues seules, ne couvrent rien, vues de face, quand celles du corps couvrent une bonne part de
+    /// l'image ; ses bras, si. Levée pour un rechargement, la copie montrait le haut de son buste au bas de l'écran ; au
+    /// pistolet, l'œil est dans les plaques du buste du CT-01, dont le contour se voyait de l'intérieur, un pan noir sur
+    /// 13 % de l'écran. On mesure ce qui se voit : chaque partie rendue seule (les pièces des autres os repliées le temps
+    /// du rendu), sur un fond transparent.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator LaCopie_NeMontreQueSesBras_SurChaqueChassis()
+    {
+        source = TestCharacter.InstantiateModel(out Animator body);
+        cameraGo = new GameObject("CameraTest");
+        int layer = LayerMask.NameToLayer(FirstPersonView.LayerName);
+        GameObject view = FirstPersonView.BuildView(source, cameraGo.transform, layer, out _, out _);
+        yield return null;
+
+        // Les os des parties, sur le squelette du corps ; chaque peau de la copie a les mêmes, dans le même ordre.
+        var torso = new HashSet<Transform>();
+        foreach (HumanBodyBones b in FirstPersonView.TorsoBones)
+            if (body.GetBoneTransform(b) != null) torso.Add(body.GetBoneTransform(b));
+        var limbs = new HashSet<Transform>();
+        foreach (HumanBodyBones b in new[] { HumanBodyBones.LeftUpperArm, HumanBodyBones.RightUpperArm })
+            limbs.UnionWith(body.GetBoneTransform(b).GetComponentsInChildren<Transform>(true));
+        var bodySkins = new List<SkinnedMeshRenderer>();
+        var pairs = new List<(SkinnedMeshRenderer skin, Transform[] bones)>();
+        foreach (SkinnedMeshRenderer skin in source.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            if (skin.bones.Length < 20) continue;
+            bodySkins.Add(skin);
+            foreach (SkinnedMeshRenderer twin in view.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                if (twin.name == skin.name) pairs.Add((twin, skin.bones));
+        }
+        Assert.GreaterOrEqual(bodySkins.Count, RobotChassis.Count, "Garde : chaque châssis a sa peau.");
+        Assert.AreEqual(bodySkins.Count, pairs.Count, "Garde : chaque peau du corps a la sienne sur la copie.");
+
+        const int width = 320, height = 320;
+        var target = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
+        target.Create();
+        var pixels = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        var lens = new GameObject("Objectif");
+        lens.transform.SetParent(cameraGo.transform, false);
+        lens.transform.localPosition = new Vector3(0f, 1.3f, 1.6f);
+        lens.transform.LookAt(cameraGo.transform.TransformPoint(new Vector3(0f, 1.3f, 0f)));
+        Camera camera = lens.AddComponent<Camera>();
+        camera.enabled = false;
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.backgroundColor = Color.clear;
+        camera.fieldOfView = 60f;
+        camera.nearClipPlane = 0.05f;
+        camera.farClipPlane = 10f;
+        camera.aspect = 1f;
+        camera.allowHDR = false;   // sans HDR, le tampon d'URP garde la couche alpha
+        camera.allowMSAA = false;
+        var fold = new GameObject("Repli").transform;
+        fold.SetParent(cameraGo.transform, false);
+        fold.localScale = Vector3.zero;
+
+        // La part de l'image que couvrent les peaux `skins` (le corps ou la copie, layer `mask`), seules les pièces des os
+        // `keep` (os du corps) gardées.
+        float Cover(IEnumerable<(SkinnedMeshRenderer skin, Transform[] bones)> skins, int mask, HashSet<Transform> keep)
+        {
+            var saved = new List<(SkinnedMeshRenderer, Transform[])>();
+            var others = new List<Renderer>();
+            foreach (GameObject root in new[] { source, view })
+                foreach (Renderer r in root.GetComponentsInChildren<Renderer>())
+                    if (!(r is SkinnedMeshRenderer s && s.bones.Length >= 20) && !r.forceRenderingOff)
+                    {
+                        r.forceRenderingOff = true;   // l'arme, le gant : pas des pièces du robot
+                        others.Add(r);
+                    }
+            try
+            {
+                foreach ((SkinnedMeshRenderer skin, Transform[] sourceBones) in skins)
+                {
+                    Transform[] bones = skin.bones;
+                    saved.Add((skin, (Transform[])bones.Clone()));
+                    for (int i = 0; i < bones.Length; i++)
+                        if (!keep.Contains(sourceBones[i])) bones[i] = fold;
+                    skin.bones = bones;
+                    skin.forceMatrixRecalculationPerRender = true;
+                }
+                camera.cullingMask = mask;
+                var request = new RenderPipeline.StandardRequest { destination = target };
+                RenderPipeline.SubmitRenderRequest(camera, request);
+                RenderTexture previous = RenderTexture.active;
+                RenderTexture.active = target;
+                pixels.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                pixels.Apply();
+                RenderTexture.active = previous;
+            }
+            finally
+            {
+                foreach ((SkinnedMeshRenderer skin, Transform[] bones) in saved) skin.bones = bones;
+                foreach (Renderer r in others) r.forceRenderingOff = false;
+            }
+            int covered = 0;
+            foreach (Color32 c in pixels.GetPixels32())
+                if (c.a >= 128) covered++;
+            return (float)covered / (width * height);
+        }
+
+        var report = new System.Text.StringBuilder();
+        try
+        {
+            foreach (ChassisId chassis in new[] { ChassisId.CT01, ChassisId.Prototype, ChassisId.OS02 })
+            {
+                RobotChassis.Apply(source.transform, chassis);
+                RobotChassis.Apply(view.transform, chassis);
+                yield return null;
+                var bodyPairs = new List<(SkinnedMeshRenderer, Transform[])>();
+                foreach (SkinnedMeshRenderer skin in bodySkins) bodyPairs.Add((skin, skin.bones));
+                float bodyTorso = Cover(bodyPairs, 1 << bodySkins[0].gameObject.layer, torso);
+                float viewTorso = Cover(pairs, 1 << layer, torso);
+                float viewArms = Cover(pairs, 1 << layer, limbs);
+                string name = RobotChassis.NameOf(chassis);
+                report.AppendLine($"{name} : buste du corps {bodyTorso * 100f:F1} % de l'image, de la copie {viewTorso * 100f:F2} %, bras de la copie {viewArms * 100f:F1} %");
+                Assert.Greater(bodyTorso, 0.03f, $"Garde : vu de face, le buste du {name} couvre une bonne part de l'image.");
+                Assert.Greater(viewArms, 0.01f, $"Garde : les bras de la copie du {name} se dessinent.");
+                // La peau du prototype est continue : rendus seuls par cette mesure (les autres os repliés en un même
+                // point), les sommets que l'épaule partage avec le buste laissent des éclats (0,2 % de l'image), que le
+                // jeu ne dessine pas. Un buste montré en couvre 5 à 6 %.
+                Assert.Less(viewTorso, 0.005f, $"La copie du {name} montre son buste : {viewTorso * 100f:F1} % de l'image.");
+            }
+        }
+        finally
+        {
+            target.Release();
+            Debug.Log("[VUE-SUBJECTIVE] " + report);
+        }
     }
 
     [UnityTest]

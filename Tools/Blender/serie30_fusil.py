@@ -100,13 +100,17 @@ def carcasse(a):
     f = kit.prisme(pc, [(0.004, 0.0935), (0.029, 0.0862), (0.030, 0.0822), (0.004, 0.0868)], 0.0288, 0.0312)
     kit.chanfreiner(pc, 0.0006, f)
     kit.cylindre(pc, P(0.162, 0.078, -0.0245), P(0.162, 0.078, -0.0285), 0.0046, 8)      # bouton du chargeur
-    f = kit.boite(pc, 0.050, 0.064, 0.1520, 0.1600, 0.022, 0.034)                         # levier d'armement
-    f += kit.boite(pc, 0.048, 0.066, 0.1490, 0.1632, 0.034, 0.044, "Polymere")
-    kit.chanfreiner(pc, 0.0012, f)
     kit.boite(pc, 0.076, 0.146, 0.135, 0.151, -0.021, -0.013)                              # la culasse, dans la fenêtre
     for x0, x1 in ((0.0245, 0.0262), (-0.0245, -0.0262)):                                 # goupilles
         kit.cylindre(pc, P(-0.058, 0.100, x0), P(-0.058, 0.100, x1), 0.0042, 8)
         kit.cylindre(pc, P(0.278, 0.099, x0), P(0.278, 0.099, x1), 0.0042, 8)
+    a.objet(pc)
+
+    # Le levier d'armement, une pièce à lui : le rechargement le tire dans sa fente (rechargement_chargeur.py).
+    pc = a.piece("Levier_Armement", "Acier")
+    f = kit.boite(pc, 0.050, 0.064, 0.1520, 0.1600, 0.022, 0.034)                         # levier d'armement
+    f += kit.boite(pc, 0.048, 0.066, 0.1490, 0.1632, 0.034, 0.044, "Polymere")
+    kit.chanfreiner(pc, 0.0012, f)
     a.objet(pc)
 
 

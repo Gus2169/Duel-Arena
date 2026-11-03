@@ -1,0 +1,119 @@
+{
+  "clip": "Rechargement PA-05",
+  "arme": "PA-05",
+  "ips": 60,
+  "duree": 3.3,
+  "utile": [
+    0.4,
+    2.5
+  ],
+  "etapes": {
+    "sortie": 0.04,
+    "saisie": 0.26,
+    "approche": 0.4,
+    "insertion": 0.45,
+    "frappe": 0.52,
+    "priseLevier": 0.66,
+    "armement": 0.72,
+    "retour": 0.92
+  },
+  "sons": [
+    "sortie",
+    "insertion",
+    "armement"
+  ],
+  "culasse": false,
+  "paumeConception": [
+    0.01,
+    0.05,
+    0.021
+  ],
+  "tenue": {
+    "paume": [
+      0.0,
+      -0.0737,
+      -0.0269
+    ],
+    "normale": [
+      0.0,
+      0.951,
+      0.309
+    ],
+    "doigts": [
+      0.0,
+      -0.309,
+      0.951
+    ]
+  },
+  "semelle": {
+    "paume": [
+      0.0,
+      -0.0737,
+      -0.0269
+    ],
+    "normale": [
+      0.0,
+      0.951,
+      0.309
+    ],
+    "doigts": [
+      0.25,
+      -0.3,
+      0.92
+    ]
+  },
+  "levier": {
+    "paume": [
+      0.0,
+      0.096,
+      -0.012
+    ],
+    "normale": [
+      0.0,
+      -1.0,
+      0.0
+    ],
+    "doigts": [
+      1.0,
+      -0.3,
+      0.0
+    ]
+  },
+  "gardeMain": {
+    "paume": [
+      -0.103,
+      0.038,
+      0.008
+    ],
+    "normale": [
+      0.872,
+      -0.196,
+      -0.448
+    ],
+    "doigts": [
+      0.394,
+      -0.263,
+      0.881
+    ]
+  },
+  "course": 0.035,
+  "axePuits": [
+    0.0,
+    0.951,
+    0.309
+  ],
+  "pieceArmement": {
+    "pieces": [
+      "Culasse",
+      "Culasse_Details",
+      "Hausse",
+      "Guidon",
+      "Accessoires/Viseur"
+    ],
+    "course": 0.035,
+    "prise": 0.66,
+    "tiree": 0.71,
+    "lachee": 0.72,
+    "revenue": 0.735
+  }
+}

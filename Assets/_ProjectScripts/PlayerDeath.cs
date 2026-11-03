@@ -40,6 +40,10 @@ public class PlayerDeath : NetworkBehaviour
     [Tooltip("Rotation (degrés) par unité de souris, avant la sensibilité des Options.")]
     [SerializeField] private float orbitSensitivity = 0.12f;
 
+    [Header("Réapparitions (ressenti)")]
+    [Tooltip("Dans un mode à réapparitions (le Gun Game, le Death match), l'épave reste ce temps (s) là où le robot est tombé, après son retour : elle ne disparaît pas sous les yeux de celui qui l'a eu.")]
+    [SerializeField] private float corpseLingerAfterRespawn = 8f;
+
     private Health health;
     private Animator modelAnimator;
     private Transform modelRoot;
@@ -48,6 +52,7 @@ public class PlayerDeath : NetworkBehaviour
     private FirstPersonView firstPersonView;
     private PlayerInputReader input;
     private RobotCorpse corpse;
+    private RobotCorpse lingeringCorpse;   // l'épave d'avant une réapparition, qui s'en va d'elle-même
     private bool shownDead;
 
     private readonly MotionWindow motion = new MotionWindow();
@@ -72,6 +77,9 @@ public class PlayerDeath : NetworkBehaviour
 
     /// <summary>L'épave affichée, null tant que le joueur est en vie.</summary>
     public RobotCorpse Corpse => corpse;
+
+    /// <summary>Les sons de la mort (le robot qui s'éteint) : le replay du coup mortel les rejoue (KillReplay).</summary>
+    public GameSounds Sounds => sounds;
 
     /// <summary>
     /// La vitesse d'un robot sur sa dernière fraction de seconde, que son épave hérite. Mesurée sur
@@ -164,7 +172,18 @@ public class PlayerDeath : NetworkBehaviour
     public override void OnDestroy()
     {
         if (corpse != null) Destroy(corpse.gameObject);
+        if (lingeringCorpse != null) Destroy(lingeringCorpse.gameObject);
         base.OnDestroy();
+    }
+
+    /// <summary>Le joueur revient-il en plein match (une réapparition), et non au début d'une manche, sous le noir ?</summary>
+    private static bool RespawningInMatch
+    {
+        get
+        {
+            RoundManager rm = RoundManager.Instance;
+            return rm != null && rm.IsSpawned && rm.CurrentPhase == RoundManager.Phase.Active && rm.Respawns;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -195,7 +214,7 @@ public class PlayerDeath : NetworkBehaviour
         }
         hiddenRenderers = shown.ToArray();
 
-        if (corpse != null && pendingImpulse && Time.time - pendingAt < 1f) corpse.ApplyImpulse(pendingPoint, pendingForce);
+        if (corpse != null && pendingImpulse && Time.time - pendingAt < 1f) Strike(pendingPoint, pendingForce);
         pendingImpulse = false;
         PlayDeathSound();
 
@@ -209,7 +228,18 @@ public class PlayerDeath : NetworkBehaviour
     private void ShowAlive()
     {
         shownDead = false;
-        if (corpse != null) Destroy(corpse.gameObject);
+        if (corpse != null)
+        {
+            // Une réapparition (le Gun Game) : l'épave reste un moment là où le robot est tombé, sous les yeux de
+            // celui qui l'a eu ; elle s'en va d'elle-même. Au début d'une manche, sous le noir, tout de suite.
+            if (RespawningInMatch)
+            {
+                if (lingeringCorpse != null) Destroy(lingeringCorpse.gameObject);
+                lingeringCorpse = corpse;
+                Destroy(corpse.gameObject, corpseLingerAfterRespawn);
+            }
+            else Destroy(corpse.gameObject);
+        }
         corpse = null;
         foreach (Renderer r in hiddenRenderers)
         {
@@ -249,13 +279,21 @@ public class PlayerDeath : NetworkBehaviour
         Vector3 force = impulse * impulseScale;
         if (shownDead && corpse != null)
         {
-            corpse.ApplyImpulse(point, force);
+            Strike(point, force);
             return;
         }
         pendingImpulse = true;
         pendingPoint = point;
         pendingForce = force;
         pendingAt = Time.time;
+    }
+
+    // Le coup mortel : il pousse l'épave, et la fait voler en pièces (RobotCorpse.Burst : des pièces arrachées, l'huile,
+    // les étincelles et des éclats aux couleurs du robot).
+    private void Strike(Vector3 point, Vector3 force)
+    {
+        corpse.ApplyImpulse(point, force);
+        corpse.Burst(point, force, paint != null ? (Color)paint.Paint : Color.clear);
     }
 
     // ------------------------------------------------------------------

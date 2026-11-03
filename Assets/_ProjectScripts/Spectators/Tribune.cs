@@ -46,6 +46,8 @@ public class Tribune : NetworkBehaviour
     [SerializeField] private float regrowTime = 8f;
 
     [Header("Dons de matériel (à juger en jouant)")]
+    [Tooltip("Le matériel tombe-t-il ? Non d'ici les armes insolites : les armes du duel ne tombent pas de la tribune (GDD § 9, confirmé par l'utilisateur le 2026-11-02).")]
+    [SerializeField] private bool weaponDrops = false;
     [SerializeField] private Vector2 dropInterval = new Vector2(12f, 20f);
     [Tooltip("Matériel présent au plus sur la tribune (posé ou tenu par un spectateur).")]
     [SerializeField] private int maxPowerUpsOnTribune = 2;
@@ -293,7 +295,7 @@ public class Tribune : NetworkBehaviour
     private void ServerUpdateDrops(double now)
     {
         RoundManager rm = RoundManager.Instance;
-        bool active = rm != null && rm.IsSpawned && rm.Rules.spectatorInterventions
+        bool active = weaponDrops && rm != null && rm.IsSpawned && rm.Rules.spectatorInterventions
                       && SpectatorRules.DropsAllowed(rm.CurrentPhase) && AnySpectator() && catalog != null;
         if (!active)
         {

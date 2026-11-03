@@ -30,10 +30,16 @@ public class MatchAudio : MonoBehaviour
     private AudioSource ambience;
 
     private bool tracking;
+    // Le match suivi : au Tournoi, il change (le couloir de son match, la salle d'attente).
+    private RoundManager trackedMatch;
     private RoundManager.Phase lastPhase;
     private double lastPhaseStartedAt;
     private int lastCountdown;
     private bool reconstructionPlayed;
+    private int lastModulesTaken;
+    private int lastTagIns;
+    private int lastZone;
+    private bool lastZoneAnnounced;
     private readonly List<(float at, SoundSet sound)> pending = new List<(float, SoundSet)>();
 
     private void Awake()
@@ -55,7 +61,8 @@ public class MatchAudio : MonoBehaviour
 
     private void Update()
     {
-        RoundManager rm = RoundManager.Instance;
+        // Le match du joueur de cette machine : au Tournoi, celui de son couloir, ou la salle d'attente.
+        RoundManager rm = RoundManager.Local;
         NetworkObject local = GameHud.LocalPlayerObject;
         bool inGame = rm != null && rm.IsSpawned && local != null;
         UpdateAmbience(inGame);
@@ -66,6 +73,12 @@ public class MatchAudio : MonoBehaviour
             return;
         }
 
+        // D'un match du Tournoi à la salle d'attente, ou l'inverse : on reprend l'état tel qu'il est.
+        if (!ReferenceEquals(rm, trackedMatch))
+        {
+            trackedMatch = rm;
+            tracking = false;
+        }
         RoundManager.Phase phase = rm.CurrentPhase;
         if (!tracking)
         {
@@ -75,6 +88,10 @@ public class MatchAudio : MonoBehaviour
             lastPhaseStartedAt = rm.PhaseStartedAt;
             lastCountdown = CountdownNumber(rm.PhaseTimeRemaining);
             reconstructionPlayed = rm.PhaseHasEnd && rm.PhaseTimeRemaining <= reconstructionLead;
+            lastModulesTaken = rm.ModulesTaken;
+            lastTagIns = rm.TagIns;
+            lastZone = rm.ShownZone;
+            lastZoneAnnounced = rm.AnnouncedZone >= 0;
         }
         else if (phase != lastPhase || rm.PhaseStartedAt != lastPhaseStartedAt)
         {
@@ -94,8 +111,41 @@ public class MatchAudio : MonoBehaviour
             StartReconstruction();
         }
 
+        if (rm.ModulesTaken != lastModulesTaken)
+        {
+            lastModulesTaken = rm.ModulesTaken;
+            OnModuleTaken(rm, local.OwnerClientId);
+        }
+
+        // Au Tag Team, un coéquipier entre dans l'arène : son châssis s'allume (la reconstruction, chez tous).
+        if (rm.TagIns != lastTagIns)
+        {
+            lastTagIns = rm.TagIns;
+            if (phase == RoundManager.Phase.Active) StartReconstruction();
+        }
+
+        // La Zone : un bip quand la suivante s'annonce, un son quand elle change de place.
+        int zone = rm.ShownZone;
+        bool announced = rm.AnnouncedZone >= 0;
+        if (phase == RoundManager.Phase.Active && sounds != null)
+        {
+            if (announced && !lastZoneAnnounced) Play(sounds.countdownBeep);
+            if (zone != lastZone && lastZone >= 0 && zone >= 0) Play(sounds.zoneMoved);
+        }
+        lastZone = zone;
+        lastZoneAnnounced = announced;
+
         UpdateMusic(rm, phase);
         PlayPending();
+    }
+
+    /// <summary>Un module vient d'être pris (l'Élimination confirmée) : on l'entend là où il flottait (catégorie B), et
+    /// celui qui l'a pris entend en plus si son élimination compte, ou s'il a annulé celle de l'autre.</summary>
+    private void OnModuleTaken(RoundManager rm, ulong me)
+    {
+        if (sounds == null) return;
+        sounds.moduleTaken?.PlayAt(rm.LastModuleAt, sounds.moduleMinDistance, sounds.moduleMaxDistance);
+        if (rm.LastModuleTaker == me) Play(rm.LastModuleConfirmed ? sounds.moduleConfirmed : sounds.moduleDenied);
     }
 
     private void OnPhaseEntered(RoundManager rm, RoundManager.Phase phase, RoundManager.Phase previous, ulong me)
@@ -107,7 +157,11 @@ public class MatchAudio : MonoBehaviour
                           && previous == RoundManager.Phase.Active;
         if (!roundEnded) return;
         Play(sounds.roundOver);
-        if (rm.LastRoundWinner == me && !GameHud.LocalIsSpectator) Play(sounds.roundWon);
+        // Au Tag Team, toute l'équipe gagnante entend sa victoire, ceux qui attendaient sur la tribune compris.
+        PlayerMatchState mine = PlayerMatchState.Of(me);
+        bool won = rm.TagTeamMode ? mine != null && mine.Team != PlayerTeam.None && mine.Team == rm.WinningTeam
+                                  : rm.LastRoundWinner == me && !GameHud.LocalIsSpectator;
+        if (won) Play(sounds.roundWon);
     }
 
     // ------------------------------------------------------------------
@@ -184,9 +238,10 @@ public class MatchAudio : MonoBehaviour
         {
             music.Play(sounds.preparationMusic);
         }
-        else if (phase == RoundManager.Phase.Salon)
+        else if (phase == RoundManager.Phase.Salon || phase == RoundManager.Phase.Tournament)
         {
-            // Le salon est un menu : sa musique (2026-10-26).
+            // Le salon est un menu : sa musique (2026-10-26) ; la salle d'attente du Tournoi aussi, entre deux
+            // matchs (2026-11-03, proposition de Claude).
             music.Play(sounds.menuMusic);
         }
         else if (phase == RoundManager.Phase.MatchOver && MatchEndScreen.IsShown)

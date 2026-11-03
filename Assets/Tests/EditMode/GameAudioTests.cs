@@ -313,6 +313,8 @@ public class GameAudioTests
         foreach (string guid in guids)
         {
             var data = UnityEditor.AssetDatabase.LoadAssetAtPath<WeaponData>(UnityEditor.AssetDatabase.GUIDToAssetPath(guid));
+            // Le gant seul (la dernière marche du Gun Game) ne tire pas : ses sons sont ceux du taser.
+            if (data.unarmed) continue;
             AssertWired(data.impactSounds, data.name + ".impactSounds");
             AssertWired(data.bodyImpactSounds, data.name + ".bodyImpactSounds");
             AssertWired(data.flybySounds, data.name + ".flybySounds");

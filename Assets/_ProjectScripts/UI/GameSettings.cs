@@ -30,6 +30,12 @@ public static class GameSettings
     private const string HostInterventionsKey = "DuelArena.Host.SpectatorInterventions";
     private const string HostRoundsKey = "DuelArena.Host.RoundsToWin";
     private const string HostRandomDuelistsKey = "DuelArena.Host.RandomDuelists";
+    private const string HostModeKey = "DuelArena.Host.Mode";
+    private const string HostLadderKey = "DuelArena.Host.GunGameLadder";
+    private const string HostDeathMatchKey = "DuelArena.Host.DeathMatch";
+    private const string HostKillsKey = "DuelArena.Host.KillsToWin";
+    private const string HostWeaponChoiceKey = "DuelArena.Host.WeaponChoice";
+    private const string HostHeadshotsKey = "DuelArena.Host.HeadshotsOnly";
     private const string MasterVolumeKey = "DuelArena.Volume.Master";
     private const string MusicVolumeKey = "DuelArena.Volume.Music";
 
@@ -64,8 +70,8 @@ public static class GameSettings
     /// <summary>
     /// Les réglages de la partie que cette machine hébergera (2026-10-13) : capacité, organisation des
     /// duels (roi de la colline ou duellistes fixes), interventions des spectateurs, depuis le
-    /// 2026-10-25 le nombre de manches (BO5 ou BO3), et depuis le 2026-10-27 le tirage au sort des
-    /// duellistes. Choisis au salon, retenus d'une session à l'autre, appliqués par le serveur seul
+    /// 2026-10-25 le nombre de manches (BO5 ou BO3), depuis le 2026-10-27 le tirage au sort des
+    /// duellistes, et depuis le 2026-11-02 le mode de jeu, l'échelle du Gun Game et le Death match du classique. Choisis au salon, retenus d'une session à l'autre, appliqués par le serveur seul
     /// (SessionFlow.ActiveRules, RoundManager).
     /// </summary>
     public static MatchRules HostRules
@@ -80,6 +86,12 @@ public static class GameSettings
                 spectatorInterventions = PlayerPrefs.GetInt(HostInterventionsKey, defaults.spectatorInterventions ? 1 : 0) == 1,
                 roundsToWin = (byte)Mathf.Clamp(PlayerPrefs.GetInt(HostRoundsKey, defaults.roundsToWin), 0, 255),
                 randomDuelists = PlayerPrefs.GetInt(HostRandomDuelistsKey, defaults.randomDuelists ? 1 : 0) == 1,
+                mode = (GameModeId)PlayerPrefs.GetInt(HostModeKey, (int)defaults.mode),
+                ladder = (GunGameLadder)Mathf.Clamp(PlayerPrefs.GetInt(HostLadderKey, (int)defaults.ladder), 0, 255),
+                deathMatch = PlayerPrefs.GetInt(HostDeathMatchKey, 0) == 1,
+                killsToWin = (byte)Mathf.Clamp(PlayerPrefs.GetInt(HostKillsKey, MatchRules.DefaultKillsToWin), 0, 255),
+                weaponChoice = (WeaponChoice)Mathf.Clamp(PlayerPrefs.GetInt(HostWeaponChoiceKey, 0), 0, 255),
+                headshotsOnly = PlayerPrefs.GetInt(HostHeadshotsKey, 0) == 1,
             }.Sanitized();
         }
         set
@@ -90,6 +102,12 @@ public static class GameSettings
             PlayerPrefs.SetInt(HostInterventionsKey, r.spectatorInterventions ? 1 : 0);
             PlayerPrefs.SetInt(HostRoundsKey, r.roundsToWin);
             PlayerPrefs.SetInt(HostRandomDuelistsKey, r.randomDuelists ? 1 : 0);
+            PlayerPrefs.SetInt(HostModeKey, (int)r.mode);
+            PlayerPrefs.SetInt(HostLadderKey, (int)r.ladder);
+            PlayerPrefs.SetInt(HostDeathMatchKey, r.deathMatch ? 1 : 0);
+            PlayerPrefs.SetInt(HostKillsKey, r.killsToWin);
+            PlayerPrefs.SetInt(HostWeaponChoiceKey, (int)r.weaponChoice);
+            PlayerPrefs.SetInt(HostHeadshotsKey, r.headshotsOnly ? 1 : 0);
             PlayerPrefs.Save();
         }
     }

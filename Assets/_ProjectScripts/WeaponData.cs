@@ -173,6 +173,10 @@ public class WeaponData : ScriptableObject
     public float reloadDuration = 2.2f;
     [Tooltip("Rechargement cartouche par cartouche (fusil à pompe, comme dans CoD et R6) : une cartouche toutes les reloadDuration secondes, jusqu'au plein. Tirer l'interrompt et tire avec ce qui est chargé.")]
     public bool reloadPerRound = false;
+    [Tooltip("Rechargée d'elle-même après chaque tir, sans la touche ni la gâchette (le Golden Gun, GDD § 11, G3 : une seule balle, rechargée après chaque tir). Le rechargement garde sa durée (reloadDuration) : rater coûte ce temps, où il ne reste que le gant.")]
+    public bool reloadsAfterEachShot = false;
+    [Tooltip("Pas d'arme à feu : le gant seul, la dernière marche du Gun Game (GDD § 11, GG4). Ni modèle, ni balle, ni visée : il ne reste que le taser. Le corps et la vue subjective passent à mains nues, le gant au poing.")]
+    public bool unarmed = false;
     [Tooltip("Les étapes sonores d'un rechargement complet (chargeur retiré, inséré, armement), chacune à sa part de reloadDuration. Entendues par tout le monde : c'est une information de jeu (l'adversaire sait qu'on ne peut plus tirer). Un rechargement interrompu se tait (WeaponAudio). Vide = silencieux.")]
     public ReloadCue[] reloadCues = new ReloadCue[0];
     [Tooltip("Rechargement cartouche par cartouche : le bruit d'une cartouche glissée, joué à chaque cartouche entrée (une au hasard).")]

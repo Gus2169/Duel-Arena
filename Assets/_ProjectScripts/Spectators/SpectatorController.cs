@@ -597,6 +597,8 @@ public class SpectatorController : NetworkBehaviour
         foreach (SpectatorController other in spawned)
         {
             if (other == null || other == this || !other.IsSpectatorRole || other.locomotion == null) continue;
+            // Au Tag Team, on ne frappe pas un coéquipier qui attend avec soi sur la tribune.
+            if (RoundManager.Teammates(OwnerClientId, other.OwnerClientId)) continue;
             Vector3 feet = other.transform.position;
             float height = other.BodyHeight;
             if (other.locomotion.ServerTrySamplePose(targetTime, out PlayerLocomotion.HitboxPose pose))

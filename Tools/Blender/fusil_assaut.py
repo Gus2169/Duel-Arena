@@ -99,15 +99,19 @@ def carcasse(a):
             kit.cylindre(pc, P(av, h, x0), P(av, h, x1), 0.0030, 8)
     kit.cylindre(pc, P(0.008, 0.140, -0.0255), P(0.030, 0.140, -0.0245), 0.0056, 10)          # assistance
     kit.boite(pc, 0.080, 0.144, 0.128, 0.144, -0.0140, -0.0080)                                # culasse, dans la fenêtre
-    f = kit.boite(pc, -0.084, -0.072, 0.150, 0.1590, -0.0185, 0.0185)                          # poignée d'armement en T
-    f += kit.boite(pc, -0.082, -0.070, 0.1515, 0.1570, 0.0185, 0.0275)                         # et son loquet
-    kit.chanfreiner(pc, 0.0008, f)
     for x0, x1 in ((0.0170, 0.0186), (-0.0170, -0.0186)):                                      # goupille arrière
         kit.cylindre(pc, P(-0.058, 0.100, x0), P(-0.058, 0.100, x1), 0.0040, 8)
     # la goupille avant, perdue, remplacée par un boulon et son écrou
     kit.vis_six_pans(pc, P(0.236, 0.099, 0.0172), GAUCHE, r=0.0054, h=0.0030, mat="AcierBrut")
     kit.cylindre(pc, P(0.236, 0.099, -0.0170), P(0.236, 0.099, -0.0260), 0.0025, 8, mat="AcierBrut")
     kit.vis_six_pans(pc, P(0.236, 0.099, -0.0172), -GAUCHE, r=0.0048, h=0.0032, mat="AcierBrut", phase=0.0)
+    a.objet(pc)
+
+    # La poignée d'armement en T, une pièce à elle : le rechargement la tire de 7 cm (rechargement_chargeur.py).
+    pc = a.piece("Levier_Armement", "Acier")
+    f = kit.boite(pc, -0.084, -0.072, 0.150, 0.1590, -0.0185, 0.0185)                          # poignée d'armement en T
+    f += kit.boite(pc, -0.082, -0.070, 0.1515, 0.1570, 0.0185, 0.0275)                         # et son loquet
+    kit.chanfreiner(pc, 0.0008, f)
     a.objet(pc)
 
 

@@ -36,18 +36,9 @@ public class MenuUxmlTests
             "joinButton", "joinButtonLabel", "localIpLabel", "lanRulesLabel", "playStatusLabel");
         AssertNames(root, "PlayScreenController",
             "playTabModes", "playTabLobbies", "playTabTraining", "playTabRanking", "playPageModes", "playPageLobbies",
-            "playPageTraining", "modeGrid", "trainingGrid", "playDetailIcon", "playDetailTitle", "playDetailText",
-            "playDetailImage", "playDetailFacts", "playDetailButton", "playDetailButtonLabel");
-        AssertNames(root, "LobbyController",
-            "lobbyHeadline", "lobbySubline", "lobbySpinner", "duelistCard0", "duelistCard1", "duelistPortrait0",
-            "duelistPortrait1", "duelistUnknown0", "duelistUnknown1", "duelistRole0", "duelistRole1", "duelistName0",
-            "duelistName1", "duelistStatus0", "duelistStatus1", "lobbyQueueTitle", "lobbyQueueHint", "lobbyQueueList",
-            "lobbyArenaName", "lobbyMap", "lobbyMapLegend", "lobbyModeValue", "lobbyRoundsCycler", "lobbyRulesHint",
-            "lobbyCapacityCycler", "lobbyKingToggle", "lobbyInterventionsToggle", "lobbyRandomToggle", "lobbyCodeLabel",
-            "lobbyCopyLabel", "lobbyStatusLabel", "lobbyCopyButton", "lobbyStartButton", "lobbyLeaveButton");
-        // Ce qui se dit oui ou non : de vraies cases à cocher (2026-10-27).
-        foreach (string check in new[] { "lobbyKingToggle", "lobbyInterventionsToggle", "lobbyRandomToggle" })
-            Assert.IsInstanceOf<Toggle>(root.Q(check), check);
+            "playPageTraining", "modeGrid", "trainingGrid", "playDetailImage", "playDetailCaption", "playDetailTitle",
+            "playDetailText", "playDetailFacts", "playDetailNote", "playDetailButton", "playDetailButtonLabel");
+        AssertSalonView(root.Q("screenLobby"), "LobbyController");
         AssertNames(root, "ArmoryController",
             "customTabRobot", "customTabWeapons", "customPageRobot", "customPageWeapons", "customHintsRobot",
             "customHintsWeapons", "robotCategories", "robotGrid", "robotGridTitle", "robotInfoName", "robotInfoTitle",
@@ -59,11 +50,9 @@ public class MenuUxmlTests
             "gunsmithAiText");
         AssertOptionsPanel(root);
 
-        // Les éléments sur mesure : un espace de noms mal écrit en UXML les remplacerait par rien.
-        Assert.IsInstanceOf<DuelArena.UI.ArenaMapView>(root.Q("lobbyMap"));
-        Assert.IsInstanceOf<DuelArena.UI.OptionCycler>(root.Q("lobbyCapacityCycler"));
-        Assert.IsInstanceOf<DuelArena.UI.Spinner>(root.Q("lobbySpinner"));
-        Assert.Greater(root.Query<Button>(className: "player-card").ToList().Count, 3, "La carte du joueur, sur chaque écran.");
+        // La carte du joueur, sur chaque écran, sauf le salon : le code y a sa place (maquette « B · Salon »).
+        Assert.AreEqual(3, root.Query<Button>(className: "player-card").ToList().Count, "Jouer, Personnalisation, Options.");
+        Assert.IsNull(root.Q("screenLobby").Q(className: "player-card"));
     }
 
     [Test]
@@ -88,20 +77,112 @@ public class MenuUxmlTests
     }
 
     /// <summary>L'écran de fin et son vote, et le salon de la partie (2026-10-26) : les éléments que
-    /// cherchent MatchEndScreen et SalonPanel, et les sélecteurs du salon, de vrais OptionCycler.</summary>
+    /// cherchent MatchEndScreen et SalonPanel.</summary>
     [Test]
     public void LEcranDeFin_EtLeSalon_PortentLeursElements()
     {
         VisualElement root = Clone("Assets/_ProjectUI/Game/GameHud.uxml");
         AssertNames(root, "MatchEndScreen", "endScreen", "endTitle", "endSubtitle", "scoreTable", "endCountdown",
             "endQuitButton", "endVote", "endVoteStatus", "endVoteButtons", "endRematchButton", "endSalonButton");
-        AssertNames(root, "SalonPanel", "salonPanel", "salonPlayers", "salonMode", "salonRulesHint", "salonInvite",
-            "salonStatus", "salonRoundsCycler", "salonCapacityCycler", "salonKingToggle", "salonInterventionsToggle",
-            "salonRandomToggle", "salonLaunchButton", "salonQuitButton");
-        foreach (string cycler in new[] { "salonRoundsCycler", "salonCapacityCycler" })
-            Assert.IsInstanceOf<DuelArena.UI.OptionCycler>(root.Q(cycler), $"{cycler} : l'espace de noms du HUD (xmlns:da).");
-        foreach (string check in new[] { "salonKingToggle", "salonInterventionsToggle", "salonRandomToggle" })
-            Assert.IsInstanceOf<Toggle>(root.Q(check), check);
+        AssertNames(root, "SalonPanel", "salonPanel");
+        AssertSalonView(root.Q("salonPanel"), "SalonPanel");
+    }
+
+    /// <summary>
+    /// Le salon (2026-11-02, maquette « B · Salon ») : le même gabarit au menu et dans l'arène. Chaque nom que
+    /// SalonView cherche y est, et l'écran se remplit d'un salon à quatre places et trois joueurs : les trois
+    /// joueurs puis une place libre, trois réglages d'emblée et trois sous « Plus de réglages », repliés.
+    /// Chez un invité, ni le bouton du mode, ni le lancement, et les réglages ne se changent pas.
+    /// </summary>
+    private static void AssertSalonView(VisualElement host, string owner)
+    {
+        Assert.IsNotNull(host, owner);
+        AssertNames(host, owner + " (SalonView)",
+            "salonView", "salonEyebrow", "salonModeName", "salonChangeMode", "salonCodeBlock", "salonCodeCaption",
+            "salonCode", "salonCopy", "salonCopyLabel", "salonPlayersTitle", "salonPlayerList", "salonPhrase",
+            "salonEssentials", "salonMore", "salonMoreLabel", "salonAdvanced", "salonHint", "salonArenaImage",
+            "salonArenaName", "salonLeave", "salonLeaveLabel", "salonStatus", "salonSummary", "salonLaunch",
+            "salonModeWindow", "salonModeList", "salonModeClose", "salonEvening", "salonEveningTitle", "salonEveningList",
+            "salonEveningLast");
+
+        var rules = new MatchRules { capacity = 4, organization = DuelOrganization.KingOfTheHill, roundsToWin = MatchRules.Bo5RoundsToWin };
+        var players = new System.Collections.Generic.List<SalonView.Player>
+        {
+            new SalonView.Player { name = "Faucon", role = SalonView.Role(true, 0, false, true, false) },
+            new SalonView.Player { name = "Rivet", role = SalonView.Role(true, 0, false, false, true), local = true },
+            new SalonView.Player { name = "Kilo", role = SalonView.Role(false, 1, false, false, false) },
+        };
+        var view = new SalonView(host);
+        view.Show(new SalonView.Model
+        {
+            eyebrow = "SALON DE FAUCON · EN LIGNE", mode = GameModeId.Classic, rules = rules, host = false, editable = false,
+            inviteCaption = "CODE", inviteValue = "K7M2QX", players = players, canLaunch = false,
+        });
+        Assert.AreEqual("CLASSIQUE", host.Q<Label>("salonModeName").text);
+        Assert.AreEqual("LES JOUEURS · 3 SUR 4", host.Q<Label>("salonPlayersTitle").text);
+        Assert.AreEqual(4, host.Q("salonPlayerList").childCount, "Trois joueurs et une place libre.");
+        Assert.IsTrue(host.Q("salonPlayerList")[1].ClassListContains("salon-player--self"), "Sa propre rangée se voit.");
+        Assert.IsTrue(host.Q("salonPlayerList")[3].ClassListContains("salon-player--empty"));
+        Assert.AreEqual(3, host.Q("salonEssentials").childCount);
+        Assert.AreEqual(5, host.Q("salonAdvanced").childCount, "Le Death match du classique, Tête seulement, les places, le tirage, la tribune.");
+        Assert.IsTrue(host.Q("salonAdvanced").ClassListContains("hidden"), "Plus de réglages : replié d'abord.");
+        Assert.AreEqual("PLUS DE RÉGLAGES (5)", host.Q<Label>("salonMoreLabel").text);
+        Assert.IsTrue(host.Q("salonLaunch").ClassListContains("hidden"), "Seul l'hôte lance.");
+        Assert.IsTrue(host.Q("salonChangeMode").ClassListContains("hidden"), "Seul l'hôte change de mode.");
+        foreach (Button choice in host.Q("salonEssentials").Query<Button>(className: "salon-seg").ToList())
+            Assert.IsFalse(choice.enabledSelf, "Chez un invité, rien ne se change.");
+        Assert.AreEqual("K7M2QX", host.Q<Label>("salonCode").text);
+        StringAssert.StartsWith("Classique · BO5", host.Q<Label>("salonSummary").text);
+        Assert.IsTrue(host.Q("salonEvening").ClassListContains("hidden"), "Sans match fini, pas de tableau de la soirée.");
+
+        // Le tableau de la soirée (GDD § 14), après trois matchs : une ligne par joueur, la sienne marquée, et le dernier.
+        view.Show(new SalonView.Model
+        {
+            eyebrow = "SALON DE FAUCON · EN LIGNE", mode = GameModeId.Classic, rules = rules, host = false, editable = false,
+            inviteCaption = "CODE", inviteValue = "K7M2QX", players = players, canLaunch = false,
+            evening = new System.Collections.Generic.List<SalonView.EveningLine>
+            {
+                new SalonView.EveningLine { name = "Faucon", wins = Evening.WinsLabel(2), detail = "Classique 2 · sur 3 matchs" },
+                new SalonView.EveningLine { name = "Rivet", wins = Evening.WinsLabel(1), detail = "Gun Game 1 · sur 3 matchs", local = true },
+            },
+            eveningMatches = 3,
+            eveningLast = "Classique : Faucon bat Rivet, 2 – 1",
+        });
+        Assert.IsFalse(host.Q("salonEvening").ClassListContains("hidden"), "Le tableau de la soirée se montre.");
+        Assert.AreEqual("LA SOIRÉE · 3 MATCHS", host.Q<Label>("salonEveningTitle").text);
+        Assert.AreEqual(2, host.Q("salonEveningList").childCount);
+        Assert.IsTrue(host.Q("salonEveningList")[1].ClassListContains("salon-evening--self"), "Sa propre ligne se voit.");
+        Assert.AreEqual("Dernier match · Classique : Faucon bat Rivet, 2 – 1", host.Q<Label>("salonEveningLast").text);
+        view.Dispose();
+    }
+
+    /// <summary>Le tableau du Tournoi (2026-11-03) : les éléments que cherche TournamentBoard, caché au départ, et qui ne
+    /// prend jamais la souris (on joue dans la salle d'attente).</summary>
+    [Test]
+    public void LeHud_PorteLeTableauDuTournoi()
+    {
+        VisualElement root = Clone("Assets/_ProjectUI/Game/GameHud.uxml");
+        AssertNames(root, "TournamentBoard", "tournamentBoard", "tournamentStage", "tournamentMine", "tournamentStandings",
+            "tournamentMatchesHeading", "tournamentMatches");
+        VisualElement board = root.Q("tournamentBoard");
+        Assert.IsTrue(board.ClassListContains("hidden"), "Caché hors de la salle d'attente.");
+        Assert.AreEqual(PickingMode.Ignore, board.pickingMode, "Il ne prend jamais la souris.");
+    }
+
+    /// <summary>Le replay du coup mortel (2026-11-03) : les éléments que cherche GameHud, cachés au départ, qui ne prennent
+    /// jamais la souris, et sous le noir, qui le couvre au passage.</summary>
+    [Test]
+    public void LeHud_PorteLeBandeauDuReplay()
+    {
+        VisualElement root = Clone("Assets/_ProjectUI/Game/GameHud.uxml");
+        AssertNames(root, "GameHud", "replayFrame", "replayTitle", "replayLine");
+        VisualElement frame = root.Q("replayFrame");
+        Assert.IsTrue(frame.ClassListContains("hidden"), "Caché hors du replay.");
+        Assert.AreEqual(PickingMode.Ignore, frame.pickingMode, "Il ne prend jamais la souris.");
+        Assert.AreEqual("LE COUP MORTEL", root.Q<Label>("replayTitle").text);
+        VisualElement fade = root.Q("fade");
+        Assert.AreEqual(frame.parent, fade.parent);
+        Assert.Less(frame.parent.IndexOf(frame), fade.parent.IndexOf(fade), "Le noir passe par-dessus le bandeau.");
     }
 
     /// <summary>La vue d'un robot touché par un caillou (2026-10-27) : l'élément que cherche HitIndicatorHud, un

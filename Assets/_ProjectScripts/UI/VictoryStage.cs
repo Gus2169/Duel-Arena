@@ -369,22 +369,57 @@ public class VictoryStage : MonoBehaviour
     // La caméra
     // ------------------------------------------------------------------
 
+    /// <summary>La durée de l'ouverture du mouvement de caméra (s) : de près, de profil et par en dessous, jusqu'au
+    /// trois-quarts.</summary>
+    public const float IntroTime = 2.6f;
+
+    /// <summary>Où se tient la caméra, autour du robot : son angle depuis l'avant du robot vers sa droite (degrés), sa
+    /// hauteur angulaire (négative : par en dessous), sa distance (1 : le cadre des genoux aux mains levées) et la
+    /// hauteur visée au-dessus des pieds (m).</summary>
+    public struct Shot
+    {
+        public float azimuth;
+        public float elevation;
+        public float distanceScale;
+        public float centerHeight;
+    }
+
+    /// <summary>
+    /// Le mouvement de caméra de l'écran de fin à l'instant `t` (s depuis son ouverture, l'horloge du serveur : le même
+    /// sur les deux machines ; GDD § 5, « mouvement de caméra »). L'ouverture part de près, presque de profil et par en
+    /// dessous, sur le haut du corps, et recule en tournant jusqu'au trois-quarts du cadre (le robot regarde vers le
+    /// tableau des scores) ; puis la caméra tourne lentement vers sa face en avançant un peu. Toujours du côté droit du
+    /// robot. Fonction pure, testée.
+    /// </summary>
+    public static Shot ShotAt(float t)
+    {
+        float intro = 1f - Mathf.Pow(1f - Mathf.Clamp01(t / IntroTime), 3f);
+        float drift = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t - IntroTime) / 12f));
+        return new Shot
+        {
+            azimuth = Mathf.Lerp(62f, 24f, intro) - 14f * drift,
+            elevation = Mathf.Lerp(-20f, -5f, intro),
+            distanceScale = Mathf.Lerp(0.5f, 1f, intro) * (1f - 0.06f * drift),
+            centerHeight = Mathf.Lerp(1.55f, (FrameBottom + FrameTop) * 0.5f, intro),
+        };
+    }
+
     /// <summary>
     /// Des genoux aux mains levées, de trois quarts du côté droit du robot (il regarde vers le
     /// tableau des scores) et un peu par en dessous, le robot sur la gauche de l'écran (`ScreenX`),
-    /// la caméra qui avance lentement. Le décor ne passe jamais entre elle et le robot.
+    /// au rythme du mouvement de caméra (ShotAt). Le décor ne passe jamais entre elle et le robot.
     /// </summary>
     private void Frame()
     {
         if (stageCamera == null || spot == null) return;
+        Shot shot = ShotAt(time);
         Vector3 feet = spot.position;
         Quaternion facing = Quaternion.Euler(0f, spot.eulerAngles.y, 0f);
-        Vector3 center = feet + Vector3.up * ((FrameBottom + FrameTop) * 0.5f);
+        Vector3 center = feet + Vector3.up * shot.centerHeight;
         float halfHeight = (FrameTop - FrameBottom) * 0.5f * 1.04f;
-        float distance = halfHeight / Mathf.Tan(FieldOfView * 0.5f * Mathf.Deg2Rad);
-        distance *= 1f - 0.05f * Mathf.SmoothStep(0f, 1f, time / 10f);
+        float distance = halfHeight / Mathf.Tan(FieldOfView * 0.5f * Mathf.Deg2Rad) * shot.distanceScale;
 
-        Vector3 direction = (facing * Vector3.forward + facing * Vector3.right * 0.45f + Vector3.down * 0.1f).normalized;
+        Vector3 direction = facing * Quaternion.Euler(-shot.elevation, shot.azimuth, 0f) * Vector3.forward;
         if (Physics.SphereCast(center, 0.25f, direction, out RaycastHit hit, distance, WorldMask, QueryTriggerInteraction.Ignore))
             distance = Mathf.Max(1.2f, hit.distance - 0.1f);
         Vector3 position = center + direction * distance;

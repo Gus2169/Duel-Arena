@@ -135,5 +135,40 @@ public class TorsoAimTests
         Assert.Greater(worstBefore, 20f, "Le torse faisait déjà face au regard : le test ne prouverait rien.");
         Assert.IsEmpty(failures, "Arme basse, le torse ne fait pas face au regard :\n" + string.Join("\n", failures));
     }
+
+    /// <summary>
+    /// Pendant un geste (2026-10-29). Le rechargement suit d'ordinaire un tir, dont la correction (au stand, 37° de cap
+    /// et ±11° d'élévation à la hanche) restait figée pendant tout le geste : vu des autres, il était tourné, et le
+    /// pistolet penché en avant. Pendant un rechargement, elle va vers celle qui met les hanches face au regard ;
+    /// pendant le coup de taser, elle reste figée (le coup part où le joueur regardait).
+    /// </summary>
+    [Test]
+    public void PendantUnRechargement_LaCorrectionDuTirSEfface_PendantLeTaserElleResteFigee()
+    {
+        float k = 1f - Mathf.Exp(-(1f / 60f) / Mathf.Max(0.01f, PrefabFloat("torsoAlignSmoothing")));   // une image
+        const float fireYaw = 37.5f, firePitch = 11.2f, restYaw = -4.2f;   // au stand : le tir, puis les hanches au repos
+        float yaw = fireYaw, pitch = firePitch;
+        for (int i = 0; i < 15; i++)   // le premier quart de seconde du rechargement
+            PlayerAnimator.StepTorso(ref yaw, ref pitch, fireYaw, firePitch, restYaw, true, false, k);
+        Debug.Log($"[BUSTE] après 0,25 s de rechargement : cap {yaw:F1}°, élévation {pitch:F1}° (au tir : {fireYaw}°, {firePitch}°)");
+        Assert.Less(Mathf.Abs(yaw - restYaw), 0.25f * Mathf.Abs(fireYaw - restYaw), "Pendant le rechargement, le buste garde le cap du tir qui le précède.");
+        Assert.Less(Mathf.Abs(pitch), 0.25f * firePitch, "Pendant le rechargement, le buste garde l'élévation du tir qui le précède.");
+        for (int i = 0; i < 45; i++)   // jusqu'à 1 s
+            PlayerAnimator.StepTorso(ref yaw, ref pitch, fireYaw, firePitch, restYaw, true, false, k);
+        Assert.AreEqual(restYaw, yaw, 0.5f, "Après 1 s de rechargement, les hanches ne font pas face au regard.");
+        Assert.AreEqual(0f, pitch, 0.5f);
+
+        yaw = fireYaw;
+        pitch = firePitch;
+        for (int i = 0; i < 30; i++)
+            PlayerAnimator.StepTorso(ref yaw, ref pitch, 0f, 0f, restYaw, false, true, k);
+        Assert.AreEqual(fireYaw, yaw, 1e-4f, "Pendant le coup de taser, la correction ne reste pas figée.");
+        Assert.AreEqual(firePitch, pitch, 1e-4f);
+
+        for (int i = 0; i < 60; i++)
+            PlayerAnimator.StepTorso(ref yaw, ref pitch, -10f, 5f, restYaw, false, false, k);
+        Assert.AreEqual(-10f, yaw, 0.5f, "Garde : hors d'un geste, la correction suit sa cible.");
+        Assert.AreEqual(5f, pitch, 0.5f);
+    }
 }
 #endif

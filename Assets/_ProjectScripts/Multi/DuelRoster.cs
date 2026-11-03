@@ -15,6 +15,19 @@ public enum PlayerRole : byte
 /// Demandé par l'utilisateur le 2026-10-13 : le roi de la colline est un mode parmi d'autres, à choisir
 /// au lobby. Le tournoi et le hasard du GDD viendront s'ajouter ici. Ajouter les valeurs à la fin.
 /// </summary>
+/// <summary>
+/// Le choix de l'arme, un réglage du salon, l'un ou l'autre (GDD § 11, I9 ; 2026-11-03) : libre, chacun la sienne en
+/// préparation ; pile ou face, une famille imposée aux deux par celui que la pièce, puis la défaite de la manche,
+/// désigne (CoinFlip) ; arsenal commun, la même arme et les mêmes accessoires pour les deux, tirés au sort toutes les deux
+/// manches, sans préparation (CommonArsenal). 🚨 Sérialisé par sa valeur : ajouter à la fin.
+/// </summary>
+public enum WeaponChoice : byte
+{
+    Free,
+    CoinFlip,
+    CommonArsenal,
+}
+
 public enum DuelOrganization : byte
 {
     /// <summary>Le gagnant du match reste, le perdant retourne au bout de la file, le premier
@@ -40,6 +53,19 @@ public struct MatchRules : INetworkSerializeByMemcpy
     /// <summary>Un match en BO3 : deux manches gagnées. Et en BO5, le format par défaut du GDD : trois.</summary>
     public const int Bo3RoundsToWin = 2, Bo5RoundsToWin = 3;
 
+    /// <summary>Le Golden Gun se joue en plus de manches : le premier à 5, ou à 7 (GDD § 11, G4).</summary>
+    public const int GoldenGunShortRounds = 5, GoldenGunLongRounds = 7;
+
+    /// <summary>Le Gun Game se joue d'une traite, avec réapparitions : une seule « manche », gagnée en finissant
+    /// l'échelle (GDD § 11, GG1). L'Élimination confirmée aussi, gagnée aux éliminations confirmées.</summary>
+    public const int GunGameRounds = 1;
+
+    /// <summary>Les éliminations à faire au Death match du classique, et les éliminations confirmées de
+    /// l'Élimination confirmée, au choix de l'hôte (GDD § 11, N8 ; 10 par défaut, la proposition de Claude pour le
+    /// Death match, la règle du GDD pour l'Élimination confirmée).</summary>
+    public static readonly byte[] KillChoices = { 5, 10, 15 };
+    public const byte DefaultKillsToWin = 10;
+
     /// <summary>Joueurs dans la partie, hôte compris.</summary>
     public byte capacity;
     public DuelOrganization organization;
@@ -53,6 +79,86 @@ public struct MatchRules : INetworkSerializeByMemcpy
     /// (2026-10-27, demandé par l'utilisateur : qu'on ne sache pas d'avance qui commence) ; sinon ce sont
     /// l'hôte et le deuxième arrivé au salon.</summary>
     public bool randomDuelists;
+    /// <summary>Le mode de jeu (GDD § 11, 2026-11-02) : un réglage de la partie comme les autres, que l'hôte
+    /// change au salon sans recréer la partie. Seul un mode jouable reste (Sanitized) ; 0 : le classique.</summary>
+    public GameModeId mode;
+    /// <summary>L'échelle du Gun Game (GDD § 11, GG2), retenue même dans un autre mode : elle revient quand
+    /// l'hôte y repasse.</summary>
+    public GunGameLadder ladder;
+    /// <summary>Le Death match du classique (GDD § 11, N8, M5) : le premier à `killsToWin` éliminations, avec
+    /// réapparitions, à la place des manches. Une case du classique : retenue dans un autre mode, sans effet
+    /// (IsDeathMatch).</summary>
+    public bool deathMatch;
+    /// <summary>Les éliminations à faire au Death match, ou les éliminations confirmées à l'Élimination confirmée :
+    /// 5, 10 ou 15 (toute autre valeur vaut 10). Un seul réglage, gardé d'un mode à l'autre.</summary>
+    public byte killsToWin;
+    /// <summary>Le choix de l'arme (GDD § 11, I9) : libre, pile ou face, ou arsenal commun. Retenu dans un mode où il n'a
+    /// pas de sens, sans effet (EffectiveWeaponChoice).</summary>
+    public WeaponChoice weaponChoice;
+    /// <summary>Tête seulement (GDD § 11, I3) : seuls les tirs à la tête blessent ; le gant tue toujours. Une case, dans
+    /// tous les modes.</summary>
+    public bool headshotsOnly;
+
+    /// <summary>Une empreinte de tous les réglages, sans allocation : un écran qui les montre (le salon de l'arène) se refait
+    /// quand elle change. Tout nouveau champ s'y ajoute (testé : chacun la change). Fonction pure.</summary>
+    public int Fingerprint()
+    {
+        int key = capacity;
+        key = key * 31 + (int)organization;
+        key = key * 31 + (spectatorInterventions ? 1 : 0);
+        key = key * 31 + roundsToWin;
+        key = key * 31 + (randomDuelists ? 1 : 0);
+        key = key * 31 + (int)mode;
+        key = key * 31 + (int)ladder;
+        key = key * 31 + (deathMatch ? 1 : 0);
+        key = key * 31 + killsToWin;
+        key = key * 31 + (int)weaponChoice;
+        key = key * 31 + (headshotsOnly ? 1 : 0);
+        return key;
+    }
+
+    /// <summary>Le choix de l'arme qui s'applique : pile ou face et l'arsenal commun ne valent que dans les modes à
+    /// manches où l'arme est libre (WeaponChoiceApplies) ; ailleurs, l'arme est libre, ou imposée par le mode.</summary>
+    public WeaponChoice EffectiveWeaponChoice => WeaponChoiceApplies(mode, IsDeathMatch) ? weaponChoice : WeaponChoice.Free;
+
+    /// <summary>Pile ou face et l'arsenal commun ont-ils un sens dans ce mode ? Seulement là où l'on joue des manches avec
+    /// l'arme de son choix : le classique (pas son Death match, d'une traite) et le Tournoi, dont les matchs sont des
+    /// classiques. Le Golden Gun et le Gun Game imposent leur arme ; les modes à réapparitions n'ont pas de manches.
+    /// Fonction pure, testée.</summary>
+    public static bool WeaponChoiceApplies(GameModeId mode, bool deathMatch)
+        => (mode == GameModeId.Classic && !deathMatch) || mode == GameModeId.Tournament;
+
+    /// <summary>Le Death match se joue-t-il ? Seulement dans le classique.</summary>
+    public bool IsDeathMatch => mode == GameModeId.Classic && deathMatch;
+
+    /// <summary>Le match se gagne-t-il aux éliminations (`killsToWin`) plutôt qu'aux manches ? Au Death match du
+    /// classique, et à l'Élimination confirmée (des éliminations confirmées).</summary>
+    public bool CountsKills => IsDeathMatch || mode == GameModeId.KillConfirmed;
+
+    /// <summary>Le match se gagne-t-il aux points ? À la Zone (ZoneMode).</summary>
+    public bool CountsPoints => mode == GameModeId.Zone;
+
+    /// <summary>Le Tag Team se joue-t-il ? Deux équipes, aux points d'équipe (TagTeam).</summary>
+    public bool IsTagTeam => mode == GameModeId.TagTeam;
+
+    /// <summary>Le Tournoi se joue-t-il ? Une poule, chacun contre chacun, puis une finale, plusieurs matchs à la fois
+    /// (Tournament).</summary>
+    public bool IsTournament => mode == GameModeId.Tournament;
+
+    /// <summary>Ce qu'il faut gagner pour remporter le match : des manches, des éliminations au Death match et à
+    /// l'Élimination confirmée, des points à la Zone, ou des points d'équipe au Tag Team. Au Tournoi, les manches d'un match
+    /// de la poule (chaque match a les siennes : RoundManager en couloir).</summary>
+    public int WinTarget
+    {
+        get
+        {
+            MatchRules r = Sanitized();
+            if (r.IsTagTeam) return TagTeam.TargetPoints;
+            if (r.IsTournament) return Tournament.PoolRoundsToWin;
+            if (r.CountsPoints) return ZoneMode.TargetPoints;
+            return r.CountsKills ? r.killsToWin : r.roundsToWin;
+        }
+    }
 
     /// <summary>Le prototype du GDD (§ 16) : quatre places (deux duellistes, deux spectateurs), roi de
     /// la colline, interventions des spectateurs permises, en BO5.</summary>
@@ -64,18 +170,58 @@ public struct MatchRules : INetworkSerializeByMemcpy
         roundsToWin = Bo5RoundsToWin,
     };
 
-    /// <summary>Le format en toutes lettres : « BO5 » ou « BO3 ».</summary>
-    public string Format => $"BO{Sanitized().roundsToWin * 2 - 1}";
+    /// <summary>Le format en toutes lettres : « BO5 » ou « BO3 » au classique, « Death match à 10 » s'il est coché,
+    /// « premier à 5 » au Golden Gun, qui en joue plus, l'échelle au Gun Game, qui n'a pas de manches, « premier à
+    /// 10 » à l'Élimination confirmée, en éliminations confirmées, « premier à 3 000 points » à la Zone, « première
+    /// équipe à 100 points » au Tag Team.</summary>
+    public string Format
+    {
+        get
+        {
+            MatchRules r = Sanitized();
+            if (r.IsDeathMatch) return $"Death match à {r.killsToWin}";
+            return r.mode switch
+            {
+                GameModeId.GoldenGun => $"premier à {r.roundsToWin}",
+                GameModeId.GunGame => GunGame.Phrase(r.ladder),
+                GameModeId.KillConfirmed => $"premier à {r.killsToWin}",
+                GameModeId.Zone => $"premier à {ZoneMode.Points(ZoneMode.TargetPoints)} points",
+                GameModeId.TagTeam => $"première équipe à {TagTeam.TargetPoints} points",
+                GameModeId.Tournament => $"poule en BO{Tournament.PoolRoundsToWin * 2 - 1}, finale en BO{Tournament.FinalRoundsToWin * 2 - 1}",
+                _ => $"BO{r.roundsToWin * 2 - 1}",
+            };
+        }
+    }
+
+    /// <summary>Les nombres de manches à gagner qu'offre un mode, le premier par défaut : 3 ou 2 (BO5, BO3)
+    /// au classique, 5 ou 7 au Golden Gun (GDD § 11, G4), une seule au Gun Game, à l'Élimination confirmée, à la
+    /// Zone et au Tag Team, qui se jouent d'une traite ; au Tournoi, celles de la poule, fixées (BO3, BO5 en finale).</summary>
+    public static (byte usual, byte other) RoundChoices(GameModeId mode) => mode switch
+    {
+        GameModeId.GoldenGun => ((byte)GoldenGunShortRounds, (byte)GoldenGunLongRounds),
+        GameModeId.GunGame or GameModeId.KillConfirmed or GameModeId.Zone or GameModeId.TagTeam => ((byte)GunGameRounds, (byte)GunGameRounds),
+        GameModeId.Tournament => ((byte)Tournament.PoolRoundsToWin, (byte)Tournament.PoolRoundsToWin),
+        _ => ((byte)Bo5RoundsToWin, (byte)Bo3RoundsToWin),
+    };
 
     /// <summary>Les mêmes réglages, ramenés dans leurs bornes (un réglage enregistré peut venir d'une
-    /// ancienne version). Fonction pure, testée.</summary>
+    /// ancienne version) : un mode qui ne se joue pas encore redevient le classique, les manches sont
+    /// celles que son mode offre, le Tag Team a au moins ses quatre places (deux contre deux), le Tournoi ses trois. Fonction pure,
+    /// testée.</summary>
     public MatchRules Sanitized()
     {
         MatchRules r = this;
         if (r.capacity < MinCapacity) r.capacity = MinCapacity;
         if (r.capacity > MaxCapacity) r.capacity = MaxCapacity;
         if (r.organization > DuelOrganization.FixedDuelists) r.organization = DuelOrganization.KingOfTheHill;
-        if (r.roundsToWin != Bo3RoundsToWin && r.roundsToWin != Bo5RoundsToWin) r.roundsToWin = Bo5RoundsToWin;
+        if (!GameModeCatalog.IsPlayable(r.mode)) r.mode = GameModeId.Classic;
+        if (r.mode == GameModeId.TagTeam && r.capacity < TagTeam.MinPlayers) r.capacity = TagTeam.MinPlayers;
+        if (r.mode == GameModeId.Tournament && r.capacity < Tournament.MinPlayers) r.capacity = Tournament.MinPlayers;
+        if (r.ladder > GunGameLadder.Laser) r.ladder = GunGameLadder.Full;
+        (byte usual, byte other) = RoundChoices(r.mode);
+        if (r.roundsToWin != usual && r.roundsToWin != other) r.roundsToWin = usual;
+        if (System.Array.IndexOf(KillChoices, r.killsToWin) < 0) r.killsToWin = DefaultKillsToWin;
+        if (r.weaponChoice > WeaponChoice.CommonArsenal) r.weaponChoice = WeaponChoice.Free;
         return r;
     }
 }

@@ -1,0 +1,117 @@
+{
+  "clip": "Rechargement FP-12",
+  "arme": "FP-12",
+  "ips": 60,
+  "duree": 3.3,
+  "utile": [
+    0.4,
+    2.5
+  ],
+  "etapes": {
+    "sortie": 0.05,
+    "saisie": 0.25,
+    "approche": 0.37,
+    "insertion": 0.42,
+    "frappe": 0.49,
+    "priseLevier": 0.68,
+    "armement": 0.87,
+    "retour": 0.97,
+    "recul": 0.76,
+    "avance": 0.85
+  },
+  "sons": [
+    "sortie",
+    "insertion",
+    "priseLevier"
+  ],
+  "culasse": true,
+  "paumeConception": [
+    0.01,
+    0.05,
+    0.021
+  ],
+  "tenue": {
+    "paume": [
+      -0.016,
+      -0.0155,
+      0.1945
+    ],
+    "normale": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "doigts": [
+      0.0,
+      0.03,
+      1.0
+    ]
+  },
+  "semelle": {
+    "paume": [
+      0.0,
+      -0.0625,
+      0.2106
+    ],
+    "normale": [
+      0.0,
+      0.997,
+      -0.078
+    ],
+    "doigts": [
+      0.35,
+      0.08,
+      0.93
+    ]
+  },
+  "levier": {
+    "paume": [
+      -0.068,
+      0.138,
+      0.009
+    ],
+    "normale": [
+      0.0,
+      -0.2,
+      -1.0
+    ],
+    "doigts": [
+      1.0,
+      0.0,
+      0.1
+    ]
+  },
+  "gardeMain": {
+    "paume": [
+      0.0,
+      0.089,
+      0.38
+    ],
+    "normale": [
+      0.1,
+      1.0,
+      0.15
+    ],
+    "doigts": [
+      0.65,
+      -0.15,
+      0.75
+    ]
+  },
+  "course": 0.08,
+  "axePuits": [
+    0.0,
+    0.999,
+    -0.038
+  ],
+  "pieceArmement": {
+    "pieces": [
+      "Culasse"
+    ],
+    "course": 0.08,
+    "prise": 0.68,
+    "tiree": 0.76,
+    "lachee": 0.76,
+    "revenue": 0.85
+  }
+}

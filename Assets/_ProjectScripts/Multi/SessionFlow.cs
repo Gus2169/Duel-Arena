@@ -62,6 +62,21 @@ public class SessionFlow : MonoBehaviour
         approvedChassis.Clear();
         approvedPlayerIds.Clear();
         LaunchOrder.Clear();
+        LaunchTeams.Clear();
+    }
+
+    /// <summary>
+    /// Les équipes du Tag Team que l'hôte a faites au salon en ligne (2026-11-02, GDD § 11, TT1), par identifiant de
+    /// joueur, fixées au lancement (LobbyController) et lues par RoundManager tant que les joueurs du salon arrivent
+    /// dans l'arène (LaunchTeamOf). Vides hors du Tag Team et en réseau local.
+    /// </summary>
+    public static readonly Dictionary<string, PlayerTeam> LaunchTeams = new Dictionary<string, PlayerTeam>();
+
+    /// <summary>L'équipe que le salon donnait au client `clientId` (LaunchTeams), aucune s'il n'y était pas.</summary>
+    public static PlayerTeam LaunchTeamOf(ulong clientId)
+    {
+        if (LaunchTeams.Count == 0 || !approvedPlayerIds.TryGetValue(clientId, out string id) || string.IsNullOrEmpty(id)) return PlayerTeam.None;
+        return LaunchTeams.TryGetValue(id, out PlayerTeam team) ? team : PlayerTeam.None;
     }
 
     /// <summary>
@@ -126,6 +141,7 @@ public class SessionFlow : MonoBehaviour
         approvedChassis.Clear();
         approvedPlayerIds.Clear();
         LaunchOrder.Clear();
+        LaunchTeams.Clear();
         networkManager.NetworkConfig.ConnectionApproval = true;
         PrepareConnectionData(networkManager);
         networkManager.ConnectionApprovalCallback = ApproveConnection;
@@ -415,6 +431,7 @@ public class SessionFlow : MonoBehaviour
     {
         PendingMenuMessage = message ?? "";
         LaunchOrder.Clear();
+        LaunchTeams.Clear();
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
 

@@ -1,0 +1,115 @@
+{
+  "clip": "Rechargement FA-30",
+  "arme": "FA-30",
+  "ips": 60,
+  "duree": 3.3,
+  "utile": [
+    0.4,
+    2.5
+  ],
+  "etapes": {
+    "sortie": 0.04,
+    "saisie": 0.26,
+    "approche": 0.4,
+    "insertion": 0.45,
+    "frappe": 0.52,
+    "priseLevier": 0.66,
+    "armement": 0.72,
+    "retour": 0.92
+  },
+  "sons": [
+    "sortie",
+    "insertion",
+    "armement"
+  ],
+  "culasse": false,
+  "paumeConception": [
+    0.01,
+    0.05,
+    0.021
+  ],
+  "tenue": {
+    "paume": [
+      -0.0145,
+      -0.039,
+      0.187
+    ],
+    "normale": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "doigts": [
+      0.0,
+      -0.12,
+      0.99
+    ]
+  },
+  "semelle": {
+    "paume": [
+      0.0,
+      -0.089,
+      0.1896
+    ],
+    "normale": [
+      0.0,
+      0.997,
+      -0.081
+    ],
+    "doigts": [
+      0.35,
+      0.08,
+      0.93
+    ]
+  },
+  "levier": {
+    "paume": [
+      -0.059,
+      0.158,
+      0.072
+    ],
+    "normale": [
+      0.0,
+      -0.2,
+      -1.0
+    ],
+    "doigts": [
+      1.0,
+      0.0,
+      0.1
+    ]
+  },
+  "gardeMain": {
+    "paume": [
+      0.0,
+      0.065,
+      0.33
+    ],
+    "normale": [
+      0.1,
+      1.0,
+      0.15
+    ],
+    "doigts": [
+      0.65,
+      -0.15,
+      0.75
+    ]
+  },
+  "course": 0.075,
+  "axePuits": [
+    0.0,
+    0.988,
+    0.154
+  ],
+  "pieceArmement": {
+    "pieces": [
+      "Levier_Armement"
+    ],
+    "course": 0.075,
+    "prise": 0.66,
+    "tiree": 0.71,
+    "lachee": 0.72,
+    "revenue": 0.735
+  }
+}

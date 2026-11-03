@@ -1,0 +1,698 @@
+/* =====================================================================
+   Le salon (2026-11-02, maquette « B · Salon » retenue par l'utilisateur) : les joueurs en liste, les
+   réglages (essentiels, puis « Plus de réglages »), l'image de l'arène. Partagé par le salon du menu et
+   celui de l'arène ; les variables de couleur viennent de Theme.uss (le document hôte la charge).
+   ===================================================================== */
+
+.salon-view {
+    flex-grow: 1;
+}
+
+/* ---------- En-tête : le mode et le code ---------- */
+
+.salon-view__head {
+    flex-direction: row;
+    align-items: flex-end;
+    flex-shrink: 0;
+    margin-bottom: 22px;
+}
+
+.salon-view__eyebrow {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf");
+    font-size: 13px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    margin: 0 0 4px 0;
+    padding: 0;
+}
+
+.salon-view__title-row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.salon-view__mode {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    font-size: 64px;
+    color: var(--yellow);
+    margin: 0 26px 0 0;
+    padding: 0;
+}
+
+.salon-view__change {
+    height: 44px;
+    padding: 0 18px;
+}
+
+.salon-view__change > .da-btn__label,
+.salon-view__copy > .da-btn__label,
+.salon-view__shuffle > .da-btn__label,
+.salon-view__window-close > .da-btn__label {
+    font-size: 14px;
+    letter-spacing: 1.5px;
+}
+
+.salon-view__spacer {
+    flex-grow: 1;
+}
+
+.salon-view__code-block {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.salon-view__code-caption {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf");
+    font-size: 13px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin: 0 14px 0 0;
+    padding: 0;
+}
+
+.salon-view__code {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf");
+    font-size: 34px;
+    letter-spacing: 6px;
+    color: var(--text);
+    margin: 0 18px 0 0;
+    padding: 0;
+}
+
+.salon-view__copy {
+    height: 44px;
+    padding: 0 18px;
+}
+
+/* ---------- Le corps : les joueurs à gauche, les réglages et l'arène à droite ---------- */
+
+.salon-view__body {
+    flex-direction: row;
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.salon-view__players {
+    width: 40%;
+    flex-shrink: 0;
+    margin-right: 36px;
+}
+
+.salon-view__section {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    margin: 0 0 12px 0;
+    padding: 0;
+}
+
+/* Le titre des joueurs, et au Tag Team le tirage des équipes, à sa droite. */
+.salon-view__players-head {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.salon-view__players-head > .salon-view__section {
+    margin: 0;
+}
+
+.salon-view__shuffle {
+    height: 36px;
+    padding: 0 14px;
+}
+
+/* Au Tag Team, le nom de chaque équipe au-dessus de ses joueurs. */
+.salon-team {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf");
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    color: rgb(244, 190, 28);
+    margin: 10px 0 6px 0;
+    padding: 0;
+}
+
+.salon-team--none {
+    color: var(--text-dim);
+}
+
+/* Un joueur que l'hôte peut changer d'équipe (un clic : A, B, hors équipe). */
+.salon-player--editable:hover {
+    border-color: rgba(244, 190, 28, 0.55);
+}
+
+.salon-player {
+    flex-direction: row;
+    align-items: center;
+    height: 58px;
+    margin-bottom: 8px;
+    padding: 0 20px;
+    background-color: rgba(12, 17, 23, 0.92);
+    border-width: 1px;
+    border-color: rgba(150, 170, 190, 0.3);
+}
+
+.salon-player--self {
+    border-color: rgba(244, 190, 28, 0.7);
+}
+
+.salon-player--empty {
+    background-color: rgba(0, 0, 0, 0);
+    border-color: rgba(150, 170, 190, 0.18);
+}
+
+.salon-player__swatch {
+    width: 18px;
+    height: 18px;
+    margin-right: 16px;
+    flex-shrink: 0;
+}
+
+.salon-player--empty > .salon-player__swatch {
+    border-width: 1px;
+    border-color: rgba(150, 170, 190, 0.3);
+}
+
+.salon-player__name {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    font-size: 24px;
+    color: var(--text);
+    flex-grow: 1;
+    margin: 0;
+    padding: 0;
+}
+
+.salon-player--empty > .salon-player__name {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf");
+    font-size: 17px;
+    color: var(--text-faint);
+}
+
+.salon-player__role {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf");
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    color: rgb(169, 180, 191);
+    margin: 0;
+    padding: 0;
+}
+
+.salon-view__phrase {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf");
+    font-size: 17px;
+    color: rgb(197, 206, 215);
+    white-space: normal;
+    margin: 8px 0 0 0;
+    padding: 0;
+}
+
+/* Le tableau de la soirée (GDD § 14) : qui a gagné quoi depuis l'ouverture de la partie. Plus serré que la liste
+   des joueurs, au-dessus de laquelle il ne doit pas prendre la place. */
+.salon-view__evening {
+    margin-top: 30px;
+}
+
+.salon-evening {
+    flex-direction: row;
+    align-items: center;
+    height: 46px;
+    margin-bottom: 6px;
+    padding: 0 18px 0 20px;
+    background-color: rgba(12, 17, 23, 0.72);
+    border-left-width: 2px;
+    border-color: rgba(150, 170, 190, 0.25);
+}
+
+.salon-evening--self {
+    border-color: rgba(244, 190, 28, 0.7);
+}
+
+.salon-evening__text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.salon-evening__name {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    font-size: 17px;
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+}
+
+.salon-evening__detail {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf");
+    font-size: 13px;
+    color: var(--text-dim);
+    margin: 1px 0 0 0;
+    padding: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.salon-evening__wins {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf");
+    font-size: 14px;
+    letter-spacing: 1px;
+    color: rgb(244, 190, 28);
+    flex-shrink: 0;
+    margin: 0 0 0 12px;
+    padding: 0;
+}
+
+.salon-view__evening-last {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf");
+    font-size: 15px;
+    color: rgb(197, 206, 215);
+    white-space: normal;
+    margin: 6px 0 0 0;
+    padding: 0;
+}
+
+.salon-view__side {
+    flex-grow: 1;
+    flex-basis: 0;
+}
+
+.salon-view__settings {
+    flex-shrink: 0;
+    padding: 26px 30px 24px 30px;
+}
+
+/* ---------- Les rangées des réglages ---------- */
+
+.salon-row {
+    flex-direction: row;
+    align-items: center;
+    min-height: 52px;
+}
+
+.salon-row__label {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Medium.ttf");
+    font-size: 18px;
+    color: var(--text);
+    width: 230px;
+    flex-shrink: 0;
+    margin: 0;
+    padding: 0;
+}
+
+.salon-view__rows--advanced .salon-row {
+    min-height: 48px;
+}
+
+.salon-view__rows--advanced .salon-row__label {
+    font-size: 16px;
+    color: rgb(197, 206, 215);
+}
+
+.salon-row__choices {
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.salon-seg {
+    flex-direction: row;
+    align-items: center;
+    height: 42px;
+    margin: 0 6px 0 0;
+    padding: 0 16px;
+    border-width: 1px;
+    border-radius: 0;
+    border-color: rgba(150, 170, 190, 0.35);
+    background-color: rgba(6, 9, 13, 0.6);
+}
+
+/* Le texte d'un choix est un Label : un Button qui a des enfants ne mesure plus son propre texte (le
+   cadenas s'y posait dessus). */
+.salon-seg__label {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Medium.ttf");
+    font-size: 16px;
+    color: rgb(197, 206, 215);
+    margin: 0;
+    padding: 0;
+}
+
+/* Les états du thème d'Unity (.unity-button:hover:enabled…) sont repris au même poids, pour l'emporter. */
+.salon-seg:hover:enabled {
+    background-color: rgba(26, 34, 45, 0.96);
+    border-color: rgba(244, 190, 28, 0.85);
+}
+
+.salon-seg:hover:enabled > .salon-seg__label {
+    color: var(--text);
+}
+
+.salon-seg:hover:active:enabled {
+    background-color: rgba(244, 190, 28, 0.22);
+}
+
+.salon-seg--on,
+.salon-seg--on:hover:enabled,
+.salon-seg--on:hover:active:enabled {
+    background-color: var(--yellow);
+    border-color: var(--yellow);
+}
+
+.salon-seg--on > .salon-seg__label,
+.salon-seg--on:hover:enabled > .salon-seg__label {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    color: var(--on-yellow);
+}
+
+/* Un choix qui n'existe pas encore (un petit cadenas) ou hors de portée : bien éteint, rien ne s'y passe. */
+.salon-seg:disabled {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0);
+    border-color: rgba(150, 170, 190, 0.12);
+}
+
+.salon-seg:disabled > .salon-seg__label {
+    color: var(--text-faint);
+}
+
+.salon-seg__lock {
+    width: 14px;
+    height: 14px;
+    margin-left: 8px;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: var(--text-faint);
+    background-image: url("project://database/Assets/_ProjectUI/Icons/lock.svg");
+}
+
+.salon-row__check {
+    margin: 0 12px 0 0;
+}
+
+/* Ce que le mode fixe (l'arme du Golden Gun) : une phrase, rien à choisir. */
+.salon-row__fixed {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Medium.ttf");
+    font-size: 16px;
+    color: rgb(197, 206, 215);
+    white-space: normal;
+    margin: 0;
+    padding: 0;
+}
+
+.salon-row__hint {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf");
+    font-size: 15px;
+    color: rgb(169, 180, 191);
+    white-space: normal;
+    flex-shrink: 1;
+    margin: 0;
+    padding: 0;
+}
+
+/* Seul l'hôte change les réglages : chez les autres, ils se lisent sans réagir. */
+.salon-view__rows--readonly .salon-seg:disabled {
+    border-color: rgba(150, 170, 190, 0.2);
+}
+
+.salon-view__rows--readonly .salon-seg:disabled > .salon-seg__label {
+    color: rgb(143, 155, 168);
+}
+
+.salon-view__rows--readonly .salon-seg--on:disabled {
+    background-color: rgba(244, 190, 28, 0.55);
+    border-color: rgba(244, 190, 28, 0.55);
+}
+
+.salon-view__rows--readonly .salon-seg--on:disabled > .salon-seg__label {
+    color: var(--on-yellow);
+}
+
+.salon-view__more {
+    flex-direction: row;
+    align-items: center;
+    align-self: flex-start;
+    height: 36px;
+    margin: 6px 0 0 0;
+    padding: 0;
+    border-width: 0;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.salon-view__more-icon {
+    width: 18px;
+    height: 18px;
+    margin-right: 10px;
+    rotate: 90deg;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: var(--yellow);
+}
+
+.salon-view__more--open > .salon-view__more-icon {
+    rotate: -90deg;
+}
+
+.salon-view__more-label {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Bold.ttf");
+    font-size: 15px;
+    letter-spacing: 1.5px;
+    color: var(--yellow);
+    margin: 0;
+    padding: 0;
+}
+
+.salon-view__more:hover:enabled,
+.salon-view__more:hover:active:enabled {
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.salon-view__more:hover > .salon-view__more-label {
+    color: var(--yellow-hover);
+}
+
+.salon-view__hint {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf");
+    font-size: 13px;
+    color: var(--text-dim);
+    white-space: normal;
+    margin: 12px 0 0 0;
+    padding: 0;
+}
+
+/* ---------- L'arène ---------- */
+
+.salon-view__arena {
+    flex-grow: 1;
+    min-height: 150px;
+    margin-top: 20px;
+    overflow: hidden;
+    background-color: rgb(14, 19, 25);
+}
+
+.salon-view__arena-image {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    -unity-background-scale-mode: scale-and-crop;
+}
+
+.salon-view__arena-caption {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    flex-direction: row;
+    align-items: center;
+    padding: 14px 22px;
+    background-color: rgba(9, 12, 16, 0.88);
+}
+
+.salon-view__arena-kicker {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf");
+    font-size: 13px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin: 0 14px 0 0;
+    padding: 0;
+}
+
+.salon-view__arena-name {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    font-size: 24px;
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+}
+
+.salon-view__arena-edge {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    --fill-color: rgba(0, 0, 0, 0);
+    --edge-color: rgba(150, 170, 190, 0.3);
+    --edge-width: 1;
+    --cut-br: 18;
+}
+
+/* ---------- Le pied : quitter, la partie en une ligne, lancer ---------- */
+
+.salon-view__foot {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    height: 64px;
+    margin-top: 22px;
+}
+
+.salon-view__leave {
+    height: 56px;
+    padding: 0 24px;
+}
+
+.salon-view__foot-text {
+    flex-grow: 1;
+    align-items: flex-end;
+    margin: 0 24px;
+}
+
+.salon-view__status {
+    -unity-text-align: middle-right;
+    margin-bottom: 2px;
+}
+
+.salon-view__summary {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf");
+    font-size: 16px;
+    color: rgb(197, 206, 215);
+    -unity-text-align: middle-right;
+    margin: 0;
+    padding: 0;
+}
+
+.salon-view__launch {
+    height: 64px;
+    padding: 0 44px;
+}
+
+.salon-view__launch > .da-btn__label {
+    font-size: 22px;
+}
+
+/* ---------- La fenêtre pour changer de mode ---------- */
+
+/* Un voile plus sombre que celui des autres fenêtres : le rendu linéaire éclaircit un voile à demi
+   transparent, et le salon est chargé derrière (la maquette B l'éteint presque). */
+.salon-view__window {
+    background-color: rgba(4, 6, 9, 0.93);
+}
+
+.salon-view__window-panel {
+    width: 1080px;
+    padding: 30px 36px 30px 36px;
+    align-items: stretch;
+}
+
+.salon-view__window-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+.salon-view__window-title {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    font-size: 34px;
+    color: var(--yellow);
+    margin: 0;
+    padding: 0;
+}
+
+.salon-view__window-close {
+    height: 44px;
+    padding: 0 18px;
+}
+
+.salon-view__mode-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+}
+
+.salon-mode {
+    width: 49.4%;
+    height: 88px;
+    margin: 0 0 10px 0;
+    padding: 0 20px;
+    align-items: flex-start;
+    justify-content: center;
+    border-width: 1px;
+    border-radius: 0;
+    border-color: rgba(150, 170, 190, 0.3);
+    background-color: rgba(6, 9, 13, 0.6);
+}
+
+.salon-mode:hover:enabled,
+.salon-mode:hover:active:enabled {
+    border-color: rgba(244, 190, 28, 0.85);
+    background-color: rgba(26, 34, 45, 0.96);
+}
+
+.salon-mode--current,
+.salon-mode--current:hover:enabled,
+.salon-mode--current:hover:active:enabled {
+    border-width: 2px;
+    border-color: var(--yellow);
+    background-color: rgba(26, 34, 45, 0.97);
+}
+
+.salon-mode__top {
+    flex-direction: row;
+    align-items: center;
+}
+
+.salon-mode__name {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    font-size: 22px;
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+}
+
+.salon-mode--current .salon-mode__name {
+    color: var(--yellow);
+}
+
+.salon-mode__badge {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf");
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    color: var(--text-faint);
+    margin: 0 0 0 12px;
+    padding: 0;
+}
+
+.salon-mode__line {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Regular.ttf");
+    font-size: 14px;
+    color: rgb(169, 180, 191);
+    white-space: normal;
+    margin: 6px 0 0 0;
+    padding: 0;
+}
+
+.salon-mode:disabled {
+    opacity: 1;
+    border-color: rgba(150, 170, 190, 0.12);
+    background-color: rgba(0, 0, 0, 0);
+}
+
+/* Un mode à venir : bien éteint, comme ses cartes de l'écran Jouer. */
+.salon-mode:disabled .salon-mode__name {
+    color: rgb(80, 88, 98);
+}
+
+.salon-mode:disabled .salon-mode__line,
+.salon-mode:disabled .salon-mode__badge {
+    color: rgb(62, 69, 78);
+}

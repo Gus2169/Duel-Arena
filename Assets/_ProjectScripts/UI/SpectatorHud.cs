@@ -90,10 +90,13 @@ public class SpectatorHud : MonoBehaviour
         bool interventions = rm.Rules.spectatorInterventions;
 
         int place = state.QueuePosition;
-        string queue = place == 1 ? "prochain duel : toi"
+        // Au Tag Team, celui qui attend son tour avec son équipe : il aide d'ici (GDD § 11, TT5).
+        string queue = state.Team != PlayerTeam.None ? (place <= 1 ? "tu entres au prochain relais" : $"tu entres au {place}e relais")
+                     : place == 1 ? "prochain duel : toi"
                      : place > 1 ? $"{place}e dans la file"
                      : "en attente d'une place";
-        roleLabel.text = interventions ? $"SPECTATEUR · {queue}" : $"SPECTATEUR · {queue} · interventions désactivées";
+        string who = state.Team != PlayerTeam.None ? TagTeam.Name(state.Team).ToUpperInvariant() : "SPECTATEUR";
+        roleLabel.text = interventions ? $"{who} · {queue}" : $"{who} · {queue} · interventions désactivées";
 
         if (spectator == null || !interventions)
         {

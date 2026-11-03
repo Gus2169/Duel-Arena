@@ -99,6 +99,11 @@
 .ico-info { background-image: url("project://database/Assets/_ProjectUI/Icons/info.svg"); }
 .ico-pencil { background-image: url("project://database/Assets/_ProjectUI/Icons/pencil.svg"); }
 .ico-spark { background-image: url("project://database/Assets/_ProjectUI/Icons/spark.svg"); }
+.ico-ladder { background-image: url("project://database/Assets/_ProjectUI/Icons/ladder.svg"); }
+.ico-bullet { background-image: url("project://database/Assets/_ProjectUI/Icons/bullet.svg"); }
+.ico-chip { background-image: url("project://database/Assets/_ProjectUI/Icons/chip.svg"); }
+.ico-zone { background-image: url("project://database/Assets/_ProjectUI/Icons/zone.svg"); }
+.ico-terminal { background-image: url("project://database/Assets/_ProjectUI/Icons/terminal.svg"); }
 
 /* ---------- Fond biseauté d'un bouton (SlantBox, premier enfant) ---------- */
 

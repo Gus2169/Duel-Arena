@@ -5,6 +5,7 @@
          de MultiTestScene.
          L'ordre compte : chaque bloc se dessine par-dessus les précédents. -->
     <ui:Template name="OptionsPanel" src="../Shared/OptionsPanel.uxml" />
+    <ui:Template name="SalonView" src="../Shared/SalonView.uxml" />
     <ui:Style src="../Shared/Theme.uss" />
     <ui:Style src="GameHud.uss" />
 
@@ -15,18 +16,34 @@
              HUD : le score et la vie restent lisibles. -->
         <da:HitIndicatorOverlay name="hitIndicator" class="hit-indicator hidden" picking-mode="Ignore" />
 
-        <!-- Barre de score : moi à gauche, l'adversaire à droite, le chrono de la manche au milieu -->
+        <!-- La Zone (2026-11-02) : ses repères à l'écran, la zone du moment et la suivante, avec leur distance. -->
+        <ui:VisualElement name="zoneMarker" class="zone-marker hidden" picking-mode="Ignore">
+            <ui:Label name="zoneMarkerLabel" class="zone-marker__label" picking-mode="Ignore" />
+        </ui:VisualElement>
+        <ui:VisualElement name="nextZoneMarker" class="zone-marker zone-marker--next hidden" picking-mode="Ignore">
+            <ui:Label name="nextZoneMarkerLabel" class="zone-marker__label" picking-mode="Ignore" />
+        </ui:VisualElement>
+
+        <!-- Barre de score : moi à gauche, l'adversaire à droite, le chrono de la manche au milieu. Au Gun Game
+             (2026-11-02), l'échelle de chacun à la place des manches, et l'arme de sa marche. -->
         <ui:VisualElement name="scoreBar" class="score-bar" picking-mode="Ignore">
             <ui:VisualElement class="score-side score-side--left" picking-mode="Ignore">
+                <ui:Label name="leftWeapon" class="score-weapon hidden" picking-mode="Ignore" />
                 <ui:Label name="leftName" class="score-name" picking-mode="Ignore" />
+                <ui:Label name="leftPoints" class="score-points hidden" picking-mode="Ignore" />
                 <ui:VisualElement name="leftPips" class="score-pips" picking-mode="Ignore" />
             </ui:VisualElement>
             <ui:Label name="roundTimer" class="round-timer" picking-mode="Ignore" />
             <ui:VisualElement class="score-side score-side--right" picking-mode="Ignore">
                 <ui:VisualElement name="rightPips" class="score-pips" picking-mode="Ignore" />
+                <ui:Label name="rightPoints" class="score-points hidden" picking-mode="Ignore" />
                 <ui:Label name="rightName" class="score-name" picking-mode="Ignore" />
+                <ui:Label name="rightWeapon" class="score-weapon hidden" picking-mode="Ignore" />
             </ui:VisualElement>
         </ui:VisualElement>
+
+        <!-- La Zone : qui la tient, et quand elle bouge -->
+        <ui:Label name="zoneStatus" class="zone-status hidden" picking-mode="Ignore" />
 
         <!-- La vie, façon Rainbow Six : le chiffre, et une jauge dont la part perdue rougit un instant -->
         <ui:VisualElement name="healthPanel" class="health-panel" picking-mode="Ignore">
@@ -44,6 +61,18 @@
         <ui:VisualElement name="centerMessage" class="center-message" picking-mode="Ignore">
             <ui:Label name="centerBig" class="center-big" picking-mode="Ignore" />
             <ui:Label name="centerSmall" class="center-small" picking-mode="Ignore" />
+        </ui:VisualElement>
+
+        <!-- Le Tournoi (2026-11-03, piloté par TournamentBoard) : dans la salle d'attente, où en est le tournoi, ce qui
+             attend le joueur, le classement de la poule et les matchs du tour (en cours, ou à venir). -->
+        <ui:VisualElement name="tournamentBoard" class="tournament-board hidden" picking-mode="Ignore">
+            <ui:Label class="tournament-board__title" text="TOURNOI" picking-mode="Ignore" />
+            <ui:Label name="tournamentStage" class="tournament-board__stage" picking-mode="Ignore" />
+            <ui:Label name="tournamentMine" class="tournament-board__mine" picking-mode="Ignore" />
+            <ui:Label class="tournament-board__heading" text="CLASSEMENT" picking-mode="Ignore" />
+            <ui:VisualElement name="tournamentStandings" class="tournament-board__rows" picking-mode="Ignore" />
+            <ui:Label name="tournamentMatchesHeading" class="tournament-board__heading" picking-mode="Ignore" />
+            <ui:VisualElement name="tournamentMatches" class="tournament-board__rows" picking-mode="Ignore" />
         </ui:VisualElement>
 
         <!-- La tribune (2026-10-13, piloté par SpectatorHud) : l'invite de la touche F (un spectateur
@@ -67,6 +96,9 @@
                 <ui:Label name="loadoutTimer" class="loadout-timer" />
             </ui:VisualElement>
             <ui:Label name="loadoutRound" class="loadout-round" />
+            <!-- Pile ou face (2026-11-03) : la pièce, qui choisit la famille, et ses boutons pour celui qui choisit. -->
+            <ui:Label name="loadoutCoin" class="loadout-coin hidden" />
+            <ui:VisualElement name="loadoutFamilies" class="loadout-families hidden" />
             <ui:VisualElement name="loadoutCards" class="loadout-cards" />
             <ui:VisualElement class="loadout-footer">
                 <ui:Label name="loadoutStatus" class="loadout-status" />
@@ -97,57 +129,22 @@
             </ui:VisualElement>
         </ui:VisualElement>
 
-        <!-- Le salon de la partie (2026-10-26) : après un match sans revanche. L'hôte règle et relance,
-             les autres l'attendent. -->
+        <!-- Le salon de la partie (2026-10-26) : après un match sans revanche. L'hôte règle et relance, les
+             autres l'attendent. Depuis le 2026-11-02, le gabarit du salon du menu (SalonView, maquette « B ·
+             Salon »), en plein écran par-dessus l'arène, piloté par SalonPanel. -->
         <ui:VisualElement name="salonPanel" class="salon-panel hidden">
-            <ui:VisualElement class="salon-header">
-                <ui:Label class="salon-title" text="SALON" />
-                <ui:Label name="salonMode" class="salon-mode" />
-            </ui:VisualElement>
-            <ui:VisualElement class="salon-body">
-                <ui:VisualElement class="salon-column">
-                    <ui:Label class="salon-section" text="JOUEURS" />
-                    <ui:VisualElement name="salonPlayers" class="salon-players" />
-                </ui:VisualElement>
-                <ui:VisualElement class="salon-column">
-                    <ui:Label class="salon-section" text="RÉGLAGES" />
-                    <ui:VisualElement class="salon-rule">
-                        <ui:Label class="salon-rule__label" text="MANCHES" />
-                        <da:OptionCycler name="salonRoundsCycler" class="salon-rule__cycler" choices-text="BO5 · premier à 3;BO3 · premier à 2" loop="true" />
-                    </ui:VisualElement>
-                    <ui:VisualElement class="salon-rule">
-                        <ui:Label class="salon-rule__label" text="PLACES" />
-                        <da:OptionCycler name="salonCapacityCycler" class="salon-rule__cycler" />
-                    </ui:VisualElement>
-                    <!-- Ce qui se dit oui ou non : des cases à cocher (2026-10-27) -->
-                    <ui:VisualElement class="salon-rule">
-                        <ui:Label class="salon-rule__label" text="ROI DE LA COLLINE" />
-                        <ui:VisualElement class="salon-rule__check-cell">
-                            <ui:Toggle name="salonKingToggle" class="da-check" />
-                        </ui:VisualElement>
-                    </ui:VisualElement>
-                    <ui:VisualElement class="salon-rule">
-                        <ui:Label class="salon-rule__label" text="INTERVENTIONS" />
-                        <ui:VisualElement class="salon-rule__check-cell">
-                            <ui:Toggle name="salonInterventionsToggle" class="da-check" />
-                        </ui:VisualElement>
-                    </ui:VisualElement>
-                    <ui:VisualElement class="salon-rule">
-                        <ui:Label class="salon-rule__label" text="DUELLISTES ALÉATOIRES" />
-                        <ui:VisualElement class="salon-rule__check-cell">
-                            <ui:Toggle name="salonRandomToggle" class="da-check" />
-                        </ui:VisualElement>
-                    </ui:VisualElement>
-                    <ui:Label name="salonRulesHint" class="salon-hint" />
-                </ui:VisualElement>
-            </ui:VisualElement>
-            <ui:Label name="salonInvite" class="salon-invite" />
-            <ui:VisualElement class="salon-footer">
-                <ui:Label name="salonStatus" class="salon-status" />
-                <ui:VisualElement class="salon-buttons">
-                    <ui:Button name="salonQuitButton" class="menu-button salon-button" text="Quitter la partie" />
-                    <ui:Button name="salonLaunchButton" class="menu-button menu-button--primary salon-button" text="Lancer la partie" />
-                </ui:VisualElement>
+            <da:SlantBox class="salon-panel__frame" picking-mode="Ignore" />
+            <ui:Instance template="SalonView" />
+        </ui:VisualElement>
+
+        <!-- Le replay du coup mortel (2026-11-03, piloté par GameHud d'après KillReplay) : des bandes noires en haut
+             et en bas, et en bas à gauche ce qu'on revoit : qui, avec quoi, où, de combien. -->
+        <ui:VisualElement name="replayFrame" class="replay-frame hidden" picking-mode="Ignore">
+            <ui:VisualElement class="replay-frame__band replay-frame__band--top" picking-mode="Ignore" />
+            <ui:VisualElement class="replay-frame__band replay-frame__band--bottom" picking-mode="Ignore" />
+            <ui:VisualElement class="replay-caption" picking-mode="Ignore">
+                <ui:Label name="replayTitle" class="replay-caption__title" text="LE COUP MORTEL" picking-mode="Ignore" />
+                <ui:Label name="replayLine" class="replay-caption__line" picking-mode="Ignore" />
             </ui:VisualElement>
         </ui:VisualElement>
 

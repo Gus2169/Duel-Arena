@@ -62,6 +62,11 @@ public static class RobotChassis
         return -1;
     }
 
+    /// <summary>Le châssis de rang `owner` est-il fait de pièces rigides, chacune liée à un seul os (le CT-01, l'OS-02) ?
+    /// Une épave peut alors perdre des pièces (RobotCorpse.Burst) ; la peau continue du Y Bot s'étirerait entre elles.
+    /// Une pièce d'aucun châssis (-1 : une arme, le gant) est rigide. Fonction pure, testée.</summary>
+    public static bool HasRigidPieces(int owner) => owner != (int)ChassisId.Prototype;
+
     /// <summary>Montre le châssis `id` sous `model` (le « Model » d'un joueur, ou une copie) : ses pièces s'allument,
     /// celles des autres s'éteignent, le reste (armes, gant) n'est pas touché.</summary>
     public static void Apply(Transform model, ChassisId id)

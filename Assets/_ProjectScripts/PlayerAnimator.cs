@@ -161,6 +161,8 @@ public class PlayerAnimator : MonoBehaviour
     // Durée du geste joué sur la couche du taser.
     private float strikeGestureDuration = 0.6f;
     private bool shownSpectator;
+    // À mains nues : un spectateur, ou un duelliste qui n'a que le gant (la dernière marche du Gun Game).
+    private bool bareHanded;
     private float gestureWeight;
     private float pickUpWeight;
     private float punchShownUntil = float.NegativeInfinity; // la garde attend la fin d'un coup montré
@@ -191,6 +193,7 @@ public class PlayerAnimator : MonoBehaviour
     private float torsoAimWeight;
     private float torsoYaw;
     private float torsoPitch;
+    private Transform hips;
 
     private void Awake()
     {
@@ -216,9 +219,10 @@ public class PlayerAnimator : MonoBehaviour
             // modèle (2026-10-11) : le modèle par défaut de chaque classe, sans accessoire, jusqu'à ce
             // que le serveur publie ce que le joueur a choisi (HandleWeaponLooks, HandleWeaponAttachments).
             rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
-            if (weapon != null) HeldWeapons.Build(rightHand, weapon.Loadout, WeaponLooks.Default);
+            if (weapon != null) HeldWeapons.Build(rightHand, weapon.AllWeapons, WeaponLooks.Default);
             ShowHeldWeapon();
             spineChain = SpineChain(animator);
+            hips = animator.GetBoneTransform(HumanBodyBones.Hips);
             planter = new FootPlanter(animator);
             grip = new WeaponGrip(animator);
         }
@@ -291,6 +295,10 @@ public class PlayerAnimator : MonoBehaviour
     public float PunchPlaybackSpeed => spectator != null
         ? punchClipContactTime / Mathf.Max(0.05f, spectator.PunchContactDelay)
         : 1f;
+
+    /// <summary>Vitesse de lecture du direct pour un contact `contactDelay` secondes après l'appui : celui du
+    /// taser, que la vue subjective d'un duelliste au gant seul joue sur la couche des gestes (SpectatorView).</summary>
+    public float PunchPlaybackSpeedFor(float contactDelay) => punchClipContactTime / Mathf.Max(0.05f, contactDelay);
 
     /// <summary>Le lancer : chez le joueur, il suit l'élan (ElanLancer) ; chez les autres, qui ne voient
     /// pas l'élan, il part du bras armé.</summary>
@@ -435,8 +443,10 @@ public class PlayerAnimator : MonoBehaviour
             ShowHeldWeapon();
         }
         // Debout, l'arbre de déplacement à mains nues ; accroupi, les jambes armées sous un haut du
-        // corps à mains nues (voir ApplyPostureTransition).
-        animator.SetFloat(MainsNuesId, spectating ? 1f : 0f);
+        // corps à mains nues (voir ApplyPostureTransition). Aussi un duelliste qui n'a que le gant, la
+        // dernière marche du Gun Game (2026-11-02) : à mains nues, le gant au poing.
+        bareHanded = spectating || (weapon != null && weapon.DisplayedUnarmed);
+        animator.SetFloat(MainsNuesId, bareHanded ? 1f : 0f);
         pistolBlend = Mathf.MoveTowards(pistolBlend, pistolHold, dt / Mathf.Max(0.01f, holdBlendTime));
         animator.SetFloat(PistoletId, pistolBlend);
 
@@ -689,8 +699,9 @@ public class PlayerAnimator : MonoBehaviour
         }
         // Un spectateur (2026-10-13) : debout, tout son corps joue l'arbre à mains nues et la couche se
         // tait ; accroupi, elle pose des bras à mains nues (état MainsNues) sur les jambes accroupies,
-        // faute de marches accroupies à mains nues qui conviennent. Il ne s'allonge jamais.
-        if (locomotion.IsSpectator) upperWeight = Mathf.Clamp01(stanceF);
+        // faute de marches accroupies à mains nues qui conviennent. Il ne s'allonge jamais. Un duelliste au
+        // gant seul pareil ; allongé, la couche se tait aussi (ses bras accroupis n'iraient pas couchés).
+        if (bareHanded) upperWeight *= Mathf.Clamp01(stanceF) * Mathf.Clamp01(2f - stanceF);
 
         if (animator.layerCount > UpperBodyLayer) animator.SetLayerWeight(UpperBodyLayer, upperWeight);
 
@@ -1254,8 +1265,9 @@ public class PlayerAnimator : MonoBehaviour
     /// le torse et le regard, en cap seulement (le fusil y est tenu en travers, et le joueur qui
     /// court de côté garde le torse face à son regard). La correction est lissée, ce qui laisse au
     /// fusil un peu du balancement des pas, et répartie sur les trois os de la colonne, pour une
-    /// torsion qui ne casse pas la taille. Elle se fige pendant le rechargement et le taser, dont le
-    /// geste doit se voir tel qu'il est authoré.
+    /// torsion qui ne casse pas la taille. Pendant le coup de taser, elle se fige (le coup part où le
+    /// joueur regardait) ; pendant un rechargement, elle met les hanches face au regard (StepTorso) :
+    /// le geste se voit tel qu'il est authoré.
     ///
     /// Le tangage vient du réseau (PlayerLocomotion.DisplayAimPitch). Catégorie C stricte : le tir
     /// part toujours de la caméra, le hitbox se calcule toujours sans les os. Appliqué AVANT le
@@ -1265,9 +1277,10 @@ public class PlayerAnimator : MonoBehaviour
     {
         if (sight == null || spineChain == null || spineChain.Length == 0) return;
 
-        bool gesture = (weapon != null && weapon.IsReloading)
-                       || (animator.layerCount > TaserLayer && animator.GetLayerWeight(TaserLayer) > 0.01f);
-        if (!gesture)
+        bool reloading = weapon != null && weapon.IsReloading;
+        bool striking = animator.layerCount > TaserLayer && animator.GetLayerWeight(TaserLayer) > 0.01f;
+        float targetYaw = torsoYaw, targetPitch = torsoPitch;
+        if (!reloading && !striking)
         {
             bool aimPose = locomotion.DisplayAiming || UpperBodyPlays(TirStateId);
             torsoAimWeight = Mathf.MoveTowards(torsoAimWeight, aimPose ? 1f : 0f, torsoAimBlendSpeed * dt);
@@ -1288,16 +1301,50 @@ public class PlayerAnimator : MonoBehaviour
 
             TorsoCorrection(rifleYaw, rifleElevation, chestYaw, locomotion.DisplayAimPitch, torsoAimWeight,
                             maxTorsoYaw, stance == PlayerLocomotion.Stance.Prone ? maxProneTorsoPitch : maxTorsoPitch,
-                            out float targetYaw, out float targetPitch);
-
-            float k = 1f - Mathf.Exp(-dt / Mathf.Max(0.01f, torsoAlignSmoothing));
-            torsoYaw = Mathf.Lerp(torsoYaw, targetYaw, k);
-            torsoPitch = Mathf.Lerp(torsoPitch, targetPitch, k);
+                            out targetYaw, out targetPitch);
         }
+        float restYaw = 0f;
+        if (reloading)
+        {
+            torsoAimWeight = Mathf.MoveTowards(torsoAimWeight, 0f, torsoAimBlendSpeed * dt);
+            // Les hanches face au regard : elles viennent des jambes, que le geste ne touche pas (au repos, à 4° du
+            // buste corrigé). Allongé, comme le buste, on ne les redresse pas.
+            if (hips != null && stance != PlayerLocomotion.Stance.Prone)
+            {
+                Vector3 h = transform.InverseTransformDirection(hips.forward);
+                restYaw = Mathf.Clamp(-Mathf.Atan2(h.x, h.z) * Mathf.Rad2Deg, -maxTorsoYaw, maxTorsoYaw);
+            }
+        }
+        float k = 1f - Mathf.Exp(-dt / Mathf.Max(0.01f, torsoAlignSmoothing));
+        StepTorso(ref torsoYaw, ref torsoPitch, targetYaw, targetPitch, restYaw, reloading, striking, k);
 
         // S'efface avec le haut du corps, pendant les transitions vers ou depuis l'allongé.
         if (upperWeight <= 0.001f) return;
         RotateSpine(spineChain, transform.right, torsoYaw * upperWeight, torsoPitch * upperWeight);
+    }
+
+    /// <summary>
+    /// La correction du buste d'une image à la suivante (cap, élévation, en degrés), lissée de `k` : vers sa cible
+    /// (TorsoCorrection) ; pendant le coup de taser, figée ; pendant un rechargement, vers celle qui met les hanches
+    /// face au regard (`restYaw`, sans élévation). Figée, elle gardait pendant tout le rechargement celle du tir qui
+    /// le précède d'ordinaire (au stand, 37° de cap et ±11° d'élévation à la hanche) : tout le geste était tourné, le
+    /// pistolet penché en avant (2026-10-29) ; mesurée sur le buste de ses images, elle en effacerait les gestes du
+    /// buste (les hanches, elles, viennent des jambes). Fonction pure, testée.
+    /// </summary>
+    public static void StepTorso(ref float yaw, ref float pitch, float targetYaw, float targetPitch, float restYaw,
+                                 bool reloading, bool striking, float k)
+    {
+        if (reloading)
+        {
+            targetYaw = restYaw;
+            targetPitch = 0f;
+        }
+        else if (striking)
+        {
+            return;
+        }
+        yaw = Mathf.Lerp(yaw, targetYaw, k);
+        pitch = Mathf.Lerp(pitch, targetPitch, k);
     }
 
     /// <summary>
@@ -1384,7 +1431,7 @@ public class PlayerAnimator : MonoBehaviour
     {
         if (weapon == null || rightHand == null) return;
         Renderer body = animator != null ? animator.GetComponentInChildren<SkinnedMeshRenderer>(true) : null;
-        HeldWeapons.Build(rightHand, weapon.Loadout, looks, attachments, body);
+        HeldWeapons.Build(rightHand, weapon.AllWeapons, looks, attachments, body);
         ShowHeldWeapon();
     }
 
@@ -1394,7 +1441,7 @@ public class PlayerAnimator : MonoBehaviour
     {
         bool spectating = locomotion != null && locomotion.IsSpectator;
         shownWeapon = weapon != null && !spectating ? weapon.Data : null;
-        WeaponModel model = weapon != null ? HeldWeapons.Show(rightHand, weapon.Loadout, shownWeapon) : null;
+        WeaponModel model = weapon != null ? HeldWeapons.Show(rightHand, weapon.AllWeapons, shownWeapon) : null;
         shownModel = model;
         sight = FindSight(animator);
         // Un pistolet se tient à deux mains, bras tendus, et non crosse à l'épaule : le haut du corps

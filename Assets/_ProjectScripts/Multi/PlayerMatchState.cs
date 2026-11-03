@@ -113,6 +113,21 @@ public class PlayerMatchState : NetworkBehaviour
     private readonly NetworkVariable<MatchVote> vote = new NetworkVariable<MatchVote>(
         MatchVote.None, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+    // Le Gun Game (2026-11-02, GDD § 11) : la marche du joueur sur l'échelle (0 = la première arme, la dernière
+    // = le gant), tenue par le serveur (RoundManager) ; le HUD montre les deux échelles.
+    private readonly NetworkVariable<byte> gunGameStep = new NetworkVariable<byte>(
+        0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    // Dans les modes à réapparitions : l'instant (horloge du serveur) où le joueur mort revient, 0 sinon. Le
+    // serveur le tient (RoundManager) ; le HUD du mort en tire son décompte.
+    private readonly NetworkVariable<double> respawnAt = new NetworkVariable<double>(
+        0d, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    // Le Tag Team (2026-11-02, GDD § 11) : l'équipe du joueur, composée par l'hôte, tenue par le serveur
+    // (RoundManager) ; aucune hors du Tag Team.
+    private readonly NetworkVariable<PlayerTeam> team = new NetworkVariable<PlayerTeam>(
+        PlayerTeam.None, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
     private static readonly List<PlayerMatchState> spawned = new List<PlayerMatchState>();
 
     /// <summary>Les fiches des joueurs présents.</summary>
@@ -169,6 +184,38 @@ public class PlayerMatchState : NetworkBehaviour
     /// <summary>Son vote de fin de match, tel que le serveur l'a accepté.</summary>
     public MatchVote Vote => vote.Value;
 
+    /// <summary>Sa marche sur l'échelle du Gun Game (0 = la première arme), publiée par le serveur.</summary>
+    public int GunGameStep => gunGameStep.Value;
+
+    /// <summary>L'instant (horloge du serveur) où ce joueur mort réapparaît, 0 s'il n'attend pas.</summary>
+    public double RespawnAt => respawnAt.Value;
+
+    /// <summary>Son équipe au Tag Team (aucune ailleurs), publiée par le serveur.</summary>
+    public PlayerTeam Team => team.Value;
+
+    /// <summary>Prend-il part au match ? Un duelliste ; au Tag Team, tout membre d'une équipe, même celui qui attend
+    /// sur la tribune : il choisit son arme à la préparation, vote à la fin, figure au tableau.</summary>
+    public bool IsMatchPlayer => IsDuelist || team.Value != PlayerTeam.None;
+
+    /// <summary>Serveur : son équipe (RoundManager).</summary>
+    public void ServerSetTeam(PlayerTeam value)
+    {
+        if (IsServer && team.Value != value) team.Value = value;
+    }
+
+    /// <summary>Serveur : sa marche sur l'échelle du Gun Game.</summary>
+    public void ServerSetGunGameStep(int step)
+    {
+        byte value = (byte)Mathf.Clamp(step, 0, 255);
+        if (IsServer && gunGameStep.Value != value) gunGameStep.Value = value;
+    }
+
+    /// <summary>Serveur : l'instant de sa réapparition (0 : il n'attend pas).</summary>
+    public void ServerSetRespawnAt(double at)
+    {
+        if (IsServer && respawnAt.Value != at) respawnAt.Value = at;
+    }
+
     /// <summary>Le propriétaire vote, pendant l'écran de fin (MatchEndScreen). Il peut changer d'avis tant
     /// que le vote n'est pas tranché.</summary>
     public void RequestVote(MatchVote choice)
@@ -177,12 +224,13 @@ public class PlayerMatchState : NetworkBehaviour
         VoteServerRpc(choice);
     }
 
-    /// <summary>Un vote ne compte que d'un duelliste, pendant le vote (RoundManager.VoteOpen).</summary>
+    /// <summary>Un vote ne compte que d'un joueur du match (un duelliste, ou au Tag Team un membre d'une équipe),
+    /// pendant le vote (RoundManager.VoteOpen).</summary>
     [ServerRpc]
     private void VoteServerRpc(MatchVote choice)
     {
         RoundManager rm = RoundManager.Instance;
-        if (rm == null || !rm.VoteOpen || !IsDuelist) return;
+        if (rm == null || !rm.VoteOpen || !IsMatchPlayer) return;
         if (choice != MatchVote.Rematch && choice != MatchVote.Salon) return;
         vote.Value = choice;
     }
@@ -242,8 +290,16 @@ public class PlayerMatchState : NetworkBehaviour
     /// après l'ouverture de l'écran de fin (None : elle ne vote pas). Remis à zéro à chaque lancement.</summary>
     public static MatchVote AutopilotVote;
 
+    /// <summary>BANC DE TEST — Editor uniquement : à pile ou face, quand la pièce ou la défaite désigne le joueur de cette
+    /// instance, il choisit la première famille permise au bout d'une seconde. Remis à faux à chaque lancement.</summary>
+    public static bool AutopilotFamily;
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    private static void ResetAutopilotVote() => AutopilotVote = MatchVote.None;
+    private static void ResetAutopilotVote()
+    {
+        AutopilotVote = MatchVote.None;
+        AutopilotFamily = false;
+    }
 #endif
 
     private void Update()
@@ -251,25 +307,64 @@ public class PlayerMatchState : NetworkBehaviour
         // Une validation ne vaut que pour la préparation en cours.
         if (readyRequested && !IsPreparing()) readyRequested = false;
 #if UNITY_EDITOR
-        if (AutopilotReady && IsOwner && IsPreparing() && RoundManager.Instance.PhaseElapsed > 1.5f) RequestReady();
+        if (AutopilotReady && IsOwner && IsPreparing() && !FamilyPending() && RoundManager.For(OwnerClientId).PhaseElapsed > 1.5f) RequestReady();
+        // Pile ou face : le joueur désigné choisit la première famille permise, au bout d'une seconde (AutopilotFamily).
+        if (AutopilotFamily && IsOwner && FamilyPending())
+        {
+            RoundManager lane = RoundManager.For(OwnerClientId);
+            CoinFlip.State coin = lane.CoinFlipNow;
+            // Comme un joueur : une seconde après que les boutons sont apparus (la pièce tombée).
+            if (coin.chooser == OwnerClientId && CoinFlip.FamilyChoiceSeconds - lane.CoinFlipTimeLeft > 1f)
+            {
+                for (byte family = 0; family < Arsenal.FamilyCount; family++)
+                {
+                    if (!CoinFlip.Allowed(family, coin.previous)) continue;
+                    RequestFamily(family);
+                    break;
+                }
+            }
+        }
         RoundManager round = RoundManager.Instance;
         if (AutopilotVote != MatchVote.None && IsOwner && round != null && round.VoteOpen
             && round.PhaseElapsed > round.EndScreenDelay + 2f) RequestVote(AutopilotVote);
 #endif
     }
 
-    private static bool IsPreparing()
+    /// <summary>À pile ou face, la famille de la manche reste-t-elle à choisir ? On ne valide pas avant.</summary>
+    private bool FamilyPending()
     {
-        RoundManager rm = RoundManager.Instance;
+        RoundManager rm = RoundManager.For(OwnerClientId);
+        return rm != null && rm.CoinFlipFamilyPending;
+    }
+
+    /// <summary>Le match de ce joueur est-il en préparation ? (au Tournoi, celui de son couloir)</summary>
+    private bool IsPreparing()
+    {
+        RoundManager rm = RoundManager.For(OwnerClientId);
         return rm != null && rm.CurrentPhase == RoundManager.Phase.Preparation;
     }
 
     /// <summary>Le propriétaire valide son arme pour la manche (panneau de préparation).</summary>
     public void RequestReady()
     {
-        if (!IsOwner || !IsSpawned || ready.Value || readyRequested || !IsPreparing()) return;
+        if (!IsOwner || !IsSpawned || ready.Value || readyRequested || !IsPreparing() || FamilyPending()) return;
         readyRequested = true;
         ReadyServerRpc();
+    }
+
+    /// <summary>Pile ou face (GDD § 11) : le joueur désigné choisit la famille de la manche (une famille, ou
+    /// CoinFlip.GloveFamily pour le gant seul). Le serveur juge (RoundManager.ServerChooseFamily).</summary>
+    public void RequestFamily(byte family)
+    {
+        if (!IsOwner || !IsSpawned || !FamilyPending()) return;
+        ChooseFamilyServerRpc(family);
+    }
+
+    [ServerRpc]
+    private void ChooseFamilyServerRpc(byte family)
+    {
+        RoundManager rm = RoundManager.For(OwnerClientId);
+        if (rm != null) rm.ServerChooseFamily(OwnerClientId, family);
     }
 
     /// <summary>Le joueur est prêt. Sans effet hors de la préparation, et sans autre effet que le
@@ -277,7 +372,8 @@ public class PlayerMatchState : NetworkBehaviour
     [ServerRpc]
     private void ReadyServerRpc()
     {
-        if (ready.Value || !IsPreparing()) return;
+        // Pas avant que la famille soit choisie (pile ou face) : on valide une arme de la famille.
+        if (ready.Value || !IsPreparing() || FamilyPending()) return;
         ready.Value = true;
     }
 

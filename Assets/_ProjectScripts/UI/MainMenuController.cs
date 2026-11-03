@@ -270,6 +270,7 @@ public class MainMenuController : MonoBehaviour
 
         string shown = CurrentScreen;
         if (shown == CustomizeScreen && weaponCustomization != null && weaponCustomization.CloseStrip()) return;
+        if (shown == LobbyScreen && lobby != null && lobby.CloseWindow()) return;
         if (shown == TitleScreen) { OpenQuit(); return; }
         if (shown == OptionsScreen)
         {

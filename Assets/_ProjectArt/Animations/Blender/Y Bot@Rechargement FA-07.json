@@ -1,0 +1,115 @@
+{
+  "clip": "Rechargement FA-07",
+  "arme": "FA-07",
+  "ips": 60,
+  "duree": 3.3,
+  "utile": [
+    0.4,
+    2.5
+  ],
+  "etapes": {
+    "sortie": 0.04,
+    "saisie": 0.26,
+    "approche": 0.4,
+    "insertion": 0.45,
+    "frappe": 0.52,
+    "priseLevier": 0.66,
+    "armement": 0.72,
+    "retour": 0.92
+  },
+  "sons": [
+    "sortie",
+    "insertion",
+    "armement"
+  ],
+  "culasse": false,
+  "paumeConception": [
+    0.01,
+    0.05,
+    0.021
+  ],
+  "tenue": {
+    "paume": [
+      -0.0145,
+      -0.058,
+      0.165
+    ],
+    "normale": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "doigts": [
+      0.0,
+      0.15,
+      1.0
+    ]
+  },
+  "semelle": {
+    "paume": [
+      0.0,
+      -0.106,
+      0.196
+    ],
+    "normale": [
+      0.0,
+      0.994,
+      -0.11
+    ],
+    "doigts": [
+      0.35,
+      0.0,
+      0.94
+    ]
+  },
+  "levier": {
+    "paume": [
+      -0.04,
+      0.165,
+      -0.064
+    ],
+    "normale": [
+      0.0,
+      -0.2,
+      -1.0
+    ],
+    "doigts": [
+      1.0,
+      0.0,
+      0.1
+    ]
+  },
+  "gardeMain": {
+    "paume": [
+      0.0,
+      0.108,
+      0.3
+    ],
+    "normale": [
+      0.1,
+      1.0,
+      0.15
+    ],
+    "doigts": [
+      0.65,
+      -0.15,
+      0.75
+    ]
+  },
+  "course": 0.07,
+  "axePuits": [
+    0.0,
+    1.0,
+    0.0
+  ],
+  "pieceArmement": {
+    "pieces": [
+      "Levier_Armement"
+    ],
+    "course": 0.07,
+    "prise": 0.66,
+    "tiree": 0.71,
+    "lachee": 0.72,
+    "revenue": 0.735
+  }
+}

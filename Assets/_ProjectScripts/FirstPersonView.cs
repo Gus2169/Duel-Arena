@@ -10,7 +10,7 @@ using UnityEngine.Rendering.Universal;
 /// Le corps du personnage ne peut pas servir à ça. Chez son propriétaire il est en ombre seule
 /// (sa caméra est dans le crâne), et ses bras ne suivent pas le regard : en regardant en l'air,
 /// l'arme sortirait de l'écran. On fait donc comme les FPS : chez le PROPRIÉTAIRE seulement, une
-/// copie du personnage et de son fusil est accrochée à la caméra, sa tête et ses jambes repliées,
+/// copie du personnage et de son fusil est accrochée à la caméra, sa tête, son buste et ses jambes repliés,
 /// et elle rejoue les GESTES de l'arme du corps (PlayerAnimator.MirrorWeaponGestures) : tir,
 /// rechargement, taser. Ni ses jambes ni sa posture (2026-10-10) : elles tournaient le buste sous
 /// l'arme, qui balançait en pas chassé et passait devant l'œil en se relevant. La caméra porte déjà
@@ -21,8 +21,8 @@ using UnityEngine.Rendering.Universal;
 /// visée, et l'arme est placée comme dans un FPS : en bas à droite sans viser, au centre en
 /// visant, canon dans l'axe du réticule. L'alignement est MESURÉ chaque image sur la pose jouée,
 /// puis lissé : les poses d'attente ne défilent pas (leur respiration faisait dériver la mire), le
-/// lissage laisse passer les gestes rapides (le recul), et l'alignement se fige pendant le
-/// rechargement, dont le geste doit se voir. Pendant le coup de taser, au contraire, il suit la pose
+/// lissage laisse passer les gestes rapides (le recul), et l'alignement ne suit plus la pose pendant le
+/// rechargement, dont le geste doit se voir (Hold). Pendant le coup de taser, au contraire, il suit la pose
 /// sans retard et l'arme s'abaisse : c'est le poing ganté qui doit se voir, pas l'arme qui bouge.
 ///
 /// Elle vit sur son propre layer (Viewmodel), dessiné par une seconde caméra par-dessus le décor :
@@ -96,6 +96,28 @@ public class FirstPersonView : NetworkBehaviour
     [Tooltip("Sans viser, le pistolet est décalé de là (m) par rapport à sa position de visée, à la place de hipOffset : à droite, en bas, sans l'avancer. Les bras jouent la pose de pistolet, tendus : avancer l'arme comme un fusil ferait entrer les épaules dans l'écran.")]
     [SerializeField] private Vector3 pistolHipOffset = new Vector3(0.10f, -0.10f, -0.10f);
 
+    [Header("Rechargement à chargeur (ressenti, 2026-10-29)")]
+    [Tooltip("Pendant un rechargement où le chargeur quitte l'arme (MagazineSwap), les bras se lèvent dans la vue : la copie tourne de tant (degrés) autour de l'œil, vers le haut. Tenue à la hanche, l'arme gardait son puits sous le bord de l'écran : ni la main, ni le chargeur qui tombe, ni le neuf qui entre ne se voyaient. Tourner autour de l'œil lève ce qui est devant sans avancer les épaules, qui sont à sa hauteur : déplacer la copie vers le haut faisait passer l'épaule et le bras gauches devant l'œil (mesuré au stand le 2026-10-29).")]
+    [SerializeField] private float reloadViewPitch = 20f;
+
+    [Tooltip("Et elle se décale de tant (m, repère de la caméra) : plus loin et un peu plus bas, l'épaule et le bras gauches hors de la vue quand la main descend au porte-chargeur.")]
+    [SerializeField] private Vector3 reloadViewOffset = new Vector3(0f, -0.06f, 0.12f);
+
+    [Tooltip("Temps (s) pour passer de la tenue de l'arme à celle du rechargement, et pour revenir. Le chargeur vide tombe dès 90 ms : en 0,2 s, la copie n'était levée qu'à 43 % à sa chute, et avec un viseur il tombait sous le bord de l'écran.")]
+    [SerializeField] private float reloadFrameTime = 0.12f;
+
+    [Tooltip("Un pistolet se recharge sous le menton (le geste le ramène contre la poitrine ; sans cadrage, son puits est 35 cm à droite et 40 cm sous l'œil, 9 cm devant) : sa copie se lève de tant (degrés) autour de l'œil, à la place de reloadViewPitch. Levé comme un fusil, le puits, la glissière et la main restaient hors du champ tout le rechargement (mesuré au stand le 2026-10-29).")]
+    [SerializeField] private float pistolReloadViewPitch = 60f;
+
+    [Tooltip("Et elle tourne de tant (degrés) vers la gauche, autour de l'œil : le pistolet vient vers le milieu. Plus, l'épaule droite, à 45° du pistolet vue de l'œil, entre dans le champ (à 45°, elle couvrait le quart bas droit de l'écran).")]
+    [SerializeField] private float pistolReloadViewYaw = 35f;
+
+    [Tooltip("Puis elle se décale de tant (m, repère de la caméra), à la place de reloadViewOffset : à gauche, plus bas et plus loin, le buste et l'épaule droite hors du champ, le bras gauche à 45 cm de l'œil quand la main tire la glissière (une rotation autour de l'œil ne l'en éloigne pas). Cherché sur un relevé du stand le 2026-10-29.")]
+    [SerializeField] private Vector3 pistolReloadViewOffset = new Vector3(-0.15f, -0.20f, 0.10f);
+
+    [Tooltip("Temps (s) du passage au cadrage du pistolet, à la place de reloadFrameTime : le chargeur vide d'un pistolet tombe dès 60 ms, encore hors du champ au bout de 0,2 s de passage.")]
+    [SerializeField] private float pistolReloadFrameTime = 0.12f;
+
     [Header("Lunette plein écran (sniper, façon Call of Duty, 2026-10-11)")]
     [Tooltip("Part de l'épaulement à partir de laquelle on est dans la lunette : la vue zoome, l'arme disparaît, la lunette couvre l'écran (CrosshairUI).")]
     [SerializeField, Range(0.5f, 1f)] private float scopeInThreshold = 0.95f;
@@ -129,13 +151,18 @@ public class FirstPersonView : NetworkBehaviour
     private float aimEyeDistance = 0.10f;
     private bool pistolHold; // WeaponModel.PistolHold : les bras jouent la pose de pistolet (PlayerAnimator)
 
-    // Tenue lissée : la rotation qui met le canon dans l'axe du regard, et la mire, dans le
-    // repère de la copie.
-    private bool holdInitialized;
-    private Quaternion holdRotation = Quaternion.identity;
-    private Vector3 holdPivot;
+    private readonly Hold hold = new Hold();   // la tenue lissée de l'arme, dans le repère de la copie
     private int taserLayer = -1;
     private static readonly int ReloadingId = Animator.StringToHash("Reloading");
+    private static readonly int ReloadStateId = Animator.StringToHash(MagazineSwap.ReloadStateName);
+    private MagazineSwap magazineSwap;   // le chargeur qui quitte l'arme (2026-10-29)
+    private float reloadFrame;           // de la tenue de l'arme (0) au puits suivi (1)
+    private Vector3 displayedSight;      // la mire telle qu'on la montre, dans le repère de la caméra
+    private Quaternion displayedSightRotation = Quaternion.identity;
+    private bool returning;              // les bras reviennent du rechargement (PlaceReturning) …
+    private Vector3 returnFrom;          // … et la mire part de là
+    private Quaternion returnFromRotation = Quaternion.identity;
+    private float armingFrame, armingPitch, armingYaw;   // le cadrage de l'armement en cours (ReloadGesture.armingView…)
 
     /// <summary>L'Animator des bras, auquel PlayerAnimator recopie ses paramètres. Null hors du
     /// propriétaire.</summary>
@@ -211,7 +238,8 @@ public class FirstPersonView : NetworkBehaviour
     private bool hidden;
 
     // Un spectateur n'a pas d'arme (2026-10-13) : la copie armée s'éteint, mais la caméra des bras
-    // reste, pour la vue subjective du spectateur (SpectatorView : ses poings, ce qu'il tient).
+    // reste, pour la vue subjective du spectateur (SpectatorView : ses poings, ce qu'il tient). Un duelliste
+    // qui n'a que le gant (la dernière marche du Gun Game, 2026-11-02) aussi : SpectatorView montre son gant.
     private bool spectatorMode;
 
     /// <summary>Masque (ou rend) les bras et l'arme de la vue subjective, et la lunette.</summary>
@@ -228,7 +256,7 @@ public class FirstPersonView : NetworkBehaviour
     /// <summary>La caméra du joueur, à laquelle les bras sont accrochés.</summary>
     public Camera PlayerCamera => playerCamera;
 
-    /// <summary>Le joueur est-il en mode spectateur (copie armée éteinte) ?</summary>
+    /// <summary>Le joueur est-il en mode spectateur (copie armée éteinte) ? Aussi un duelliste au gant seul.</summary>
     public bool SpectatorMode => spectatorMode;
 
     private void ApplySpectatorMode(bool value)
@@ -241,7 +269,7 @@ public class FirstPersonView : NetworkBehaviour
             if (viewSight != null) viewSight.UpdateScreen(playerCamera, armsCamera, 0f);
             if (armsCamera != null) armsCamera.enabled = !hidden;
         }
-        holdInitialized = false;
+        hold.Reset();
     }
 
     public override void OnNetworkSpawn()
@@ -249,6 +277,7 @@ public class FirstPersonView : NetworkBehaviour
         if (!IsOwner) return;
         locomotion = GetComponent<PlayerLocomotion>();
         weaponController = GetComponentInChildren<WeaponController>();
+        magazineSwap = GetComponent<MagazineSwap>();
         Build();
 
         // Le châssis du robot (2026-10-26) : la copie a pris celui que montrait le corps ; elle suit le publié.
@@ -294,7 +323,7 @@ public class FirstPersonView : NetworkBehaviour
         if (view == null || viewRightHand == null || weaponController == null) return;
         // les nouvelles pièces prennent les réglages de la copie : ni ombre portée, ni ombre reçue
         Renderer like = view.GetComponentInChildren<SkinnedMeshRenderer>(true);
-        HeldWeapons.Build(viewRightHand, weaponController.Loadout, looks, attachments, like);
+        HeldWeapons.Build(viewRightHand, weaponController.AllWeapons, looks, attachments, like);
         AimLensesAtCamera();
         ShowWeapon(weaponController.Data);
     }
@@ -377,7 +406,8 @@ public class FirstPersonView : NetworkBehaviour
         // Avant de mesurer la mire : la main droite d'une crosse droite a déplacé l'arme à l'image d'avant
         // (WeaponGrip), et l'Animator des bras a remis la main dans sa pose animée.
         viewGrip?.RestoreWeapon();
-        bool spectating = locomotion != null && locomotion.IsSpectator;
+        bool spectating = locomotion != null && locomotion.IsSpectator
+                          || weaponController != null && weaponController.DisplayedUnarmed;
         if (spectating != spectatorMode) ApplySpectatorMode(spectating);
         if (hidden || spectatorMode) return;
         if (weaponController != null && weaponController.Data != shownWeapon) ShowWeapon(weaponController.Data);
@@ -393,26 +423,14 @@ public class FirstPersonView : NetworkBehaviour
         Transform root = view.transform;
         Vector3 pivot = root.InverseTransformPoint(sight.position);
         Quaternion align = LevelSight(root.InverseTransformDirection(sight.forward), root.InverseTransformDirection(sight.up));
+        // la mire de l'arme elle-même, sous un viseur monté : le rechargement replace la copie sur elle
+        Vector3 ironPivot = shownModel != null && shownModel.Sight != null ? root.InverseTransformPoint(shownModel.Sight.position) : pivot;
 
         float strikeWeight = taserLayer >= 0 ? viewAnimator.GetLayerWeight(taserLayer) : 0f;
         bool striking = strikeWeight > 0.01f;
         // Le gant n'apparaît que pendant le coup de taser (voir HeldWeapons.WearTaserGlove).
         HeldWeapons.WearTaserGlove(viewAnimator, striking);
-        if (!holdInitialized || striking)
-        {
-            // Pendant le coup, l'arme reste calée sur le regard, sans retard : le coup penche le buste
-            // en avant (Taser Punch), et une arme figée sur la pose d'avant montait devant l'œil.
-            // C'est le bras gauche qui bouge, par rapport à elle.
-            holdRotation = align;
-            holdPivot = pivot;
-            holdInitialized = true;
-        }
-        else if (!viewAnimator.GetBool(ReloadingId))
-        {
-            float k = 1f - Mathf.Exp(-Time.deltaTime / Mathf.Max(0.01f, holdSmoothing));
-            holdRotation = Quaternion.Slerp(holdRotation, align, k);
-            holdPivot = Vector3.Lerp(holdPivot, pivot, k);
-        }
+        hold.Step(viewAnimator, align, pivot, ironPivot, striking, Time.deltaTime, holdSmoothing);
 
         Vector3 offsets = (pistolHold ? pistolHipOffset : hipOffset) * (1f - Mathf.SmoothStep(0f, 1f, aimBlend)) + WalkBob();
 
@@ -432,7 +450,62 @@ public class FirstPersonView : NetworkBehaviour
         float dip = Mathf.SmoothStep(0f, 1f, strikeWeight);
         offsets += strikeOffset * dip;
         Quaternion extra = Quaternion.Euler(sprintEuler * sprintPose + raiseEuler * lowered + strikeEuler * dip);
-        Place(root, extra * holdRotation, holdPivot, new Vector3(aimSightPosition.x, aimSightPosition.y, aimEyeDistance) + offsets);
+        Vector3 target = new Vector3(aimSightPosition.x, aimSightPosition.y, aimEyeDistance) + offsets;
+        Place(root, extra * hold.rotation, hold.pivot, target);
+        // Pendant un rechargement à chargeur, les bras se lèvent dans la vue (reloadViewPitch, reloadViewOffset ; un
+        // pistolet se lève et vient aussi vers le milieu, pistolReloadView…), au rythme du geste qu'ils montrent
+        // (MagazineSwap, l'image d'avant).
+        bool magazineReload = magazineSwap != null && magazineSwap.Arms != null && !float.IsNaN(magazineSwap.Arms.Progress);
+        float frameTime = pistolHold ? pistolReloadFrameTime : reloadFrameTime;
+        reloadFrame = Mathf.MoveTowards(reloadFrame, magazineReload ? 1f : 0f, Time.deltaTime / Mathf.Max(0.01f, frameTime));
+        if (reloadFrame > 0f)
+        {
+            float frame = Mathf.SmoothStep(0f, 1f, reloadFrame);
+            // Un viseur avance la mire de 10 à 16 cm et rapproche l'œil : toute la copie vient 11 à 18 cm plus près.
+            // Pendant le rechargement, elle reprend la place qu'elle aurait sans lui (les organes de visée de l'arme), où
+            // ce cadrage a été réglé : avec un viseur, le chargeur vide du FA-30 tombait hors de l'écran.
+            if (shownModel != null)
+                root.localPosition += ReloadSightShift(extra * hold.rotation, hold.ironPivot, hold.pivot, shownModel.AimEyeDistance, aimEyeDistance) * frame;
+            if (pistolHold) LiftForReload(root, pistolReloadViewPitch, pistolReloadViewYaw, pistolReloadViewOffset, frame);
+            else LiftForReload(root, reloadViewPitch, 0f, reloadViewOffset, frame);
+        }
+        // Pendant l'armement, ils se lèvent encore (ReloadGesture.ArmingViewPitch) : la poignée, le levier ou la culasse
+        // et la main qui les tire passaient au ras du bas de l'écran ou dessous. La levée se décide une fois, au début de
+        // sa montée, d'après la main sur la pièce tirée vue de l'œil : elle dépend du viseur, qui déplace toute la copie.
+        // Un rechargement coupé défait ce cadrage au rythme de celui du rechargement.
+        ReloadGesture armingGesture = magazineReload ? magazineSwap.GestureFor(shownWeapon) : null;
+        float armingWanted = armingGesture != null ? armingGesture.ArmingViewWeight(magazineSwap.Arms.Progress) : 0f;
+        if (armingWanted > 0f && shownModel != null)
+        {
+            if (armingFrame <= 0f)
+            {
+                Vector3 palm = root.parent.InverseTransformPoint(shownModel.transform.TransformPoint(armingGesture.ArmingPalmPulled));
+                armingPitch = armingGesture.ArmingViewPitch(palm);
+                armingYaw = armingGesture.armingViewYaw;
+            }
+            armingFrame = armingWanted;
+        }
+        else armingFrame = Mathf.MoveTowards(armingFrame, 0f, Time.deltaTime / Mathf.Max(0.01f, frameTime));
+        if (armingFrame > 0f) LiftForReload(root, armingPitch, armingYaw, Vector3.zero, armingFrame);
+        // La fin du rechargement, pendant le fondu qui ramène les bras à la visée (0,2 s) : la mire glisse droit de là où
+        // le geste la montrait à sa place, en visée si la touche est tenue, et la pose des bras change autour d'elle. Le
+        // cadrage du rechargement qui partait, l'épaulement et la pose qui revenaient, chacun à son rythme, la faisaient
+        // passer au-delà du centre de l'écran, puis revenir : l'à-coup avant de viser (signalé par l'utilisateur, mesuré
+        // au stand le 2026-10-29).
+        float poseLeft = ReloadPoseLeft(viewAnimator);
+        if (poseLeft > 0f && poseLeft < 1f && !striking)
+        {
+            if (!returning)
+            {
+                returning = true;
+                returnFrom = displayedSight;
+                returnFromRotation = displayedSightRotation;
+            }
+            PlaceReturning(root, align, pivot, returnFrom, returnFromRotation, target, extra, 1f - poseLeft);
+        }
+        else returning = false;
+        displayedSight = root.parent.InverseTransformPoint(sight.position);
+        displayedSightRotation = Quaternion.Inverse(root.parent.rotation) * sight.rotation;
         // Les mains sur l'arme, une fois l'arme placée (sa mire a été mesurée sans elles) : la main gauche
         // la lâche pour le rechargement et pour le coup de taser, que AimStrike oriente ensuite ; la droite
         // lâche le poignet d'une crosse droite en visée.
@@ -483,6 +556,81 @@ public class FirstPersonView : NetworkBehaviour
     /// </summary>
     public static float StraightStockHold(float aimBlend) => 1f - Mathf.SmoothStep(0f, 1f, aimBlend);
 
+    /// <summary>
+    /// La tenue de l'arme sur la copie, dans le repère de la copie : la rotation qui met le canon dans l'axe du regard
+    /// (`rotation`), la mire (`pivot`) et celle de l'arme elle-même sous un viseur (`ironPivot`). Elle suit la pose jouée
+    /// avec un retard de quelques dixièmes, et sans retard pendant le coup de taser. Tant que les bras montrent le geste
+    /// de rechargement (ReloadShown), elle reste figée : le geste doit se voir. Ils revenus à la visée, elle repart de leur
+    /// pose (PlaceReturning vient de placer la copie sur elle) : relâchée dès la fin du rechargement, elle courait après
+    /// les poses du fondu, et l'arme dépassait le centre de l'écran puis revenait. Testée.
+    /// </summary>
+    public sealed class Hold
+    {
+        public Quaternion rotation = Quaternion.identity;
+        public Vector3 pivot, ironPivot;
+        private bool initialized, reloadShown;
+
+        /// <summary>Repartir de la pose de la prochaine image : une autre arme, un autre viseur.</summary>
+        public void Reset() => initialized = false;
+
+        /// <summary>Une image : `align`, `posePivot` et `poseIronPivot`, la tenue que donne la pose jouée par les bras
+        /// `arms` ; `striking`, pendant le coup de taser.</summary>
+        public void Step(Animator arms, Quaternion align, Vector3 posePivot, Vector3 poseIronPivot, bool striking, float dt, float smoothing)
+        {
+            bool wasShown = reloadShown;
+            reloadShown = ReloadShown(arms);
+            if (!initialized || striking || (wasShown && !reloadShown))
+            {
+                // Pendant le coup, l'arme reste calée sur le regard, sans retard : le coup penche le buste en avant (Taser
+                // Punch), et une arme figée sur la pose d'avant montait devant l'œil. C'est le bras gauche qui bouge,
+                // par rapport à elle.
+                rotation = align;
+                pivot = posePivot;
+                ironPivot = poseIronPivot;
+                initialized = true;
+            }
+            else if (!reloadShown)
+            {
+                float k = 1f - Mathf.Exp(-dt / Mathf.Max(0.01f, smoothing));
+                rotation = Quaternion.Slerp(rotation, align, k);
+                pivot = Vector3.Lerp(pivot, posePivot, k);
+                ironPivot = Vector3.Lerp(ironPivot, poseIronPivot, k);
+            }
+        }
+    }
+
+    /// <summary>Les bras montrent-ils encore le geste de rechargement ? Demandé, ou son état encore joué pendant le
+    /// fondu qui les ramène à la visée (0,2 s). Sans état.</summary>
+    public static bool ReloadShown(Animator arms)
+    {
+        if (arms.GetBool(ReloadingId)) return true;
+        return arms.layerCount > MagazineSwap.UpperBodyLayer
+               && arms.GetCurrentAnimatorStateInfo(MagazineSwap.UpperBodyLayer).shortNameHash == ReloadStateId;
+    }
+
+    /// <summary>La part du geste de rechargement que montrent encore les bras : 1 dans son état, de 1 à 0 pendant le
+    /// fondu qui les en sort, 0 ailleurs. Sans état.</summary>
+    public static float ReloadPoseLeft(Animator arms)
+    {
+        if (arms.layerCount <= MagazineSwap.UpperBodyLayer
+            || arms.GetCurrentAnimatorStateInfo(MagazineSwap.UpperBodyLayer).shortNameHash != ReloadStateId) return 0f;
+        return arms.IsInTransition(MagazineSwap.UpperBodyLayer)
+            ? 1f - arms.GetAnimatorTransitionInfo(MagazineSwap.UpperBodyLayer).normalizedTime : 1f;
+    }
+
+    /// <summary>
+    /// Place la copie (enfant de la caméra) pendant que les bras reviennent du rechargement : sa mire, à `pivot` dans le
+    /// repère de la copie et que `align` met dans l'axe du regard (LevelSight), glisse en ligne droite de `from` à `to`
+    /// et tourne de `fromRotation` à `toRotation` (repère de la caméra), adoucie, à `progress` (de 0 à 1) ; la pose des
+    /// bras change autour d'elle. Sans état, testée.
+    /// </summary>
+    public static void PlaceReturning(Transform viewRoot, Quaternion align, Vector3 pivot, Vector3 from, Quaternion fromRotation,
+                                      Vector3 to, Quaternion toRotation, float progress)
+    {
+        float u = Mathf.SmoothStep(0f, 1f, progress);
+        Place(viewRoot, Quaternion.Slerp(fromRotation, toRotation, u) * align, pivot, Vector3.Lerp(from, to, u));
+    }
+
     /// <summary>Pendant le coup de taser : le bras tourne à l'épaule pour que le poing parte vers
     /// `target` (monde), à la distance de l'épaule que lui donne le clip (élan, frappe, retour). Sans
     /// état, testée.</summary>
@@ -503,7 +651,7 @@ public class FirstPersonView : NetworkBehaviour
     {
         shownWeapon = data;
         WeaponModel model = data != null && weaponController != null
-            ? HeldWeapons.Show(viewRightHand, weaponController.Loadout, data) : null;
+            ? HeldWeapons.Show(viewRightHand, weaponController.AllWeapons, data) : null;
         shownModel = model;
         shownSight = model != null ? AttachmentMount.Mounted(model.transform, AttachmentCategory.Sight) : null;
         // la mire du viseur monté s'il y en a un, et sa distance à l'œil (AttachmentMount.SightOf)
@@ -511,7 +659,7 @@ public class FirstPersonView : NetworkBehaviour
         sight = modelSight != null ? modelSight : PlayerAnimator.FindSight(viewAnimator);
         if (model == null) aimEyeDistance = aimSightPosition.z;
         pistolHold = model != null && model.PistolHold;
-        holdInitialized = false;
+        hold.Reset();
 
         // L'écran d'un viseur numérique, sur la copie seulement : l'arme vue par les autres garde le
         // sien. Celui de l'arme qu'on range s'éteint.
@@ -560,7 +708,7 @@ public class FirstPersonView : NetworkBehaviour
     }
 
     /// <summary>
-    /// Copie le personnage sous la caméra et le prépare : layer des bras, aucune ombre, tête, cou et
+    /// Copie le personnage sous la caméra et le prépare : layer des bras, aucune ombre, tête, cou, buste et
     /// jambes repliés. La copie garde son Animator et son contrôleur. Sans état, testée.
     /// </summary>
     public static GameObject BuildView(GameObject modelSource, Transform cameraTransform, int layer,
@@ -593,9 +741,74 @@ public class FirstPersonView : NetworkBehaviour
         Collapse(animator.GetBoneTransform(HumanBodyBones.Neck));
         Collapse(animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg));
         Collapse(animator.GetBoneTransform(HumanBodyBones.RightUpperLeg));
+        // Et le buste (2026-10-29, demandé par l'utilisateur : on ne voit que les bras). Levée pour un rechargement, la
+        // copie en montrait le haut au bas de l'écran (jusqu'à 7 % de l'écran à l'armement du FA-07, sur le CT-01), et
+        // au pistolet l'œil est dans les plaques du buste du CT-01 : leur contour s'y voyait de l'intérieur, un pan noir
+        // sur 13 % de l'écran. Les bras en sont les enfants : on n'en replie que les pièces.
+        FoldPieces(animator, TorsoBones);
 
         sight = PlayerAnimator.FindSight(animator);
         return copy;
+    }
+
+    /// <summary>Les os dont la copie ne montre pas les pièces : le buste et les clavicules. Leurs enfants, les bras,
+    /// restent.</summary>
+    public static readonly HumanBodyBones[] TorsoBones =
+    {
+        HumanBodyBones.Hips, HumanBodyBones.Spine, HumanBodyBones.Chest, HumanBodyBones.UpperChest,
+        HumanBodyBones.LeftShoulder, HumanBodyBones.RightShoulder,
+    };
+
+    /// <summary>
+    /// Replie les pièces liées aux os `bones` sans toucher à leurs enfants : chaque peau de la copie les lie, à la place
+    /// de l'os, à un repère d'échelle nulle posé sur lui, où elles s'effondrent en un point. Replier l'os lui-même par son
+    /// échelle (Collapse) replierait aussi ses enfants. L'os, lui, ne change pas : l'Animator et les mains le posent
+    /// comme avant.
+    /// </summary>
+    private static void FoldPieces(Animator animator, HumanBodyBones[] bones)
+    {
+        var points = new Dictionary<Transform, Transform>();
+        foreach (HumanBodyBones b in bones)
+        {
+            Transform bone = animator.GetBoneTransform(b);
+            if (bone == null || points.ContainsKey(bone)) continue;
+            var point = new GameObject(bone.name + "_Replie").transform;
+            point.SetParent(bone, false);
+            point.localScale = Vector3.zero;
+            points[bone] = point;
+        }
+        foreach (SkinnedMeshRenderer skin in animator.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            Transform[] skinBones = skin.bones;
+            bool folded = false;
+            for (int i = 0; i < skinBones.Length; i++)
+            {
+                if (skinBones[i] == null || !points.TryGetValue(skinBones[i], out Transform point)) continue;
+                skinBones[i] = point;
+                folded = true;
+            }
+            if (folded) skin.bones = skinBones;
+        }
+    }
+
+    /// <summary>
+    /// Ce qui ramène la copie placée sur la mire `sightPivot` (le viseur monté, l'œil à `sightEye`) là où l'aurait mise
+    /// la mire de l'arme elle-même, `ironPivot` (l'œil à `ironEye`), avec la même rotation `hold` (Place) : un décalage
+    /// dans le repère de la caméra. Rien sans viseur. Sans état, testée.
+    /// </summary>
+    public static Vector3 ReloadSightShift(Quaternion hold, Vector3 ironPivot, Vector3 sightPivot, float ironEye, float sightEye)
+        => new Vector3(0f, 0f, ironEye - sightEye) - hold * (ironPivot - sightPivot);
+
+    /// <summary>
+    /// Lève la copie placée (enfant de la caméra) pour un rechargement à chargeur : elle tourne de `yaw` degrés vers la
+    /// gauche puis de `pitch` degrés vers le haut autour de l'œil, puis se décale de `offset` (repère de la caméra), à
+    /// `weight` (0 à 1). Sans état, testée.
+    /// </summary>
+    public static void LiftForReload(Transform viewRoot, float pitch, float yaw, Vector3 offset, float weight)
+    {
+        Quaternion tilt = Quaternion.AngleAxis(-pitch * weight, Vector3.right) * Quaternion.AngleAxis(-yaw * weight, Vector3.up);
+        viewRoot.localRotation = tilt * viewRoot.localRotation;
+        viewRoot.localPosition = tilt * viewRoot.localPosition + offset * weight;
     }
 
     /// <summary>

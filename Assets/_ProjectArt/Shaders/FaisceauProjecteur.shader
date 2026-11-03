@@ -39,6 +39,9 @@ Shader "DuelArena/FaisceauProjecteur"
                 float _Proche;
             CBUFFER_END
 
+            // Le replay du coup mortel assombrit le décor (KillReplay, global) : les faisceaux s'éteignent d'autant.
+            float _ReplayDim;
+
             struct Attributes
             {
                 float4 positionOS : POSITION;
@@ -77,7 +80,7 @@ Shader "DuelArena/FaisceauProjecteur"
                 float proche = saturate((distance(input.positionWS, GetCameraPositionWS()) - 0.5) / _Proche);
                 half3 couleur = _Couleur.rgb * (_Intensite * face * face * descente * verre * proche);
                 couleur = MixFogColor(couleur, half3(0.0, 0.0, 0.0), input.fog);   // lumière ajoutée : la brume l'éteint
-                return half4(couleur, 0.0);
+                return half4(couleur * (1.0 - _ReplayDim), 0.0);
             }
             ENDHLSL
         }

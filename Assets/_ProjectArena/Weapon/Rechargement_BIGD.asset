@@ -1,0 +1,54 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1877fecc928cb1544a3f39054dd60ed6, type: 3}
+  m_Name: Rechargement_BIGD
+  m_EditorClassIdentifier: DuelArena.Runtime::BreakActionGesture
+  animatorValue: 5
+  weapons:
+  - {fileID: 11400000, guid: 26e1bf21c24e2d54888014a40d9a88d0, type: 2}
+  drop: 0.18
+  grab: 0.3
+  approach: 0.45
+  seated: 0.5
+  weaponInHandPosition: {x: 0.009588544, y: -0.07392481, z: 0.22718923}
+  weaponInHandRotation: {x: 0.002490347, y: -0.99999505, z: -0.002212223, w: -0.0004057213}
+  designPalm: {x: 0.01, y: 0.05, z: 0.021}
+  armingParts: []
+  armingTravel: 0
+  armingGrab: 0
+  armingPulled: 0
+  armingRelease: 0
+  armingReturned: 0
+  armingPalm: {x: 0, y: 0, z: 0}
+  armingViewPitchMax: 0
+  armingViewYaw: 0
+  clipLength: 3.3000002
+  usefulStart: 0.4
+  usefulEnd: 2.5
+  barrelPath: Canon
+  hammerPath: Chien
+  latchPath: Levier
+  cartridgePath: Canon/Cartouche
+  casePath: Canon/Cartouche/Douille
+  bulletPath: Canon/Cartouche/Balle
+  latchStep: {x: 0.02, y: 0.1}
+  openStep: {x: 0.08, y: 0.24}
+  ejectStep: {x: 0.14, y: 0.18}
+  insertStep: {x: 0.5, y: 0.62}
+  closeStep: {x: 0.68, y: 0.82}
+  cockStep: {x: 0.86, y: 0.93}
+  barrelAngle: 180
+  hammerAngle: 40
+  latchAngle: 14
+  caseTravel: 0.09
+  cartridgeApproach: 0.12
+  reloadSeconds: 2.5

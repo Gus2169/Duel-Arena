@@ -130,9 +130,9 @@ public class SpectatorRulesTests
         Assert.IsFalse(RoundManager.WeaponSwitchAllowed(Phase.Salon, false));
         Assert.IsFalse(RoundManager.ForfeitApplies(Phase.Salon));
 
-        Assert.AreEqual("Duelliste", SalonPanel.RoleText(true, 0));
-        Assert.AreEqual("Tribune · 1er à entrer", SalonPanel.RoleText(false, 1));
-        Assert.AreEqual("Tribune · 3e à entrer", SalonPanel.RoleText(false, 3));
+        Assert.AreEqual("DUELLISTE", SalonView.Role(true, 0, false, false, false));
+        Assert.AreEqual("TRIBUNE · 1ER", SalonView.Role(false, 1, false, false, false));
+        Assert.AreEqual("TRIBUNE · 3E", SalonView.Role(false, 3, false, false, false));
         StringAssert.Contains("retour au salon dans 7 s", MatchEndScreen.CountdownText(false, RoundManager.MatchDecision.Pending, "Revanche", 7));
         Assert.AreEqual("Revanche !", MatchEndScreen.CountdownText(false, RoundManager.MatchDecision.Rematch, "Revanche", 1));
         Assert.AreEqual("Nouvelle partie dans 4 s", MatchEndScreen.CountdownText(true, RoundManager.MatchDecision.Pending, "Revanche", 4),

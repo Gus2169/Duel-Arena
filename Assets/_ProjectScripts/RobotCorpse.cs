@@ -4,7 +4,9 @@ using UnityEngine.Rendering;
 
 /// <summary>
 /// L'épave d'un robot tué : une copie de son modèle, figée dans la pose où il est mort, qui tombe
-/// en ragdoll (2026-10-12, GDD § 6 : « le châssis vole en pièces, ragdoll, pas de gore »).
+/// en ragdoll (2026-10-12, GDD § 6 : « le châssis vole en pièces »). Depuis le 2026-11-03 (l'utilisateur, d'après Sniper
+/// Elite et Mortal Kombat), le coup qui tue l'arrache en partie : des pièces volent, l'huile gicle, des étincelles et des
+/// éclats partent (Burst, RobotBurst).
 ///
 /// Une COPIE, et non le modèle lui-même : l'Animator, le calage des pieds, le buste et le lean
 /// réécrivent les os à chaque image, ils se battraient avec la physique. Le modèle vivant est
@@ -22,6 +24,9 @@ using UnityEngine.Rendering;
 public class RobotCorpse : MonoBehaviour
 {
     private readonly List<Rigidbody> bodies = new List<Rigidbody>();
+    private readonly Dictionary<RagdollPart, Rigidbody> parts = new Dictionary<RagdollPart, Rigidbody>();
+    private readonly List<Transform> detached = new List<Transform>();
+    private bool burst;
     private Rigidbody pelvis;
     private Transform liveRoot;
     private float totalMass;
@@ -130,6 +135,201 @@ public class RobotCorpse : MonoBehaviour
     /// <summary>Le coup qui a tué : une impulsion (N·s) reçue en `point`, sur la pièce la plus proche.</summary>
     public void ApplyImpulse(Vector3 point, Vector3 impulse) => Push(NearestBody(point), point, impulse);
 
+    // ------------------------------------------------------------------
+    // Voler en pièces (2026-11-03)
+    // ------------------------------------------------------------------
+
+    /// <summary>La force du coup qui tue : léger (la dernière balle d'un fusil d'assaut, d'un pistolet), lourd (un tir de
+    /// précision, une tête au revolver : HeavyBurstImpulse et plus), brutal (le pompe, le gant, qui projettent l'épave :
+    /// BrutalBurstImpulse et plus).</summary>
+    public enum BurstSeverity { Light, Heavy, Brutal }
+
+    /// <summary>Les pièces du ragdoll.</summary>
+    public enum RagdollPart { Pelvis, Torso, Head, LeftArm, LeftForearm, RightArm, RightForearm, LeftThigh, LeftCalf, RightThigh, RightCalf }
+
+    /// <summary>L'impulsion (N·s) d'un coup lourd : un coup de 86 dégâts et plus (WeaponController.DeathImpulse).</summary>
+    public const float HeavyBurstImpulse = 30f;
+    /// <summary>L'impulsion d'un coup brutal : ceux qui projettent l'épave (le pompe, le gant : KnockbackImpulse).</summary>
+    public const float BrutalBurstImpulse = 100f;
+
+    /// <summary>La force d'un coup d'impulsion `impulse` (N·s). Fonction pure, testée.</summary>
+    public static BurstSeverity SeverityOf(float impulse)
+        => !(impulse >= HeavyBurstImpulse) ? BurstSeverity.Light : impulse >= BrutalBurstImpulse ? BurstSeverity.Brutal : BurstSeverity.Heavy;
+
+    /// <summary>
+    /// Les pièces qu'un coup arrache (leur articulation rompue : elles volent avec ce qui y tient), selon la pièce touchée et
+    /// le côté du robot touché. Léger : la tête, ou le membre touché ; au buste, le bras de ce côté ; au bassin, la cuisse.
+    /// Lourd : la tête ; un membre en deux morceaux ; au buste, le robot coupé en deux à la taille, et la tête ; au bassin, le
+    /// buste et la cuisse de ce côté. Brutal : la tête, les deux bras, les deux jambes et le buste (et l'avant-bras ou le
+    /// mollet touché). Fonction pure, testée.
+    /// </summary>
+    public static List<RagdollPart> PartsToDetach(RagdollPart hit, bool hitOnRight, BurstSeverity severity)
+    {
+        var result = new List<RagdollPart>();
+        void Add(RagdollPart part)
+        {
+            if (!result.Contains(part)) result.Add(part);
+        }
+        RagdollPart arm = hitOnRight ? RagdollPart.RightArm : RagdollPart.LeftArm;
+        RagdollPart thigh = hitOnRight ? RagdollPart.RightThigh : RagdollPart.LeftThigh;
+        switch (severity)
+        {
+            case BurstSeverity.Brutal:
+                Add(RagdollPart.Head);
+                Add(RagdollPart.LeftArm);
+                Add(RagdollPart.RightArm);
+                Add(RagdollPart.LeftThigh);
+                Add(RagdollPart.RightThigh);
+                Add(RagdollPart.Torso);
+                if (UpperOf(hit) != hit) Add(hit);
+                break;
+            case BurstSeverity.Heavy:
+                if (hit == RagdollPart.Head) Add(RagdollPart.Head);
+                else if (hit == RagdollPart.Torso)
+                {
+                    Add(RagdollPart.Torso);
+                    Add(RagdollPart.Head);
+                }
+                else if (hit == RagdollPart.Pelvis)
+                {
+                    Add(RagdollPart.Torso);
+                    Add(thigh);
+                }
+                else
+                {
+                    Add(UpperOf(hit));
+                    Add(LowerOf(hit));
+                }
+                break;
+            default:
+                if (hit == RagdollPart.Torso) Add(arm);
+                else if (hit == RagdollPart.Pelvis) Add(thigh);
+                else Add(hit);
+                break;
+        }
+        return result;
+    }
+
+    // Le haut d'un membre (l'avant-bras donne le bras, le mollet la cuisse), et son bas.
+    private static RagdollPart UpperOf(RagdollPart part) => part switch
+    {
+        RagdollPart.LeftForearm => RagdollPart.LeftArm,
+        RagdollPart.RightForearm => RagdollPart.RightArm,
+        RagdollPart.LeftCalf => RagdollPart.LeftThigh,
+        RagdollPart.RightCalf => RagdollPart.RightThigh,
+        _ => part,
+    };
+
+    private static RagdollPart LowerOf(RagdollPart part) => part switch
+    {
+        RagdollPart.LeftArm => RagdollPart.LeftForearm,
+        RagdollPart.RightArm => RagdollPart.RightForearm,
+        RagdollPart.LeftThigh => RagdollPart.LeftCalf,
+        RagdollPart.RightThigh => RagdollPart.RightCalf,
+        _ => part,
+    };
+
+    /// <summary>Les os des pièces arrachées : le replay du coup mortel y fait gicler l'huile, chez lui.</summary>
+    public IReadOnlyList<Transform> Detached => detached;
+
+    /// <summary>L'épave a-t-elle volé en pièces (Burst), et comment : le replay du coup mortel refait la même gerbe.</summary>
+    public bool HasBurst => burst;
+    public BurstSeverity Severity { get; private set; }
+    public Vector3 BurstPoint { get; private set; }
+    public Vector3 BurstDirection { get; private set; }
+    public Color BurstPaint { get; private set; }
+
+    /// <summary>
+    /// Le coup qui a tué (`impulse`, N·s, reçu en `point`) fait voler l'épave en pièces : celles que dit PartsToDetach (la
+    /// pièce touchée est la plus proche du point, hors des bras) se détachent et partent loin de l'impact, en tournant ; une gerbe d'huile,
+    /// d'étincelles et d'éclats de blindage (gris et de la couleur `paint`) part de l'impact ; l'huile gicle de chaque
+    /// articulation rompue et traîne derrière chaque pièce. Une fois par épave. Catégorie C : chaque machine choisit les
+    /// mêmes pièces (le même point, la même impulsion), mais elles ne tombent pas pareil partout.
+    /// </summary>
+    public void Burst(Vector3 point, Vector3 impulse, Color paint)
+    {
+        if (burst || !float.IsFinite(point.x) || !float.IsFinite(point.y) || !float.IsFinite(point.z)) return;
+        if (!float.IsFinite(impulse.x) || !float.IsFinite(impulse.y) || !float.IsFinite(impulse.z)) return;
+        burst = true;
+        float magnitude = impulse.magnitude;
+        BurstSeverity severity = SeverityOf(magnitude);
+        Vector3 direction = magnitude > 1e-4f ? impulse / magnitude : -transform.forward;
+        RagdollPart hit = NearestPart(point);
+        Vector3 center = pelvis != null ? pelvis.worldCenterOfMass : transform.position;
+        bool hitOnRight = Vector3.Dot(point - center, transform.right) > 0f;
+        int layer = gameObject.layer;
+        Severity = severity;
+        BurstPoint = point;
+        BurstDirection = direction;
+        BurstPaint = paint;
+        // Un châssis à peau continue (le prototype, le Y Bot) s'étirerait entre les pièces arrachées : il ne perd rien,
+        // seule la gerbe part.
+        if (RigidPieces())
+        {
+            foreach (RagdollPart part in PartsToDetach(hit, hitOnRight, severity)) Detach(part, point, direction, severity, layer);
+        }
+        RobotBurst.Impact(transform, point, direction, severity, paint, layer);
+    }
+
+    // La pièce touchée : la plus proche du point, hors des bras. La surface touchable n'a pas de bras (ils comptent pour
+    // le buste) : tenant l'arme devant lui, un robot touché au buste perdait le bras qui la tenait (vu à deux instances).
+    private RagdollPart NearestPart(Vector3 point)
+    {
+        RagdollPart nearest = RagdollPart.Torso;
+        float best = float.MaxValue;
+        foreach (KeyValuePair<RagdollPart, Rigidbody> pair in parts)
+        {
+            if (pair.Value == null || IsArm(pair.Key)) continue;
+            float d = (pair.Value.worldCenterOfMass - point).sqrMagnitude;
+            if (d >= best) continue;
+            best = d;
+            nearest = pair.Key;
+        }
+        return nearest;
+    }
+
+    /// <summary>Une pièce d'un bras (bras ou avant-bras).</summary>
+    public static bool IsArm(RagdollPart part)
+        => part == RagdollPart.LeftArm || part == RagdollPart.LeftForearm || part == RagdollPart.RightArm || part == RagdollPart.RightForearm;
+
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+    /// <summary>Surface de test : la pièce que touche un coup reçu en `point`.</summary>
+    public RagdollPart TestNearestPart(Vector3 point) => NearestPart(point);
+#endif
+
+    // Le robot montré est-il fait de pièces rigides, chacune sur un seul os (le CT-01, l'OS-02) ?
+    private bool RigidPieces()
+    {
+        foreach (SkinnedMeshRenderer skin in GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            if (skin.enabled && !RobotChassis.HasRigidPieces(RobotChassis.OwnerOf(skin.name))) return false;
+        }
+        return true;
+    }
+
+    private void Detach(RagdollPart part, Vector3 point, Vector3 direction, BurstSeverity severity, int layer)
+    {
+        if (!parts.TryGetValue(part, out Rigidbody body) || body == null) return;
+        var joint = body.GetComponent<CharacterJoint>();
+        if (joint == null) return;
+        Rigidbody parent = joint.connectedBody;
+        Vector3 stump = body.position;
+        if (Application.isPlaying) Destroy(joint);
+        else DestroyImmediate(joint);
+        detached.Add(body.transform);
+
+        // Loin de l'impact, dans le sens du coup, un peu soulevée, en tournant.
+        Vector3 away = body.worldCenterOfMass - point;
+        away = away.sqrMagnitude > 1e-4f ? away.normalized : direction;
+        float speed = severity == BurstSeverity.Light ? 3f : severity == BurstSeverity.Heavy ? 4.5f : 6f;
+        body.linearVelocity += (away + direction * 0.5f).normalized * speed + Vector3.up * 1.5f;
+        body.angularVelocity += Random.insideUnitSphere * 10f;
+
+        Vector3 outward = parent != null ? stump - parent.worldCenterOfMass : away;
+        RobotBurst.Stump(parent != null ? parent.transform : transform, stump, outward, severity, layer);
+        RobotBurst.Trail(body.transform, stump, layer);
+    }
+
     // Le bruit des pièces qui heurtent le sol (2026-10-13) : à partir d'une vitesse de choc, pas plus
     // d'un toutes les ImpactSoundGap secondes, et un nombre borné par épave (elle s'immobilise).
     private const float ImpactSoundMinSpeed = 1.2f; // m/s
@@ -231,8 +431,9 @@ public class RobotCorpse : MonoBehaviour
     // ------------------------------------------------------------------
 
     /// <summary>Ne garde de la copie que son apparence : plus aucun script (arme, viseur, étincelles
-    /// du taser), plus d'Animator (il réécrirait les os), plus de lumière, de son ni de collider.</summary>
-    private static void StripToAppearance(GameObject copy)
+    /// du taser), plus d'Animator (il réécrirait les os), plus de lumière, de son, de caméra ni de collider. Sert à l'épave
+    /// et aux marionnettes du replay du coup mortel (KillReplay).</summary>
+    public static void StripToAppearance(GameObject copy)
     {
         // Les scripts d'abord : ce sont eux qui dépendent des autres composants.
         MonoBehaviour[] scripts = copy.GetComponentsInChildren<MonoBehaviour>(true);
@@ -259,7 +460,7 @@ public class RobotCorpse : MonoBehaviour
         if (hips == null || spine == null || head == null)
         {
             // Modèle incomplet : un seul bloc, plutôt qu'un robot figé debout.
-            pelvis = AddBody(copyRoot, RobotMass);
+            pelvis = AddBody(copyRoot, RobotMass, RagdollPart.Pelvis);
             AddBox(copyRoot, copyRoot.position + Vector3.up * 0.9f, new Vector3(0.45f, 1.8f, 0.3f), copyRoot);
             FinishBodies(velocity);
             return;
@@ -275,53 +476,54 @@ public class RobotCorpse : MonoBehaviour
         Vector3 neckPoint = neck != null ? neck.position : head.position;
 
         // Bassin et buste : des blocs, comme l'assistant Ragdoll.
-        pelvis = AddBody(hips, PelvisMass);
+        pelvis = AddBody(hips, PelvisMass, RagdollPart.Pelvis);
         float hipWidth = leftThigh != null && rightThigh != null ? Vector3.Distance(leftThigh.position, rightThigh.position) + 0.16f : 0.34f;
         float pelvisHeight = Mathf.Max(0.18f, Vector3.Distance(hips.position, spine.position) * 1.6f);
         AddBox(hips, hips.position + up * (pelvisHeight * 0.25f), new Vector3(hipWidth, pelvisHeight, 0.24f), copyRoot);
 
-        Rigidbody torso = AddBody(spine, TorsoMass);
+        Rigidbody torso = AddBody(spine, TorsoMass, RagdollPart.Torso);
         float shoulderWidth = leftArm != null && rightArm != null ? Vector3.Distance(leftArm.position, rightArm.position) * 0.9f : 0.36f;
         AddBox(spine, (spine.position + neckPoint) * 0.5f,
                new Vector3(shoulderWidth, Vector3.Distance(spine.position, neckPoint), 0.26f), copyRoot);
         AddJoint(torso, pelvis, right, forward, -20f, 20f, 10f);
 
-        Rigidbody headBody = AddBody(head, HeadMass);
+        Rigidbody headBody = AddBody(head, HeadMass, RagdollPart.Head);
         AddSphere(head, head.position + up * 0.09f, 0.115f);
         AddJoint(headBody, torso, right, forward, -40f, 25f, 25f);
 
         // Bras : épaule vers le buste, coude en charnière. Côté droit en miroir.
-        AddArm(Bone(HumanBodyBones.LeftUpperArm), Bone(HumanBodyBones.LeftLowerArm), Bone(HumanBodyBones.LeftHand), torso, up, forward);
-        AddArm(Bone(HumanBodyBones.RightUpperArm), Bone(HumanBodyBones.RightLowerArm), Bone(HumanBodyBones.RightHand), torso, -up, forward);
+        AddArm(Bone(HumanBodyBones.LeftUpperArm), Bone(HumanBodyBones.LeftLowerArm), Bone(HumanBodyBones.LeftHand), torso, up, forward, false);
+        AddArm(Bone(HumanBodyBones.RightUpperArm), Bone(HumanBodyBones.RightLowerArm), Bone(HumanBodyBones.RightHand), torso, -up, forward, true);
 
         // Jambes : hanche vers le bassin, genou en charnière, pied rattaché à la jambe.
-        AddLeg(leftThigh, Bone(HumanBodyBones.LeftLowerLeg), Bone(HumanBodyBones.LeftFoot), Bone(HumanBodyBones.LeftToes), right, forward, copyRoot);
-        AddLeg(rightThigh, Bone(HumanBodyBones.RightLowerLeg), Bone(HumanBodyBones.RightFoot), Bone(HumanBodyBones.RightToes), right, forward, copyRoot);
+        AddLeg(leftThigh, Bone(HumanBodyBones.LeftLowerLeg), Bone(HumanBodyBones.LeftFoot), Bone(HumanBodyBones.LeftToes), right, forward, copyRoot, false);
+        AddLeg(rightThigh, Bone(HumanBodyBones.RightLowerLeg), Bone(HumanBodyBones.RightFoot), Bone(HumanBodyBones.RightToes), right, forward, copyRoot, true);
 
         FinishBodies(velocity);
     }
 
-    private void AddArm(Transform upper, Transform lower, Transform hand, Rigidbody torso, Vector3 twistAxis, Vector3 forward)
+    private void AddArm(Transform upper, Transform lower, Transform hand, Rigidbody torso, Vector3 twistAxis, Vector3 forward, bool rightSide)
     {
         if (upper == null || lower == null) return;
-        Rigidbody arm = AddBody(upper, ArmMass);
+        Rigidbody arm = AddBody(upper, ArmMass, rightSide ? RagdollPart.RightArm : RagdollPart.LeftArm);
         AddCapsule(upper, lower.position, 0.055f);
         AddJoint(arm, torso, twistAxis, forward, -70f, 10f, 50f);
 
-        Rigidbody forearm = AddBody(lower, ForearmMass);
+        Rigidbody forearm = AddBody(lower, ForearmMass, rightSide ? RagdollPart.RightForearm : RagdollPart.LeftForearm);
         Vector3 end = hand != null ? hand.position + (hand.position - lower.position).normalized * 0.08f : lower.position + (lower.position - upper.position);
         AddCapsule(lower, end, 0.045f);
         AddJoint(forearm, arm, forward, twistAxis, -90f, 0f, 0f);
     }
 
-    private void AddLeg(Transform thigh, Transform calf, Transform foot, Transform toes, Vector3 right, Vector3 forward, Transform characterRoot)
+    private void AddLeg(Transform thigh, Transform calf, Transform foot, Transform toes, Vector3 right, Vector3 forward, Transform characterRoot,
+                        bool rightSide)
     {
         if (thigh == null || calf == null) return;
-        Rigidbody thighBody = AddBody(thigh, ThighMass);
+        Rigidbody thighBody = AddBody(thigh, ThighMass, rightSide ? RagdollPart.RightThigh : RagdollPart.LeftThigh);
         AddCapsule(thigh, calf.position, 0.085f);
         AddJoint(thighBody, pelvis, right, forward, -20f, 70f, 30f);
 
-        Rigidbody calfBody = AddBody(calf, CalfMass);
+        Rigidbody calfBody = AddBody(calf, CalfMass, rightSide ? RagdollPart.RightCalf : RagdollPart.LeftCalf);
         AddCapsule(calf, foot != null ? foot.position : calf.position + (calf.position - thigh.position), 0.07f);
         AddJoint(calfBody, thighBody, right, forward, -80f, 0f, 0f);
 
@@ -335,11 +537,12 @@ public class RobotCorpse : MonoBehaviour
         }
     }
 
-    private Rigidbody AddBody(Transform bone, float mass)
+    private Rigidbody AddBody(Transform bone, float mass, RagdollPart part)
     {
         var body = bone.gameObject.AddComponent<Rigidbody>();
         body.mass = mass;
         bodies.Add(body);
+        parts[part] = body;
         totalMass += mass;
         return body;
     }

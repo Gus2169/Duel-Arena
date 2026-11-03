@@ -330,6 +330,7 @@ GameObject:
   - component: {fileID: 2150533149295835661}
   - component: {fileID: 5843594468034477752}
   - component: {fileID: 7725396244092417038}
+  - component: {fileID: 7031386418627690778}
   m_Layer: 3
   m_Name: Player
   m_TagString: Untagged
@@ -850,6 +851,13 @@ MonoBehaviour:
   strikeEuler: {x: 10, y: 0, z: -8}
   strikeFistTarget: {x: -0.06, y: -0.1, z: 0.6}
   pistolHipOffset: {x: 0.1, y: -0.1, z: -0.1}
+  reloadViewPitch: 20
+  reloadViewOffset: {x: 0, y: -0.06, z: 0.12}
+  reloadFrameTime: 0.12
+  pistolReloadViewPitch: 60
+  pistolReloadViewYaw: 35
+  pistolReloadViewOffset: {x: -0.15, y: -0.2, z: 0.1}
+  pistolReloadFrameTime: 0.12
   scopeInThreshold: 0.95
 --- !u!114 &7995085467982269497
 MonoBehaviour:
@@ -884,6 +892,7 @@ MonoBehaviour:
   cameraStartPitch: 28
   cameraBlendTime: 0.7
   orbitSensitivity: 0.12
+  corpseLingerAfterRespawn: 8
 --- !u!114 &4408059371079503041
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1010,6 +1019,31 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: DuelArena.Runtime::PlayerChassis
   ShowTopMostFoldoutHeaderGroup: 1
+--- !u!114 &7031386418627690778
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4948709451476686498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f65af7285099804196a9f9a1ee665e8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: DuelArena.Runtime::MagazineSwap
+  gestures:
+  - {fileID: 11400000, guid: ae861ffe99568ae40a85b74e0c16ee1e, type: 2}
+  - {fileID: 11400000, guid: b6039ed89a0f2524cb9b75e3e7d0b6b9, type: 2}
+  - {fileID: 11400000, guid: c3b9f623cd0f15e4288d099f366ddd15, type: 2}
+  - {fileID: 11400000, guid: acfbab9d9355c8e4da85a2cf01385863, type: 2}
+  - {fileID: 11400000, guid: b24d51953a35f7146ae0eed477ddd9c6, type: 2}
+  drop:
+    ejectSpeed: 0.8
+    maxInheritedSpeed: 2
+    tumble: 4
+    lifetime: 8
+    armsLifetime: 0.45
+    ownerRevealDelay: 0.35
 --- !u!1 &4953124100940397496
 GameObject:
   m_ObjectHideFlags: 0
@@ -1187,6 +1221,9 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 5dda986ec96b5cd418d42be3cc706d73, type: 2}
   - {fileID: 11400000, guid: ad9d7a2a58caf444aa2ce5c422d4f8a2, type: 2}
   - {fileID: 11400000, guid: f0aedc2430bad31419a2cd5dc1e6014c, type: 2}
+  modeWeapons:
+  - {fileID: 11400000, guid: 26e1bf21c24e2d54888014a40d9a88d0, type: 2}
+  - {fileID: 11400000, guid: 094d7fdb5ca1d9e498fc95a5e5d43c42, type: 2}
   aimCamera: {fileID: 8366488429288959033}
   cameraLook: {fileID: 3352715494086386985}
   visualFeedback: {fileID: 4778785776251366436}

@@ -10,7 +10,7 @@ using UnityEngine;
 /// (MainMenuController.StartShootingRange), seul : l'hôte n'écoute que sa propre machine.
 ///
 /// Pas de boucle de manches : sans RoundManager, on bouge, on tire et on change d'arme librement
-/// (RoundManager.MovementAllowedFor, WeaponSwitchAllowedFor). Le serveur place les joueurs au poste de
+/// (RoundManager.MovementAllowedFor, WeaponSwitchAllowedFor : sans RoundManager, rien ne bloque). Le serveur place les joueurs au poste de
 /// tir (PlayerSpawnPoints de la scène), comme l'arène le fait (RoundManager.OnNetworkSpawn).
 ///
 /// Ouvrir la scène dans l'Editor et lancer le Play Mode y mène aussi : sans NetworkManager, elle charge

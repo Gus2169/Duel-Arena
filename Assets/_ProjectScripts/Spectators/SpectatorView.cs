@@ -15,6 +15,8 @@ using UnityEngine.Rendering;
 ///   l'écran, et encaisse quand elle arrête un coup.
 /// - L'objet en main, en bas à droite : il recule pendant l'élan, part devant au lancer. Rangé (la
 ///   molette), il ne se voit pas.
+/// - Un duelliste qui n'a que le gant (la dernière marche du Gun Game, 2026-11-02) la prend aussi : rien au
+///   repos, et à chaque coup de taser le direct gauche, le gant au poing, arcs compris (TaserSparkFX).
 ///
 /// Catégorie C pure, chez le propriétaire seulement : rien ne la lit.
 /// </summary>
@@ -74,6 +76,12 @@ public class SpectatorView : NetworkBehaviour
     private float throwStartedAt = float.NegativeInfinity;
     private PlayerChassis chassis;
 
+    // Le duelliste au gant seul : son taser, le dernier coup montré, le gant porté sur la copie.
+    private WeaponController weapon;
+    private TaserController taser;
+    private float shownStrikeAt = float.NegativeInfinity;
+    private bool gloveShown;
+
     public override void OnNetworkSpawn()
     {
         if (!IsOwner) return;
@@ -81,6 +89,9 @@ public class SpectatorView : NetworkBehaviour
         locomotion = GetComponent<PlayerLocomotion>();
         playerAnimator = GetComponent<PlayerAnimator>();
         firstPersonView = GetComponent<FirstPersonView>();
+        weapon = GetComponentInChildren<WeaponController>();
+        taser = GetComponentInChildren<TaserController>();
+        if (taser != null) shownStrikeAt = taser.LastStrikeSeenAt;
         layer = LayerMask.NameToLayer(FirstPersonView.LayerName);
         if (spectator != null)
         {
@@ -172,8 +183,9 @@ public class SpectatorView : NetworkBehaviour
     {
         if (!IsOwner || spectator == null || cameraTransform == null) return;
 
-        bool active = locomotion != null && locomotion.IsSpectator && firstPersonView != null && firstPersonView.ArmsCamera != null
-                      && firstPersonView.ArmsCamera.enabled;
+        bool gloveOnly = locomotion != null && !locomotion.IsSpectator && weapon != null && weapon.DisplayedUnarmed;
+        bool active = locomotion != null && (locomotion.IsSpectator || gloveOnly) && firstPersonView != null
+                      && firstPersonView.ArmsCamera != null && firstPersonView.ArmsCamera.enabled;
         if (arms != null && arms.activeSelf != active) arms.SetActive(active);
         if (!active)
         {
@@ -181,8 +193,30 @@ public class SpectatorView : NetworkBehaviour
             return;
         }
 
+        if (gloveOnly != gloveShown && armsAnimator != null)
+        {
+            gloveShown = gloveOnly;
+            HeldWeapons.WearTaserGlove(armsAnimator, gloveShown);
+        }
+        if (gloveOnly) FollowStrike();
         UpdatePunch();
         UpdateHeld();
+    }
+
+    /// <summary>Au gant seul : chaque coup de taser (vu à l'appui chez le joueur) joue le direct gauche, gant au
+    /// poing, tendu au contact du taser.</summary>
+    private void FollowStrike()
+    {
+        if (taser == null || taser.LastStrikeSeenAt <= shownStrikeAt) return;
+        shownStrikeAt = taser.LastStrikeSeenAt;
+        // Un coup donné pendant que la vue était éteinte (un autre rôle, la mort) ne se rejoue pas.
+        if (Time.time - shownStrikeAt > taser.ContactDelay) return;
+        punchStartedAt = shownStrikeAt;
+        punchDuration = Mathf.Max(0.1f, taser.StrikeDuration);
+        punchRight = false;
+        if (armsAnimator == null || !armsAnimator.isActiveAndEnabled) return;
+        armsAnimator.SetFloat(GesteSpeedId, playerAnimator != null ? playerAnimator.PunchPlaybackSpeedFor(taser.ContactDelay) : 1f);
+        armsAnimator.SetTrigger(PoingId);
     }
 
     /// <summary>La tête de la copie dans l'œil ; pendant un coup, son poing vers l'écran ; en garde, ses

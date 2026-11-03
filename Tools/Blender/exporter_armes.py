@@ -56,6 +56,9 @@ POINTS_PISTOLET = {"Poignee": "Manchon"}
 # le sien : WeaponModel cherche Mire et Bouche parmi les enfants de la racine.
 RENOMMAGES_PIECES = {"Poignee": "PoigneePistolet", "Bouche": "BoucheCanon"}
 REPERES = {"Mire", "Bouche", "MainGauche", "MainDroite", "Accessoires"}
+# Les armes hors de l'arsenal, que des modes de jeu mettent en main (WeaponController.modeWeapons) : (script, classe,
+# famille). Elles s'exportent comme les autres ; dans Unity, leur WeaponData pointe sur leur préfab.
+HORS_ARSENAL = [("golden_gun.py", CLASSE_PISTOLET, 0)]   # le Big D du Golden Gun (2026-11-03)
 DISTANCE_AO = 0.018   # celle du nœud Ambient Occlusion de kit.materiau
 
 # Les bruits de kit.materiau, dans l'ordre où il les crée, avec le générateur qui tire leur décalage
@@ -420,8 +423,16 @@ def exporter(script, classe, famille, a):
     for ob in objets_mesh:
         bord_en_couleur(ob)
     deplier(scene, objets_mesh)
-    ao_moyenne = cuire_occlusion(scene, objets_mesh, os.path.join(dossier, f"{at.prefixe}_Occlusion.png"),
-                                 a.resolution, a.echantillons, a.marge)
+    # ce qui sort de l'arme (la cartouche du Big D) se cuit à l'écart, puis revient à sa place
+    a_part = [bpy.data.objects[nom] for nom in getattr(at, "cuire_a_part", [])]
+    for ob in a_part:
+        ob.location.y += 1.0
+    try:
+        ao_moyenne = cuire_occlusion(scene, objets_mesh, os.path.join(dossier, f"{at.prefixe}_Occlusion.png"),
+                                     a.resolution, a.echantillons, a.marge)
+    finally:
+        for ob in a_part:
+            ob.location.y -= 1.0
     vers_axes_unity(at, objets)
     exporter_fbx(scene, at, objets, os.path.join(dossier, f"{at.prefixe}_Modele.fbx"))
 
@@ -450,6 +461,9 @@ def principal():
         for famille, script in enumerate(scripts):
             if script and (not voulues or script in voulues):
                 exporter(script, classe, famille, a)
+    for script, classe, famille in HORS_ARSENAL:
+        if not voulues or script in voulues:
+            exporter(script, classe, famille, a)
 
 
 if __name__ == "__main__":   # lancé par Blender ; exporter_accessoires.py l'importe pour ses fonctions

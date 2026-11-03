@@ -20,6 +20,19 @@ using UnityEngine;
 /// </summary>
 public class Health : NetworkBehaviour
 {
+    /// <summary>Ce qui a porté un coup : une arme, ou le gant du taser (le Gun Game ne compte pas pareil un coup
+    /// de gant, GDD § 11, GG5) ; un tir dont une balle ou un plomb a touché la tête (le Tag Team la compte plus, TT6).
+    /// Ajouter les valeurs à la fin.</summary>
+    public enum DamageCause : byte
+    {
+        Shot,
+        Glove,
+        HeadShot,
+    }
+
+    /// <summary>Personne n'a porté le coup mortel (pas encore mort, ou mort sans auteur connu).</summary>
+    public const ulong NoKiller = ulong.MaxValue;
+
     [SerializeField] private float maxHealth = 100f;
 
     private readonly NetworkVariable<float> networkCurrent = new NetworkVariable<float>(
@@ -63,10 +76,18 @@ public class Health : NetworkBehaviour
         if (current <= 0f && previous > 0f) OnDeath?.Invoke();
     }
 
+    /// <summary>Serveur : le joueur qui a porté le coup mortel (son identifiant de client), ou NoKiller. Lu par la
+    /// boucle de manches quand elle voit la mort (RoundManager, le Gun Game) ; effacé quand la vie revient.</summary>
+    public ulong ServerKillerId { get; private set; } = NoKiller;
+
+    /// <summary>Serveur : ce qui a porté le coup mortel (une arme ou le gant).</summary>
+    public DamageCause ServerKillCause { get; private set; }
+
     /// <summary>Appelée par le serveur (WeaponController.FireServerRpc) en contexte réseauté, ou
     /// directement en local sinon (cible de test sans NetworkObject). Sans effet si un CLIENT
-    /// l'appelle sur un objet réseauté : seul le serveur fait autorité sur la vie en multi.</summary>
-    public void ApplyDamage(float amount, GameObject source = null)
+    /// l'appelle sur un objet réseauté : seul le serveur fait autorité sur la vie en multi. `source` est la
+    /// racine du tireur, `cause` ce qui a frappé : le serveur retient l'auteur du coup mortel.</summary>
+    public void ApplyDamage(float amount, GameObject source = null, DamageCause cause = DamageCause.Shot)
     {
         if (IsDead || amount <= 0f) return;
 
@@ -74,6 +95,12 @@ public class Health : NetworkBehaviour
         {
             if (!IsServer) return; // garde-fou anti-triche : voir doc de classe
             networkCurrent.Value = Mathf.Max(0f, networkCurrent.Value - amount);
+            if (networkCurrent.Value <= 0f)
+            {
+                ServerKillerId = source != null && source.TryGetComponent(out NetworkObject killer) && killer.IsSpawned
+                    ? killer.OwnerClientId : NoKiller;
+                ServerKillCause = cause;
+            }
             // HandleNetworkCurrentChanged se charge d'OnDamaged/OnDeath sur TOUTES les instances,
             // y compris celle du serveur lui-même (son propre OnValueChanged se déclenche aussi).
         }
@@ -88,6 +115,7 @@ public class Health : NetworkBehaviour
     /// <summary>Pratique pour la cible de test : se relève après un délai au lieu de rester morte.</summary>
     public void ResetHealth()
     {
+        ServerKillerId = NoKiller;
         if (IsNetworked)
         {
             if (IsServer) networkCurrent.Value = maxHealth;

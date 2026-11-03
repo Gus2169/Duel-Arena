@@ -399,6 +399,8 @@ public class ArenaItem : NetworkBehaviour
             if (h.collider == null || !h.collider.enabled) continue;
             PlayerLocomotion player = h.collider.GetComponentInParent<PlayerLocomotion>();
             if (player == null || player.IsSpectator || !player.IsAlive) continue;
+            // Au Tag Team, un caillou ne touche pas le combattant de l'équipe de son lanceur : il le traverse.
+            if (RoundManager.Teammates(itemInfo.thrower, player.OwnerClientId)) continue;
             // Un chevauchement dès le départ est rendu à distance nulle, sans point.
             float fraction = h.distance <= 0f ? 0f : h.distance / length;
             if (fraction >= best.fraction) continue;
@@ -414,6 +416,7 @@ public class ArenaItem : NetworkBehaviour
         foreach (SpectatorController other in SpectatorController.Spawned)
         {
             if (other == null || !other.IsSpectatorRole || other.OwnerClientId == itemInfo.thrower) continue;
+            if (RoundManager.Teammates(itemInfo.thrower, other.OwnerClientId)) continue;
             Vector3 feet = other.transform.position;
             if (!SpectatorRules.SweepHitsBody(a, b, radius, feet, other.BodyHeight, SpectatorRules.BodyRadius, out float fraction)) continue;
             if (fraction >= best.fraction) continue;

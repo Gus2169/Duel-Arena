@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -25,12 +26,13 @@ public class RobotCorpseTests
         if (walker != null) Object.Destroy(walker);
     }
 
-    private IEnumerator SpawnCorpse(Vector3 velocity = default)
+    private IEnumerator SpawnCorpse(Vector3 velocity = default, ChassisId chassis = ChassisId.CT01)
     {
         ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
         ground.transform.localScale = Vector3.one * 4f; // 40 m, sur le layer Default
         model = TestCharacter.InstantiateModel(out Animator animator);
         model.transform.position = Vector3.zero;
+        RobotChassis.Apply(model.transform, chassis);
 
         // La pose d'attente posée par l'Animator, comme au moment d'une mort en jeu.
         yield return null;
@@ -85,6 +87,87 @@ public class RobotCorpseTests
 
         Assert.AreEqual(liveHeadHeight, liveAnimator.GetBoneTransform(HumanBodyBones.Head).position.y, 0.05f,
             "Le modèle vivant n'est pas touché : il réapparaîtra intact à la manche suivante.");
+    }
+
+    /// <summary>
+    /// Le coup qui tue fait voler l'épave en pièces (2026-11-03, avec la kill cam) : brutal (le pompe, le gant), la tête,
+    /// les bras, les jambes et le buste s'en détachent, sans articulation, et s'éloignent ; l'huile, les étincelles et les
+    /// éclats partent, sur le layer de l'épave (la caméra du replay ne les voit pas, elle a les siens) ; une balle légère à
+    /// la tête n'arrache que la tête ; le prototype, à la peau continue, ne perd rien mais crache sa gerbe. Vu échouer, les
+    /// articulations gardées.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator LeCoupQuiTue_FaitVolerLEpaveEnPieces()
+    {
+        yield return SpawnCorpse();
+        Vector3 chest = corpse.Center + Vector3.up * 0.45f;
+        corpse.Burst(chest, Vector3.forward * 200f, new Color(1f, 0.42f, 0.07f));
+        Assert.IsTrue(corpse.HasBurst);
+        Assert.AreEqual(RobotCorpse.BurstSeverity.Brutal, corpse.Severity);
+        Assert.AreEqual(6, corpse.Detached.Count, "Brutal : la tête, les deux bras, les deux cuisses et le buste.");
+        var rest = new Dictionary<Transform, Vector3>();
+        foreach (Transform piece in corpse.Detached) rest[piece] = piece.localPosition;
+        ParticleSystem[] systems = corpse.GetComponentsInChildren<ParticleSystem>(true);
+        Assert.GreaterOrEqual(systems.Length, 3 + 6 * 2, "La gerbe de l'impact, l'huile de chaque articulation rompue, la traînée de chaque pièce.");
+        foreach (ParticleSystem system in systems)
+            Assert.AreEqual(CorpseLayer.Index, system.gameObject.layer, $"{system.name} : sur le layer de l'épave.");
+
+        // Une articulation détruite disparaît à la fin de l'image.
+        yield return null;
+        foreach (Transform piece in corpse.Detached)
+            Assert.IsNull(piece.GetComponent<CharacterJoint>(), $"{piece.name} : son articulation est rompue.");
+        yield return new WaitForSeconds(0.6f);
+        int away = 0;
+        foreach (KeyValuePair<Transform, Vector3> pair in rest)
+        {
+            if (Vector3.Distance(pair.Key.localPosition, pair.Value) > 0.25f) away++;
+        }
+        Assert.GreaterOrEqual(away, 5, "Les pièces arrachées s'éloignent de leur place.");
+        int alive = 0;
+        foreach (ParticleSystem system in systems)
+        {
+            if (system != null && system.particleCount > 0) alive++;
+        }
+        Assert.Greater(alive, 0, "La gerbe est partie.");
+
+        // Une balle légère à la tête.
+        TearDown();
+        yield return null;
+        yield return SpawnCorpse();
+        Transform head = model.GetComponent<Animator>().GetBoneTransform(HumanBodyBones.Head);
+        corpse.Burst(head.position + Vector3.up * 0.1f, Vector3.forward * WeaponController.DeathImpulse(17f), Color.clear);
+        Assert.AreEqual(RobotCorpse.BurstSeverity.Light, corpse.Severity);
+        Assert.AreEqual(1, corpse.Detached.Count, "Une balle légère à la tête : la tête seule.");
+        Assert.AreEqual(head.name, corpse.Detached[0].name);
+
+        // Un tir de précision au buste, de face : le robot coupé à la taille, et sa tête. Jamais un bras touché (la surface
+        // touchable n'a pas de bras) : celui qui tient l'arme devant le buste ne le cache pas.
+        TearDown();
+        yield return null;
+        yield return SpawnCorpse();
+        Transform chestBone = model.GetComponent<Animator>().GetBoneTransform(HumanBodyBones.Chest);
+        Vector3 front = model.transform.forward;
+        for (float x = -0.6f; x <= 0.61f; x += 0.1f)
+            for (float y = -0.5f; y <= 0.51f; y += 0.1f)
+                for (float z = -0.3f; z <= 0.61f; z += 0.1f)
+                {
+                    Vector3 point = chestBone.position + model.transform.right * x + Vector3.up * y + front * z;
+                    Assert.IsFalse(RobotCorpse.IsArm(corpse.TestNearestPart(point)), $"Un coup en {point} touche un bras.");
+                }
+        corpse.Burst(chestBone.position + front * 0.2f, -front * WeaponController.DeathImpulse(100f), Color.clear);
+        Assert.AreEqual(RobotCorpse.BurstSeverity.Heavy, corpse.Severity);
+        var cut = new List<string>();
+        foreach (Transform piece in corpse.Detached) cut.Add(piece.name);
+        Assert.AreEqual(2, cut.Count, "Lourd au buste : le buste et la tête (" + string.Join(", ", cut) + ").");
+        Assert.IsTrue(cut.Exists(n => n.EndsWith("Spine")) && cut.Exists(n => n.EndsWith("Head")), string.Join(", ", cut));
+
+        // Le prototype, à la peau continue.
+        TearDown();
+        yield return null;
+        yield return SpawnCorpse(default, ChassisId.Prototype);
+        corpse.Burst(corpse.Center + Vector3.up * 0.45f, Vector3.forward * 200f, Color.clear);
+        Assert.AreEqual(0, corpse.Detached.Count, "Le prototype ne perd rien : sa peau s'étirerait.");
+        Assert.GreaterOrEqual(corpse.GetComponentsInChildren<ParticleSystem>(true).Length, 3, "Mais sa gerbe part.");
     }
 
     /// <summary>Ce qu'on retient d'une chute : la pièce la plus rapide, la rotation la plus vive, de

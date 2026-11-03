@@ -109,4 +109,34 @@ public class SpawnPointTests
         Configure(new Vector3(0, 0, 2));
         Assert.DoesNotThrow(() => spawnPoints.TryGetSpawnPointFarthestFrom(null, out _, out _));
     }
+
+    /// <summary>En manches, les postes A et B, et l'on change de côté à chaque manche (GDD § 5, T3) : le premier
+    /// duelliste commence au poste A, le second au B, puis ils échangent ; en BO5, chacun joue les deux côtés. Les postes
+    /// sont les points d'apparition, dans leur ordre. Vu échouer, chacun gardant son poste tout le match.</summary>
+    [Test]
+    public void EnManches_LesPostesAEtB_EtOnChangeDeCoteAChaqueManche()
+    {
+        Assert.AreEqual(0, RoundManager.SidePost(0, 1), "Manche 1 : le premier au poste A.");
+        Assert.AreEqual(1, RoundManager.SidePost(1, 1), "Manche 1 : le second au poste B.");
+        Assert.AreEqual(1, RoundManager.SidePost(0, 2), "Manche 2 : on change de côté.");
+        Assert.AreEqual(0, RoundManager.SidePost(1, 2));
+        var sides = new HashSet<int>();
+        for (int round = 1; round <= 5; round++)
+        {
+            Assert.AreNotEqual(RoundManager.SidePost(0, round), RoundManager.SidePost(1, round), $"Manche {round} : jamais au même poste.");
+            sides.Add(RoundManager.SidePost(0, round));
+        }
+        Assert.AreEqual(2, sides.Count, "En BO5, chacun joue les deux côtés.");
+
+        Configure(new Vector3(0, 0, 2), new Vector3(0, 0, 58));
+        root.transform.GetChild(1).rotation = Quaternion.Euler(0f, 180f, 0f);
+        Assert.IsTrue(spawnPoints.TryGetPost(0, out Vector3 a, out float yawA));
+        Assert.IsTrue(spawnPoints.TryGetPost(1, out Vector3 b, out float yawB));
+        Assert.AreEqual(new Vector3(0, 0, 2), a, "Le poste A : le premier point.");
+        Assert.AreEqual(new Vector3(0, 0, 58), b, "Le poste B : le second.");
+        Assert.AreEqual(0f, yawA, 0.01f);
+        Assert.AreEqual(180f, yawB, 0.01f);
+        Assert.IsFalse(spawnPoints.TryGetPost(2, out _, out _), "Pas de troisième poste.");
+        Assert.IsFalse(spawnPoints.TryGetPost(-1, out _, out _), "-1 : pas de poste, le point le plus éloigné.");
+    }
 }

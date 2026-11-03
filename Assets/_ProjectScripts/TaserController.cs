@@ -153,7 +153,7 @@ public class TaserController : NetworkBehaviour
 #if UNITY_EDITOR
         if (PlayerLocomotion.DebugVaultIgnoresRules) vaulting = false; // client tricheur simulé
 #endif
-        if (wantsStrike && !IsStriking && RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead) && !vaulting)
+        if (wantsStrike && !IsStriking && RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead) && !vaulting)
         {
             BeginStrike();
         }
@@ -200,7 +200,7 @@ public class TaserController : NetworkBehaviour
         double now = Time.timeAsDouble;
         if (now - serverLastStrikeAt < strikeDuration * 0.85) return;
         if (IsSpectatorRole) return;
-        if (!RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead)) return;
+        if (!RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead)) return;
         if (direction.sqrMagnitude < 0.0001f) return;
 
         Vector3 offset = origin - transform.root.position;
@@ -240,7 +240,7 @@ public class TaserController : NetworkBehaviour
     private void ServerResolveStrike()
     {
         // Un attaquant tué pendant le geste ne frappe pas : c'est tout l'intérêt du délai.
-        if (!RoundManager.FiringAllowedFor(ownHealth == null || !ownHealth.IsDead)) return;
+        if (!RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead)) return;
 
         // On ne frappe pas en courant (2026-10-10) : le joueur honnête cesse de sprinter dès
         // l'appui (PlayerLocomotion.GateSprint). Un client qui sprinterait pendant le geste ne
@@ -287,15 +287,15 @@ public class TaserController : NetworkBehaviour
 
             Collider hit = QueryStrike(origin, serverStrikeDirection, range, radius, hitboxMask, worldMask, overlapBuffer);
             Health target = hit != null ? hit.GetComponentInParent<Health>() : null;
-            if (target != null && target != ownHealth && !target.IsDead)
+            if (target != null && target != ownHealth && !target.IsDead && RoundManager.MayHurt(OwnerClientId, target))
             {
                 // Mort instantanée (GDD § 6) : quelle que soit la vie restante.
                 float before = target.Current;
-                target.ApplyDamage(float.PositiveInfinity, transform.root.gameObject);
+                target.ApplyDamage(float.PositiveInfinity, transform.root.gameObject, Health.DamageCause.Glove);
                 Debug.Log($"[Serveur] Taser : {hit.transform.root.name} neutralisé (rewind {rewind * 1000f:F0} ms).");
 
                 // Statistiques du match (pendant la manche seulement) et épave poussée par le coup.
-                if (matchState != null && RoundManager.StatsRecording) matchState.ServerRecordDamage(before);
+                if (matchState != null && RoundManager.StatsRecordingFor(OwnerClientId)) matchState.ServerRecordDamage(before);
                 if (target.IsDead && target.TryGetComponent(out PlayerDeath death))
                     death.ServerNotifyKilled(hit.ClosestPoint(origin), DeathImpulse(serverStrikeDirection));
                 // Le retour de touche, comme au tir (2026-10-13) : le coup qui tue.
@@ -397,6 +397,10 @@ public class TaserController : NetworkBehaviour
     }
 
     private void PlayZapSound() => PlayOneOf(zapSounds, zapVolume);
+
+    /// <summary>La décharge du gant et son volume : le replay du coup mortel la rejoue, au ralenti (KillReplay).</summary>
+    public IReadOnlyList<AudioClip> ZapSounds => zapSounds;
+    public float ZapVolume => zapVolume;
 
     private void PlayOneOf(AudioClip[] clips, float volume)
     {

@@ -88,6 +88,8 @@ public class PauseMenu : MonoBehaviour
             ShootingRangePanel.Close();
             return;
         }
+        // Au salon de l'arène, la fenêtre « Changer de mode » aussi.
+        if (!IsOpen && SalonPanel.CloseWindow()) return;
         if (!IsOpen) Open();
         else if (!pauseOptions.ClassListContains("hidden"))
         {

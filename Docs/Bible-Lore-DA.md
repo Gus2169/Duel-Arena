@@ -138,7 +138,7 @@ La recommandation est de combiner ces motivations, sans imposer un objectif uniq
 
 **Destruction et reconstruction**
 
-La défaite est présentée comme une destruction du châssis : pièces mécaniques dispersées, ragdoll et effets d'impact non gore. La reconstruction entre les manches permet de conserver le format de match et d'expliquer le retour des combattants. **On l'entend pendant le fondu au noir** qui sépare deux manches : perceuses, servomoteurs. **Un robot reconstruit se souvient de tout** : la défaite ne lui coûte que des pièces (2026-10-25). La nature exacte de la restauration reste ouverte.
+La défaite est présentée comme une destruction du châssis : pièces mécaniques dispersées, ragdoll et effets d'impact non gore. *À l'essai depuis le 2026-11-03 (l'utilisateur, avec la kill cam) : un gore de robot, sans sang ni chair : le coup qui tue arrache des membres, l'huile moteur gicle des articulations rompues (de l'ambre doré à l'ambre brûlé, des gouttes qui luisent), des étincelles et des éclats de blindage aux couleurs du robot partent de l'impact (propositions de Claude).* La reconstruction entre les manches permet de conserver le format de match et d'expliquer le retour des combattants. **On l'entend pendant le fondu au noir** qui sépare deux manches : perceuses, servomoteurs. **Un robot reconstruit se souvient de tout** : la défaite ne lui coûte que des pièces (2026-10-25). La nature exacte de la restauration reste ouverte.
 
 ## 8. Spectateurs et interventions
 
@@ -162,7 +162,7 @@ Piste recommandée : les interventions ont d'abord existé comme protocoles mili
 
 Une **plateforme circulaire fermée et surélevée, qui fait le tour de l'arène**. Une pièce de surveillance avec des écrans de caméras peut compléter le lieu, mais ne doit pas être indispensable au prototype. Les actions physiques sont plus intuitives si les spectateurs se trouvent à proximité du terrain.
 
-*Dans le prototype (2026-10-13) : une passerelle à 4,5 m au-dessus de l'arène, qui en épouse le contour, avec un garde-corps d'un mètre côté arène et un mur côté extérieur. Les cailloux viennent de **blocs fissurés** posés le long de ce mur, qu'on casse à coups de poing ; le matériel que lancent les spectateurs, ce sont des armes (GDD § 9). Le tout est en gris, à habiller.*
+*Dans le prototype (2026-10-13) : une passerelle à 4,5 m au-dessus de l'arène, qui en épouse le contour, avec un garde-corps d'un mètre côté arène et un mur côté extérieur. Les cailloux viennent de **blocs fissurés** posés le long de ce mur, qu'on casse à coups de poing ; le matériel que lancent les spectateurs, ce seront les armes insolites, et d'ici leur arrivée rien ne tombe (GDD § 9, 2026-11-02). Le tout est en gris, à habiller.*
 
 Les interventions des spectateurs doivent rester optionnelles ou dépendre de variantes de règles, afin de ne pas rendre le duel principal injuste ou frustrant. Le mode de base peut préserver une compétition sans perturbation.
 
@@ -199,7 +199,7 @@ La direction retenue est une esthétique industrielle dystopique stylisée : som
 | Palette | Décor sombre et terne : noir, gris acier, béton, blanc cassé, presque pas de jaune. Les robots portent des couleurs vives, qui tranchent avec le décor. |
 | Éclairage | Industriel, directionnel et atmosphérique, sans sacrifier la visibilité des adversaires. |
 | Usure | Rayures, peinture écaillée, poussière, soudures, réparations et impacts, réutilisés par textures et decals. |
-| Effets | Étincelles, flashes, poussière, pièces mécaniques, fumée légère ; pas de gore. |
+| Effets | Étincelles, flashes, poussière, pièces mécaniques, fumée légère ; pas de sang : à l'essai (2026-11-03), l'huile moteur qui gicle d'un robot qui vole en pièces. |
 | Ton | Sérieux dans le ton et le thème, drôle quand même, étrange, jamais enfantin. |
 
 La DA doit être une stylisation fonctionnelle : les limites de modélisation, de rigging et d'animation deviennent des propriétés assumées des combattants, plutôt que des imperfections réalistes mal dissimulées.
@@ -216,6 +216,7 @@ La DA doit être une stylisation fonctionnelle : les limites de modélisation, d
 - Les mouvements peuvent être mécaniques ou légèrement saccadés, mais la réponse de gameplay doit rester fluide et prévisible.
 - Le crouch, le prone, le vault, le sprint et les déplacements doivent conserver une lecture claire de l'état du joueur.
 - Les animations de mort peuvent détacher ou disperser des pièces, avec une logique de ragdoll contrôlée.
+- **Un robot touché garde la trace de l'impact** : une plaie de métal en fusion, rouge, qui jette de petites étincelles par intermittence, dans tous les modes, jusqu'à sa réparation au fondu au noir (souhait de l'utilisateur, 2026-11-02 ; GDD § 6). Elle luit : dans l'Arène dans le noir, c'est elle qu'on voit.
 - Les cosmétiques ne doivent pas créer d'avantage de gameplay ni rendre les silhouettes ambiguës.
 
 **Animation et perception**
@@ -285,6 +286,8 @@ Toujours dans la palette du décor : la rouille est brune et sombre, puisque l'o
 - les sept accessoires de plus (2026-10-29, intégrés au jeu, à juger au stand de tir) se font sur leur arme. **Les crosses** suivent la crosse d'origine (sa longueur, ses hauteurs) : la légère est un cadre d'acier ajouré (un collier à la carcasse, deux barres, un montant, une plaque de couche fine), derrière le poignet gardé des crosses de chasse du FP-30 et du FAP-30 ; la lourde, la crosse d'origine élargie, un appui-joue réglable sur deux montants, des masses d'acier boulonnées sur les flancs, une épaisse plaque de couche. **Au canon**, le compensateur est un manchon percé de lumières sur le dessus, le frein de bouche un bloc large ouvert de deux grandes fenêtres sur les flancs (un bloc qui prolonge la glissière du PA-05 ou le fourreau du RV-30) ; le canon long et le canon court allongent ou raccourcissent l'avant de l'arme, sa bande ventilée, sa tête et son guidon suivant (un canon qui dépasse de la glissière du PA-05, une rallonge du fourreau du RV-30). Les armes laser ont les leurs, dans leurs deux tons et leur lueur rouge : l'anneau focaliseur du stabilisateur, les ailettes du dissipateur autour d'un cœur allumé, la tête allongée du focaliseur long, la lèvre évasée du focaliseur court ; sur le FX-2 ils pincent les pointes de la fourche, sur le FX-3 un cadre enserre ses quatre branches. **Le chargeur rapide** est plus court, une boucle de nylon sous la semelle pour l'arracher du puits ; sous une cellule d'énergie, une anse d'acier.
 
 **L'arme de corps à corps est un taser**, pas un couteau : une lame n'a guère de sens contre un châssis de métal, une décharge électrique si. Ses règles sont dans le GDD (§ 6). **C'est un gant à décharge électrique**, porté sur l'avant-bras gauche, dans l'esprit des gantelets de *Fallout* : le coup est un direct du poing, qui lâche des arcs électriques au contact (modèle fourni par l'utilisateur, 2026-10-11 ; refait le 2026-10-16 dans la DA du projet, ses étincelles remplacées le même jour par de vrais arcs, à la demande de l'utilisateur). *Proposition de Claude pour les arcs :* à l'appui, le gant se charge, de petits arcs sautent d'une électrode à l'autre et courent des condensateurs au poing ; au contact, des éclairs zigzaguent des électrodes jusqu'à la cible, au cœur blanc et au halo rouge, l'énergie des armes laser et de la jauge du gant, et la lumière du poing rougit ce qu'elle touche. Un spectateur étourdi grésille des mêmes arcs, autour de la tête. *Propositions de Claude, appliquées au GD-1 :* un gantelet d'atelier détourné ; une manchette d'acier peinte anthracite en deux coques, fermée de sangles ; sur le dessus, deux condensateurs à ailettes de céramique blanc cassé, des isolateurs de ligne à haute tension, et une jauge de charge qui luit rouge, l'énergie des armes laser, face au coude, que voit le joueur quand il frappe ; deux câbles gainés jusqu'au poing ; quatre électrodes noircies par les arcs sur une barre de jointures d'acier. Il a servi : une coque fêlée sous une tôle rivetée, un câble regainé de ruban, un collier de serrage, et sur le flanc du pouce « HAUTE TENSION » et l'éclair dans son triangle ; sur l'autre, sa désignation et des bâtons de victoires.
+
+**L'arme du Golden Gun** (GDD § 11, 2026-11-02) : une arme à part, qui n'existe que dans ce mode, tue d'une balle et recharge après chaque tir. **C'est le Big D** (2026-11-02, d'après deux photos de l'utilisateur, un derringer de type Bond Arms ; son logo et le visage gravé sur la bouche ne sont pas repris) : un derringer à un coup, **en or** (choisi par l'utilisateur, plutôt que l'inox), plus gros qu'un vrai (×1,5, pour se lire en main d'un robot) ; un canon octogonal à grands chanfreins, gravé, qui pivote sur une charnière basse, à l'avant du dessus de la carcasse, et bascule en arrière jusqu'à l'horizontale pour qu'on glisse la cartouche dans la chambre ; un levier sur le flanc gauche, sous le pouce, qui le libère ; un chien qu'on arme ; une crosse arrondie, une détente qui revient vers l'avant ; une mire simple : le point rouge du guidon, sur une face unie, vu dans le cran que creuse le nez de la carcasse. Sa cartouche est longue et grosse, à douille de laiton et balle de plomb. Le chien, la détente et le levier restent d'acier.
 
 La variété doit soutenir le fun sans détruire le skill. Chaque arme ou power-up doit être évalué selon sa lisibilité, sa contre-mesure, son impact sur les distances de combat et son potentiel de frustration.
 
@@ -537,3 +540,13 @@ Cette bible constitue une base de travail. Les décisions finales devront être 
 | Section | Ce qui a changé | Décision |
 |---|---|---|
 | 12 | L'apparence des crosses, de ce qui va au canon (un seul emplacement ; les émetteurs des armes laser) et du chargeur rapide, sur chaque arme qui les prend. Intégrés au jeu, à juger au stand de tir. | Choix de l'utilisateur, 2026-10-29 ; propositions de Claude |
+
+**2026-11-02 — modes de jeu**
+
+*Les codes renvoient aux pages « Modes de jeu » et « Modes de jeu, la suite ».*
+
+| Section | Ce qui a changé | Décision |
+|---|---|---|
+| 8 | Le matériel que lancent les spectateurs, ce seront les armes insolites ; d'ici leur arrivée, rien ne tombe sur la passerelle. | C3 |
+| 11 | Un robot touché garde une plaie de métal en fusion rouge, qui jette de petites étincelles, dans tous les modes, jusqu'au fondu au noir ; elle luit. | N1, K2 |
+| 12 | Une arme propre au Golden Gun, que l'utilisateur décrira au moment de la modéliser. | G1, G6 |

@@ -148,8 +148,10 @@ public class WeaponVisualFeedback : MonoBehaviour
     /// avec elle (les bras du tireur, le corps chez les autres). Cosmétique : chaque machine la place
     /// sur l'arme qu'elle montre. Elle tourne d'un coup à l'autre (un angle d'or, pas de hasard).
     /// `size` : ce que les accessoires lui font (le frein de bouche la grossit, AttachmentCatalog.MuzzleFlashScale).
+    /// `duration` : combien de temps elle reste (s ; par défaut, muzzleFlashDuration) : plus longtemps au ralenti du
+    /// replay du coup mortel (KillReplay).
     /// </summary>
-    public GameObject SpawnMuzzleFlash(Transform muzzle, Vector3 forward, float size = 1f)
+    public GameObject SpawnMuzzleFlash(Transform muzzle, Vector3 forward, float size = 1f, float duration = -1f)
     {
         if (muzzle == null || muzzleFlashMaterial == null || forward.sqrMagnitude < 1e-6f) return null;
         flashCount++;
@@ -186,7 +188,7 @@ public class WeaponVisualFeedback : MonoBehaviour
             light.shadows = LightShadows.None;
         }
 
-        Destroy(go, muzzleFlashDuration);
+        Destroy(go, duration > 0f ? duration : muzzleFlashDuration);
         return go;
     }
 

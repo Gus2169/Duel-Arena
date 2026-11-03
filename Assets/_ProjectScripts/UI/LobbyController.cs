@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using DuelArena.UI;
 using Unity.Netcode;
 using Unity.Services.Multiplayer;
 using UnityEngine;
@@ -9,20 +8,20 @@ using UnityEngine.UIElements;
 
 /// <summary>
 /// Le salon d'une partie en ligne (2026-10-13, demandé par l'utilisateur ; GDD § 12 : « choix du mode, avec
-/// ses réglages à côté → lobby → duel »), refait le 2026-10-17 d'après ses maquettes : « les deux duellistes
-/// en tête d'affiche si on sait qui c'est d'avance, et dessous la liste des spectateurs ; sur la droite, un
-/// visuel de la map avec les éléments clés ». Sur MainMenuUI, à côté de MainMenuController ; ouvert depuis
-/// l'écran Jouer (une carte de mode, ou Rejoindre avec un code).
+/// ses réglages à côté → lobby → duel »), refait le 2026-11-02 d'après la maquette qu'il a retenue (« B ·
+/// Salon ») : les joueurs en liste, les réglages (les essentiels, puis « Plus de réglages »), l'image de
+/// l'arène ; l'écran est SalonView, le même que le salon de l'arène (SalonPanel). Sur MainMenuUI, à côté de
+/// MainMenuController ; ouvert depuis l'écran Jouer (une carte de mode, ou Rejoindre avec un code).
 ///
-/// - En tête d'affiche : l'hôte et le deuxième arrivé au salon (LobbyLineup ; l'arène suit cet ordre, voir
-///   SessionFlow.LaunchOrder). Avec les duellistes tirés au sort, deux points d'interrogation : le tirage se
-///   fait au lancement.
-/// - Dessous, la tribune : ceux qui attendent leur tour, puis les places libres.
-/// - À droite : l'arène (sa carte, ses points d'apparition, sa tribune et ses blocs, MenuArtwork), le mode
-///   et les réglages (sélecteurs, et cases à cocher pour ce qui se dit oui ou non, 2026-10-27), que seul
-///   l'hôte change et que tous voient changer, puis le code à donner.
-/// Les portraits sont le robot de chaque joueur, dans la couleur qu'il aura vraiment : celle qu'il a choisie
-/// si personne avant lui ne l'a prise, sinon la première libre (PlayerPaint.PickPaint, comme le serveur).
+/// - Les duellistes sont l'hôte et le deuxième arrivé au salon (LobbyLineup ; l'arène suit cet ordre, voir
+///   SessionFlow.LaunchOrder), puis la tribune dans l'ordre d'arrivée. Avec les duellistes tirés au sort,
+///   tous sont « dans le tirage » : il se fait au lancement.
+/// - Chacun a la couleur qu'il aura vraiment : celle qu'il a choisie si personne avant lui ne l'a prise,
+///   sinon la première libre (PlayerPaint.PickPaint, comme le serveur).
+/// - Les réglages, que seul l'hôte change et que tous voient changer, puis le code à donner.
+/// - Au Tag Team, les équipes que l'hôte compose (un clic sur un joueur, ou au hasard), publiées dans le salon
+///   (OnlineSession.Teams) et emmenées dans l'arène au lancement (SessionFlow.LaunchTeams) ; tant qu'il n'en a pas
+///   composé, A et B en alternance dans l'ordre du salon (TagTeam.AutoTeams).
 ///
 /// Ce composant ne décide rien du réseau : il appelle OnlineSession et affiche ce que le salon publie.
 /// </summary>
@@ -32,20 +31,11 @@ public class LobbyController : MonoBehaviour
     [SerializeField] private UIDocument document;
     [SerializeField] private MainMenuController mainMenu;
 
-    [Tooltip("Les portraits des joueurs.")]
-    [SerializeField] private MenuThumbnails thumbnails;
-
     [Tooltip("La palette des robots, lue sur le préfab joueur (sur le même GameObject si vide).")]
     [SerializeField] private CharacterPreviewController characterPreview;
 
     [Tooltip("Nom de la scène de jeu à charger au lancement. Doit être dans les Build Settings.")]
     [SerializeField] private string gameplaySceneName = "MultiTestScene";
-
-    private sealed class DuelistCard
-    {
-        public VisualElement card, portrait;
-        public Label unknown, role, name, status;
-    }
 
     /// <summary>Un joueur du salon, tel que l'écran le montre.</summary>
     public readonly struct Entry
@@ -77,28 +67,18 @@ public class LobbyController : MonoBehaviour
         public string code;
         /// <summary>L'hôte d'abord, puis les autres dans leur ordre d'arrivée.</summary>
         public List<Entry> players;
+        /// <summary>Au Tag Team, les équipes composées par l'hôte, par identifiant de joueur (vides : celles par défaut).</summary>
+        public Dictionary<string, PlayerTeam> teams;
     }
 
     private VisualElement root;
     private VisualElement lobbyScreen;
-    private Label headline, subline;
-    private VisualElement spinner;
-    private readonly DuelistCard[] duelists = new DuelistCard[2];
-    private Label queueTitle, queueHint;
-    private ScrollView queueList;
-    private Label arenaName;
-    private ArenaMapView map;
-    private Label modeValue, rulesHint;
-    private OptionCycler roundsCycler, capacityCycler;
-    private Toggle kingToggle, interventionsToggle, randomToggle;
-    private Label codeLabel, copyLabel, statusLabel;
-    private Button copyButton, startButton, leaveButton;
+    private SalonView salon;
 
     private bool busy;        // une demande au service en cours (créer, rejoindre, lancer, quitter)
     private bool launching;   // l'hôte a lancé : on attend l'arène
+    private string statusText = "";
     private bool statusIsError;
-    private float copiedUntil;
-    private int capacityFloor = MatchRules.MinCapacity;   // la plus petite capacité proposée (les joueurs déjà là)
 
     private void OnEnable()
     {
@@ -106,52 +86,16 @@ public class LobbyController : MonoBehaviour
         if (mainMenu == null) mainMenu = GetComponent<MainMenuController>();
         if (characterPreview == null) characterPreview = GetComponent<CharacterPreviewController>();
         root = document.rootVisualElement;
-
         lobbyScreen = root.Q<VisualElement>("screenLobby");
-        headline = root.Q<Label>("lobbyHeadline");
-        subline = root.Q<Label>("lobbySubline");
-        spinner = root.Q<VisualElement>("lobbySpinner");
-        for (int i = 0; i < duelists.Length; i++)
-        {
-            duelists[i] = new DuelistCard
-            {
-                card = root.Q<VisualElement>($"duelistCard{i}"),
-                portrait = root.Q<VisualElement>($"duelistPortrait{i}"),
-                unknown = root.Q<Label>($"duelistUnknown{i}"),
-                role = root.Q<Label>($"duelistRole{i}"),
-                name = root.Q<Label>($"duelistName{i}"),
-                status = root.Q<Label>($"duelistStatus{i}"),
-            };
-        }
-        queueTitle = root.Q<Label>("lobbyQueueTitle");
-        queueHint = root.Q<Label>("lobbyQueueHint");
-        queueList = root.Q<ScrollView>("lobbyQueueList");
-        arenaName = root.Q<Label>("lobbyArenaName");
-        map = root.Q<ArenaMapView>("lobbyMap");
-        modeValue = root.Q<Label>("lobbyModeValue");
-        roundsCycler = root.Q<OptionCycler>("lobbyRoundsCycler");
-        rulesHint = root.Q<Label>("lobbyRulesHint");
-        capacityCycler = root.Q<OptionCycler>("lobbyCapacityCycler");
-        kingToggle = root.Q<Toggle>("lobbyKingToggle");
-        interventionsToggle = root.Q<Toggle>("lobbyInterventionsToggle");
-        randomToggle = root.Q<Toggle>("lobbyRandomToggle");
-        codeLabel = root.Q<Label>("lobbyCodeLabel");
-        copyLabel = root.Q<Label>("lobbyCopyLabel");
-        statusLabel = root.Q<Label>("lobbyStatusLabel");
-        copyButton = root.Q<Button>("lobbyCopyButton");
-        startButton = root.Q<Button>("lobbyStartButton");
-        leaveButton = root.Q<Button>("lobbyLeaveButton");
 
-        BuildArena();
-
-        copyButton.clicked += CopyCode;
-        startButton.clicked += OnStartClicked;
-        leaveButton.clicked += OnLeaveClicked;
-        roundsCycler.RegisterValueChangedCallback(OnRoundsChanged);
-        capacityCycler.RegisterValueChangedCallback(OnCapacityChanged);
-        kingToggle.RegisterValueChangedCallback(OnKingChanged);
-        interventionsToggle.RegisterValueChangedCallback(OnInterventionsChanged);
-        randomToggle.RegisterValueChangedCallback(OnRandomChanged);
+        salon = new SalonView(lobbyScreen);
+        salon.RulesChanged += ChangeRules;
+        salon.LaunchClicked += OnStartClicked;
+        salon.LeaveClicked += OnLeaveClicked;
+        salon.PlayerClicked += ChangeTeam;
+        salon.ShuffleClicked += ShuffleTeams;
+        MenuArtwork artwork = mainMenu != null ? mainMenu.Artwork : null;
+        salon.SetArena(artwork != null ? artwork.arenaOverview : null, artwork != null ? artwork.arenaName : "ARÈNE DE TEST");
 
         OnlineSession.Changed += Render;
         OnlineSession.Ended += OnSessionEnded;
@@ -159,27 +103,16 @@ public class LobbyController : MonoBehaviour
 
     private void OnDisable()
     {
-        copyButton.clicked -= CopyCode;
-        startButton.clicked -= OnStartClicked;
-        leaveButton.clicked -= OnLeaveClicked;
-        roundsCycler.UnregisterValueChangedCallback(OnRoundsChanged);
-        capacityCycler.UnregisterValueChangedCallback(OnCapacityChanged);
-        kingToggle.UnregisterValueChangedCallback(OnKingChanged);
-        interventionsToggle.UnregisterValueChangedCallback(OnInterventionsChanged);
-        randomToggle.UnregisterValueChangedCallback(OnRandomChanged);
-
+        salon?.Dispose();
+        salon = null;
         OnlineSession.Changed -= Render;
         OnlineSession.Ended -= OnSessionEnded;
     }
 
-    private void Update()
-    {
-        if (copiedUntil > 0f && Time.unscaledTime > copiedUntil)
-        {
-            copiedUntil = 0f;
-            copyLabel.text = "COPIER";
-        }
-    }
+    private void Update() => salon?.Tick(Time.unscaledTime);
+
+    /// <summary>Échap : ferme la fenêtre « Changer de mode » si elle est ouverte (MainMenuController).</summary>
+    public bool CloseWindow() => salon != null && salon.CloseWindow();
 
     // ------------------------------------------------------------------
     // Entrer dans un salon (depuis l'écran Jouer)
@@ -285,7 +218,7 @@ public class LobbyController : MonoBehaviour
 
     private void Render()
     {
-        if (this == null || root == null) return;
+        if (this == null || root == null || salon == null) return;
         ISession session = OnlineSession.Current;
         if (session == null) return;
         Show(new View
@@ -295,6 +228,7 @@ public class LobbyController : MonoBehaviour
             rules = OnlineSession.Rules,
             code = session.Code,
             players = Entries(session),
+            teams = OnlineSession.Teams,
         });
     }
 
@@ -308,22 +242,233 @@ public class LobbyController : MonoBehaviour
 
     private void Show(View view)
     {
+        if (salon == null) return;
         List<Entry> players = view.players ?? new List<Entry>();
-        var lineup = LobbyLineup<Entry>.Arrange(players, view.rules.capacity, view.rules.randomDuelists);
+        MatchRules rules = view.rules.Sanitized();
+        shownView = view;
+        if (rules.IsTagTeam)
+        {
+            ShowTeams(view, players, rules);
+            return;
+        }
+        if (rules.IsTournament)
+        {
+            ShowTournament(view, players, rules);
+            return;
+        }
+        var lineup = LobbyLineup<Entry>.Arrange(players, rules.capacity, rules.randomDuelists);
 
-        codeLabel.text = string.IsNullOrEmpty(view.code) ? "······" : view.code;
-        RenderHeadline(view.host, view.started, players.Count);
-        RenderDuelists(lineup, players.Count);
-        RenderStands(lineup, view.rules);
-        RenderRules(view.rules, view.host, view.host && !view.started, players.Count);
+        // Les duellistes d'abord (l'hôte et le deuxième arrivé), puis la tribune dans l'ordre d'arrivée.
+        var shown = new List<SalonView.Player>();
+        if (lineup.hasFirst) shown.Add(Shown(lineup.first, true, 0, false));
+        if (lineup.secondKnown) shown.Add(Shown(lineup.second, true, 0, false));
+        for (int i = 0; i < lineup.stands.Count; i++) shown.Add(Shown(lineup.stands[i], false, i + 1, lineup.drawn));
 
-        startButton.EnableInClassList("hidden", !view.host);
-        startButton.SetEnabled(view.host && !busy && !view.started);
-        leaveButton.SetEnabled(!busy || launching);
+        string hostName = "";
+        foreach (Entry entry in players)
+        {
+            if (entry.host) hostName = entry.name;
+        }
 
-        if (view.started) SetStatus(view.host ? "Lancement de la partie..." : "La partie démarre...", false);
-        else if (!statusIsError) SetStatus("", false);
+        string status = statusText;
+        bool error = statusIsError;
+        if (view.started)
+        {
+            status = view.host ? "Lancement de la partie…" : "La partie démarre…";
+            error = false;
+        }
+        else if (!statusIsError)
+        {
+            status = !view.host ? "En attente du lancement par l'hôte…"
+                : players.Count < DuelRoster.DuelistSlots ? "Tu peux lancer seul : les autres te rejoindront dans l'arène."
+                : "Lance la partie quand tu veux.";
+        }
+
+        salon.Show(new SalonView.Model
+        {
+            eyebrow = string.IsNullOrEmpty(hostName) ? "SALON · EN LIGNE" : $"SALON DE {hostName.ToUpperInvariant()} · EN LIGNE",
+            mode = GameModeCatalog.ModeOf(rules),
+            rules = rules,
+            host = view.host,
+            editable = view.host && !view.started,
+            inviteCaption = "CODE",
+            inviteValue = string.IsNullOrEmpty(view.code) ? "······" : view.code,
+            players = shown,
+            phrase = SalonView.Phrase(players.Count,
+                lineup.hasFirst ? lineup.first.name.ToUpperInvariant() : null,
+                lineup.secondKnown ? lineup.second.name.ToUpperInvariant() : null,
+                lineup.drawn, rules.organization, rules.capacity > DuelRoster.DuelistSlots, "le code du salon"),
+            status = status,
+            statusError = error,
+            canLaunch = view.host && !busy && !view.started,
+            leaveLabel = "QUITTER LE SALON",
+        });
     }
+
+    // Ce que le salon montre, pour savoir qui l'hôte a cliqué (le Tag Team).
+    private View shownView;
+
+    /// <summary>Le salon du Tag Team : les joueurs dans l'ordre du salon, rangés par équipe par SalonView ; chacun sa
+    /// place dans le relais de son équipe.</summary>
+    private void ShowTeams(View view, List<Entry> players, MatchRules rules)
+    {
+        PlayerTeam[] teams = TeamsOf(players, view.teams);
+        var shown = new List<SalonView.Player>();
+        int teamA = 0, teamB = 0;
+        string hostName = "", firstA = null, firstB = null;
+        for (int i = 0; i < players.Count; i++)
+        {
+            Entry entry = players[i];
+            if (entry.host) hostName = entry.name;
+            int place = teams[i] == PlayerTeam.A ? teamA++ : teams[i] == PlayerTeam.B ? teamB++ : 0;
+            if (teams[i] == PlayerTeam.A && place == 0) firstA = entry.name.ToUpperInvariant();
+            if (teams[i] == PlayerTeam.B && place == 0) firstB = entry.name.ToUpperInvariant();
+            shown.Add(new SalonView.Player
+            {
+                name = entry.name,
+                paint = entry.paint,
+                role = SalonView.TeamRole(teams[i], place, entry.host, entry.local),
+                local = entry.local,
+                team = teams[i],
+            });
+        }
+
+        bool ready = TagTeam.CanPlay(teamA, teamB);
+        string status = statusText;
+        bool error = statusIsError;
+        if (view.started)
+        {
+            status = view.host ? "Lancement de la partie…" : "La partie démarre…";
+            error = false;
+        }
+        else if (!statusIsError)
+        {
+            status = !view.host ? "En attente du lancement par l'hôte…"
+                : ready ? "Lance la partie quand tu veux."
+                : "Il faut deux équipes égales, de deux ou trois joueurs : clique un joueur pour le changer d'équipe.";
+        }
+
+        salon.Show(new SalonView.Model
+        {
+            eyebrow = string.IsNullOrEmpty(hostName) ? "SALON · EN LIGNE" : $"SALON DE {hostName.ToUpperInvariant()} · EN LIGNE",
+            mode = GameModeCatalog.ModeOf(rules),
+            rules = rules,
+            host = view.host,
+            editable = view.host && !view.started,
+            inviteCaption = "CODE",
+            inviteValue = string.IsNullOrEmpty(view.code) ? "······" : view.code,
+            players = shown,
+            phrase = SalonView.TeamPhrase(teamA, teamB, firstA, firstB),
+            status = status,
+            statusError = error,
+            canLaunch = view.host && !busy && !view.started && ready,
+            leaveLabel = "QUITTER LE SALON",
+            teams = true,
+            teamsEditable = view.host && !view.started,
+        });
+    }
+
+    /// <summary>L'équipe de chaque joueur (dans l'ordre du salon) : celle que l'hôte lui a donnée, aucune pour un
+    /// nouveau venu ; sans composition de l'hôte, A et B en alternance (TagTeam.AutoTeams). Fonction pure, testée.</summary>
+    public static PlayerTeam[] TeamsOf(IReadOnlyList<Entry> players, IReadOnlyDictionary<string, PlayerTeam> composed)
+    {
+        int count = players != null ? players.Count : 0;
+        if (composed == null || composed.Count == 0) return TagTeam.AutoTeams(count);
+        var teams = new PlayerTeam[count];
+        for (int i = 0; i < count; i++)
+            teams[i] = composed.TryGetValue(players[i].id ?? "", out PlayerTeam team) ? team : PlayerTeam.None;
+        return teams;
+    }
+
+    /// <summary>La composition des équipes à publier : chaque joueur du salon et son équipe.</summary>
+    private static List<(string id, PlayerTeam team)> Composition(IReadOnlyList<Entry> players, PlayerTeam[] teams)
+    {
+        var composition = new List<(string id, PlayerTeam team)>();
+        for (int i = 0; i < players.Count; i++) composition.Add((players[i].id, teams[i]));
+        return composition;
+    }
+
+    /// <summary>L'hôte clique un joueur du Tag Team : il passe dans l'autre équipe, puis hors équipe (TagTeam.NextTeam).</summary>
+    private void ChangeTeam(int index)
+    {
+        if (!OnlineSession.IsHost || OnlineSession.GameStarted || launching) return;
+        List<Entry> players = shownView.players;
+        if (players == null || index < 0 || index >= players.Count) return;
+        PlayerTeam[] teams = TeamsOf(players, shownView.teams);
+        int teamA = 0, teamB = 0;
+        foreach (PlayerTeam team in teams)
+        {
+            if (team == PlayerTeam.A) teamA++;
+            else if (team == PlayerTeam.B) teamB++;
+        }
+        teams[index] = TagTeam.NextTeam(teams[index], teamA, teamB);
+        OnlineSession.SetTeams(Composition(players, teams));
+    }
+
+    /// <summary>L'hôte tire les équipes au sort (« Équipes au hasard », GDD § 11, TT1).</summary>
+    private void ShuffleTeams()
+    {
+        if (!OnlineSession.IsHost || OnlineSession.GameStarted || launching) return;
+        List<Entry> players = shownView.players;
+        if (players == null) return;
+        OnlineSession.SetTeams(Composition(players, TagTeam.Shuffled(players.Count, new System.Random())));
+    }
+
+    /// <summary>Le salon du Tournoi : tous y jouent, dans l'ordre d'arrivée ; on le lance à trois au moins.</summary>
+    private void ShowTournament(View view, List<Entry> players, MatchRules rules)
+    {
+        var shown = new List<SalonView.Player>();
+        string hostName = "";
+        foreach (Entry entry in players)
+        {
+            if (entry.host) hostName = entry.name;
+            shown.Add(new SalonView.Player
+            {
+                name = entry.name,
+                paint = entry.paint,
+                role = SalonView.TournamentRole(entry.host, entry.local),
+                local = entry.local,
+            });
+        }
+        bool enough = players.Count >= Tournament.MinPlayers;
+        string status = statusText;
+        bool error = statusIsError;
+        if (view.started)
+        {
+            status = view.host ? "Lancement du tournoi…" : "Le tournoi démarre…";
+            error = false;
+        }
+        else if (!statusIsError)
+        {
+            status = !view.host ? "En attente du lancement par l'hôte…"
+                : enough ? "Lance le tournoi quand tout le monde est là."
+                : "Il faut trois joueurs au moins pour lancer le tournoi.";
+        }
+        salon.Show(new SalonView.Model
+        {
+            eyebrow = string.IsNullOrEmpty(hostName) ? "SALON · EN LIGNE" : $"SALON DE {hostName.ToUpperInvariant()} · EN LIGNE",
+            mode = GameModeCatalog.ModeOf(rules),
+            rules = rules,
+            host = view.host,
+            editable = view.host && !view.started,
+            inviteCaption = "CODE",
+            inviteValue = string.IsNullOrEmpty(view.code) ? "······" : view.code,
+            players = shown,
+            phrase = SalonView.TournamentPhrase(players.Count),
+            status = status,
+            statusError = error,
+            canLaunch = view.host && !busy && !view.started && enough,
+            leaveLabel = "QUITTER LE SALON",
+        });
+    }
+
+    private static SalonView.Player Shown(Entry entry, bool duelist, int queuePosition, bool drawn) => new SalonView.Player
+    {
+        name = entry.name,
+        paint = entry.paint,
+        role = SalonView.Role(duelist, queuePosition, drawn, entry.host, entry.local),
+        local = entry.local,
+    };
 
     /// <summary>Un joueur pour un aperçu de l'écran (ShowPreview).</summary>
     public static Entry PreviewEntry(string name, Color32 paint, bool host, bool local) => new Entry(name, name, paint, host, local);
@@ -359,222 +504,14 @@ public class LobbyController : MonoBehaviour
 
     private IReadOnlyList<Color32> Palette => characterPreview != null ? characterPreview.Palette : Array.Empty<Color32>();
 
-    private void RenderHeadline(bool host, bool started, int playerCount)
-    {
-        bool waiting;
-        if (started)
-        {
-            headline.text = "LANCEMENT";
-            subline.text = "L'ARÈNE SE CHARGE…";
-            waiting = true;
-        }
-        else if (playerCount < DuelRoster.DuelistSlots)
-        {
-            headline.text = "MATCH EN ATTENTE";
-            subline.text = "EN ATTENTE D'UN ADVERSAIRE…";
-            waiting = true;
-        }
-        else if (host)
-        {
-            headline.text = "PRÊT AU COMBAT";
-            subline.text = "LANCE LA PARTIE QUAND TU VEUX";
-            waiting = false;
-        }
-        else
-        {
-            headline.text = "MATCH EN ATTENTE";
-            subline.text = "EN ATTENTE DU LANCEMENT PAR L'HÔTE…";
-            waiting = true;
-        }
-        spinner.EnableInClassList("hidden", !waiting);
-    }
-
-    private void RenderDuelists(LobbyLineup<Entry> lineup, int playerCount)
-    {
-        if (lineup.drawn)
-        {
-            // Le tirage au sort : personne ne sait d'avance qui commence.
-            ShowDuelist(duelists[0], false, default, "DUELLISTE 1", "?", "Tiré au sort au lancement.");
-            ShowDuelist(duelists[1], false, default, "DUELLISTE 2", "?", "Tiré au sort au lancement.");
-            return;
-        }
-        ShowDuelist(duelists[0], lineup.hasFirst, lineup.first, "DUELLISTE 1", "", "");
-        if (lineup.secondKnown)
-            ShowDuelist(duelists[1], true, lineup.second, "DUELLISTE 2", "", "");
-        else
-            ShowDuelist(duelists[1], false, default, "DUELLISTE 2", "EN ATTENTE…",
-                playerCount == 0 ? "" : "Donne le code du salon à ton adversaire.");
-    }
-
-    private void ShowDuelist(DuelistCard view, bool known, Entry entry, string role, string unknownName, string unknownStatus)
-    {
-        view.card.EnableInClassList("duelist-card--self", known && entry.local);
-        view.unknown.EnableInClassList("hidden", known);
-        view.role.text = known && entry.host ? role + " · HÔTE" : role;
-        view.name.text = known ? entry.name.ToUpperInvariant() : unknownName;
-        view.status.text = known ? (entry.local ? "PRÊT · TOI" : "PRÊT") : unknownStatus;
-        view.status.EnableInClassList("duelist-card__status--waiting", !known);
-        RequestPortrait(view.portrait, known ? entry.paint : default, !known, known ? entry.chassis : ChassisId.CT01);
-    }
-
-    private void RequestPortrait(VisualElement target, Color32 paint, bool silhouette, ChassisId chassis)
-    {
-        if (thumbnails == null || target == null) return;
-        var shot = new MenuThumbnails.RobotShot
-        {
-            paint = paint,
-            silhouette = silhouette,
-            chassis = chassis,
-            time = 0.4f,
-            yaw = -18f,
-            framing = MenuThumbnails.Framing.Bust,
-            width = 300,
-            height = 330,
-        };
-        // La vignette arrive plus tard : la carte a pu changer de joueur entre-temps.
-        string key = silhouette ? "silhouette" : $"{(int)chassis}/{paint.r},{paint.g},{paint.b}";
-        target.userData = key;
-        thumbnails.Robot(shot, texture =>
-        {
-            if (!Equals(target.userData, key) || texture is not RenderTexture rt) return;
-            target.style.backgroundImage = new StyleBackground(Background.FromRenderTexture(rt));
-        });
-    }
-
-    private void RenderStands(LobbyLineup<Entry> lineup, MatchRules rules)
-    {
-        queueList.Clear();
-        foreach (Entry entry in lineup.stands) queueList.Add(StandRow(entry, queueList.childCount + 1, lineup.drawn));
-        for (int i = 0; i < lineup.freeStands; i++) queueList.Add(FreeRow());
-
-        int standPlaces = lineup.stands.Count + lineup.freeStands;
-        if (lineup.drawn)
-        {
-            queueTitle.text = $"DANS LE TIRAGE  {lineup.stands.Count}/{standPlaces}";
-            queueHint.text = standPlaces <= DuelRoster.DuelistSlots
-                ? "Deux places : un duel sans tribune."
-                : "Deux d'entre eux seront tirés au sort au lancement ; les autres attendront leur tour sur la tribune.";
-            return;
-        }
-        queueTitle.text = standPlaces == 0 ? "SPECTATEURS" : $"SPECTATEURS  {lineup.stands.Count}/{standPlaces}";
-        if (standPlaces == 0)
-            queueHint.text = "Deux places : un duel sans tribune.";
-        else
-            queueHint.text = rules.organization == DuelOrganization.KingOfTheHill
-                ? "Ils attendent leur tour sur la tribune, dans leur ordre d'arrivée : le perdant de chaque match passe au bout de la file."
-                : "Ils regardent le match depuis la tribune.";
-    }
-
-    private static VisualElement StandRow(Entry entry, int rank, bool drawn)
-    {
-        var row = new SlantBox();
-        row.AddToClassList("queue-slot");
-        if (entry.local) row.AddToClassList("queue-slot--self");
-        var logo = new ArenaLogo();
-        logo.AddToClassList("queue-slot__logo");
-        logo.LogoColor = entry.paint;
-        row.Add(logo);
-        row.Add(NewLabel(entry.host ? entry.name + " (hôte)" : entry.name, "queue-slot__name"));
-        string status = drawn ? (entry.local ? "TOI · DANS LE TIRAGE" : "DANS LE TIRAGE")
-                              : entry.local ? $"TOI · EN FILE {rank}" : $"EN FILE {rank}";
-        row.Add(NewLabel(status, "queue-slot__status"));
-        return row;
-    }
-
-    private static VisualElement FreeRow()
-    {
-        var row = new SlantBox();
-        row.AddToClassList("queue-slot");
-        row.AddToClassList("queue-slot--empty");
-        var icon = new VisualElement { pickingMode = PickingMode.Ignore };
-        icon.AddToClassList("queue-slot__empty-icon");
-        row.Add(icon);
-        row.Add(NewLabel("Emplacement libre", "queue-slot__name"));
-        return row;
-    }
-
-    private static Label NewLabel(string text, string ussClass)
-    {
-        var label = new Label(text) { pickingMode = PickingMode.Ignore };
-        label.AddToClassList(ussClass);
-        return label;
-    }
-
     // ------------------------------------------------------------------
-    // L'arène, le mode et les réglages
+    // Les réglages
     // ------------------------------------------------------------------
 
-    private void BuildArena()
-    {
-        MenuArtwork artwork = mainMenu != null ? mainMenu.Artwork : null;
-        arenaName.text = artwork != null ? artwork.arenaName : "ARÈNE DE TEST";
-        map?.SetMap(artwork);
-
-        VisualElement legend = root.Q<VisualElement>("lobbyMapLegend");
-        if (legend == null) return;
-        legend.Clear();
-        legend.Add(LegendItem("map-legend__swatch--spawn", "Points d'apparition A et B"));
-        legend.Add(LegendItem("map-legend__swatch--walkway", "Tribune des spectateurs"));
-        legend.Add(LegendItem("map-legend__swatch--rock", "Blocs (cailloux)"));
-    }
-
-    private static VisualElement LegendItem(string swatchClass, string text)
-    {
-        var item = new VisualElement();
-        item.AddToClassList("map-legend__item");
-        var swatch = new VisualElement();
-        swatch.AddToClassList("map-legend__swatch");
-        swatch.AddToClassList(swatchClass);
-        item.Add(swatch);
-        item.Add(NewLabel(text, "map-legend__label"));
-        return item;
-    }
-
-    private void RenderRules(MatchRules rules, bool host, bool editable, int playerCount)
-    {
-        modeValue.text = GameModeCatalog.Describe(rules);
-        // Les choix du sélecteur : BO5 (premier à 3), BO3 (premier à 2).
-        roundsCycler.SetValueWithoutNotify(rules.roundsToWin == MatchRules.Bo3RoundsToWin ? 1 : 0);
-
-        // On ne réduit pas les places sous le nombre de joueurs déjà là : les choix commencent à ce nombre.
-        capacityFloor = Mathf.Clamp(playerCount, MatchRules.MinCapacity, MatchRules.MaxCapacity);
-        var capacities = new List<string>();
-        for (int c = capacityFloor; c <= MatchRules.MaxCapacity; c++) capacities.Add(c.ToString());
-        capacityCycler.Choices = capacities;
-        capacityCycler.SetValueWithoutNotify(Mathf.Max(0, rules.capacity - capacityFloor));
-        kingToggle.SetValueWithoutNotify(rules.organization == DuelOrganization.KingOfTheHill);
-        interventionsToggle.SetValueWithoutNotify(rules.spectatorInterventions);
-        randomToggle.SetValueWithoutNotify(rules.randomDuelists);
-        roundsCycler.SetEnabled(editable);
-        capacityCycler.SetEnabled(editable);
-        kingToggle.SetEnabled(editable);
-        interventionsToggle.SetEnabled(editable);
-        randomToggle.SetEnabled(editable);
-
-        rulesHint.text = host
-            ? "Chaque changement s'affiche aussitôt chez les autres joueurs du salon."
-            : "Seul l'hôte change les réglages.";
-    }
-
-    private void OnRoundsChanged(ChangeEvent<int> evt)
-        => ChangeRules(r => { r.roundsToWin = (byte)(evt.newValue == 1 ? MatchRules.Bo3RoundsToWin : MatchRules.Bo5RoundsToWin); return r; });
-
-    private void OnCapacityChanged(ChangeEvent<int> evt)
-        => ChangeRules(r => { r.capacity = (byte)(capacityFloor + evt.newValue); return r; });
-
-    private void OnKingChanged(ChangeEvent<bool> evt)
-        => ChangeRules(r => { r.organization = evt.newValue ? DuelOrganization.KingOfTheHill : DuelOrganization.FixedDuelists; return r; });
-
-    private void OnInterventionsChanged(ChangeEvent<bool> evt)
-        => ChangeRules(r => { r.spectatorInterventions = evt.newValue; return r; });
-
-    private void OnRandomChanged(ChangeEvent<bool> evt)
-        => ChangeRules(r => { r.randomDuelists = evt.newValue; return r; });
-
-    private void ChangeRules(Func<MatchRules, MatchRules> change)
+    private void ChangeRules(MatchRules rules)
     {
         if (!OnlineSession.IsHost || OnlineSession.GameStarted || launching) return;
-        MatchRules rules = change(OnlineSession.Rules).Sanitized();
+        rules = rules.Sanitized();
         GameSettings.HostRules = rules;  // retenus pour la prochaine partie, en ligne ou en réseau local
         OnlineSession.SetRules(rules);   // publiés aux autres (envoi regroupé)
     }
@@ -586,11 +523,13 @@ public class LobbyController : MonoBehaviour
         string organization = r.organization == DuelOrganization.FixedDuelists ? "duellistes fixes" : "roi de la colline";
         string interventions = r.spectatorInterventions ? "spectateurs actifs" : "spectateurs sans interventions";
         string draw = r.randomDuelists ? ", duellistes tirés au sort" : "";
-        return $"Duel {r.Format}, {r.capacity} places, {organization}, {interventions}{draw}.";
+        // Le classique dit « Duel BO5 » ; un autre mode se nomme (« Gun Game, grande échelle »).
+        string mode = r.mode == GameModeId.Classic ? $"Duel {r.Format}" : $"{GameModeCatalog.Name(r.mode)}, {r.Format}";
+        return $"{mode}, {r.capacity} places, {organization}, {interventions}{draw}.";
     }
 
     // ------------------------------------------------------------------
-    // Lancer, quitter, copier
+    // Lancer, quitter
     // ------------------------------------------------------------------
 
     private async void OnStartClicked()
@@ -610,7 +549,15 @@ public class LobbyController : MonoBehaviour
         // L'ordre du salon (les duellistes en tête, tirés au sort avec le tirage), que l'arène suivra : tous
         // s'y connectent à la fois, et l'ordre d'arrivée n'y dit plus rien (2026-10-27).
         SessionFlow.LaunchOrder.Clear();
-        SessionFlow.LaunchOrder.AddRange(OnlineSession.LaunchOrder(OnlineSession.Rules.randomDuelists, new System.Random()));
+        MatchRules launched = OnlineSession.Rules.Sanitized();
+        SessionFlow.LaunchOrder.AddRange(OnlineSession.LaunchOrder(launched.randomDuelists && !launched.IsTagTeam, new System.Random()));
+        // Au Tag Team, les équipes du salon : l'arène les reprend (RoundManager), chacune dans l'ordre du salon.
+        SessionFlow.LaunchTeams.Clear();
+        if (launched.IsTagTeam && shownView.players != null)
+        {
+            PlayerTeam[] teams = TeamsOf(shownView.players, OnlineSession.Teams);
+            for (int i = 0; i < shownView.players.Count; i++) SessionFlow.LaunchTeams[shownView.players[i].id] = teams[i];
+        }
         SessionFlow.PrepareConnectionData(nm);           // le pseudo a pu changer depuis le lancement
 
         try
@@ -631,6 +578,7 @@ public class LobbyController : MonoBehaviour
         {
             Debug.LogWarning($"[En ligne] Lancement de la partie : {e}");
             SessionFlow.LaunchOrder.Clear();
+            SessionFlow.LaunchTeams.Clear();
             if (this == null) return;
             launching = false;
             SetStatus(OnlineSession.DescribeError(e), true);
@@ -643,6 +591,8 @@ public class LobbyController : MonoBehaviour
 
     private async void OnLeaveClicked()
     {
+        // Pendant une demande au service, on ne quitte pas, sauf pour renoncer au lancement.
+        if (busy && !launching) return;
         bool wasHost = OnlineSession.IsHost;
         launching = false;
         SetBusy(true);
@@ -663,15 +613,6 @@ public class LobbyController : MonoBehaviour
         mainMenu.ShowPlayStatus(message, true);
     }
 
-    private void CopyCode()
-    {
-        string code = OnlineSession.Code;
-        if (string.IsNullOrEmpty(code)) return;
-        GUIUtility.systemCopyBuffer = code;
-        copyLabel.text = "COPIÉ !";
-        copiedUntil = Time.unscaledTime + 1.5f;
-    }
-
     private void SetBusy(bool value)
     {
         busy = value;
@@ -682,7 +623,7 @@ public class LobbyController : MonoBehaviour
     private void SetStatus(string message, bool isError)
     {
         statusIsError = isError && !string.IsNullOrEmpty(message);
-        statusLabel.text = message;
-        statusLabel.EnableInClassList("da-status--error", isError);
+        statusText = message ?? "";
+        Render();
     }
 }

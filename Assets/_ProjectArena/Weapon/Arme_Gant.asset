@@ -1,0 +1,119 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe33acf964d9c684b81db736a07bf7db, type: 3}
+  m_Name: Arme_Gant
+  m_EditorClassIdentifier: DuelArena.Runtime::WeaponData
+  weaponName: Gant
+  family: 0
+  role: "la derni\xE8re marche du Gun Game : le gant seul, sans arme \xE0 feu"
+  modelPrefab: {fileID: 0}
+  acceptedAttachments: 63
+  acceptedSights: 23
+  acceptedMagazines: 3
+  acceptedBarrels: 15
+  attachmentCatalog: {fileID: 0}
+  damagePerHit: 17
+  shotsPerSecond: 7
+  isAutomatic: 1
+  maxRange: 60
+  headMultiplier: 1.4
+  legsMultiplier: 1
+  falloffStart: 0
+  falloffEnd: 0
+  minDamageMultiplier: 1
+  pelletPattern: []
+  aimPatternScale: 1
+  hipSpread: 0
+  hipSpreadMoving: 0
+  hipSpreadPerShot: 0
+  hipSpreadMaxBloom: 0
+  hipSpreadRecovery: 4
+  aimCurve: 0
+  killKnockback: 0
+  killKnockbackLift: 0
+  raiseTime: 0.2
+  moveSpeedMultiplier: 1
+  aimTime: 0.125
+  scopeMagnification: 1
+  hipCrosshair: 0
+  shotIsBeam: 0
+  tracerColor: {r: 1, g: 0.85, b: 0.4, a: 1}
+  worldMask:
+    serializedVersion: 2
+    m_Bits: 1
+  hitboxMask:
+    serializedVersion: 2
+    m_Bits: 128
+  magazineSize: 0
+  reloadDuration: 2.2
+  reloadPerRound: 0
+  reloadsAfterEachShot: 0
+  unarmed: 1
+  reloadCues: []
+  reloadRoundSounds: []
+  reloadEndSounds: []
+  reloadEndDelay: 0.3
+  reloadVolume: 0.8
+  heatPerShot: 0
+  heatCoolDelay: 0.3
+  heatCoolTime: 2.5
+  overheatVentDuration: 2.5
+  chargeTime: 0
+  unchargedDamage: 0.3
+  chargeSound: {fileID: 0}
+  chargeVolume: 0.7
+  sprintToFireTime: 0
+  recoilPattern:
+  - {x: 0, y: 0.6}
+  - {x: 0, y: 0.85}
+  - {x: 0.15, y: 1.05}
+  - {x: -0.25, y: 1.2}
+  - {x: 0.4, y: 1.3}
+  - {x: -0.5, y: 1.31875}
+  - {x: 0.55, y: 1.3}
+  - {x: -0.5, y: 1.261111}
+  - {x: 0.45, y: 1.2055556}
+  - {x: -0.4, y: 1.15}
+  - {x: 0.35, y: 1.1}
+  - {x: 0.159375, y: 1.05}
+  - {x: -0.3, y: 1}
+  recoilPerShotDegrees: 1.2
+  recoilRecoverySpeed: 6
+  recoilResetDelay: 0.35
+  fireSounds: []
+  fireVolume: 0.9
+  firePitchRange: {x: 0.97, y: 1.03}
+  fireFirstSound: {fileID: 0}
+  fireTailSound: {fileID: 0}
+  fireMechanismSounds: []
+  fireMechanismDelay: 0.4
+  fireMechanismVolume: 0.8
+  impactSounds:
+    clips: []
+    volume: 0.8
+    pitchRange: {x: 0.97, y: 1.03}
+  bodyImpactSounds:
+    clips: []
+    volume: 0.8
+    pitchRange: {x: 0.97, y: 1.03}
+  flybySounds:
+    clips: []
+    volume: 0.8
+    pitchRange: {x: 0.97, y: 1.03}
+  dryFireSounds:
+    clips: []
+    volume: 0.8
+    pitchRange: {x: 0.97, y: 1.03}
+  raiseSounds:
+    clips: []
+    volume: 0.8
+    pitchRange: {x: 0.97, y: 1.03}

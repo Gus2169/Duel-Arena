@@ -206,6 +206,20 @@ def materiaux(code, bouche, variante=None, mains=None, fabrique=None):
                              emission=srgb(214, 232, 255), force_emission=1.4)
     M["HoloRouge"] = mat("DA_Hologramme_Rouge", srgb(30, 6, 4), rug=0.4, salete=0.0, variation=0.0,
                                   emission=ROUGE_LUEUR, force_emission=2.4)
+    # le Big D, l'arme du Golden Gun (golden_gun.py) : l'acier inoxydable satiné des photos de l'utilisateur, ou
+    # l'or ; ses gravures, claires sur l'acier, sombres sur l'or ; et sa cartouche, une .45-70 à balle chemisée
+    M["Inox"] = mat("DA_Inox", srgb(168, 170, 172), "acier", rug=0.34, metal=1.0, dessous=srgb(208, 210, 212),
+                             rug_dessous=0.2, bords=0.45, rayures=0.12, salete=0.35, variation=0.04, graine=20)
+    M["Or"] = mat("DA_Or", srgb(222, 172, 66), "laiton", rug=0.3, metal=1.0, dessous=srgb(246, 214, 140),
+                           rug_dessous=0.18, bords=0.5, rayures=0.35, salete=0.3, variation=0.05, graine=21)
+    M["GravureClaire"] = mat("DA_Gravure_Claire", srgb(222, 222, 218), rug=0.65, metal=0.25, salete=0.2,
+                                      variation=0.0)
+    M["GravureSombre"] = mat("DA_Gravure_Sombre", srgb(70, 54, 30), rug=0.55, metal=0.6, salete=0.2, variation=0.0)
+    M["LaitonCartouche"] = mat("DA_Laiton_Cartouche", srgb(206, 162, 82), "laiton", rug=0.3, metal=1.0,
+                                        dessous=srgb(232, 200, 130), rug_dessous=0.2, bords=0.4, rayures=0.25,
+                                        salete=0.35, graine=22)
+    M["Cuivre"] = mat("DA_Cuivre", srgb(196, 112, 74), rug=0.35, metal=1.0, salete=0.3, variation=0.05, graine=23)
+    M["Plomb"] = mat("DA_Plomb", srgb(118, 120, 126), rug=0.55, metal=0.6, salete=0.4, variation=0.06, graine=24)
     if variante == "depareillee":   # une carcasse d'un autre lot, d'un gris plus clair
         M["PeintureGrise"] = mat("DA_Peinture_Grise", srgb(96, 99, 102), "peinture", rug=0.58, dessous=acier_nu,
                                  rug_dessous=0.4, metal_dessous=0.6, bords=0.75, eclats=0.5, rayures=0.6, salete=0.6,

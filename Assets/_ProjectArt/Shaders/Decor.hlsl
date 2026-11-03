@@ -106,6 +106,16 @@ SAMPLER(sampler_MarquageTex);
 // Le rendu de toute la scène (Shader.SetGlobalFloat) : 0 low poly propre, 1 cel-shading, 2 les deux mêlés.
 float _DecorStyle;
 
+// Le replay du coup mortel assombrit le décor autour des robots (KillReplay, le temps du rendu de sa caméra
+// seulement ; 0 partout ailleurs) : de 0 à 1, vers un gris froid presque noir, désaturé.
+float _ReplayDim;
+
+half3 DecorReplayDim(half3 color)
+{
+    half gris = dot(color, half3(0.2126, 0.7152, 0.0722));
+    return lerp(color, gris * half3(0.15, 0.16, 0.19), (half)_ReplayDim);
+}
+
 #include "UsureBlender.hlsl"
 
 // --- le repère ------------------------------------------------------------------------------------

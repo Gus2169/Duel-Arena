@@ -1,0 +1,114 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:da="DuelArena.UI">
+    <!-- Le salon (2026-11-02, d'après la maquette retenue par l'utilisateur, « B · Salon ») : les joueurs en
+         liste à gauche ; à droite les réglages de la partie, les essentiels visibles et le reste sous « Plus
+         de réglages », puis l'image de l'arène ; au pied, la partie en une ligne et « Lancer la partie ».
+         Le même gabarit sert au salon du menu (LobbyController) et à celui de l'arène (SalonPanel), par
+         SalonView, qui retrouve ses éléments par nom. Les rangées des réglages et les joueurs sont créés
+         par SalonView. Le document hôte charge Theme.uss. -->
+    <ui:Style src="SalonView.uss" />
+    <ui:VisualElement name="salonView" class="salon-view">
+
+        <!-- Le mode, son nom en grand, et le code à donner -->
+        <ui:VisualElement class="salon-view__head">
+            <ui:VisualElement class="salon-view__title-block">
+                <ui:Label name="salonEyebrow" class="salon-view__eyebrow" text="SALON" />
+                <ui:VisualElement class="salon-view__title-row">
+                    <ui:Label name="salonModeName" class="salon-view__mode" text="CLASSIQUE" />
+                    <ui:Button name="salonChangeMode" class="da-btn salon-view__change" focusable="false">
+                        <da:SlantBox class="slant-bg" />
+                        <ui:Label class="da-btn__label" text="CHANGER DE MODE" picking-mode="Ignore" />
+                    </ui:Button>
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:VisualElement class="salon-view__spacer" />
+            <ui:VisualElement name="salonCodeBlock" class="salon-view__code-block">
+                <ui:Label name="salonCodeCaption" class="salon-view__code-caption" text="CODE" />
+                <ui:Label name="salonCode" class="salon-view__code" text="······" />
+                <ui:Button name="salonCopy" class="da-btn salon-view__copy" focusable="false">
+                    <da:SlantBox class="slant-bg" />
+                    <ui:VisualElement class="da-btn__icon ico-copy" picking-mode="Ignore" />
+                    <ui:Label name="salonCopyLabel" class="da-btn__label" text="COPIER" picking-mode="Ignore" />
+                </ui:Button>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement class="salon-view__body">
+            <!-- Les joueurs : leur couleur, leur nom, leur rôle ; les places libres en pointillés. Au Tag Team, rangés
+                 par équipe, et l'hôte les tire au sort. -->
+            <ui:VisualElement class="salon-view__players">
+                <ui:VisualElement class="salon-view__players-head">
+                    <ui:Label name="salonPlayersTitle" class="salon-view__section" text="LES JOUEURS" />
+                    <ui:Button name="salonShuffle" class="da-btn salon-view__shuffle hidden" focusable="false">
+                        <da:SlantBox class="slant-bg" />
+                        <ui:Label class="da-btn__label" text="ÉQUIPES AU HASARD" picking-mode="Ignore" />
+                    </ui:Button>
+                </ui:VisualElement>
+                <ui:VisualElement name="salonPlayerList" class="salon-view__player-list" />
+                <ui:Label name="salonPhrase" class="salon-view__phrase" text="" />
+                <!-- Le tableau de la soirée (GDD § 14) : qui a gagné quoi depuis l'ouverture de la partie, et le dernier
+                     match. Caché tant qu'aucun match n'est fini (au salon du menu, toujours). -->
+                <ui:VisualElement name="salonEvening" class="salon-view__evening hidden">
+                    <ui:Label name="salonEveningTitle" class="salon-view__section" text="LA SOIRÉE" />
+                    <ui:VisualElement name="salonEveningList" class="salon-view__evening-list" />
+                    <ui:Label name="salonEveningLast" class="salon-view__evening-last" text="" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+            <!-- Les réglages, puis l'arène -->
+            <ui:VisualElement class="salon-view__side">
+                <da:SlantBox class="da-panel salon-view__settings">
+                    <ui:Label class="salon-view__section" text="RÉGLAGES" />
+                    <ui:VisualElement name="salonEssentials" class="salon-view__rows" />
+                    <ui:Button name="salonMore" class="salon-view__more" focusable="false">
+                        <ui:VisualElement name="salonMoreIcon" class="salon-view__more-icon ico-chevron-right" picking-mode="Ignore" />
+                        <ui:Label name="salonMoreLabel" class="salon-view__more-label" text="PLUS DE RÉGLAGES" picking-mode="Ignore" />
+                    </ui:Button>
+                    <ui:VisualElement name="salonAdvanced" class="salon-view__rows salon-view__rows--advanced hidden" />
+                    <ui:Label name="salonHint" class="salon-view__hint" text="" />
+                </da:SlantBox>
+                <ui:VisualElement name="salonArena" class="salon-view__arena">
+                    <ui:VisualElement name="salonArenaImage" class="salon-view__arena-image" picking-mode="Ignore" />
+                    <ui:VisualElement class="salon-view__arena-caption" picking-mode="Ignore">
+                        <ui:Label class="salon-view__arena-kicker" text="L'ARÈNE" picking-mode="Ignore" />
+                        <ui:Label name="salonArenaName" class="salon-view__arena-name" text="" picking-mode="Ignore" />
+                    </ui:VisualElement>
+                    <da:SlantBox class="salon-view__arena-edge" picking-mode="Ignore" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Quitter, la partie en une ligne, lancer -->
+        <ui:VisualElement class="salon-view__foot">
+            <ui:Button name="salonLeave" class="da-btn salon-view__leave ui-back" focusable="false">
+                <da:SlantBox class="slant-bg" />
+                <ui:VisualElement class="da-btn__icon ico-exit" picking-mode="Ignore" />
+                <ui:Label name="salonLeaveLabel" class="da-btn__label" text="QUITTER LE SALON" picking-mode="Ignore" />
+            </ui:Button>
+            <ui:VisualElement class="salon-view__foot-text">
+                <ui:Label name="salonStatus" class="da-status salon-view__status" text="" />
+                <ui:Label name="salonSummary" class="salon-view__summary" text="" />
+            </ui:VisualElement>
+            <ui:Button name="salonLaunch" class="da-btn da-btn--primary salon-view__launch ui-confirm" focusable="false">
+                <da:SlantBox class="slant-bg" />
+                <ui:VisualElement class="da-btn__icon ico-play" picking-mode="Ignore" />
+                <ui:Label class="da-btn__label" text="LANCER LA PARTIE" picking-mode="Ignore" />
+            </ui:Button>
+        </ui:VisualElement>
+
+        <!-- Changer de mode : les modes de l'écran Jouer, ceux à venir verrouillés -->
+        <ui:VisualElement name="salonModeWindow" class="modal-overlay salon-view__window hidden">
+            <da:SlantBox class="modal salon-view__window-panel">
+                <ui:VisualElement class="salon-view__window-head">
+                    <ui:Label class="salon-view__window-title" text="CHANGER DE MODE" />
+                    <ui:VisualElement class="salon-view__spacer" />
+                    <ui:Button name="salonModeClose" class="da-btn salon-view__window-close ui-back" focusable="false">
+                        <da:SlantBox class="slant-bg" />
+                        <ui:Label class="da-btn__label" text="FERMER" picking-mode="Ignore" />
+                    </ui:Button>
+                </ui:VisualElement>
+                <ui:VisualElement name="salonModeList" class="salon-view__mode-list" />
+                <ui:Label class="salon-view__hint" text="Les joueurs restent dans le salon ; les réglages suivent le nouveau mode." />
+            </da:SlantBox>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

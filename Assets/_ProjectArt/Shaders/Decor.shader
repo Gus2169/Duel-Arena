@@ -355,7 +355,7 @@ Shader "DuelArena/Decor"
                     color = UniversalFragmentPBR(inputData, surfaceData).rgb;
                 }
                 color = MixFog(color, inputData.fogCoord);
-                outColor = half4(color, 1);
+                outColor = half4(DecorReplayDim(color), 1);
             #ifdef _WRITE_RENDERING_LAYERS
                 outRenderingLayers = EncodeMeshRenderingLayer();
             #endif
@@ -421,7 +421,7 @@ Shader "DuelArena/Decor"
 
             half4 ContourFragment(Varyings input) : SV_Target
             {
-                return half4(MixFog(_CouleurContour.rgb, input.fog), 1.0);
+                return half4(DecorReplayDim(MixFog(_CouleurContour.rgb, input.fog)), 1.0);
             }
             ENDHLSL
         }

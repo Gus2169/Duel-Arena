@@ -5,6 +5,7 @@
          contrôleurs, qui retrouvent leurs éléments par nom. -->
     <ui:Template name="OptionsPanel" src="../Shared/OptionsPanel.uxml" />
     <ui:Template name="PlayerCard" src="../Shared/PlayerCard.uxml" />
+    <ui:Template name="SalonView" src="../Shared/SalonView.uxml" />
     <ui:Style src="../Shared/Theme.uss" />
     <ui:Style src="MainMenu.uss" />
     <ui:VisualElement name="root" class="root da-vars da-font" picking-mode="Position">
@@ -159,15 +160,16 @@
                     </ui:VisualElement>
                 </ui:VisualElement>
 
-                <!-- Le détail de ce qui est choisi, et son action -->
+                <!-- La fiche de ce qui est choisi, et son action (maquette « A · Jouer ») : l'image en haut, le
+                     nom, ce qu'il faut savoir, puis le bouton -->
                 <da:SlantBox class="da-panel play-detail">
-                    <ui:VisualElement class="play-detail__head">
-                        <ui:VisualElement name="playDetailIcon" class="da-icon play-detail__icon" />
-                        <ui:Label name="playDetailTitle" class="da-title" text="" />
+                    <ui:VisualElement name="playDetailImage" class="play-detail__image">
+                        <ui:Label name="playDetailCaption" class="play-detail__caption" text="" />
                     </ui:VisualElement>
+                    <ui:Label name="playDetailTitle" class="play-detail__title" text="" />
                     <ui:Label name="playDetailText" class="da-text play-detail__text" text="" />
-                    <ui:VisualElement name="playDetailImage" class="play-detail__image" />
                     <ui:VisualElement name="playDetailFacts" class="play-detail__facts" />
+                    <ui:Label name="playDetailNote" class="play-detail__note" text="" />
                     <ui:VisualElement class="play-detail__spacer" />
                     <ui:Label name="playStatusLabel" class="da-status play-detail__status" text="" />
                     <ui:Button name="playDetailButton" class="da-btn da-btn--primary play-detail__button ui-confirm" focusable="false">
@@ -185,128 +187,11 @@
             </ui:VisualElement>
         </ui:VisualElement>
 
-        <!-- ================= Salon : les duellistes, les spectateurs, l'arène et les réglages ================= -->
+        <!-- ================= Salon (2026-11-02, maquette « B · Salon ») : le gabarit partagé avec le salon de
+             l'arène (SalonView), piloté par LobbyController ================= -->
         <ui:VisualElement name="screenLobby" class="da-screen hidden">
             <da:SlantBox class="da-frame" />
-            <ui:VisualElement class="da-header">
-                <ui:VisualElement class="da-brand">
-                    <da:ArenaLogo class="da-brand__logo" />
-                    <ui:Label class="da-brand__name" text="DUEL ARENA" />
-                </ui:VisualElement>
-                <ui:VisualElement class="lobby-headline-block">
-                    <da:Spinner name="lobbySpinner" class="lobby-spinner" />
-                    <ui:VisualElement>
-                        <ui:Label name="lobbyHeadline" class="lobby-headline" text="MATCH EN ATTENTE" />
-                        <ui:Label name="lobbySubline" class="lobby-subline" text="" />
-                    </ui:VisualElement>
-                </ui:VisualElement>
-                <ui:VisualElement class="da-header__spacer" />
-                <ui:Instance template="PlayerCard" />
-            </ui:VisualElement>
-
-            <ui:VisualElement class="lobby-body">
-                <ui:VisualElement class="lobby-main">
-                    <!-- Les deux duellistes en tête d'affiche, quand on sait qui ils seront -->
-                    <ui:VisualElement class="lobby-versus">
-                        <da:SlantBox name="duelistCard0" class="duelist-card">
-                            <ui:VisualElement name="duelistPortrait0" class="duelist-card__portrait" />
-                            <ui:Label name="duelistUnknown0" class="duelist-card__unknown hidden" text="?" />
-                            <ui:VisualElement class="duelist-card__info">
-                                <ui:Label name="duelistRole0" class="duelist-card__role" text="" />
-                                <ui:Label name="duelistName0" class="duelist-card__name" text="" />
-                                <ui:Label name="duelistStatus0" class="duelist-card__status" text="" />
-                            </ui:VisualElement>
-                        </da:SlantBox>
-                        <ui:Label class="lobby-vs" text="VS" />
-                        <da:SlantBox name="duelistCard1" class="duelist-card">
-                            <ui:VisualElement name="duelistPortrait1" class="duelist-card__portrait" />
-                            <ui:Label name="duelistUnknown1" class="duelist-card__unknown hidden" text="?" />
-                            <ui:VisualElement class="duelist-card__info">
-                                <ui:Label name="duelistRole1" class="duelist-card__role" text="" />
-                                <ui:Label name="duelistName1" class="duelist-card__name" text="" />
-                                <ui:Label name="duelistStatus1" class="duelist-card__status" text="" />
-                            </ui:VisualElement>
-                        </da:SlantBox>
-                    </ui:VisualElement>
-
-                    <!-- Dessous, la tribune : ceux qui attendent leur tour, et les places libres -->
-                    <ui:VisualElement class="lobby-queue-header">
-                        <ui:Label name="lobbyQueueTitle" class="da-section lobby-queue-title" text="SPECTATEURS" />
-                        <ui:Label name="lobbyQueueHint" class="da-hint lobby-queue-hint" text="" />
-                    </ui:VisualElement>
-                    <ui:ScrollView name="lobbyQueueList" class="lobby-queue" vertical-scroller-visibility="Auto" horizontal-scroller-visibility="Hidden" />
-                </ui:VisualElement>
-
-                <!-- À droite, l'arène et ses éléments clés, puis les réglages de la partie -->
-                <da:SlantBox class="da-panel lobby-side">
-                    <ui:VisualElement class="lobby-arena-row">
-                        <ui:Label class="lobby-arena-caption" text="ARÈNE :" />
-                        <ui:Label name="lobbyArenaName" class="lobby-arena-name" text="" />
-                    </ui:VisualElement>
-                    <da:ArenaMapView name="lobbyMap" class="lobby-map" />
-                    <ui:VisualElement name="lobbyMapLegend" class="map-legend" />
-                    <ui:VisualElement class="lobby-rules">
-                        <ui:VisualElement class="lobby-rule">
-                            <ui:Label class="lobby-rule__label" text="MODE" />
-                            <ui:Label name="lobbyModeValue" class="lobby-rule__value" text="" />
-                        </ui:VisualElement>
-                        <ui:VisualElement class="lobby-rule">
-                            <ui:Label class="lobby-rule__label" text="MANCHES" />
-                            <da:OptionCycler name="lobbyRoundsCycler" class="lobby-rule__cycler" choices-text="BO5 · premier à 3;BO3 · premier à 2" loop="true" />
-                        </ui:VisualElement>
-                        <ui:VisualElement class="lobby-rule">
-                            <ui:Label class="lobby-rule__label" text="PLACES" />
-                            <da:OptionCycler name="lobbyCapacityCycler" class="lobby-rule__cycler" />
-                        </ui:VisualElement>
-                        <!-- Ce qui se dit oui ou non : des cases à cocher (2026-10-27) -->
-                        <ui:VisualElement class="lobby-rule">
-                            <ui:Label class="lobby-rule__label" text="ROI DE LA COLLINE" />
-                            <ui:VisualElement class="lobby-rule__check-cell">
-                                <ui:Toggle name="lobbyKingToggle" class="da-check" />
-                            </ui:VisualElement>
-                        </ui:VisualElement>
-                        <ui:VisualElement class="lobby-rule">
-                            <ui:Label class="lobby-rule__label" text="INTERVENTIONS" />
-                            <ui:VisualElement class="lobby-rule__check-cell">
-                                <ui:Toggle name="lobbyInterventionsToggle" class="da-check" />
-                            </ui:VisualElement>
-                        </ui:VisualElement>
-                        <ui:VisualElement class="lobby-rule lobby-rule--last">
-                            <ui:Label class="lobby-rule__label" text="DUELLISTES ALÉATOIRES" />
-                            <ui:VisualElement class="lobby-rule__check-cell">
-                                <ui:Toggle name="lobbyRandomToggle" class="da-check" />
-                            </ui:VisualElement>
-                        </ui:VisualElement>
-                    </ui:VisualElement>
-                    <ui:Label name="lobbyRulesHint" class="da-hint lobby-rules-hint" text="" />
-                    <ui:VisualElement class="lobby-code-block">
-                        <ui:VisualElement class="lobby-code-text">
-                            <ui:Label class="lobby-code-caption" text="CODE DU SALON" />
-                            <ui:Label name="lobbyCodeLabel" class="lobby-code" text="······" />
-                        </ui:VisualElement>
-                        <ui:Button name="lobbyCopyButton" class="da-btn lobby-copy" focusable="false">
-                            <da:SlantBox class="slant-bg" />
-                            <ui:VisualElement class="da-btn__icon ico-copy" picking-mode="Ignore" />
-                            <ui:Label name="lobbyCopyLabel" class="da-btn__label" text="COPIER" picking-mode="Ignore" />
-                        </ui:Button>
-                    </ui:VisualElement>
-                </da:SlantBox>
-            </ui:VisualElement>
-
-            <ui:VisualElement class="da-footer">
-                <ui:Button name="lobbyLeaveButton" class="da-btn lobby-leave ui-back" focusable="false">
-                    <da:SlantBox class="slant-bg" />
-                    <ui:VisualElement class="da-btn__icon ico-exit" picking-mode="Ignore" />
-                    <ui:Label class="da-btn__label" text="QUITTER LE SALON" picking-mode="Ignore" />
-                </ui:Button>
-                <ui:VisualElement class="da-footer__spacer" />
-                <ui:Label name="lobbyStatusLabel" class="da-status lobby-status" text="" />
-                <ui:Button name="lobbyStartButton" class="da-btn da-btn--primary lobby-start ui-confirm" focusable="false">
-                    <da:SlantBox class="slant-bg" />
-                    <ui:VisualElement class="da-btn__icon ico-play" picking-mode="Ignore" />
-                    <ui:Label class="da-btn__label" text="LANCER LA PARTIE" picking-mode="Ignore" />
-                </ui:Button>
-            </ui:VisualElement>
+            <ui:Instance template="SalonView" class="lobby-salon" />
         </ui:VisualElement>
 
         <!-- ================= Personnalisation : le robot et les armes ================= -->

@@ -38,6 +38,8 @@ public static class OnlineSession
     /// <summary>Propriétés du salon : la version du jeu de l'hôte, et les réglages de la partie.</summary>
     public const string VersionKey = "version";
     public const string RulesKey = "regles";
+    /// <summary>Propriété du salon : les équipes du Tag Team que l'hôte compose (2026-11-02, TagTeam.Format).</summary>
+    public const string TeamsKey = "equipes";
 
     /// <summary>Propriété de chaque joueur : son pseudo, tel qu'il l'a tapé (nettoyé).</summary>
     public const string NameKey = "pseudo";
@@ -67,8 +69,9 @@ public static class OnlineSession
     /// connexion à la partie a échoué), avec ce qu'on dit au joueur.</summary>
     public static event Action<string> Ended;
 
-    // Côté hôte : les réglages publiés, qui font la capacité tenue par le verrou.
+    // Côté hôte : les réglages publiés, qui font la capacité tenue par le verrou ; les équipes du Tag Team.
     private static MatchRules hostRules = MatchRules.Default;
+    private static string hostTeams = "";
     private static bool leaving;
     private static bool savingHostState;
     private static bool saveHostStateAgain;
@@ -83,6 +86,7 @@ public static class OnlineSession
         Changed = null;
         Ended = null;
         hostRules = MatchRules.Default;
+        hostTeams = "";
         leaving = false;
         savingHostState = false;
         saveHostStateAgain = false;
@@ -202,6 +206,7 @@ public static class OnlineSession
         await LeaveAsync();
 
         hostRules = rules.Sanitized();
+        hostTeams = "";
         var options = new SessionOptions
         {
             MaxPlayers = MatchRules.MaxCapacity,
@@ -315,6 +320,20 @@ public static class OnlineSession
         Changed?.Invoke();
     }
 
+    /// <summary>Les équipes du Tag Team publiées par l'hôte du salon, par identifiant de joueur (vides tant qu'il n'en
+    /// a pas composé : le salon montre alors les équipes par défaut, TagTeam.AutoTeams).</summary>
+    public static Dictionary<string, PlayerTeam> Teams
+        => TagTeam.Parse(Current == null ? "" : IsHost ? hostTeams : PropertyValue(Current.Properties, TeamsKey));
+
+    /// <summary>Hôte : compose les équipes du Tag Team (envoi regroupé, comme les réglages).</summary>
+    public static void SetTeams(IReadOnlyList<(string id, PlayerTeam team)> teams)
+    {
+        if (!IsHost) return;
+        hostTeams = TagTeam.Format(teams);
+        RequestHostStateSave();
+        Changed?.Invoke();
+    }
+
     // Publie les réglages et le verrou (complet ou non), un envoi à la fois : le service refuse deux
     // modifications concurrentes du même salon.
     private static async void RequestHostStateSave()
@@ -336,6 +355,7 @@ public static class OnlineSession
 
                 IHostSession host = session.AsHost();
                 host.SetProperty(RulesKey, new SessionProperty(FormatRules(hostRules), VisibilityPropertyOptions.Member));
+                host.SetProperty(TeamsKey, new SessionProperty(hostTeams, VisibilityPropertyOptions.Member));
                 host.IsLocked = ShouldLock(host.PlayerCount, hostRules.capacity);
                 await host.SavePropertiesAsync();
             }
@@ -421,6 +441,7 @@ public static class OnlineSession
         if (IsHost)
         {
             hostRules = ParseRules(PropertyValue(Current.Properties, RulesKey));
+            hostTeams = PropertyValue(Current.Properties, TeamsKey);
             RequestHostStateSave();
         }
         Changed?.Invoke();
@@ -516,13 +537,13 @@ public static class OnlineSession
         return builder.ToString();
     }
 
-    /// <summary>Les réglages en propriété du salon : « places;organisation;interventions;manches;tirage »
-    /// (le tirage au sort des duellistes depuis le 2026-10-27). Fonction pure, testée (aller-retour avec
+    /// <summary>Les réglages en propriété du salon : « places;organisation;interventions;manches;tirage;mode »
+    /// (le tirage au sort des duellistes depuis le 2026-10-27, le mode depuis le 2026-11-02). Fonction pure, testée (aller-retour avec
     /// ParseRules).</summary>
     public static string FormatRules(MatchRules rules)
     {
         MatchRules r = rules.Sanitized();
-        return $"{r.capacity};{(int)r.organization};{(r.spectatorInterventions ? 1 : 0)};{r.roundsToWin};{(r.randomDuelists ? 1 : 0)}";
+        return $"{r.capacity};{(int)r.organization};{(r.spectatorInterventions ? 1 : 0)};{r.roundsToWin};{(r.randomDuelists ? 1 : 0)};{(int)r.mode};{(int)r.ladder};{(r.deathMatch ? 1 : 0)};{r.killsToWin};{(int)r.weaponChoice};{(r.headshotsOnly ? 1 : 0)}";
     }
 
     /// <summary>Relit les réglages publiés par l'hôte. Ce qui manque ou ne se lit pas garde sa valeur par
@@ -537,6 +558,17 @@ public static class OnlineSession
         if (parts.Length > 2) rules.spectatorInterventions = parts[2].Trim() != "0";
         if (parts.Length > 3 && byte.TryParse(parts[3], out byte rounds)) rules.roundsToWin = rounds;
         if (parts.Length > 4) rules.randomDuelists = parts[4].Trim() == "1";
+        // Le mode (2026-11-02), en sixième : un salon d'avant joue le classique. Sanitized borne ensuite les
+        // manches selon le mode.
+        if (parts.Length > 5 && int.TryParse(parts[5], out int mode)) rules.mode = (GameModeId)mode;
+        // L'échelle du Gun Game, en septième.
+        if (parts.Length > 6 && byte.TryParse(parts[6], out byte ladder)) rules.ladder = (GunGameLadder)ladder;
+        // Le Death match du classique et ses éliminations, en huitième et neuvième.
+        if (parts.Length > 7) rules.deathMatch = parts[7].Trim() == "1";
+        if (parts.Length > 8 && byte.TryParse(parts[8], out byte kills)) rules.killsToWin = kills;
+        // Le choix de l'arme et Tête seulement (2026-11-03), en dixième et onzième.
+        if (parts.Length > 9 && byte.TryParse(parts[9], out byte choice)) rules.weaponChoice = (WeaponChoice)choice;
+        if (parts.Length > 10) rules.headshotsOnly = parts[10].Trim() == "1";
         return rules.Sanitized();
     }
 

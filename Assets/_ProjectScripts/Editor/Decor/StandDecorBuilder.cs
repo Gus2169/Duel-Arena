@@ -127,7 +127,8 @@ public static class StandDecorBuilder
     // Les blocs
     // ------------------------------------------------------------------
 
-    private static void DressBlocks(Transform decor, IReadOnlyList<Block> blocks, Dictionary<string, Material> materials,
+    /// <summary>Habille des blocs du jeu (leur collider fait foi) : le stand, la salle d'attente du Tournoi.</summary>
+    internal static void DressBlocks(Transform decor, IReadOnlyList<Block> blocks, Dictionary<string, Material> materials,
                                     DecorMeshes.Bank bank, StringBuilder report)
     {
         var root = new GameObject("Blocs habillés").transform;

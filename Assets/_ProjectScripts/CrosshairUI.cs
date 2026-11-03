@@ -201,13 +201,16 @@ public class CrosshairUI : MonoBehaviour
         Vector2 center = RuntimePanelUtils.CameraTransformWorldToPanel(
             reticle.panel, aimCamera.transform.position + aimCamera.transform.forward * 10f, aimCamera);
         bool spectator = matchState != null && matchState.IsSpectator;
-        bool armed = !spectator && weapon != null && weapon.MagazineSize > 0;
+        // Le gant seul (la dernière marche du Gun Game, 2026-11-02) : le point du centre, comme un spectateur, et
+        // « Gant » à la place des munitions.
+        bool gloveOnly = !spectator && weapon != null && weapon.DisplayedUnarmed;
+        bool armed = !spectator && !gloveOnly && weapon != null && weapon.MagazineSize > 0;
         bool scoped = !spectator && firstPersonView != null && firstPersonView.Scoped;
 
-        UpdateReticle(center, height, spectator, armed, scoped);
+        UpdateReticle(center, height, spectator || gloveOnly, armed, scoped);
         UpdateScope(center, scoped);
         UpdateStatic();
-        UpdateAmmo(armed);
+        UpdateAmmo(armed, gloveOnly);
         UpdateHint(center, armed);
     }
 
@@ -247,7 +250,7 @@ public class CrosshairUI : MonoBehaviour
         }
         else reticle.barProgress = -1f;
 
-        reticle.markerKind = !spectator && HitMarker.Alpha(markerKind, markerAge) > 0f ? (int)markerKind : -1;
+        reticle.markerKind = (matchState == null || !matchState.IsSpectator) && HitMarker.Alpha(markerKind, markerAge) > 0f ? (int)markerKind : -1;
         reticle.markerAge = markerAge;
         reticle.MarkDirtyRepaint();
     }
@@ -274,17 +277,23 @@ public class CrosshairUI : MonoBehaviour
     }
 
     /// <summary>Les munitions, ou la chaleur d'une arme laser (GDD § 15, 2026-10-26) : sur un fond sombre, en bas à
-    /// droite, comme la vie en bas à gauche. Les textes ne sont refaits que quand ils changent.</summary>
-    private void UpdateAmmo(bool armed)
+    /// droite, comme la vie en bas à gauche ; au gant seul, son nom. Les textes ne sont refaits que quand ils changent.</summary>
+    private void UpdateAmmo(bool armed, bool gloveOnly)
     {
-        SetVisible(ammoPanel, armed);
-        if (!armed) return;
+        SetVisible(ammoPanel, armed || gloveOnly);
+        if (!armed && !gloveOnly) return;
 
         WeaponData data = weapon.Data;
         if (data != shownData)
         {
             shownData = data;
             weaponNameLabel.text = data != null ? data.weaponName : "";
+        }
+        if (gloveOnly)
+        {
+            SetVisible(ammoRow, false);
+            SetVisible(heatRow, false);
+            return;
         }
 
         bool hot = weapon.DisplayedUsesHeat;

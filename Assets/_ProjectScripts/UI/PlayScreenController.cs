@@ -1,63 +1,40 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 /// <summary>
-/// L'écran Jouer du menu (2026-10-17, d'après la maquette de l'utilisateur) : des onglets, une grille de
-/// cartes, et à droite le détail de la carte choisie avec son action. Posé sur MainMenuUI, à côté de
-/// MainMenuController, qui lui montre l'écran.
+/// L'écran Jouer du menu (2026-10-17, d'après la maquette de l'utilisateur ; refait le 2026-11-02 d'après celle
+/// qu'il a retenue, « A · Jouer ») : des onglets, une grille de cartes, et à droite la fiche de la carte choisie
+/// avec son action. Posé sur MainMenuUI, à côté de MainMenuController, qui lui montre l'écran.
 ///
-/// - MODES DE JEU : les cartes de GameModeCatalog. Une carte jouable ouvre un salon privé avec les
-///   réglages de son mode (LobbyController.Create) ; les autres disent où le jeu va, verrouillées : voilées
-///   de sombre sous un grand cadenas, elles ne se choisissent pas (2026-10-27, demandé par l'utilisateur :
-///   on les voyait trop, on croyait pouvoir les choisir).
+/// - MODES DE JEU : une grille de 3 × 3 cartes, celles de GameModeCatalog : l'icône du mode, son nom, une
+///   ligne, son rythme et ses joueurs. Une carte jouable ouvre un salon privé avec les réglages de départ de
+///   son mode (LobbyController.Create) ; l'organisation et les options se règlent ensuite au salon. Les modes à
+///   venir disent où le jeu va, bien éteints sous un cadenas : ils ne se choisissent pas (2026-10-27, demandé
+///   par l'utilisateur : on croyait pouvoir les choisir).
 /// - SALONS : rejoindre un salon par son code, ou une partie du réseau local (MainMenuController).
 /// - ENTRAÎNEMENT (demandé par l'utilisateur : le stand de tir y vit) : une carte, le stand de tir, la
 ///   Fosse et la salle de précision, qui sont dans la même scène, la Fosse et la salle de part et d'autre
-///   du poste de tir (MainMenuController.StartShootingRange). Deux cartes y menaient au même endroit ;
-///   depuis le 2026-10-27, une seule.
+///   du poste de tir (MainMenuController.StartShootingRange).
 /// - CLASSEMENT : verrouillé, il viendra avec le classé, après la sortie (GDD § 14).
 ///
-/// Les images des cartes : l'arène (MenuArtwork) et, devant, le robot dans une pose et une couleur propres à
-/// chaque mode (MenuThumbnails, réglé par `modeArt`).
+/// La fiche montre l'arène (MenuArtwork) ou le stand, le nom, ce qu'il faut savoir et le bouton.
 /// </summary>
 public class PlayScreenController : MonoBehaviour
 {
-    /// <summary>Le robot d'une carte de mode : sa pose, sa couleur (rang dans la palette), son angle, et un
-    /// second robot en face pour un duel.</summary>
-    [Serializable]
-    public struct ModeArt
-    {
-        public GameModeId mode;
-        public AnimationClip pose;
-        public float time;
-        [Tooltip("Rang de la couleur dans la palette des robots (-1 : silhouette sans couleur).")]
-        public int paint;
-        public float yaw;
-        public bool duo;
-        public AnimationClip duoPose;
-        public float duoTime;
-        public int duoPaint;
-    }
-
     private enum Tab { Modes, Lobbies, Training }
 
     [SerializeField] private UIDocument document;
     [SerializeField] private MainMenuController mainMenu;
     [SerializeField] private LobbyController lobby;
-    [SerializeField] private MenuThumbnails thumbnails;
-    [SerializeField] private CharacterPreviewController characterPreview;
-    [SerializeField] private ModeArt[] modeArt = Array.Empty<ModeArt>();
 
     private VisualElement root;
     private Button tabModes, tabLobbies, tabTraining, tabRanking;
     private VisualElement pageModes, pageLobbies, pageTraining;
     private VisualElement modeGrid, trainingGrid;
-    private VisualElement detailIcon, detailImage, detailFacts;
-    private Label detailTitle, detailText, detailButtonLabel;
+    private VisualElement detailImage, detailFacts;
+    private Label detailCaption, detailTitle, detailText, detailNote, detailButtonLabel;
     private Button detailButton;
-    private string detailIconClass;
 
     private readonly List<(GameModeId id, Button card)> modeCards = new();
     private Button trainingCard;
@@ -78,7 +55,6 @@ public class PlayScreenController : MonoBehaviour
         if (document == null) document = GetComponent<UIDocument>();
         if (mainMenu == null) mainMenu = GetComponent<MainMenuController>();
         if (lobby == null) lobby = GetComponent<LobbyController>();
-        if (characterPreview == null) characterPreview = GetComponent<CharacterPreviewController>();
         root = document.rootVisualElement;
 
         tabModes = root.Q<Button>("playTabModes");
@@ -90,11 +66,12 @@ public class PlayScreenController : MonoBehaviour
         pageTraining = root.Q<VisualElement>("playPageTraining");
         modeGrid = root.Q<VisualElement>("modeGrid");
         trainingGrid = root.Q<VisualElement>("trainingGrid");
-        detailIcon = root.Q<VisualElement>("playDetailIcon");
+        detailImage = root.Q<VisualElement>("playDetailImage");
+        detailCaption = root.Q<Label>("playDetailCaption");
         detailTitle = root.Q<Label>("playDetailTitle");
         detailText = root.Q<Label>("playDetailText");
-        detailImage = root.Q<VisualElement>("playDetailImage");
         detailFacts = root.Q<VisualElement>("playDetailFacts");
+        detailNote = root.Q<Label>("playDetailNote");
         detailButton = root.Q<Button>("playDetailButton");
         detailButtonLabel = root.Q<Label>("playDetailButtonLabel");
 
@@ -119,7 +96,6 @@ public class PlayScreenController : MonoBehaviour
     {
         Wire();
         ShowTab(tab);
-        RequestArt();
     }
 
     /// <summary>Une demande au service en ligne est en cours : pas de second salon.</summary>
@@ -157,14 +133,12 @@ public class PlayScreenController : MonoBehaviour
             for (int i = start; i < Mathf.Min(start + columns, modes.Count); i++)
             {
                 GameMode mode = modes[i];
-                bool locked = !mode.CanCreate;
-                // Une rangée incomplète se termine par des places vides (Spacer) : la dernière carte n'en est pas le bout.
-                Button card = NewCard(mode.title, mode.subtitle, mode.icon, GameModeCatalog.Badge(mode.availability),
-                    mode.availability == GameModeAvailability.InClassic, locked, i == start + columns - 1);
+                Button card = NewCard(mode.icon, mode.title, mode.line, mode.rhythm, mode.players,
+                    GameModeCatalog.Badge(mode.availability), i == start + columns - 1);
                 GameModeId id = mode.id;
                 card.clicked += () => SelectMode(id);
                 // Un mode verrouillé ne se choisit pas : ni survol, ni clic.
-                if (locked) card.SetEnabled(false);
+                if (!mode.CanCreate) card.SetEnabled(false);
                 row.Add(card);
                 modeCards.Add((id, card));
             }
@@ -179,21 +153,24 @@ public class PlayScreenController : MonoBehaviour
     private static VisualElement Spacer(bool rowEnd)
     {
         var spacer = new VisualElement { pickingMode = PickingMode.Ignore };
-        spacer.AddToClassList("mode-card");
-        spacer.AddToClassList("mode-card--spacer");
-        if (rowEnd) spacer.AddToClassList("mode-card--row-end");
+        spacer.AddToClassList("mode-tile");
+        spacer.AddToClassList("mode-tile--spacer");
+        if (rowEnd) spacer.AddToClassList("mode-tile--row-end");
         return spacer;
     }
 
     private void BuildTrainingCards()
     {
         trainingGrid.Clear();
-        VisualElement row = NewRow(true);
-        trainingCard = NewCard("STAND DE TIR ET FOSSE", "SEUL · HORS LIGNE", "ico-target", "", false, false, false);
+        VisualElement row = NewRow(false);
+        trainingCard = NewCard("ico-target", "STAND DE TIR ET FOSSE",
+            "Les armes et leurs accessoires, la Fosse chronométrée, la salle de précision.", "SEUL", "HORS LIGNE", "", false);
         row.Add(trainingCard);
+        row.Add(Spacer(false));
         row.Add(Spacer(true));
         trainingGrid.Add(row);
-        // Une seule rangée : elle prend la moitié de la hauteur, comme deux grandes cartes.
+        // Une rangée sur trois : la carte a la taille de celles des modes.
+        trainingGrid.Add(NewRow(false));
         trainingGrid.Add(NewRow(true));
         RefreshCards();
     }
@@ -206,39 +183,36 @@ public class PlayScreenController : MonoBehaviour
         return row;
     }
 
-    /// <summary>Une carte : l'image en fond, le robot devant, un voile sombre en bas, le titre ; un badge
-    /// et un cadenas pour ce qui n'existe pas encore ; le liseré par-dessus tout.</summary>
-    private static Button NewCard(string title, string subtitle, string icon, string badge, bool liveBadge, bool locked, bool rowEnd)
+    /// <summary>Une carte : l'icône et l'étiquette en haut (« CHOISI », ou « BIENTÔT » sous un cadenas pour ce
+    /// qui n'existe pas encore), le nom, une ligne, puis le rythme et les joueurs ; le liseré par-dessus.</summary>
+    private static Button NewCard(string icon, string title, string line, string rhythm, string players, string badge, bool rowEnd)
     {
         var card = new Button { focusable = false };
-        card.AddToClassList("mode-card");
+        card.AddToClassList("mode-tile");
         card.AddToClassList("ui-select");
-        if (rowEnd) card.AddToClassList("mode-card--row-end");
-        if (locked) card.AddToClassList("mode-card--locked");
+        if (rowEnd) card.AddToClassList("mode-tile--row-end");
+        bool locked = !string.IsNullOrEmpty(badge);
+        if (locked) card.AddToClassList("mode-tile--locked");
 
-        card.Add(Part("mode-card__art"));
-        card.Add(Part("mode-card__shade", new DuelArena.UI.GradientFill()));
-        if (locked)
-        {
-            VisualElement veil = Part("mode-card__lock");
-            veil.Add(Part("mode-card__lock-icon"));
-            card.Add(veil);
-        }
-        VisualElement iconElement = Part("mode-card__icon");
+        VisualElement top = Part("mode-tile__top");
+        VisualElement iconElement = Part("mode-tile__icon");
         iconElement.AddToClassList(icon);
-        card.Add(iconElement);
-        if (!string.IsNullOrEmpty(badge))
-        {
-            var badgeLabel = new Label(badge) { pickingMode = PickingMode.Ignore };
-            badgeLabel.AddToClassList("mode-card__badge");
-            if (liveBadge) badgeLabel.AddToClassList("mode-card__badge--live");
-            card.Add(badgeLabel);
-        }
-        VisualElement text = Part("mode-card__text");
-        text.Add(NewLabel(title, "mode-card__title"));
-        text.Add(NewLabel(subtitle, "mode-card__subtitle"));
-        card.Add(text);
-        card.Add(Part("mode-card__edge", new DuelArena.UI.SlantBox()));
+        top.Add(iconElement);
+        if (locked) top.Add(Part("mode-tile__lock"));
+        top.Add(Part("mode-tile__spacer"));
+        Label tag = NewLabel(badge, "mode-tile__tag");
+        tag.EnableInClassList("hidden", !locked);
+        top.Add(tag);
+        card.Add(top);
+
+        card.Add(NewLabel(title, "mode-tile__title"));
+        card.Add(NewLabel(line, "mode-tile__line"));
+        card.Add(Part("mode-tile__fill"));
+        VisualElement chips = Part("mode-tile__chips");
+        chips.Add(NewLabel(rhythm, "mode-tile__chip"));
+        chips.Add(NewLabel(players, "mode-tile__chip"));
+        card.Add(chips);
+        card.Add(Part("mode-tile__edge", new DuelArena.UI.SlantBox()));
         return card;
     }
 
@@ -266,82 +240,22 @@ public class PlayScreenController : MonoBehaviour
 
     private void RefreshCards()
     {
-        foreach ((GameModeId id, Button card) in modeCards) card.EnableInClassList("mode-card--selected", id == selectedMode);
-        trainingCard?.AddToClassList("mode-card--selected");
-    }
-
-    // ------------------------------------------------------------------
-    // Les images : l'arène derrière, le robot devant
-    // ------------------------------------------------------------------
-
-    private void RequestArt()
-    {
-        MenuArtwork artwork = Artwork;
-        for (int i = 0; i < modeCards.Count; i++)
+        foreach ((GameModeId id, Button card) in modeCards)
         {
-            Button card = modeCards[i].card;
-            VisualElement backdrop = card.Q<VisualElement>(className: "mode-card__art");
-            SetBackground(backdrop, artwork != null ? artwork.arenaOverview : null);
-            // Chaque carte cadre un autre coin de l'arène : les images de la maquette sont toutes différentes.
-            if (backdrop != null)
-            {
-                backdrop.style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Left, Length.Percent(i % 3 * 50f));
-                backdrop.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Top, Length.Percent(i / 3 * 50f));
-            }
-            if (card.Q<VisualElement>(className: "mode-card__robot") != null) continue;
-            ModeArt art = ArtFor(modeCards[i].id, out bool found);
-            if (!found || thumbnails == null) continue;
-            if (art.duo)
-            {
-                AddRobot(card, art.pose, art.time, art.paint, 35f, "mode-card__robot--left");
-                AddRobot(card, art.duoPose != null ? art.duoPose : art.pose, art.duoTime, art.duoPaint, -35f, "mode-card__robot--right");
-            }
-            else
-            {
-                AddRobot(card, art.pose, art.time, art.paint, art.yaw, "mode-card__robot--center");
-            }
+            if (!card.enabledSelf) continue;   // un mode verrouillé garde son étiquette
+            ShowChosen(card, id == selectedMode);
         }
-        if (trainingCard != null) SetBackground(trainingCard.Q<VisualElement>(className: "mode-card__art"), artwork != null ? artwork.rangeImage : null);
+        if (trainingCard != null) ShowChosen(trainingCard, true);
     }
 
-    private ModeArt ArtFor(GameModeId id, out bool found)
+    /// <summary>La carte choisie est cernée de jaune et dit « CHOISI ».</summary>
+    private static void ShowChosen(Button card, bool chosen)
     {
-        foreach (ModeArt art in modeArt)
-        {
-            if (art.mode != id) continue;
-            found = true;
-            return art;
-        }
-        found = false;
-        return default;
-    }
-
-    /// <summary>Le robot d'une carte, posé derrière le voile (il se fond dans le bas de la carte).</summary>
-    private void AddRobot(Button card, AnimationClip pose, float time, int paint, float yaw, string placement)
-    {
-        VisualElement robot = Part("mode-card__robot");
-        robot.AddToClassList(placement);
-        // Juste après l'image de fond : sous le voile, le titre et le liseré.
-        card.Insert(1, robot);
-        var shot = new MenuThumbnails.RobotShot
-        {
-            paint = PaletteColor(paint),
-            silhouette = paint < 0,
-            pose = pose,
-            time = time,
-            yaw = yaw,
-            framing = MenuThumbnails.Framing.FullBody,
-            width = 300,
-            height = 360,
-        };
-        thumbnails.Robot(shot, texture => SetBackground(robot, texture));
-    }
-
-    private Color32 PaletteColor(int index)
-    {
-        IReadOnlyList<Color32> palette = characterPreview != null ? characterPreview.Palette : Array.Empty<Color32>();
-        if (palette.Count == 0) return new Color32(244, 190, 28, 255);
-        return palette[Mathf.Clamp(index, 0, palette.Count - 1)];
+        card.EnableInClassList("mode-tile--selected", chosen);
+        Label tag = card.Q<Label>(className: "mode-tile__tag");
+        if (tag == null) return;
+        tag.text = chosen ? "CHOISI" : "";
+        tag.EnableInClassList("hidden", !chosen);
     }
 
     private static void SetBackground(VisualElement element, Texture texture)
@@ -364,47 +278,38 @@ public class PlayScreenController : MonoBehaviour
         if (detailTitle == null) return;
         detailFacts.Clear();
         MenuArtwork artwork = Artwork;
+        string arena = artwork != null && !string.IsNullOrEmpty(artwork.arenaName) ? $"ARÈNE · {artwork.arenaName.ToUpperInvariant()}" : "";
         switch (tab)
         {
             case Tab.Modes:
             {
                 GameMode mode = GameModeCatalog.Get(selectedMode);
-                SetDetail(mode.icon, mode.title, mode.description, artwork != null ? artwork.arenaOverview : null);
-                if (mode.CanCreate)
-                {
-                    MatchRules rules = GameModeCatalog.RulesFor(mode.id);
-                    AddFact("PLACES", rules.capacity <= MatchRules.MinCapacity ? $"{rules.capacity}, jusqu'à {MatchRules.MaxCapacity} au salon" : rules.capacity.ToString());
-                    AddFact("ROI DE LA COLLINE", rules.organization == DuelOrganization.KingOfTheHill ? "Oui" : "Non, au choix du salon");
-                    AddFact("SPECTATEURS", rules.capacity <= DuelRoster.DuelistSlots ? "Aucun"
-                        : rules.spectatorInterventions ? "Interviennent" : "Regardent");
-                    AddFact("MANCHES", $"{rules.Format} ou BO3, au salon");
-                    SetButton(true, "CRÉER UNE PARTIE", !busy);
-                }
-                else
-                {
-                    AddFact("DISPONIBLE", mode.availability == GameModeAvailability.AfterRelease ? "Après la sortie" : "Bientôt");
-                    SetButton(true, GameModeCatalog.Badge(mode.availability), false);
-                }
+                SetDetail(mode.title, mode.description, artwork != null ? artwork.arenaOverview : null, arena,
+                    "Qui affronte qui et les règles de la partie se choisissent ensuite, dans le salon.");
+                AddFact("JOUEURS", mode.playersLong);
+                AddFact("RYTHME", mode.rhythmLong);
+                AddFact("POUR GAGNER", mode.goal);
+                if (mode.CanCreate) SetButton(true, "CRÉER UNE PARTIE", !busy);
+                else SetButton(true, GameModeCatalog.Badge(mode.availability), false);
                 break;
             }
             case Tab.Lobbies:
-                SetDetail("ico-users", "SALONS PRIVÉS",
+                SetDetail("SALONS PRIVÉS",
                     "Duel Arena se joue entre amis, dans des salons privés à code. Pour en ouvrir un, choisis un mode et crée la partie : le salon s'ouvre avec son code, à donner aux autres.",
-                    artwork != null ? artwork.arenaOverview : null);
-                AddFact("PLACES", $"{MatchRules.MinCapacity} à {MatchRules.MaxCapacity}");
+                    artwork != null ? artwork.arenaOverview : null, arena, "");
+                AddFact("JOUEURS", $"{MatchRules.MinCapacity} à {MatchRules.MaxCapacity}");
                 AddFact("RÉGLAGES", "Par l'hôte, au salon");
                 AddFact("PARTIE LANCÉE", "Le code reste valable");
                 SetButton(false, "", false);
                 break;
             default:
             {
-                SetDetail("ico-target", "STAND DE TIR ET FOSSE",
-                    "Essaie chaque arme et ses accessoires sur dix-sept mannequins, de 5 à 59 m, d'un mur à l'autre du stand. À droite du poste de tir, la Fosse, le parcours chronométré, où des cibles se lèvent sur ton passage, hostiles à neutraliser, civils à épargner ; à gauche, la salle de précision, une grande cible ronde que son pupitre envoie de 5 à 50 m. B ouvre la fenêtre des armes, Échap la pause et les Options.",
-                    artwork != null ? artwork.rangeImage : null);
+                SetDetail("STAND DE TIR ET FOSSE",
+                    "Essaie chaque arme et ses accessoires sur dix-sept mannequins, de 5 à 59 m. À droite du poste de tir, la Fosse, le parcours chronométré : des cibles se lèvent sur ton passage, hostiles à neutraliser, civils à épargner. À gauche, la salle de précision, une grande cible ronde, de 5 à 50 m.",
+                    artwork != null ? artwork.rangeImage : null, "B-02 · STAND DE TIR",
+                    "B ouvre la fenêtre des armes, Échap la pause et les Options.");
                 AddFact("JOUEURS", "Seul, hors ligne");
-                AddFact("MANNEQUINS", "14, de 5 à 60 m");
-                AddFact("LA FOSSE", "33 hostiles, 14 civils, 12 sections");
-                AddFact("PRÉCISION", "Une cible, de 5 à 50 m");
+                AddFact("LA FOSSE", "33 hostiles, 14 civils");
                 float best = BestCourseTime();
                 AddFact("TON RECORD", best > 0f ? $"{WeaponStatSheet.Number(best)} s" : "Aucun");
                 SetButton(true, "LANCER", !busy && (mainMenu == null || !mainMenu.Busy));
@@ -425,14 +330,15 @@ public class PlayScreenController : MonoBehaviour
         return best;
     }
 
-    private void SetDetail(string icon, string title, string text, Texture2D image)
+    private void SetDetail(string title, string text, Texture2D image, string caption, string note)
     {
-        if (detailIconClass != null) detailIcon.RemoveFromClassList(detailIconClass);
-        detailIconClass = icon;
-        if (icon != null) detailIcon.AddToClassList(icon);
         detailTitle.text = title;
         detailText.text = text;
         SetBackground(detailImage, image);
+        detailCaption.text = caption;
+        detailCaption.EnableInClassList("hidden", string.IsNullOrEmpty(caption));
+        detailNote.text = note;
+        detailNote.EnableInClassList("hidden", string.IsNullOrEmpty(note));
     }
 
     private void AddFact(string label, string value)

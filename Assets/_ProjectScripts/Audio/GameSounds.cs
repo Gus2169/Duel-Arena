@@ -47,6 +47,28 @@ public class GameSounds : ScriptableObject
     [Tooltip("La reconstruction des châssis, dans le noir entre deux manches (GDD § 5 et § 8). Chaque étape part `delay` secondes après la tombée du noir.")]
     public TimedSound[] reconstruction = System.Array.Empty<TimedSound>();
 
+    [Header("L'Élimination confirmée (GDD § 11)")]
+    [Tooltip("Un module mémoire ramassé : entendu de tous là où il flottait (une information de jeu).")]
+    public SoundSet moduleTaken = new SoundSet();
+    [Tooltip("Distance (m) jusqu'à laquelle on l'entend à plein volume.")]
+    public float moduleMinDistance = 4f;
+    [Tooltip("Au-delà (m), on ne l'entend plus.")]
+    public float moduleMaxDistance = 60f;
+    [Tooltip("Chez celui qui ramasse le module de son adversaire : l'élimination compte (à plat).")]
+    public SoundSet moduleConfirmed = new SoundSet();
+    [Tooltip("Chez celui qui reprend son propre module : l'élimination est annulée (à plat).")]
+    public SoundSet moduleDenied = new SoundSet();
+
+    [Header("La Zone (GDD § 11)")]
+    [Tooltip("Tenue, la zone grésille (Z7) : une décharge de temps en temps, sur son anneau, entendue de tous.")]
+    public SoundSet zoneCrackle = new SoundSet();
+    [Tooltip("Distance (m) jusqu'à laquelle on l'entend à plein volume.")]
+    public float zoneCrackleMinDistance = 3f;
+    [Tooltip("Au-delà (m), on ne l'entend plus.")]
+    public float zoneCrackleMaxDistance = 35f;
+    [Tooltip("La zone vient de changer de place (à plat).")]
+    public SoundSet zoneMoved = new SoundSet();
+
     [Header("Ambiance de l'arène (à plat, en boucle)")]
     public AudioClip ambienceLoop;
     [Range(0f, 1f)] public float ambienceVolume = 0.25f;

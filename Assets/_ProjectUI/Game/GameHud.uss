@@ -75,6 +75,42 @@
     border-color: rgb(230, 70, 70);
 }
 
+/* Le Gun Game (2026-11-02) : une marche par arme de l'échelle, le gant au bout. Les marches passées se
+   remplissent ; celle où l'on est se cerne de blanc. */
+.score-pip--step {
+    width: 10px;
+    height: 18px;
+    margin-left: 2px;
+    margin-right: 2px;
+    border-radius: 2px;
+}
+
+.score-pip--glove {
+    width: 18px;
+    border-radius: 9px;
+}
+
+/* À droite, l'échelle monte aussi vers le chrono : le gant au milieu de la barre. */
+.score-pips--mirror {
+    flex-direction: row-reverse;
+}
+
+.score-pip--current {
+    border-color: rgb(255, 255, 255);
+    border-width: 3px;
+}
+
+.score-weapon {
+    font-size: 16px;
+    -unity-font-style: bold;
+    letter-spacing: 1px;
+    color: rgb(214, 218, 224);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.7);
+    margin-left: 4px;
+    margin-right: 4px;
+}
+
 .round-timer {
     width: 110px;
     margin-left: 8px;
@@ -238,6 +274,33 @@
     margin-bottom: 16px;
 }
 
+/* Pile ou face (2026-11-03) : la pièce et qui choisit, puis les familles à choisir. */
+.loadout-coin {
+    font-size: 22px;
+    -unity-font-style: bold;
+    color: rgb(244, 190, 28);
+    margin-bottom: 12px;
+    white-space: normal;
+}
+
+.loadout-families {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+
+.loadout-family-choice {
+    margin: 0 10px 8px 0;
+    min-width: 180px;
+}
+
+/* Une arme hors de la famille de la manche : éteinte, plus qu'une carte qu'on ne peut plus choisir (:disabled, 0,55),
+   qui l'emportait sur une seule classe. */
+.loadout-card.loadout-card--outside,
+.loadout-card.loadout-card--outside:disabled {
+    opacity: 0.25;
+}
+
 .loadout-cards {
     flex-direction: row;
     justify-content: space-between;
@@ -353,6 +416,58 @@
 }
 
 /* -------------------- Fondu au noir -------------------- */
+
+/* -------------------- Le replay du coup mortel (2026-11-03) -------------------- */
+
+.replay-frame {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.replay-frame__band {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 9%;
+    background-color: rgb(0, 0, 0);
+}
+
+.replay-frame__band--top {
+    top: 0;
+}
+
+.replay-frame__band--bottom {
+    bottom: 0;
+}
+
+.replay-caption {
+    position: absolute;
+    left: 56px;
+    bottom: 12%;
+    padding: 8px 18px 10px 16px;
+    background-color: rgba(10, 13, 17, 0.62);
+    border-left-width: 4px;
+    border-left-color: rgb(244, 190, 28);
+}
+
+.replay-caption__title {
+    font-size: 18px;
+    -unity-font-style: bold;
+    letter-spacing: 4px;
+    color: rgb(244, 190, 28);
+}
+
+.replay-caption__line {
+    margin-top: 2px;
+    font-size: 34px;
+    -unity-font-style: bold;
+    color: rgb(232, 236, 240);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.6);
+}
 
 .fade {
     position: absolute;
@@ -677,165 +792,207 @@
     border-color: rgb(255, 255, 255);
 }
 
-/* -------------------- Salon de la partie (2026-10-26) -------------------- */
+/* -------------------- Salon de la partie (2026-10-26) --------------------
+   Depuis le 2026-11-02, le gabarit partagé avec le menu (Shared/SalonView.uxml et .uss) : ici, son cadre en
+   plein écran, aux marges des écrans du menu, sur l'arène assombrie. */
 
 .salon-panel {
     position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 1040px;
-    translate: -50% -50%;
-    background-color: rgba(12, 15, 20, 0.95);
-    border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    padding: 28px 32px;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    padding: 34px 58px 24px 58px;
+    background-color: rgba(7, 10, 14, 0.9);
 }
 
-.salon-header {
-    flex-direction: row;
-    align-items: flex-end;
-    margin-bottom: 18px;
+.salon-panel__frame {
+    position: absolute;
+    left: 20px;
+    top: 20px;
+    right: 20px;
+    bottom: 20px;
+    --edge-color: rgba(150, 170, 190, 0.16);
+    --edge-width: 1;
+    --cut-tl: 28;
+    --cut-br: 28;
+    --bracket-color: rgba(244, 190, 28, 0.7);
+    --bracket-size: 26;
+    --bracket-width: 2;
+    --bracket-corners: 10;
 }
 
-.salon-title {
-    font-size: 44px;
+/* La Zone (2026-11-02) : les points de chacun à côté de son nom, l'état de la zone sous la barre de score, et ses
+   repères à l'écran (posés par GameHud, centrés sur leur point). */
+.score-points {
+    min-width: 70px;
+    font-size: 24px;
     -unity-font-style: bold;
-    letter-spacing: 4px;
-    color: rgb(255, 210, 30);
-    margin: 0 18px 0 0;
-    padding: 0;
+    -unity-text-align: middle-center;
+    color: rgb(240, 242, 245);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.7);
+    margin-left: 4px;
+    margin-right: 4px;
 }
 
-.salon-mode {
-    font-size: 20px;
-    color: rgb(200, 205, 212);
-    margin: 0 0 6px 0;
-    padding: 0;
-}
-
-.salon-body {
-    flex-direction: row;
-}
-
-.salon-column {
-    flex-grow: 1;
-    flex-basis: 0;
-    margin-right: 28px;
-}
-
-.salon-section {
-    font-size: 14px;
-    -unity-font-style: bold;
-    letter-spacing: 2px;
-    color: rgb(143, 155, 168);
-    margin: 0 0 8px 0;
-    padding: 0;
-}
-
-.salon-players {
-    background-color: rgba(255, 255, 255, 0.03);
-    border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-    padding: 6px 0;
-}
-
-.salon-player {
-    flex-direction: row;
-    align-items: center;
-    height: 40px;
-    padding: 0 14px;
-}
-
-.salon-player__swatch {
-    width: 14px;
-    height: 14px;
-    border-radius: 3px;
-    margin-right: 12px;
-}
-
-.salon-player__name {
-    flex-grow: 1;
-    font-size: 18px;
-    -unity-font-style: bold;
-    color: rgb(232, 236, 240);
-    margin: 0;
-    padding: 0;
-}
-
-.salon-player__role {
+.zone-status {
+    position: absolute;
+    top: 66px;
+    left: 0;
+    right: 0;
+    -unity-text-align: upper-center;
     font-size: 15px;
-    color: rgb(150, 160, 172);
-    margin: 0;
-    padding: 0;
+    -unity-font-style: bold;
+    letter-spacing: 1px;
+    color: rgb(240, 242, 245);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.75);
 }
 
-.salon-rule {
-    flex-direction: row;
-    align-items: center;
-    height: 42px;
-    border-bottom-width: 1px;
-    border-color: rgba(150, 170, 190, 0.16);
+.zone-marker {
+    position: absolute;
+    translate: -50% -50%;
+    padding: 2px 8px;
+    background-color: rgba(10, 13, 17, 0.55);
+    border-left-width: 3px;
+    border-left-color: rgba(240, 242, 245, 0.9);
 }
 
-.salon-rule__label {
-    flex-grow: 1;
+.zone-marker--next {
+    opacity: 0.75;
+}
+
+.zone-marker__label {
     font-size: 14px;
     -unity-font-style: bold;
     letter-spacing: 1px;
+    color: rgb(240, 242, 245);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.7);
+}
+
+/* ---------- Le Tournoi (2026-11-03) : le tableau de la salle d'attente, en haut à droite ---------- */
+
+.tournament-board {
+    position: absolute;
+    top: 18px;
+    right: 28px;
+    width: 400px;
+    padding: 10px 14px 12px 14px;
+    background-color: rgba(10, 13, 17, 0.62);
+    border-left-width: 3px;
+    border-left-color: rgb(244, 190, 28);
+    border-radius: 4px;
+}
+
+.tournament-board__title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    letter-spacing: 3px;
+    color: rgb(244, 190, 28);
+}
+
+.tournament-board__stage {
+    margin-top: 2px;
+    font-size: 20px;
+    -unity-font-style: bold;
+    letter-spacing: 1px;
+    color: rgb(240, 242, 245);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.6);
+}
+
+.tournament-board__mine {
+    margin-top: 4px;
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: rgb(244, 190, 28);
+    white-space: normal;
+}
+
+.tournament-board__heading {
+    margin-top: 10px;
+    margin-bottom: 2px;
+    font-size: 12px;
+    -unity-font-style: bold;
+    letter-spacing: 2px;
     color: rgb(143, 155, 168);
-    margin: 0;
-    padding: 0;
 }
 
-.salon-rule__cycler {
-    flex-grow: 0;
-    width: 260px;
+.tournament-board__rows {
+    flex-direction: column;
 }
 
-/* Une case à cocher (2026-10-27) : au milieu de la place d'un sélecteur. */
-.salon-rule__check-cell {
-    width: 260px;
-    flex-shrink: 0;
+.tournament-row,
+.tournament-match {
     flex-direction: row;
-    justify-content: center;
     align-items: center;
+    height: 24px;
+    padding-left: 4px;
+    padding-right: 4px;
 }
 
-.salon-hint {
+.tournament-row--me,
+.tournament-match--mine {
+    background-color: rgba(244, 190, 28, 0.12);
+}
+
+.tournament-row--left {
+    opacity: 0.45;
+}
+
+.tournament-row__rank {
+    width: 22px;
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: rgb(143, 155, 168);
+}
+
+.tournament-row__name {
+    flex-grow: 1;
+    font-size: 15px;
+    -unity-font-style: bold;
+    overflow: hidden;
+}
+
+.tournament-row__record {
+    width: 92px;
+    font-size: 14px;
+    color: rgb(232, 236, 240);
+    -unity-text-align: middle-right;
+}
+
+.tournament-row__diff {
+    width: 40px;
     font-size: 14px;
     color: rgb(143, 155, 168);
-    margin-top: 8px;
-    white-space: normal;
+    -unity-text-align: middle-right;
 }
 
-.salon-invite {
-    font-size: 16px;
-    color: rgb(200, 205, 212);
-    margin-top: 18px;
+.tournament-match__name {
+    width: 128px;
+    font-size: 14px;
+    -unity-font-style: bold;
+    overflow: hidden;
 }
 
-.salon-footer {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 18px;
+.tournament-match__name--right {
+    -unity-text-align: middle-right;
 }
 
-.salon-status {
-    font-size: 16px;
-    color: rgb(170, 177, 186);
-    flex-shrink: 1;
-    white-space: normal;
+.tournament-match__score {
+    width: 56px;
+    font-size: 15px;
+    -unity-font-style: bold;
+    color: rgb(240, 242, 245);
+    -unity-text-align: middle-center;
 }
 
-.salon-buttons {
-    flex-direction: row;
-}
-
-.salon-button {
-    width: 240px;
-    margin-top: 0;
-    margin-left: 14px;
+.tournament-match__where {
+    flex-grow: 1;
+    font-size: 12px;
+    letter-spacing: 1px;
+    color: rgb(143, 155, 168);
+    -unity-text-align: middle-right;
 }

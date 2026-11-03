@@ -1,0 +1,41 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef24d38a5fd150846abbad6a65d5efe5, type: 3}
+  m_Name: Rechargement_PA05
+  m_EditorClassIdentifier: DuelArena.Runtime::ReloadGesture
+  animatorValue: 4
+  weapons:
+  - {fileID: 11400000, guid: ad9d7a2a58caf444aa2ce5c422d4f8a2, type: 2}
+  drop: 0.04
+  grab: 0.26
+  approach: 0.4
+  seated: 0.45
+  weaponInHandPosition: {x: 0.0107495645, y: 0.053512793, z: 0.09902039}
+  weaponInHandRotation: {x: -0.0004112404, y: -0.5882149, z: -0.8087004, w: -0.0027927046}
+  designPalm: {x: 0.01, y: 0.05, z: 0.021}
+  armingParts:
+  - Culasse
+  - Culasse_Details
+  - Hausse
+  - Guidon
+  - Accessoires/Viseur
+  armingTravel: 0.035
+  armingGrab: 0.66
+  armingPulled: 0.71
+  armingRelease: 0.72
+  armingReturned: 0.735
+  armingPalm: {x: 0, y: 0.096, z: -0.012}
+  armingViewPitchMax: 0
+  armingViewYaw: 0
+  clipLength: 3.3000002
+  usefulStart: 0.4
+  usefulEnd: 2.5

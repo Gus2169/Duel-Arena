@@ -257,6 +257,35 @@ public class MatchFlowTests
         Assert.AreNotEqual(MatchEndScreen.CelebrationSeed(1234.5), MatchEndScreen.CelebrationSeed(1239.75), "Chaque match tire les siennes.");
     }
 
+    /// <summary>Le mouvement de caméra de l'écran de fin (GDD § 5) : il s'ouvre de près, presque de profil et par en
+    /// dessous, recule jusqu'au trois-quarts du cadre à la fin de l'ouverture, puis tourne lentement vers la face, toujours
+    /// du côté droit du robot, sans à-coup ; le même à chaque instant sur les deux machines. Vu échouer, la caméra fixe
+    /// d'avant.</summary>
+    [Test]
+    public void LEcranDeFin_LaCameraSOuvreDePresPuisRecule_EtTourneSansAcoup()
+    {
+        VictoryStage.Shot start = VictoryStage.ShotAt(0f);
+        VictoryStage.Shot settled = VictoryStage.ShotAt(VictoryStage.IntroTime);
+        VictoryStage.Shot late = VictoryStage.ShotAt(VictoryStage.IntroTime + 12f);
+        Assert.Less(start.distanceScale, 0.7f, "L'ouverture : de près.");
+        Assert.Greater(start.azimuth, 45f, "Presque de profil.");
+        Assert.Less(start.elevation, -12f, "Par en dessous.");
+        Assert.AreEqual(1f, settled.distanceScale, 1e-3f, "Le cadre entier à la fin de l'ouverture.");
+        Assert.AreEqual(24f, settled.azimuth, 0.5f, "Le trois-quarts.");
+        Assert.AreEqual((VictoryStage.FrameBottom + VictoryStage.FrameTop) * 0.5f, settled.centerHeight, 1e-3f, "Des genoux aux mains levées.");
+        Assert.Less(late.azimuth, settled.azimuth - 5f, "Puis elle tourne vers la face.");
+        Assert.Greater(late.azimuth, 0f, "Toujours du côté droit du robot : il regarde vers le tableau des scores.");
+        VictoryStage.Shot previous = start;
+        for (float t = 1f / 60f; t < 20f; t += 1f / 60f)
+        {
+            VictoryStage.Shot s = VictoryStage.ShotAt(t);
+            Assert.Less(Mathf.Abs(s.azimuth - previous.azimuth), 1f, $"Sans à-coup à {t:F2} s.");
+            Assert.Less(Mathf.Abs(s.elevation - previous.elevation), 1f);
+            Assert.Less(Mathf.Abs(s.distanceScale - previous.distanceScale), 0.02f);
+            previous = s;
+        }
+    }
+
     /// <summary>
     /// La jauge de vie façon Rainbow Six (demandée par l'utilisateur, 2026-10-12) : la part perdue
     /// reste rouge un instant, pour voir ce que le coup a coûté, puis se vide ; une nouvelle manche
