@@ -317,6 +317,50 @@ public class MagazineSwapTests
     /// reste à la même place sur la pièce, à 4 mm près, quand la pièce recule de toute sa course ; une fois revenue,
     /// elle est à sa place ; un rechargement coupé en plein armement la remet aussitôt.
     /// </summary>
+    /// <summary>L'arme que le mode met en main sort par la fin du geste (2026-11-04) : son chargeur est déjà dedans, rien ne
+    /// tombe et la main ne tient rien ; la pièce d'armement recule et revient, comme à la fin d'un rechargement.</summary>
+    [UnityTest]
+    public IEnumerator LaFinDuGeste_NeFaitRienTomber_EtArmeLArme([ValueSource(nameof(Codes))] string code)
+    {
+        Setup(WeaponAttachments.None, code);
+        Assert.Greater(gesture.armingGrab, WeaponController.ArrivalStart, "Garde : l'armement du " + code + " est dans la fin du geste.");
+        Transform part = ArmsModel.transform.Find(gesture.armingParts[0]);
+        Vector3 rest = ArmsModel.transform.InverseTransformPoint(part.position);
+        Drive(false);
+        yield return Wait(0.4f);
+
+        float first = float.NaN, maxBack = 0f;
+        bool hidden = false, inHand = false;
+        record = () =>
+        {
+            float f = armsView.Progress;
+            if (float.IsNaN(f)) return;
+            if (float.IsNaN(first)) first = f;
+            hidden |= armsView.MagazineHidden || bodyView.MagazineHidden;
+            inHand |= armsView.Shown != MagazineSwap.Phase.InWeapon || bodyView.Shown != MagazineSwap.Phase.InWeapon;
+            maxBack = Mathf.Max(maxBack, rest.z - ArmsModel.transform.InverseTransformPoint(part.position).z);
+        };
+        float useful = gesture.usefulEnd - gesture.usefulStart;
+        float clipTime = gesture.usefulStart + WeaponController.ArrivalStart * useful, speed = useful / reloadDuration;
+        Drive(true);
+        PlayerAnimator.PlayReloadEnd(body, clipTime, speed);
+        PlayerAnimator.PlayReloadEnd(arms, clipTime, speed);
+        yield return Wait(0.2f);
+        // Le fondu est fini, même sur les bras, dont les poses sont figées : le geste se voit vraiment.
+        Assert.IsFalse(arms.IsInTransition(MagazineSwap.UpperBodyLayer), "Les bras n'entrent pas dans le geste.");
+        Assert.IsFalse(body.IsInTransition(MagazineSwap.UpperBodyLayer), "Le corps n'entre pas dans le geste.");
+        yield return Wait(reloadDuration * (1f - WeaponController.ArrivalStart) - 0.3f);
+        record = null;
+        Assert.That(first, Is.InRange(WeaponController.ArrivalStart - 0.01f, WeaponController.ArrivalStart + 0.1f), "Le geste part de sa fin.");
+        Assert.IsFalse(hidden, "Le chargeur de l'arme disparaît.");
+        Assert.IsFalse(inHand, "Un chargeur apparaît dans la main.");
+        Assert.AreEqual(gesture.armingTravel, maxBack, 0.002f, "La pièce d'armement ne recule pas de sa course.");
+        Assert.IsEmpty(Object.FindObjectsByType<DroppedMagazine>(), "Un chargeur tombe.");
+        Drive(false);
+        yield return Wait(0.4f);
+        Assert.IsEmpty(armsView.ArmingMoved, "L'arme sortie, des pièces restent déplacées.");
+    }
+
     [UnityTest]
     public IEnumerator LaPieceDArmement_ReculeAvecLaMain_PuisRevient([ValueSource(nameof(Codes))] string code)
     {

@@ -3,12 +3,12 @@ using UnityEngine.Rendering;
 
 /// <summary>
 /// Les emplacements de la Zone dans une arène (GDD § 11, T8 : « chaque arène reçoit ses repères »), dans leur ordre, et
-/// ce que chaque machine en montre (catégorie C) : la zone du moment, un anneau au sol et une paroi de lumière (presque
-/// effacée vue de dedans, pour ne pas teindre l'arène), à la couleur de qui la tient (pâle libre, blanche et battante
-/// disputée), qui grésille quand on la tient (arcs et sons,
-/// Z7) ; la suivante, un anneau qui bat, les dernières secondes avant le changement. Le serveur y lit aussi qui est
-/// dedans (RoundManager). Posé par Duel Arena > Arène > Poser les zones (ZoneLayoutBuilder) : on corrige le script,
-/// pas la scène.
+/// ce que chaque machine en montre (catégorie C) : la zone du moment, un anneau au sol, une paroi de lumière (presque
+/// effacée vue de dedans, pour ne pas teindre l'arène) et une colonne de lumière vue de partout, à travers les murs, à la
+/// couleur de qui la tient (pâle libre, blanche et battante disputée), qui grésille quand on la tient (arcs et sons,
+/// Z7) ; la suivante, un anneau et sa colonne qui battent, les dernières secondes avant le changement. Le serveur y lit
+/// aussi qui est dedans (RoundManager). Posé par Duel Arena > Arène > Poser les zones (ZoneLayoutBuilder) : on corrige le
+/// script, pas la scène.
 /// </summary>
 public class ZoneLayout : MonoBehaviour
 {
@@ -20,6 +20,12 @@ public class ZoneLayout : MonoBehaviour
     [SerializeField] private float radius = 4f;
     [Tooltip("L'anneau et la paroi : une lumière ajoutée (URP Particles/Unlit, additif, les deux faces).")]
     [SerializeField] private Material zoneMaterial;
+    [Tooltip("La colonne au-dessus de la zone : une lumière ajoutée, vue à travers les murs (DuelArena/ZoneColonne).")]
+    [SerializeField] private Material columnMaterial;
+    [Tooltip("Son rayon, son pied (au-dessus de la tête d'un robot, qu'elle ne voile pas) et son sommet (m).")]
+    [SerializeField] private float columnRadius = 0.8f, columnBottom = 2.4f, columnTop = 13f;
+    [Tooltip("Son éclat, en part de celui de la zone tenue ou disputée ; libre ou annoncée (la zone y est faible), le sien.")]
+    [SerializeField] private float columnIntensity = 0.5f, columnFreeIntensity = 0.6f;
     [Tooltip("Les arcs quand on la tient : ceux du gant (DuelArena/ArcElectrique).")]
     [SerializeField] private Material arcMaterial;
     [SerializeField] private GameSounds sounds;
@@ -68,6 +74,7 @@ public class ZoneLayout : MonoBehaviour
 
     private Renderer[] rings;
     private Renderer[] walls;
+    private Renderer[] columns;
     private ArcLines arcs;
     [System.NonSerialized] private MaterialPropertyBlock block;
     private float nextCrackle;
@@ -77,12 +84,15 @@ public class ZoneLayout : MonoBehaviour
         if (!Application.isPlaying || zoneMaterial == null) return;
         Mesh ring = RingMesh(radius - 0.12f, radius, 72);
         Mesh wall = WallMesh(radius, wallHeight, 72);
+        Mesh column = ColumnMesh(columnRadius, columnBottom, columnTop, 24);
         rings = new Renderer[zones.Length];
         walls = new Renderer[zones.Length];
+        columns = new Renderer[zones.Length];
         for (int i = 0; i < zones.Length; i++)
         {
-            rings[i] = Part(zones[i], "Anneau", ring);
-            walls[i] = Part(zones[i], "Paroi", wall);
+            rings[i] = Part(zones[i], "Anneau", ring, zoneMaterial);
+            walls[i] = Part(zones[i], "Paroi", wall, zoneMaterial);
+            if (columnMaterial != null) columns[i] = Part(zones[i], "Colonne", column, columnMaterial);
         }
         if (arcMaterial != null) arcs = new ArcLines(transform, "Arcs de la zone", arcMaterial, 0, new[] { 3, 3, 3, 3 }, null);
     }
@@ -107,6 +117,7 @@ public class ZoneLayout : MonoBehaviour
             bool announced = i == next && !active;
             rings[i].enabled = active || announced;
             walls[i].enabled = active;
+            if (columns[i] != null) columns[i].enabled = active || announced;
             if (active)
             {
                 float fade = 1f;
@@ -115,9 +126,15 @@ public class ZoneLayout : MonoBehaviour
                     Vector3 offset = viewer.transform.position - zones[i].position;
                     fade = WallFade(new Vector2(offset.x, offset.z).magnitude, radius, wallInsideFade, wallFadeDistance);
                 }
-                Tint(i, ZoneColor(rm), fade);
+                Color zone = ZoneColor(rm);
+                bool free = !rm.ZoneContested && rm.ZoneHolder == RoundManager.NoWinner;
+                Tint(i, zone, free ? Pale * columnFreeIntensity : zone * columnIntensity, fade);
             }
-            else if (announced) Tint(i, Pale * (nextIntensity * (0.6f + 0.4f * Mathf.Sin(Time.time * 2f * Mathf.PI))), 1f);
+            else if (announced)
+            {
+                float pulse = 0.6f + 0.4f * Mathf.Sin(Time.time * 2f * Mathf.PI);
+                Tint(i, Pale * (nextIntensity * pulse), Pale * (columnFreeIntensity * pulse), 1f);
+            }
         }
         Crackle(rm, shown);
     }
@@ -141,12 +158,17 @@ public class ZoneLayout : MonoBehaviour
     }
 
     /// <summary>L'anneau à `color`, la paroi aussi, n'en gardant que `wallFade` (une lumière ajoutée : son alpha la
-    /// dose).</summary>
-    private void Tint(int index, Color color, float wallFade)
+    /// dose), et la colonne à `column`, de même (la sienne se dose à sa couleur).</summary>
+    private void Tint(int index, Color color, Color column, float wallFade)
     {
         block ??= new MaterialPropertyBlock();
         block.SetColor(BaseColorId, color);
         rings[index].SetPropertyBlock(block);
+        if (columns[index] != null)
+        {
+            block.SetColor(BaseColorId, column * wallFade);
+            columns[index].SetPropertyBlock(block);
+        }
         color.a *= wallFade;
         block.SetColor(BaseColorId, color);
         walls[index].SetPropertyBlock(block);
@@ -195,13 +217,13 @@ public class ZoneLayout : MonoBehaviour
         return Pale;
     }
 
-    private Renderer Part(Transform zone, string name, Mesh mesh)
+    private static Renderer Part(Transform zone, string name, Mesh mesh, Material material)
     {
         var part = new GameObject(name);
         part.transform.SetParent(zone, false);
         part.AddComponent<MeshFilter>().sharedMesh = mesh;
         var renderer = part.AddComponent<MeshRenderer>();
-        renderer.sharedMaterial = zoneMaterial;
+        renderer.sharedMaterial = material;
         renderer.shadowCastingMode = ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         renderer.lightProbeUsage = LightProbeUsage.Off;
@@ -262,6 +284,33 @@ public class ZoneLayout : MonoBehaviour
             }
         }
         var mesh = new Mesh { name = "Zone_Paroi", vertices = vertices, colors = colors, triangles = triangles };
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    /// <summary>La colonne : un cylindre ouvert de `bottom` à `top` mètres, sa normale radiale et sa hauteur dans son uv
+    /// (DuelArena/ZoneColonne en tire son volume et ses fondus).</summary>
+    private static Mesh ColumnMesh(float radius, float bottom, float top, int segments)
+    {
+        var vertices = new Vector3[(segments + 1) * 2];
+        var normals = new Vector3[vertices.Length];
+        var uvs = new Vector2[vertices.Length];
+        var triangles = new int[segments * 6];
+        for (int i = 0; i <= segments; i++)
+        {
+            float angle = i * 2f * Mathf.PI / segments;
+            var direction = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
+            vertices[i * 2] = direction * radius + Vector3.up * bottom;
+            vertices[i * 2 + 1] = direction * radius + Vector3.up * top;
+            normals[i * 2] = normals[i * 2 + 1] = direction;
+            uvs[i * 2] = new Vector2((float)i / segments, 0f);
+            uvs[i * 2 + 1] = new Vector2((float)i / segments, 1f);
+            if (i == segments) break;
+            int t = i * 6;
+            triangles[t] = i * 2; triangles[t + 1] = i * 2 + 1; triangles[t + 2] = i * 2 + 2;
+            triangles[t + 3] = i * 2 + 2; triangles[t + 4] = i * 2 + 1; triangles[t + 5] = i * 2 + 3;
+        }
+        var mesh = new Mesh { name = "Zone_Colonne", vertices = vertices, normals = normals, uv = uvs, triangles = triangles };
         mesh.RecalculateBounds();
         return mesh;
     }

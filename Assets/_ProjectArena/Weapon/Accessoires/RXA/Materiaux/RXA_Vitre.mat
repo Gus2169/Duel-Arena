@@ -40,6 +40,6 @@ Material:
     - _Trait: 0.414
     m_Colors:
     - _CouleurReticule: {r: 0.27450982, g: 1, b: 0.3764706, a: 1}
-    - _CouleurVitre: {r: 0.72156864, g: 0.76862746, b: 0.78431374, a: 0.12}
+    - _CouleurVitre: {r: 0.72156864, g: 0.76862746, b: 0.78431374, a: 0.05}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

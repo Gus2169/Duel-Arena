@@ -2,16 +2,16 @@ using UnityEngine;
 
 /// <summary>
 /// Feedback visuel de tir en Game view : la flamme de bouche d'une arme à balles, ou la trace
-/// lumineuse d'un rayon (le raygun), et un marqueur d'impact temporaire. PLACEHOLDER assumé, appelé
+/// lumineuse d'un rayon (le raygun). PLACEHOLDER assumé, appelé
 /// par WeaponController.Fire() (feedback local du tireur) et par BroadcastShotClientRpc (ce que voient
 /// les autres joueurs). Depuis le 2026-10-16, les armes à balles n'ont plus de traçant (demandé par
 /// l'utilisateur) : la flamme de bouche (WeaponData.shotIsBeam à faux).
 ///
 /// Entièrement procédural : pas de prefab à préparer, pas de matériau à créer à la main. Le shader
 /// utilisé est détecté automatiquement pour rester compatible Built-in RP / URP. Pensé pour être
-/// remplacé plus tard par de vrais VFX (Particle System, tracer avec traînée, décal d'impact
-/// texturé...) sans changer l'API publique (SpawnTracer / SpawnImpact) — les appelants n'auront
-/// rien à changer le jour où le visuel sera amélioré.
+/// remplacé plus tard par de vrais VFX (Particle System, tracer avec traînée...) sans changer
+/// l'API publique (SpawnTracer) — les appelants n'auront rien à changer le jour où le visuel sera
+/// amélioré. Là où le tir arrive, c'est ShotImpacts.
 /// </summary>
 public class WeaponVisualFeedback : MonoBehaviour
 {
@@ -19,11 +19,6 @@ public class WeaponVisualFeedback : MonoBehaviour
     [SerializeField] private Color tracerColor = new Color(1f, 0.85f, 0.3f);
     [SerializeField] private float tracerWidth = 0.015f;
     [SerializeField] private float tracerDuration = 0.05f;
-
-    [Header("Marqueur d'impact")]
-    [SerializeField] private Color impactColor = new Color(1f, 0.3f, 0.1f);
-    [SerializeField] private float impactSize = 0.12f;
-    [SerializeField] private float impactLifetime = 1.2f;
 
     [Header("Flamme de bouche (armes à balles, 2026-10-16)")]
     [Tooltip("Matériau de la flamme (DuelArena/FlammeBouche). Sans lui, pas de flamme.")]
@@ -148,8 +143,8 @@ public class WeaponVisualFeedback : MonoBehaviour
     /// avec elle (les bras du tireur, le corps chez les autres). Cosmétique : chaque machine la place
     /// sur l'arme qu'elle montre. Elle tourne d'un coup à l'autre (un angle d'or, pas de hasard).
     /// `size` : ce que les accessoires lui font (le frein de bouche la grossit, AttachmentCatalog.MuzzleFlashScale).
-    /// `duration` : combien de temps elle reste (s ; par défaut, muzzleFlashDuration) : plus longtemps au ralenti du
-    /// replay du coup mortel (KillReplay).
+    /// `duration` : combien de temps elle reste (s ; par défaut, muzzleFlashDuration) : plus longtemps au ralenti de
+    /// la kill cam (KillCam).
     /// </summary>
     public GameObject SpawnMuzzleFlash(Transform muzzle, Vector3 forward, float size = 1f, float duration = -1f)
     {
@@ -271,40 +266,5 @@ public class WeaponVisualFeedback : MonoBehaviour
         lr.receiveShadows = false;
 
         Destroy(go, tracerDuration * weight);
-    }
-
-    /// <summary>Petit marqueur temporaire à l'endroit précis où le tir a touché quelque chose.</summary>
-    public void SpawnImpact(Vector3 point, Vector3 normal)
-    {
-        var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        go.name = "ImpactMarker";
-
-        // CreatePrimitive livre TOUJOURS un collider. Il faut le neutraliser, et surtout le faire
-        // IMMÉDIATEMENT : Destroy() est différé à la fin de la frame, donc le collider reste bien
-        // vivant pour la physique entre-temps. C'est enabled = false qui prend effet tout de
-        // suite ; Destroy ne fait que le ménage ensuite.
-        //
-        // Ce marqueur apparaît pile à l'endroit touché, donc à la surface du corps de la cible.
-        // Un collider actif ne serait pas qu'un détail cosmétique :
-        //   - le CharacterController de la cible se pousserait hors de la sphère à son prochain
-        //     Move() — d'où un adversaire qui RECULE visiblement à chaque balle encaissée ;
-        //   - la sphère naît sur le layer Default, celui de worldMask, donc elle bloquerait les
-        //     tirs suivants comme un mur ;
-        //   - elle compterait aussi comme obstacle pour CanStandUp() et l'anti-clipping du lean.
-        var col = go.GetComponent<Collider>();
-        if (col != null)
-        {
-            col.enabled = false;
-            Destroy(col);
-        }
-
-        go.transform.position = point + normal * 0.01f; // léger décalage pour éviter le z-fighting
-        go.transform.localScale = Vector3.one * impactSize;
-
-        // Matériau partagé, comme celui des traçants : en créer un par impact en laissait un derrière
-        // chaque marqueur détruit, des milliers au fil d'une soirée (relecture du 2026-10-12).
-        go.GetComponent<Renderer>().sharedMaterial = TracerMaterial(impactColor);
-
-        Destroy(go, impactLifetime);
     }
 }

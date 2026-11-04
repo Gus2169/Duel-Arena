@@ -47,6 +47,12 @@ public class PlayerAnimator : MonoBehaviour
     [Tooltip("Durée de la partie UTILE du clip de rechargement (Y Bot@Reloading, 3,3 s au total). Mesurée le 2026-10-08 : la main gauche quitte l'arme vers 0,4 s et y revient vers 2,5 s. Le contrôleur entre dans le clip à 0,4 s ; il est lu à la vitesse qui fait tenir ce geste dans la durée réelle du rechargement (WeaponData.reloadDuration).")]
     [SerializeField] private float reloadClipUsefulLength = 2.1f;
 
+    /// <summary>Le début de la partie utile du geste de rechargement dans son clip (s), où le contrôleur y entre.</summary>
+    private const float ReloadClipUsefulStart = 0.4f;
+
+    /// <summary>Le fondu (s) vers la fin du geste, quand une arme arrive.</summary>
+    private const float ArrivalBlend = 0.08f;
+
     [Tooltip("Durée de la partie UTILE du clip de taser (Y Bot@Taser Punch, en miroir, 1,7 s au total, depuis le 2026-10-11). Mesurée : le poing part à 0,10 s, il est tendu à 0,32 s et revenu à 0,82 s ; le contact tombe ainsi à 30 % du geste, les 0,18 s de TaserController.contactDelay sur 0,6 s. Le contrôleur entre dans le clip à 0,10 s ; il est lu à la vitesse qui fait tenir ce geste dans TaserController.StrikeDuration.")]
     [SerializeField] private float taserClipUsefulLength = 0.72f;
 
@@ -71,6 +77,9 @@ public class PlayerAnimator : MonoBehaviour
     [Header("Cadence des jambes (pieds calés sur le sol)")]
     [Tooltip("Cadence maximale des jambes. Les clips du Y Bot avancent moins vite que le jeu (course 4,64 m/s pour une marche à 5, sprint 6,96 pour 10, marche accroupie 1,97 pour 3) : les caler demande jusqu'à ×1,52. Au-delà de ce plafond, les pieds glissent ; aucune glissade n'est tolérée (2026-10-10), donc il couvre toutes les allures du jeu. Le baisser, c'est accepter des glissades ou baisser les vitesses du jeu.")]
     [SerializeField] private float maxLegCadence = 1.6f;
+
+    [Tooltip("Cadence maximale des jambes allongé. La reptation avant (la reptation arrière de Mixamo jouée à l'envers) n'avance qu'à 0,28 m/s : la caler à 0,65 m/s (2026-11-03, « plus vite sur tous les axes ») demande ×2,3. Une reptation avant calculée dans Blender, à plus grande foulée, la ramènerait sous le plafond debout (dette n° 41).")]
+    [SerializeField] private float maxProneLegCadence = 2.4f;
 
     [Tooltip("Cadence minimale des jambes. En dessous, les pieds avanceraient plus vite que le corps. Une cadence basse se voit comme un ralenti : signe qu'il manque un clip de marche lente pour cette direction.")]
     [SerializeField] private float minLegCadence = 0.2f;
@@ -108,6 +117,7 @@ public class PlayerAnimator : MonoBehaviour
     private static readonly int PostureSpeedId = Animator.StringToHash("PostureSpeed");
     private static readonly int ReloadingId = Animator.StringToHash("Reloading");
     private static readonly int ReloadSpeedId = Animator.StringToHash("ReloadSpeed");
+    private static readonly int ReloadStateId = Animator.StringToHash(MagazineSwap.ReloadStateName);
     private static readonly int TaserId = Animator.StringToHash("Taser");
     private static readonly int TaserSpeedId = Animator.StringToHash("TaserSpeed");
     private static readonly int PistoletId = Animator.StringToHash("Pistolet");
@@ -190,6 +200,8 @@ public class PlayerAnimator : MonoBehaviour
     // pompe glisse ses cartouches une à une.
     private float reloadAnimationDuration = 1f;
     private bool wasReloading;
+    private bool wasArriving;
+    private int arrivalSlot = -1;
     private float torsoAimWeight;
     private float torsoYaw;
     private float torsoPitch;
@@ -335,6 +347,19 @@ public class PlayerAnimator : MonoBehaviour
         MirrorWeaponGestures(animator, view, TaserLayerWeight(PlayerLocomotion.Stance.Standing));
     }
 
+    /// <summary>
+    /// Fait entrer `animator` (le corps, ou les bras de la vue subjective) dans le geste de rechargement à `clipTime` secondes
+    /// de son clip, lu à `speed` (ReloadSpeed), sans passer par son début. Sans état, testée.
+    ///
+    /// Un fondu en temps fixe : compté en part de l'état qu'on quitte, il ne finissait jamais sur les bras, dont les poses
+    /// sont figées (vitesse nulle), et durait 0,7 s sur le corps. Son décalage, lui, se compte à la vitesse de l'état.
+    /// </summary>
+    public static void PlayReloadEnd(Animator animator, float clipTime, float speed)
+    {
+        if (animator == null || !animator.isActiveAndEnabled || animator.layerCount <= UpperBodyLayer) return;
+        animator.CrossFadeInFixedTime(ReloadStateId, ArrivalBlend, UpperBodyLayer, clipTime / Mathf.Max(0.01f, speed));
+    }
+
     /// <summary>Recopie vers les bras de la vue subjective ce qu'ils reprennent du corps (voir
     /// MirrorToView). Sans état, testée.</summary>
     public static void MirrorWeaponGestures(Animator body, Animator view, float taserWeight)
@@ -426,7 +451,11 @@ public class PlayerAnimator : MonoBehaviour
         // d'avant (WeaponGrip), et l'Animator a remis la main dans sa pose animée.
         grip?.RestoreWeapon();
 
-        float dt = Time.deltaTime;
+        // Sous la kill cam (KillCam), ce robot vit au temps qu'elle montre : son Animator, et tout ce qui se lisse ici. Il
+        // ralentit dans la pose où le coup l'a pris, au lieu de retomber aussitôt dans son attente.
+        float worldRate = KillCam.RateOf(locomotion);
+        if (animator.speed != worldRate) animator.speed = worldRate;
+        float dt = Time.deltaTime * worldRate;
         if (dt <= 0f) return;
 
         // Un spectateur est à mains nues (2026-10-13) : ni arme, ni gant. Le rôle est publié par le
@@ -454,7 +483,7 @@ public class PlayerAnimator : MonoBehaviour
         previousPosition = transform.position;
         delta.y = 0f;
 
-        Vector3 local = transform.InverseTransformDirection(delta / dt);
+        Vector3 local = transform.InverseTransformDirection(delta / Time.deltaTime);
 
         // La posture AFFICHÉE, transition comprise, et non CurrentStance : cette dernière n'est
         // mise à jour que dans Move(), qu'un spectateur n'appelle jamais. Elle y resterait bloquée
@@ -509,10 +538,11 @@ public class PlayerAnimator : MonoBehaviour
         // Les jambes : quel clip, et à quelle cadence pour que les pieds ne patinent pas.
         // Tout dans le repère du MODÈLE, qui peut être tourné par rapport au joueur le temps que les
         // jambes se réalignent : c'est celui où l'arbre de mélange place ses clips.
-        Vector3 rootVelocity = rootMotion != null ? animator.transform.InverseTransformDirection(rootMotion.Velocity) : Vector3.zero;
+        Vector3 rootVelocity = rootMotion != null ? animator.transform.InverseTransformDirection(rootMotion.Velocity) / worldRate : Vector3.zero;
         Vector3 legsMove = animator.transform.InverseTransformDirection(transform.TransformDirection(new Vector3(smoothedMove.x, 0f, smoothedMove.y)));
         DriveGait(animator, ref gait, new Vector2(legsMove.x, legsMove.z), reference, stance, new Vector2(rootVelocity.x, rootVelocity.z),
-                  minPlaybackSpeed * PlaybackScale(stance), upperCadence, minLegCadence, maxLegCadence, dt);
+                  minPlaybackSpeed * PlaybackScale(stance), upperCadence, minLegCadence,
+                  stance == PlayerLocomotion.Stance.Prone ? maxProneLegCadence : maxLegCadence, dt);
 
         // Chute et franchissement passent par des accesseurs qui choisissent eux-mêmes entre la
         // valeur locale et la valeur réseautée selon le cas réseau. Ce script n'a donc pas à
@@ -543,9 +573,21 @@ public class PlayerAnimator : MonoBehaviour
         if (weapon != null)
         {
             bool reloading = weapon.IsReloading;
+            bool arriving = !reloading && weapon.IsArriving;
             if (reloading && !wasReloading) reloadAnimationDuration = Mathf.Max(0.05f, weapon.ReloadTimeRemaining);
+            // Une arme que le mode met en main : la fin du geste, tenue dans le temps de sa sortie.
+            if (arriving && (!wasArriving || weapon.DisplayedSlot != arrivalSlot))
+            {
+                arrivalSlot = weapon.DisplayedSlot;
+                reloadAnimationDuration = Mathf.Max(0.05f, weapon.RaiseTimeRemaining / (1f - WeaponController.ArrivalStart));
+                float clipTime = ReloadClipUsefulStart + WeaponController.ArrivalStart * reloadClipUsefulLength;
+                float speed = reloadClipUsefulLength / reloadAnimationDuration;
+                PlayReloadEnd(animator, clipTime, speed);
+                PlayReloadEnd(ViewAnimator, clipTime, speed);
+            }
             wasReloading = reloading;
-            animator.SetBool(ReloadingId, reloading);
+            wasArriving = arriving;
+            animator.SetBool(ReloadingId, reloading || arriving);
             animator.SetFloat(ReloadSpeedId, reloadClipUsefulLength / reloadAnimationDuration);
         }
         if (taser != null)
@@ -774,7 +816,7 @@ public class PlayerAnimator : MonoBehaviour
     private void ApplyHandGrip(float dt)
     {
         if (grip == null) return;
-        bool holding = locomotion.IsAlive && !locomotion.DisplayVaulting && (weapon == null || !weapon.IsReloading);
+        bool holding = locomotion.IsAlive && !locomotion.DisplayVaulting && (weapon == null || !weapon.ShowsReloadGesture);
         float upper = animator.layerCount > UpperBodyLayer ? animator.GetLayerWeight(UpperBodyLayer) : 0f;
         float strike = animator.layerCount > TaserLayer ? animator.GetLayerWeight(TaserLayer) : 0f;
         grip.Apply(shownModel, shownWeapon != null ? shownWeapon.attachmentCatalog : null, holding, upper * (1f - strike), handGrip, dt);
@@ -1277,7 +1319,7 @@ public class PlayerAnimator : MonoBehaviour
     {
         if (sight == null || spineChain == null || spineChain.Length == 0) return;
 
-        bool reloading = weapon != null && weapon.IsReloading;
+        bool reloading = weapon != null && weapon.ShowsReloadGesture;
         bool striking = animator.layerCount > TaserLayer && animator.GetLayerWeight(TaserLayer) > 0.01f;
         float targetYaw = torsoYaw, targetPitch = torsoPitch;
         if (!reloading && !striking)

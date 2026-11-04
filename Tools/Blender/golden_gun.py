@@ -5,9 +5,16 @@ satiné, à crosse de caoutchouc noir quadrillé de pointes de diamant, qui tire
 (une .45-70 : douille droite à bourrelet, balle chemisée à pointe de plomb), mise directement dans
 la chambre. Les cotes viennent de la photo de l'arme fermée, redressée dans le repère de l'arme et
 relevée autour de l'axe de sa charnière (PIV ; « av » vers la bouche, « h » en hauteur) ; l'arme garde
-la prise des pistolets (la poignée à l'origine). Le canon est un octogone aux grands chanfreins,
-d'après la photo de la bouche ; puis toute l'arme est agrandie de moitié autour de la prise (ECHELLE),
-pour qu'on la voie bien dans la main des robots (demandé par l'utilisateur).
+l'origine des pistolets (la prise de la main), mais s'y tient 3 cm plus en avant (AVANCE_DANS_LA_MAIN), sa crosse
+amincie (DEMI_CROSSE) : la main droite du robot l'enveloppe (sa tenue, animations/tenue_golden_gun.py). Le canon est
+un octogone aux grands chanfreins, d'après la photo de la bouche ; puis toute l'arme est agrandie de moitié autour de
+la prise (ECHELLE), pour qu'on la voie bien dans la main des robots (demandé par l'utilisateur).
+
+La mire (2026-11-03, l'utilisateur : « cran de mire trop large et guidon trop petit et trop large », puis les pattes du
+cran deux fois plus fines, le guidon et son point un peu plus gros) : vu de l'œil, deux pattes fines, plus hautes que les
+oreilles du nez, encadrent le cran ; le guidon, une lame qui porte un gros point rouge, en couvre les deux tiers, son haut
+à celui des pattes. Le canon est creux de bout en bout (AME : le logement du bourrelet, la chambre, l'âme), et le chien
+agrandi (« qu'il sorte un peu plus »).
 
 Le canon pivote sur l'axe de la charnière (AXE), plus bas que sur la photo pour que la charnière
 dépasse moins du canon (demandé par l'utilisateur), et bascule en arrière jusqu'à l'horizontale,
@@ -53,7 +60,11 @@ kit = ca.kit
 from kit_lowpoly import AVANT, GAUCHE, HAUT, P, Piece  # noqa: E402
 
 ECHELLE = 1.50              # l'arme agrandie autour de la prise, pour qu'on la voie dans la main des robots
-PIV = (0.042, 0.070)        # l'axe de la charnière de la photo, dans le repère de l'arme ; le reste se relève autour
+# L'axe de la charnière de la photo, dans le repère de l'arme ; le reste se relève autour. L'arme est avancée de 2 cm
+# (3 cm une fois agrandie) dans la main, par rapport à la prise des pistolets : la main du robot (la prise du clip)
+# a ses jointures 4 cm devant la bande avant de la crosse, et ses doigts ne pouvaient pas l'envelopper (2026-11-03)
+AVANCE_DANS_LA_MAIN = 0.020
+PIV = (0.042 + AVANCE_DANS_LA_MAIN, 0.070)
 AXE = (0.0, -0.0045)        # l'axe de la charnière du Big D : 6,5 mm au-dessus du canon, contre 11 sur la photo
 D_HAUT = -0.011             # le dessus du canon
 D_BAS = -0.042              # son dessous
@@ -63,15 +74,24 @@ DEMI_DESSUS = 0.0060        # le dessus du canon, entre ses grands chanfreins
 CHANFREIN_HAUT = 0.0060
 DEMI_DESSOUS = 0.0070
 CHANFREIN_BAS = 0.0050
-DEMI_AILERON = 0.0056       # l'aileron du guidon, presque aussi large que le dessus
+DEMI_AILERON = 0.0017       # l'aileron du guidon : une lame, que le cran de mire encadre de deux jours de 2 mrad
 DEMI_TENON = 0.0085         # le tenon du canon, entre les joues de la carcasse
-DEMI_FENTE = 0.0075         # la fente du nez, entre ses deux oreilles, où tournent les pattes du canon
-DEMI_MIRE = 0.0030          # la rainure de visée, entre les pattes
+# la fente du nez, entre ses deux oreilles, où tournent les pattes du canon : les pattes, de DEMI_MIRE à elle, ont la
+# moitié de leur largeur d'avant (2,8 mm ; l'utilisateur, 2026-11-03 : « encore un peu larges »)
+DEMI_FENTE = 0.0047
+DEMI_MIRE = 0.0019          # le cran de mire, entre les pattes : 12,6 mrad vu de l'œil, dont le guidon couvre 8,4
 AV_BOUCHE = 0.109
 AV_CULASSE = -0.0050        # l'arrière du canon, contre le bouclier de la carcasse (à -0,006)
 H_VISEE = -0.0015           # la ligne de mire, 9,5 mm au-dessus du canon
 R_AME = 0.0058
-R_NEZ = 0.0058              # le nez, un disque autour de l'axe, que le canon longe en basculant
+# le canon est creux sur toute sa longueur (demandé par l'utilisateur le 2026-11-03) : à l'arrière, le logement du
+# bourrelet, puis la chambre de la douille, puis l'âme jusqu'à la bouche ; (distance à l'arrière du canon, rayon)
+AME = [(-0.0020, 0.0079), (0.0019, 0.0079), (0.0019, 0.0066), (0.0535, 0.0066), (0.0535, 0.0060), (0.1160, 0.0060)]
+# le nez, un disque autour de l'axe, que le canon longe en basculant ; les pattes du canon, autour de l'axe, dans sa
+# fente, le dépassent de 0,8 mm (1,2 une fois agrandi) : vu de l'œil, deux montants fins autour du cran. Retourné, le
+# haut des pattes passe à 0,3 mm du fond de la fente (D_HAUT + 0,2 mm)
+R_NEZ = 0.0052
+R_PATTE = 0.0060
 
 # le bord avant des joues de la carcasse, qui couvrent le bas du canon (de l'arrière vers l'avant) ; derrière
 # l'axe, un arc autour de lui, que le canon longe en s'ouvrant au lieu d'y plonger
@@ -80,31 +100,70 @@ JOUE = ([(AXE[0] + 0.0210 * math.cos(math.radians(d)), AXE[1] + 0.0210 * math.si
         + [(0.0133, -0.0262), (0.0267, -0.0275), (0.0400, -0.0308), (0.0453, -0.0342), (0.0473, -0.0395),
            (0.0478, -0.0425)])
 # le guidon, une rampe droite comme sur la photo, jusqu'à la face où se pose le point rouge : tout ce qu'on voit du
-# guidon dans le cran de mire, la rampe restant cachée sous le fond du cran
-AILERON = [(0.0800, D_HAUT), (0.1030, H_VISEE - 0.0033), (0.1030, H_VISEE + 0.0016), (0.1076, H_VISEE + 0.0016),
-           (0.1086, H_VISEE + 0.0012), (0.1090, H_VISEE + 0.0004), (0.1090, D_HAUT)]
+# guidon dans le cran de mire, la rampe restant cachée sous le fond du cran. Vu de l'œil (40 cm derrière la mire), son
+# haut est à celui des pattes du cran : 9,9 mrad au-dessus de la ligne de mire (2026-11-03, l'utilisateur : « guidon
+# trop petit et trop large »)
+AILERON = [(0.0800, D_HAUT), (0.1030, H_VISEE - 0.0033), (0.1030, H_VISEE + 0.0040), (0.1076, H_VISEE + 0.0040),
+           (0.1086, H_VISEE + 0.0035), (0.1090, H_VISEE + 0.0026), (0.1090, D_HAUT)]
+R_POINT = 0.00125           # le point rouge du guidon, sur la ligne de mire
 # le chien abattu, plus bas que sur la photo : sa crête reste sous la ligne de mire ; il tourne autour de AXE_CHIEN,
-# dans la carcasse, et le modèle le montre armé, tourné vers l'arrière de ARMEMENT_CHIEN
-CHIEN = [(-0.0244, -0.0174), (-0.0246, -0.0104), (-0.0250, -0.0069), (-0.0262, -0.0050), (-0.0285, -0.0042),
-         (-0.0315, -0.0046), (-0.0338, -0.0054), (-0.0350, -0.0064), (-0.0345, -0.0074), (-0.0325, -0.0080),
-         (-0.0300, -0.0092), (-0.0285, -0.0114), (-0.0282, -0.0174)]
+# dans la carcasse, et le modèle le montre armé, tourné vers l'arrière de ARMEMENT_CHIEN. Agrandi autour de son axe
+# (ECHELLE_CHIEN, demandé deux fois par l'utilisateur le 2026-11-03) : abattu, sa crête reste 0,8 mm sous le canon
+# retourné (1,55 l'y ferait toucher)
 AXE_CHIEN = (-0.0263, -0.0150)
+ECHELLE_CHIEN = 1.50
+
+
+def grand(p):
+    """Un point du chien de la photo, à sa place sur le chien agrandi."""
+    return (AXE_CHIEN[0] + ECHELLE_CHIEN * (p[0] - AXE_CHIEN[0]), AXE_CHIEN[1] + ECHELLE_CHIEN * (p[1] - AXE_CHIEN[1]))
+
+
+CHIEN = [grand(p) for p in [(-0.0244, -0.0174), (-0.0246, -0.0104), (-0.0250, -0.0069), (-0.0262, -0.0050),
+                            (-0.0285, -0.0042), (-0.0315, -0.0046), (-0.0338, -0.0054), (-0.0350, -0.0064),
+                            (-0.0345, -0.0074), (-0.0325, -0.0080), (-0.0300, -0.0092), (-0.0285, -0.0114),
+                            (-0.0282, -0.0174)]]
+DEMI_CHIEN = 0.0032 * ECHELLE_CHIEN
+CRETE_CHIEN = grand((-0.0305, -0.0044))   # le dessus de la crête, abattu, où le pouce l'arme
 ARMEMENT_CHIEN = 40.0       # degrés
-AXE_LEVIER = (0.0087, -0.0435)
-ABAISSEMENT_LEVIER = 14.0   # degrés : le bout du levier, sous le pouce, descend et libère le canon
+# le levier qui libère le canon, sur le flanc gauche, sous le pouce : son axe, puis son bras jusqu'au bout moleté
+# (MOLETAGE_LEVIER, l'avant du moletage ; BOUT_LEVIER, son bout), à XL_LEVIER du milieu de l'arme, le moletage de
+# R_MOLETAGE de rayon ; le pouce appuie sur le dessus du moletage, près du bout (tenue_golden_gun, rechargement_golden_gun).
+# L'arme ayant avancé dans la main, le levier recule d'autant sur la carcasse : il reste sous le pouce (avancé avec elle,
+# il était 3 cm devant, et le pouce du CT-01, 23 mm d'épaisseur, n'y arrivait qu'en entrant dans la carcasse). Le
+# moletage est gros, sort du flanc de 8,7 mm une fois agrandi et va jusque sous le bout du pouce : à 5,9 mm, le pouce,
+# couché sur le haut du flanc, n'en touchait que le côté, ou entrait de 2 à 2,5 mm dans la carcasse pour se poser dessus ;
+# 4,5 mm plus court, il s'arrêtait devant le bout du pouce
+AXE_LEVIER = (0.0087 - AVANCE_DANS_LA_MAIN, -0.0435)
+MOLETAGE_LEVIER = (-0.0010 - AVANCE_DANS_LA_MAIN, -0.0418)
+BOUT_LEVIER = (-0.0125 - AVANCE_DANS_LA_MAIN, -0.0410)
+XL_LEVIER = DEMI + 0.0031
+R_MOLETAGE = 0.0027
+R_BRAS_LEVIER = 0.0015
+ABAISSEMENT_LEVIER = 12.0   # degrés : le bout du levier, sous le pouce, descend et libère le canon
 OUVERTURE_CANON = 180.0     # degrés : le canon à l'horizontale, au-dessus de la carcasse, la chambre vers l'avant
 SORTIE_DOUILLE = 0.060      # la douille vide hors de la chambre, avant de tomber
 APPROCHE_CARTOUCHE = 0.080  # la cartouche neuve, présentée devant la chambre avant d'y entrer
+# Le canon bascule seul, lancé par le coup de poignet : il part à la vitesse que l'arme avait quand le poignet s'est
+# arrêté (une part de sa vitesse moyenne), accélère, et rebondit sur sa butée. Pour le refermer, le coup de poignet vers
+# le bas est sec : le canon part presque à sa pleine vitesse et claque sur la carcasse.
+DEPART_CANON = 0.30
+DEPART_FERMETURE = 0.80
+REBOND_CANON = 10.0         # degrés
 # Le rechargement, de 0 (le coup parti, chien abattu, douille vide dans la chambre) à 1 (refermé, armé) : quand
-# chaque pièce bouge, en part de sa durée. Les mains du robot s'y calent, et Unity le rejoue (voir pose).
+# chaque pièce bouge, en part de sa durée. Les mains du robot s'y calent, et Unity le rejoue (voir pose). La main
+# droite fait tout (2026-11-03, d'après le Wingman d'Apex Legends, demandé par l'utilisateur : « fluide, aisé et
+# nonchalant ») : le pouce abaisse le levier, un coup de poignet vers le haut ouvre l'arme, un vers le bas la referme,
+# et le pouce arme le chien ; la main gauche ne fait que glisser la cartouche, du pouce et de l'index.
 DUREE_RECHARGEMENT = 2.5    # s, celle du Golden Gun (Arme_GoldenGun.asset)
 ETAPES = {
-    "levier": (0.02, 0.10),      # le pouce abaisse le levier, puis le relâche
-    "ouverture": (0.08, 0.24),   # la main gauche lance le canon, qui bascule jusqu'à l'horizontale
-    "ejection": (0.14, 0.18),    # la chambre tournée vers le bas, la douille vide glisse dehors, puis tombe
-    "insertion": (0.50, 0.62),   # la cartouche neuve, présentée devant la chambre, y entre
-    "fermeture": (0.68, 0.82),   # la main gauche ramène le canon, qui se verrouille
-    "armement": (0.86, 0.93),    # le pouce arme le chien
+    "levier": (0.03, 0.17),      # le pouce droit abaisse le levier pendant l'élan, le tient, puis le relâche
+    "ouverture": (0.12, 0.17),   # le coup de poignet vers le haut s'arrête net : le canon bascule seul
+    "rebond": (0.17, 0.21),      # il rebondit sur sa butée
+    "ejection": (0.17, 0.215),   # au bout de sa course, l'éjecteur chasse la douille vide, qui saute puis tombe
+    "insertion": (0.49, 0.57),   # la cartouche neuve, tenue du pouce et de l'index, entre dans la chambre
+    "fermeture": (0.672, 0.705), # le coup de poignet vers le bas s'arrête net : le canon, lancé, se rabat et claque
+    "armement": (0.80, 0.88),    # le canon verrouillé, le pouce droit arme le chien
 }
 # la détente de la photo : une lame qui part vers l'arrière, face avant creuse, et dont le bout revient vers l'avant
 DETENTE = [(0.0222, -0.0430), (0.0212, -0.0470), (0.0192, -0.0510), (0.0175, -0.0550), (0.0166, -0.0588),
@@ -121,7 +180,12 @@ CROSSE = [(-0.0213, -0.0315), (-0.0293, -0.0275), (-0.0400, -0.0262), (-0.0480, 
           (-0.0216, -0.0942), (-0.0207, -0.0848), (-0.0213, -0.0742), (-0.0224, -0.0608), (-0.0220, -0.0475),
           (-0.0213, -0.0368)]
 VIS_CROSSE = (-0.0390, -0.0645)
-DEMI_CROSSE = 0.0145
+# La crosse amincie (2026-11-03, l'utilisateur : « des doigts qui passent à travers la crosse ») : les doigts des robots,
+# des blocs épais, n'en faisaient pas le tour ; la carcasse qu'elle couvre (son noyau et la bande avant) s'amincit avec
+# elle sous le haut du caoutchouc (NOYAU_HAUT)
+DEMI_CROSSE = 0.0103        # ±15,5 mm agrandie, la crosse du PA-05
+DEMI_NOYAU = DEMI_CROSSE - 0.0020
+NOYAU_HAUT = -0.0360
 ARRONDI_CROSSE = 0.0030     # le bord du caoutchouc, un quart de rond
 # La crosse de la photo est presque droite et, agrandie avec l'arme, trop épaisse pour la main des robots, qui tient
 # celle des pistolets, inclinée de 18° : elle est inclinée vers l'arrière et réduite autour de son haut, sans changer
@@ -276,6 +340,12 @@ def canon(a, T):
     for x0, x1 in ((DEMI_TENON, DEMI + 0.002), (-DEMI - 0.002, -DEMI_TENON)):
         kit.prisme(cp, [q(av, h) for av, h in joues], x0, x1)
     a.couper(ob, cp, auto=True)
+    cp = Piece("ame", "Interieur")
+    debut = Vector(Q(AV_CULASSE, D_AXE))
+    longueur = AME[-1][0] - AME[0][0]
+    kit.tranches(cp, debut + AVANT * AME[0][0], debut + AVANT * AME[-1][0], [r for _, r in AME], 20, mat="Interieur",
+                 positions=[(d - AME[0][0]) / longueur for d, _ in AME])
+    a.couper(ob, cp, auto=True)
     kit.lisser(ob, 20.0)   # les chanfreins du bas, à 28° des flancs, restent des arêtes
     accrocher(ob)
 
@@ -286,7 +356,7 @@ def canon(a, T):
     bas = D_HAUT - CHANFREIN_HAUT
     prisme(pc, [(-0.0040, bas)] + dessus + [(0.0020, bas)], -DEMI, DEMI, mat)   # devant, il rentre sous le nez
     # rondes autour de l'axe, sous le dessus du nez : vu d'en haut, le nez reste un bloc, fendu de la rainure
-    patte = [(-0.0035, D_HAUT)] + arc(0.0050, (200, 160, 120, 90, 60, 20, -20)) + [(0.0050, D_HAUT)]
+    patte = [(-0.0035, D_HAUT)] + arc(R_PATTE, (200, 160, 120, 90, 60, 20, -20)) + [(0.0050, D_HAUT)]
     for x0, x1 in ((DEMI_MIRE, DEMI_FENTE - 0.00005), (-DEMI_FENTE + 0.00005, -DEMI_MIRE)):   # contre les oreilles
         prisme(pc, patte, x0, x1, mat, 0.0004)
     accrocher(a.objet(pc))
@@ -294,9 +364,9 @@ def canon(a, T):
     pc = a.piece("Guidon", mat)
     prisme(pc, AILERON, -DEMI_AILERON, DEMI_AILERON, mat, 0.0006)
     # le point, sur la face du haut de la rampe, face à l'œil
-    kit.cylindre(pc, Q(0.1029, H_VISEE), Q(0.1051, H_VISEE), 0.0009, 8, mat="Lueur")
-    kit.disque(pc, Q(AV_BOUCHE + 0.0001, D_AXE), AVANT, R_AME + 0.0014, 16, mat="AcierBrut")   # la couronne
-    kit.disque(pc, Q(AV_BOUCHE + 0.0002, D_AXE), AVANT, R_AME, 16, mat="Interieur")
+    kit.cylindre(pc, Q(0.1029, H_VISEE), Q(0.1051, H_VISEE), R_POINT, 10, mat="Lueur")
+    kit.anneau(pc, PIV[0] + AV_BOUCHE - 0.0002, PIV[0] + AV_BOUCHE + 0.0002, PIV[1] + D_AXE,
+               AME[-1][1] + 0.0014, AME[-1][1], 20, mat="AcierBrut")   # la couronne, autour de l'âme
     accrocher(a.objet(pc))
 
     # sur le flanc gauche, que voit le joueur : une balle qui file vers la bouche, et le nom
@@ -346,6 +416,10 @@ def carcasse(a, T):
     boite(cp, -0.0061, 0.0520, D_BAS - 0.0006, D_HAUT, -DEMI_TENON, DEMI_TENON)
     boite(cp, AXE[0] - 0.0065, AXE[0] + 0.0090, D_HAUT + 0.0002, 0.0100, -DEMI_FENTE, DEMI_FENTE)  # la fente du nez
     boite(cp, -0.0095, -0.0060, H_VISEE - 0.0025, 0.0100, -DEMI_MIRE, DEMI_MIRE)  # la rainure de visée
+    if DEMI_NOYAU < DEMI:
+        zone = [(-0.0900, NOYAU_HAUT), (-0.0060, NOYAU_HAUT), (-0.0060, -0.1300), (-0.0900, -0.1300)]
+        for x0, x1 in ((DEMI_NOYAU, DEMI + 0.002), (-DEMI - 0.002, -DEMI_NOYAU)):
+            kit.prisme(cp, [q(*p) for p in zone], x0, x1)
     a.couper(ob, cp, auto=True)
 
     pc = a.piece("Pontet", mat)
@@ -357,10 +431,10 @@ def carcasse(a, T):
 
     _, au_chien = mobile(a, "Chien", Q(*AXE_CHIEN))   # armé : prêt à tirer
     pc = a.piece("Chien_Corps", T["pieces"])
-    prisme(pc, [arme(p) for p in CHIEN], -0.0032, 0.0032, T["pieces"], 0.0006)
+    prisme(pc, [arme(p) for p in CHIEN], -DEMI_CHIEN, DEMI_CHIEN, T["pieces"], 0.0006)
     for av in (-0.0300, -0.0315, -0.0330):   # les stries de la crête, sous le pouce
         strie = [(av - 0.0003, -0.0054), (av + 0.0003, -0.0054), (av + 0.0003, -0.0040), (av - 0.0003, -0.0040)]
-        prisme(pc, [arme(p) for p in strie], -0.0026, 0.0026, "Interieur")
+        prisme(pc, [arme(grand(p)) for p in strie], -DEMI_CHIEN + 0.0006, DEMI_CHIEN - 0.0006, "Interieur")
     au_chien(a.objet(pc))
 
     pc = a.piece("Commandes", T["pieces"])
@@ -378,18 +452,17 @@ def carcasse(a, T):
         kit.disque(pc, Q(*AXE, cote * (DEMI + 0.0002)), GAUCHE * cote, 0.0020, 10, mat="Interieur")
         kit.disque(pc, Q(*AXE_CHIEN, cote * (DEMI + 0.0002)), GAUCHE * cote, 0.0013, 8, mat="Interieur")
         kit.disque(pc, Q(-0.0127, -0.0118, cote * (DEMI + 0.0002)), GAUCHE * cote, 0.0014, 6, mat="Interieur")
-        kit.disque(pc, Q(*prise((-0.0170, -0.0640)), cote * (DEMI + 0.0002)), GAUCHE * cote, 0.0012, 8,
-                   mat="Interieur")
+        kit.disque(pc, Q(*prise((-0.0170, -0.0640)), cote * (DEMI_NOYAU + 0.0002)), GAUCHE * cote, 0.0012, 8,
+                   mat="Interieur")   # sur la bande avant, amincie avec la crosse
     a.objet(pc)
 
     # le levier qui libère le canon, sur le flanc gauche : son bout moleté, sous le pouce, s'abaisse
     _, au_levier = mobile(a, "Levier", Q(*AXE_LEVIER))
     pc = a.piece("Levier_Corps", T["pieces"])
-    bout, moletage = (-0.0095, -0.0412), (-0.0010, -0.0418)
-    xl = DEMI + 0.0022
-    kit.cylindre(pc, Q(*AXE_LEVIER, DEMI - 0.0004), Q(*AXE_LEVIER, DEMI + 0.0016), 0.0038, 12, mat=T["pieces"])
-    kit.cylindre(pc, Q(*AXE_LEVIER, xl), Q(*moletage, xl), 0.0011, 6, mat=T["pieces"])
-    kit.cylindre(pc, Q(*moletage, xl), Q(*bout, xl), 0.0017, 10, mat="AcierBrut")
+    xl = XL_LEVIER
+    kit.cylindre(pc, Q(*AXE_LEVIER, DEMI - 0.0004), Q(*AXE_LEVIER, xl - 0.0004), 0.0038, 12, mat=T["pieces"])
+    kit.cylindre(pc, Q(*AXE_LEVIER, xl), Q(*MOLETAGE_LEVIER, xl), R_BRAS_LEVIER, 6, mat=T["pieces"])
+    kit.cylindre(pc, Q(*MOLETAGE_LEVIER, xl), Q(*BOUT_LEVIER, xl), R_MOLETAGE, 10, mat="AcierBrut")
     au_levier(a.objet(pc))
 
 
@@ -473,8 +546,10 @@ def construire(a):
     a.reperes(Q(-0.035, H_VISEE), Q(AV_BOUCHE, D_AXE))
     agrandir(a, ECHELLE)
     # la cartouche sort de la chambre pendant le rechargement, et va dans la main : son occlusion se cuit hors du canon,
-    # où elle serait presque noire (exporter_armes.cuire_occlusion)
-    a.cuire_a_part = [a.nom("Cartouche")]
+    # où elle serait presque noire (exporter_armes.cuire_occlusion). Le canon se cuit aussi hors de la carcasse : ouvert,
+    # il montre sa culasse, son dessous et le lit de la carcasse, qui, cuits l'un contre l'autre, sortaient noirs
+    # (0,02 d'occlusion sur la culasse, vu au rechargement le 2026-11-03)
+    a.cuire_a_part = [a.nom("Canon"), a.nom("Cartouche")]
 
 
 def doux(x):
@@ -488,6 +563,27 @@ def part(t, etape):
     return min(1.0, max(0.0, (t - debut) / (fin - debut)))
 
 
+ENFONCE_LEVIER = 0.30   # parts de l'étape du levier : le pouce l'enfonce, le tient (jusqu'à ce que le canon parte),
+RELACHE_LEVIER = 0.25   # puis le relâche
+
+
+def appui(x):
+    """L'appui du pouce sur le levier (0, puis 1, puis 0) : il l'enfonce, le tient et le relâche, sans à-coup."""
+    x = min(1.0, max(0.0, x))
+    if x < ENFONCE_LEVIER:
+        return doux(x / ENFONCE_LEVIER)
+    if x > 1.0 - RELACHE_LEVIER:
+        return doux((1.0 - x) / RELACHE_LEVIER)
+    return 1.0
+
+
+def bascule(x, depart=DEPART_CANON):
+    """La course du canon lancé (0 à 1) : il part avec de l'élan (`depart`, une part de sa vitesse moyenne) et accélère
+    jusqu'à sa butée."""
+    x = min(1.0, max(0.0, x))
+    return x * (depart + (1.0 - depart) * x)
+
+
 def pose(t):
     """Les pièces mobiles à l'instant t du rechargement (0 à 1), en degrés et en mètres de l'arme (avant ECHELLE) :
     canon (ouvert de tant), chien (abattu de tant depuis l'armé), levier (abaissé de tant) ; douille : ce que la
@@ -495,9 +591,10 @@ def pose(t):
     que la cartouche neuve est encore devant la chambre, None tant qu'elle n'y est pas présentée."""
     ejection = part(t, "ejection")
     return dict(
-        canon=OUVERTURE_CANON * (doux(part(t, "ouverture")) - doux(part(t, "fermeture"))),
+        canon=OUVERTURE_CANON * (bascule(part(t, "ouverture")) - bascule(part(t, "fermeture"), DEPART_FERMETURE))
+        - REBOND_CANON * math.sin(math.pi * part(t, "rebond")),
         chien=ARMEMENT_CHIEN * (1.0 - doux(part(t, "armement"))),
-        levier=ABAISSEMENT_LEVIER * math.sin(math.pi * part(t, "levier")),
+        levier=ABAISSEMENT_LEVIER * appui(part(t, "levier")),
         douille=SORTIE_DOUILLE * ejection * ejection if ejection < 1.0 else None,   # elle glisse de plus en plus vite
         chute=(t - ETAPES["ejection"][1]) * DUREE_RECHARGEMENT if ejection >= 1.0 else None,
         cartouche=APPROCHE_CARTOUCHE * (1.0 - doux(part(t, "insertion"))) if t >= ETAPES["insertion"][0] else None,
@@ -523,6 +620,7 @@ VUES = [
     ("detail_charniere", Q(0.040, 0.045, 0.16) * ECHELLE, Q(0.005, -0.020, 0.0) * ECHELLE, 45),
     ("bouche", Q(0.215, 0.020, 0.075) * ECHELLE, Q(0.098, -0.024, 0.0) * ECHELLE, 50),
     ("detail_crosse", Q(-0.010, -0.020, 0.17) * ECHELLE, Q(-0.045, -0.065, 0.0) * ECHELLE, 45),
+    ("detail_levier", Q(-0.075, -0.012, 0.075) * ECHELLE, Q(-0.020, -0.041, XL_LEVIER) * ECHELLE, 30),
 ]
 
 ATELIER = ca.principal("BIG-D", "derringer du Golden Gun", "Big D" if TEINTE == "or" else f"Big D — {TEINTE}",

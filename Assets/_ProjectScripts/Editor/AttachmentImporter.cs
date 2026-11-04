@@ -43,10 +43,13 @@ public static class AttachmentImporter
     // L'éclat du réticule : un rouge franc sous le tonemapping neutre de l'arène, qui déborde un peu
     // en halo (bloom au-dessus de 1).
     private const float ReticleIntensity = 1.6f;
-    private const float LensOpacity = 0.12f;
+    // Ce que la vitre assombrit vue de face (DuelArena/ViseurReticule ne lui ajoute plus sa teinte depuis le
+    // 2026-11-03 : seul son reflet, de biais, la porte). À 12 % de teinte ajoutée, la vue se voilait de bleu
+    // dans la pénombre de l'arène (l'utilisateur : « pas assez transparents »).
+    public const float LensOpacity = 0.05f;
     // La vitre d'une lunette couvre le centre de la vue grossie : à 12 %, sa teinte ajoutée voilait la cible
     // dans la pénombre du stand (vu le 2026-10-28). Une optique traitée laisse presque tout passer.
-    public const float ScopeLensOpacity = 0.04f;
+    public const float ScopeLensOpacity = 0.02f;
     // En visée, la distance de l'œil à la mire d'un viseur dont la fiche ne la donne pas, au premier import.
     private const float SightEyeDistance = 0.08f;
 

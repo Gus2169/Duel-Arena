@@ -205,7 +205,7 @@ public class FirstPersonView : NetworkBehaviour
 
     /// <summary>L'arme est épaulée au point d'entrer dans sa lunette (pas pendant un rechargement).</summary>
     private bool InScope => view != null && !hidden && !spectatorMode && aimBlend >= scopeInThreshold
-                            && weaponController != null && !weaponController.IsReloading;
+                            && weaponController != null && !weaponController.ShowsReloadGesture;
 
     /// <summary>Dans la lunette plein écran du sniper (2026-10-11) : la vue zoome du grossissement de
     /// l'arme, l'arme disparaît, la lunette couvre l'écran (CrosshairUI). Comme dans Call of Duty,
@@ -443,8 +443,9 @@ public class FirstPersonView : NetworkBehaviour
             : wantedPose;
         offsets += sprintOffset * sprintPose;
 
-        // L'arme qu'on vient de prendre remonte pendant qu'elle sort (WeaponController.RaiseProgress).
-        float lowered = weaponController != null ? 1f - Mathf.SmoothStep(0f, 1f, weaponController.RaiseProgress) : 0f;
+        // L'arme qu'on vient de prendre remonte pendant qu'elle sort (WeaponController.RaiseProgress) ; celle que le mode met
+        // en main sort par la fin du geste de rechargement (IsArriving).
+        float lowered = weaponController != null && !weaponController.IsArriving ? 1f - Mathf.SmoothStep(0f, 1f, weaponController.RaiseProgress) : 0f;
         offsets += raiseOffset * lowered;
         // Pendant le coup de taser, l'arme s'abaisse pour laisser passer le poing.
         float dip = Mathf.SmoothStep(0f, 1f, strikeWeight);

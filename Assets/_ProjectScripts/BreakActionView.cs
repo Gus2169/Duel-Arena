@@ -12,8 +12,10 @@ using UnityEngine.Rendering;
 /// le geste (BreakActionGesture.PoseAt) ; la cartouche de la chambre montre la douille vide qui glisse dehors (sans sa
 /// balle), puis rien, puis la cartouche neuve qui entre ; quand la douille quitte la chambre, une copie tombe
 /// (DroppedMagazine) ; de la saisie à la présentation, une copie de la cartouche neuve est dans la main gauche, à la
-/// paume de la main montrée, et rejoint la chambre sans à-coup. Hors du rechargement, une arme vide (le coup parti) a son
-/// chien abattu et sa douille vide dans la chambre ; sinon, elle est au repos, chargée.
+/// paume de la main montrée, et rejoint la chambre sans à-coup ; le pouce droit, qui abaisse le levier puis arme le
+/// chien, prend les poses du geste (BreakActionGesture.ThumbAt). Hors du rechargement, une arme vide (le coup parti) a
+/// son chien abattu et sa douille vide dans la chambre ; sinon, elle est au repos, chargée. L'arme en main, rechargement
+/// ou non, la main droite prend la tenue du geste (BreakActionGesture.rightHold) : ses doigts épousent la crosse.
 ///
 /// Ce qu'on cache, on le cache par Renderer.enabled et on ne rallume que ce qu'on a éteint ; les pièces tournées
 /// reprennent leur rotation de repos. Un rechargement interrompu, une autre arme, rendent aussitôt l'arme intacte.
@@ -26,6 +28,9 @@ public sealed class BreakActionView
 
     private readonly bool arms;
     private readonly Transform leftHand;
+    private readonly Transform[] hand;    // les phalanges de la main droite que la tenue repose (BreakActionGesture.HoldOrder)
+    private readonly Transform[] thumb;   // les phalanges du pouce droit, de la base au bout
+    private readonly Quaternion[] thumbPose = new Quaternion[BreakActionGesture.ThumbBones];
     private WeaponModel model;
     private BreakActionGesture boundTo;
     private Transform barrel, hammer, latch, cartridge;
@@ -44,6 +49,10 @@ public sealed class BreakActionView
     {
         this.arms = arms;
         leftHand = animator != null ? animator.GetBoneTransform(HumanBodyBones.LeftHand) : null;
+        hand = new Transform[animator != null && animator.isHuman ? BreakActionGesture.HoldOrder.Length : 0];
+        for (int b = 0; b < hand.Length; b++) hand[b] = animator.GetBoneTransform(BreakActionGesture.HoldOrder[b]);
+        thumb = new Transform[hand.Length > 0 ? BreakActionGesture.ThumbBones : 0];
+        for (int b = 0; b < thumb.Length; b++) thumb[b] = hand[b];
     }
 
     /// <summary>La copie de la cartouche neuve dans la main gauche, ou null.</summary>
@@ -70,6 +79,12 @@ public sealed class BreakActionView
             boundTo = gesture;
             Bind();
         }
+        // La main droite sur l'arme, au rechargement ou non : ses phalanges comme la tenue du geste (la prise des
+        // pistolets du clip refermait la main sur deux centimètres, et ses doigts entraient dans la crosse). L'Animator
+        // les réécrit à chaque image : rien à rendre.
+        if (model != null && gesture != null && gesture.HasHold && hand.Length == gesture.rightHold.Length)
+            for (int b = 0; b < hand.Length; b++)
+                if (hand[b] != null) hand[b].localRotation = gesture.rightHold[b];
         float f = !float.IsNaN(progress) ? progress : empty ? 0f : float.NaN;
         if (model == null || gesture == null || barrel == null || cartridge == null || float.IsNaN(f))
         {
@@ -98,8 +113,23 @@ public sealed class BreakActionView
         // La cartouche neuve dans la main gauche, de la saisie à la présentation devant la chambre.
         if (f >= gesture.grab && f < gesture.seated && leftHand != null) Hold(gesture, palmShift, f);
         else DestroyHeld();
+
+        // Le pouce droit, qui abaisse le levier puis arme le chien : ses phalanges comme dans Blender (le clip humanoïde
+        // n'en garde pas la torsion), fondues dans celles de la tenue (ou de l'Animator) au début et à la fin du geste.
+        if (!float.IsNaN(progress) && thumb.Length == BreakActionGesture.ThumbBones && gesture.ThumbAt(f, thumbPose))
+        {
+            float w = BreakActionGesture.ThumbWeight(f);
+            for (int b = 0; b < thumb.Length; b++)
+                if (thumb[b] != null) thumb[b].localRotation = Quaternion.Slerp(thumb[b].localRotation, thumbPose[b], w);
+        }
         last = f;
     }
+
+    /// <summary>Les phalanges du pouce droit que la vue repose (de la base au bout), pour les tests.</summary>
+    public IReadOnlyList<Transform> Thumb => thumb;
+
+    /// <summary>Les phalanges de la main droite que la tenue repose (BreakActionGesture.HoldOrder), pour les tests.</summary>
+    public IReadOnlyList<Transform> Hand => hand;
 
     /// <summary>Rend l'arme intacte : ses pièces au repos, la cartouche dans la chambre, rien dans la main.</summary>
     public void Restore()

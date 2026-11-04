@@ -37,6 +37,6 @@ Material:
     - _Reflet: 0.35
     m_Colors:
     - _CouleurReticule: {r: 1, g: 0.13333334, b: 0.09411765, a: 1}
-    - _CouleurVitre: {r: 0.87058824, g: 0.6901961, b: 0.40784314, a: 0.04}
+    - _CouleurVitre: {r: 0.87058824, g: 0.6901961, b: 0.4078431, a: 0.02}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

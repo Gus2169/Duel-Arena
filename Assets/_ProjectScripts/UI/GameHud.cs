@@ -55,9 +55,18 @@ public class GameHud : MonoBehaviour
     private int shownLeftPoints = -1, shownRightPoints = -1;
     private Label zoneStatus;
     private VisualElement zoneMarker;
+    private VisualElement zoneMarkerIcon;
+    private VisualElement zoneMarkerHalo;
     private Label zoneMarkerLabel;
     private VisualElement nextZoneMarker;
+    private VisualElement nextZoneMarkerIcon;
+    private VisualElement nextZoneMarkerHalo;
     private Label nextZoneMarkerLabel;
+    private VisualElement leftGauge;
+    private VisualElement leftGaugeFill;
+    private VisualElement rightGauge;
+    private VisualElement rightGaugeFill;
+    private Label scoreGoal;
     private bool pipsAreSteps;
     private bool pipsCompact;
     private int shownLeftWeapon = -1, shownRightWeapon = -1;
@@ -67,13 +76,22 @@ public class GameHud : MonoBehaviour
     private VisualElement healthFill;
     private VisualElement healthTrail;
     private VisualElement centerMessage;
-    private VisualElement replayFrame;
-    private Label replayLine;
-    private string shownReplayLine;
+    private VisualElement killCamCaption;
+    private Label killCamLine;
+    private string shownKillCamLine;
     private Label centerBig;
     private Label centerSmall;
     private VisualElement fade;
+    private VisualElement loadingBlock;
+    private Label loadingTitle;
+    private string shownLoadingTitle;
     private int pipCount = -1;
+
+    // L'arrivée dans l'arène (2026-11-03) : le temps compté depuis que la partie est prête sur cette machine
+    // (StepArrival), -1 tant qu'elle ne l'est pas. Le noir du chargement se lève à partir de là (ArrivalBlack).
+    private float readyFor = -1f;
+    // Cette machine a été dans la partie, dans cette arène : la perdre ensuite, c'est s'en aller (le noir reste).
+    private bool wasInGame;
 
     // La jauge : la vie montrée par la part rouge, et l'instant du dernier coup encaissé.
     private float shownTrail = -1f;
@@ -97,9 +115,20 @@ public class GameHud : MonoBehaviour
         shownLeftPoints = shownRightPoints = -1;
         zoneStatus = root.Q<Label>("zoneStatus");
         zoneMarker = root.Q<VisualElement>("zoneMarker");
+        zoneMarkerIcon = root.Q<VisualElement>("zoneMarkerIcon");
+        zoneMarkerHalo = root.Q<VisualElement>("zoneMarkerHalo");
         zoneMarkerLabel = root.Q<Label>("zoneMarkerLabel");
         nextZoneMarker = root.Q<VisualElement>("nextZoneMarker");
+        nextZoneMarkerIcon = root.Q<VisualElement>("nextZoneMarkerIcon");
+        nextZoneMarkerHalo = root.Q<VisualElement>("nextZoneMarkerHalo");
         nextZoneMarkerLabel = root.Q<Label>("nextZoneMarkerLabel");
+        leftGauge = root.Q<VisualElement>("leftGauge");
+        leftGaugeFill = root.Q<VisualElement>("leftGaugeFill");
+        rightGauge = root.Q<VisualElement>("rightGauge");
+        rightGaugeFill = root.Q<VisualElement>("rightGaugeFill");
+        scoreGoal = root.Q<Label>("scoreGoal");
+        leftGaugeShown = rightGaugeShown = default;
+        shownScoreGoal = -1;
         shownZoneStatus = null;
         zoneMarkerShown = nextMarkerShown = default;
         roundTimer = root.Q<Label>("roundTimer");
@@ -110,10 +139,15 @@ public class GameHud : MonoBehaviour
         centerMessage = root.Q<VisualElement>("centerMessage");
         centerBig = root.Q<Label>("centerBig");
         centerSmall = root.Q<Label>("centerSmall");
-        replayFrame = root.Q<VisualElement>("replayFrame");
-        replayLine = root.Q<Label>("replayLine");
-        shownReplayLine = null;
+        killCamCaption = root.Q<VisualElement>("killCamCaption");
+        killCamLine = root.Q<Label>("killCamLine");
+        shownKillCamLine = null;
         fade = root.Q<VisualElement>("fade");
+        loadingBlock = root.Q<VisualElement>("loadingBlock");
+        loadingTitle = root.Q<Label>("loadingTitle");
+        shownLoadingTitle = null;
+        readyFor = -1f;
+        wasInGame = false;
         pipCount = -1;
         // Les éléments viennent d'être retrouvés : leurs textes sont à refaire.
         shownTimerSeconds = int.MinValue;
@@ -144,26 +178,44 @@ public class GameHud : MonoBehaviour
         // de la scène, qui tient aussi le tournoi).
         RoundManager rm = RoundManager.Local;
         NetworkObject local = LocalPlayerObject;
-        bool inGame = local != null && rm != null && rm.IsSpawned;
+        // On s'en va (le retour au menu demandé, ou Netcode qui s'arrête : il le finit après cette image et emporte la
+        // caméra du joueur avant qu'elle ne soit dessinée) : plus rien de la partie, le noir tout de suite.
+        NetworkManager nm = NetworkManager.Singleton;
+        bool leaving = SessionFlow.LeavingToMenu || (nm != null && nm.ShutdownInProgress);
+        bool inGame = !leaving && local != null && rm != null && rm.IsSpawned;
         // L'écran de fin a toute la place : ni score, ni vie par-dessus le gagnant ; le salon non plus.
         bool endScreen = MatchEndScreen.IsShown || SalonPanel.IsShown;
-        // Le replay du coup mortel a l'écran (KillReplay) : la partie s'efface derrière lui, comme sous l'écran de fin.
-        bool replay = inGame && KillReplay.Covers;
-        bool covered = endScreen || replay;
+        // La kill cam a l'écran (KillCam) : le HUD s'efface devant elle, comme sous l'écran de fin.
+        bool killCam = inGame && KillCam.Covers;
+        bool covered = endScreen || killCam;
         if (inGame) TrackMatchChange(rm);
 
         // Hors d'un match du Tournoi (la salle d'attente, l'attente des joueurs), pas de barre de score : le tableau du
         // tournoi en tient lieu (TournamentBoard).
         SetVisible(scoreBar, inGame && !covered && !rm.TournamentMode);
         SetVisible(healthPanel, inGame && !covered);
-        SetVisible(centerMessage, inGame && !replay);
-        UpdateReplay(replay);
+        SetVisible(centerMessage, inGame && !killCam);
+        UpdateKillCam(killCam);
         if (!inGame)
         {
-            SetFade(0f);
+            // Pas encore dans la partie (le chargement : son robot ou l'arbitre de la manche pas encore là), ou plus (la
+            // session s'arrête, le retour au menu) : le noir, et ce qu'on attend. Sans session (l'arène lancée seule dans
+            // l'Editor), rien.
+            bool session = wasInGame || leaving || (nm != null && nm.IsListening);
+            readyFor = -1f;
+            SetFade(session ? 1f : 0f);
+            ShowLoading(session, LoadingTitle(wasInGame || leaving, false));
             HidesCrosshair = false;
             return;
         }
+
+        wasInGame = true;
+        // Prête quand l'arbitre et son robot sont là, et que les joueurs d'un salon en ligne sont tous arrivés.
+        bool gathering = RoundManager.Instance != null && RoundManager.Instance.Gathering;
+        bool matchComing = rm.CurrentPhase == RoundManager.Phase.WaitingForPlayers && rm.PhaseHasEnd;
+        readyFor = StepArrival(readyFor, !gathering, matchComing, Time.unscaledDeltaTime);
+        float arrival = ArrivalBlack(readyFor, fadeHold, fadeInTime);
+        ShowLoading(arrival >= 1f, LoadingTitle(false, gathering));
 
         UpdateScoreBar(rm, local.OwnerClientId);
         if (!covered) UpdateHealth(local);
@@ -176,34 +228,34 @@ public class GameHud : MonoBehaviour
         UpdateZone(rm, local.OwnerClientId, local.transform.position, covered);
         UpdateTagTeam(rm, local, covered);
         UpdateTournamentLine(rm, covered);
-        // Le noir des fins de manche, et le passage au replay.
-        float black = Mathf.Max(FadeAlpha(rm), KillReplay.Dip);
+        // Le noir des fins de manche, et celui de l'arrivée.
+        float black = Mathf.Max(FadeAlpha(rm), arrival);
         SetFade(black);
 
-        // L'arbitre du curseur et des commandes.
+        // L'arbitre du curseur et des commandes. Sous le noir de l'arrivée, on ne joue pas à l'aveugle.
         bool menu = PauseMenu.IsOpen || MatchEndScreen.IsShown || SalonPanel.IsShown;
         bool choosing = LoadoutPanel.IsShown;
         bool cursorFree = menu || choosing;
+        bool loading = arrival > 0.5f;
         if (local.TryGetComponent(out PlayerInputReader input))
         {
-            input.SetMode(menu || choosing ? PlayerInputReader.Mode.None : PlayerInputReader.Mode.Gameplay);
+            input.SetMode(menu || choosing || loading ? PlayerInputReader.Mode.None : PlayerInputReader.Mode.Gameplay);
         }
         UnityEngine.Cursor.lockState = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
         UnityEngine.Cursor.visible = cursorFree;
-        HidesCrosshair = cursorFree || black > 0.5f || replay;
+        HidesCrosshair = cursorFree || black > 0.5f || killCam;
     }
 
-    /// <summary>Le replay du coup mortel : ses bandes et sa légende, tant qu'il est à l'écran (sous le noir qui
-    /// l'ouvre, rien).</summary>
-    private void UpdateReplay(bool replay)
+    /// <summary>La légende de la kill cam, de l'impact à la fin de l'épave (KillCam.CaptionShown).</summary>
+    private void UpdateKillCam(bool killCam)
     {
-        bool shown = replay && KillReplay.CaptionShown;
-        SetVisible(replayFrame, shown);
-        if (!shown || replayLine == null) return;
-        string line = KillReplay.CurrentCaption;
-        if (line == shownReplayLine) return;
-        shownReplayLine = line;
-        replayLine.text = line;
+        bool shown = killCam && KillCam.CaptionShown;
+        SetVisible(killCamCaption, shown);
+        if (!shown || killCamLine == null) return;
+        string line = KillCam.CurrentCaption;
+        if (line == shownKillCamLine) return;
+        shownKillCamLine = line;
+        killCamLine.text = line;
     }
 
     // ------------------------------------------------------------------
@@ -269,6 +321,7 @@ public class GameHud : MonoBehaviour
         else FillPips(leftPips, rm.WinsOf(leftId), leftClass);
         ShowStepWeapon(leftWeapon, gunGame && leftShown, ladder, left != null ? left.GunGameStep : 0, ref shownLeftWeapon);
         ShowPoints(leftPoints, zone && leftShown, rm.WinsOf(leftId), ref shownLeftPoints);
+        ShowGauge(leftGauge, leftGaugeFill, zone && leftShown, rm.WinsOf(leftId), rm.RoundsToWin, PaintOf(leftId), ref leftGaugeShown);
 
         PlayerMatchState opponent = right;
         bool hasOpponent = opponent != null;
@@ -284,22 +337,64 @@ public class GameHud : MonoBehaviour
         }
         ShowStepWeapon(rightWeapon, gunGame && hasOpponent, ladder, hasOpponent ? opponent.GunGameStep : 0, ref shownRightWeapon);
         ShowPoints(rightPoints, zone && hasOpponent, hasOpponent ? rm.WinsOf(opponent.OwnerClientId) : 0, ref shownRightPoints);
+        ShowGauge(rightGauge, rightGaugeFill, zone && hasOpponent, hasOpponent ? rm.WinsOf(opponent.OwnerClientId) : 0, rm.RoundsToWin,
+                  hasOpponent ? PaintOf(opponent.OwnerClientId) : Color.white, ref rightGaugeShown);
+        SetVisible(scoreGoal, zone);
+        if (zone && rm.RoundsToWin != shownScoreGoal)
+        {
+            shownScoreGoal = rm.RoundsToWin;
+            scoreGoal.text = "OBJECTIF " + ZoneMode.Points(rm.RoundsToWin);
+        }
 
         // Le chrono de la manche : le temps écoulé, pas un compte à rebours (GDD § 5). Hors manche,
         // « VS » sépare les cercles des deux joueurs, qui se lisaient sinon comme une seule rangée.
         // Le texte n'est refait qu'au changement de seconde (il allouait à chaque image).
-        // À la Zone, le temps avant qu'elle ne change de place.
+        // À la Zone, le temps qui reste au match, puis la prolongation.
         bool active = rm.CurrentPhase == RoundManager.Phase.Active;
+        bool overtime = active && rm.ZoneOvertime;
         SetVisible(roundTimer, hasOpponent || active);
-        int seconds = !active ? -1 : zone ? Mathf.CeilToInt(rm.ZoneTimeLeft) : Mathf.Max(0, Mathf.FloorToInt(rm.PhaseElapsed));
+        roundTimer.EnableInClassList("round-timer--long", overtime);
+        int seconds = !active ? -1 : zone ? Mathf.CeilToInt(rm.ZoneMatchTimeLeft) : Mathf.Max(0, Mathf.FloorToInt(rm.PhaseElapsed));
         if (seconds != shownTimerSeconds)
         {
             shownTimerSeconds = seconds;
-            roundTimer.text = active ? FormatTime(seconds) : "VS";
+            roundTimer.text = overtime ? "PROLONGATION" : active ? FormatTime(seconds) : "VS";
         }
     }
 
     private int shownTimerSeconds = int.MinValue;
+    private int shownScoreGoal = -1;
+
+    // Ce qu'affiche une barre des points (rien n'est réécrit sans changement).
+    private struct GaugeShown
+    {
+        public int points;
+        public Color color;
+        public bool written;
+    }
+
+    private GaugeShown leftGaugeShown, rightGaugeShown;
+
+    /// <summary>La barre des points d'un duelliste, à la couleur de son robot, pleine au compte à atteindre (`target`).</summary>
+    private static void ShowGauge(VisualElement gauge, VisualElement fill, bool visible, int points, int target, Color color, ref GaugeShown shown)
+    {
+        SetVisible(gauge, visible);
+        if (gauge == null || fill == null || !visible) return;
+        if (!shown.written || points != shown.points)
+        {
+            shown.points = points;
+            fill.style.width = Length.Percent(100f * GaugeFill(points, target));
+        }
+        if (!shown.written || color != shown.color)
+        {
+            shown.color = color;
+            fill.style.backgroundColor = color;
+        }
+        shown.written = true;
+    }
+
+    /// <summary>La part remplie d'une barre : `points` sur `target`, sans jamais déborder. Fonction pure, testée.</summary>
+    public static float GaugeFill(int points, int target) => target > 0 ? Mathf.Clamp01((float)points / target) : 0f;
 
     private void BuildPips(int count, bool steps, bool compact)
     {
@@ -444,6 +539,8 @@ public class GameHud : MonoBehaviour
     // La zone et son annonce à l'image d'avant, et les duellistes déjà annoncés à la moitié des points.
     private int seenZone = -1;
     private bool seenZoneAnnounced;
+    private bool lastMinuteAnnounced;
+    private bool overtimeAnnounced;
     private readonly System.Collections.Generic.HashSet<ulong> halfAnnounced = new System.Collections.Generic.HashSet<ulong>();
 
     /// <summary>La suivante s'annonce (« La zone bouge dans 10 s », Z9), son changement aussi, et l'IA annonce qui passe
@@ -456,6 +553,7 @@ public class GameHud : MonoBehaviour
         {
             seenZone = -1;
             seenZoneAnnounced = false;
+            lastMinuteAnnounced = overtimeAnnounced = false;
             if (rm.CurrentPhase != RoundManager.Phase.MatchOver) halfAnnounced.Clear();
             return;
         }
@@ -466,6 +564,17 @@ public class GameHud : MonoBehaviour
             Announce($"La zone bouge dans {Mathf.CeilToInt(rm.ZoneTimeLeft)} s", "Prochaine : " + layout.NameOf(next), 2.5f);
         seenZone = zone;
         seenZoneAnnounced = next >= 0;
+
+        if (rm.ZoneOvertime && !overtimeAnnounced)
+        {
+            overtimeAnnounced = true;
+            Announce("Prolongation", "Égalité : le prochain point gagne.", 3f);
+        }
+        else if (rm.ZoneMatchTimeLeft <= LastMinute && rm.ZoneMatchTimeLeft > LastMinute - 2f && !lastMinuteAnnounced)
+        {
+            lastMinuteAnnounced = true;
+            Announce("Plus qu'une minute", "À la fin du chrono, le plus de points gagne.", 2.5f);
+        }
 
         int half = ZoneMode.TargetPoints / 2;
         foreach (PlayerMatchState state in duelists)
@@ -498,7 +607,7 @@ public class GameHud : MonoBehaviour
                           : holder == RoundManager.NoWinner ? "ZONE LIBRE"
                           : holder == me && !LocalIsSpectator ? "TU TIENS LA ZONE"
                           : PlayerMatchState.NameOf(holder).ToUpperInvariant() + " TIENT LA ZONE";
-            if (rm.AnnouncedZone >= 0) status += $" · ELLE BOUGE DANS {Mathf.CeilToInt(rm.ZoneTimeLeft)} S";
+            status += $" · ELLE BOUGE DANS {Mathf.CeilToInt(rm.ZoneTimeLeft)} S";
             if (status != shownZoneStatus)
             {
                 shownZoneStatus = status;
@@ -511,9 +620,9 @@ public class GameHud : MonoBehaviour
                 zoneStatus.style.color = color;
             }
         }
-        PlaceMarker(zoneMarker, zoneMarkerLabel, show && !inside, show ? layout.Center(shown) : Vector3.zero, "ZONE", color, ref zoneMarkerShown);
+        PlaceMarker(zoneMarker, zoneMarkerIcon, zoneMarkerHalo, zoneMarkerLabel, show && !inside, show ? layout.Center(shown) : Vector3.zero, "ZONE", color, ref zoneMarkerShown);
         int next = rm.AnnouncedZone;
-        PlaceMarker(nextZoneMarker, nextZoneMarkerLabel, show && next >= 0, next >= 0 ? layout.Center(next) : Vector3.zero, "SUIVANTE",
+        PlaceMarker(nextZoneMarker, nextZoneMarkerIcon, nextZoneMarkerHalo, nextZoneMarkerLabel, show && next >= 0, next >= 0 ? layout.Center(next) : Vector3.zero, "SUIVANTE",
                     new Color(0.82f, 0.9f, 1f), ref nextMarkerShown);
     }
 
@@ -539,9 +648,15 @@ public class GameHud : MonoBehaviour
     /// tête d'un robot qui la tient, qu'il ne cache pas.</summary>
     public const float MarkerHeight = 3f;
 
-    /// <summary>Pose un repère à l'écran au-dessus du centre d'une zone : son titre et sa distance (à plat) au joueur,
-    /// estompé près du réticule.</summary>
-    private void PlaceMarker(VisualElement marker, Label label, bool visible, Vector3 center, string title, Color color, ref MarkerShown shown)
+    /// <summary>Le dernier moment annoncé du chrono (s).</summary>
+    private const float LastMinute = 60f;
+
+    /// <summary>Un repère reste à tant de points du bord de l'écran : la moitié de sa largeur, sa distance comprise.</summary>
+    private const float MarkerMargin = 76f;
+
+    /// <summary>Pose un repère à l'écran au-dessus du centre d'une zone : un losange lumineux, son titre et sa distance (à
+    /// plat) au joueur, estompé près du réticule. Il se voit à travers tout : c'est du HUD.</summary>
+    private void PlaceMarker(VisualElement marker, VisualElement icon, VisualElement halo, Label label, bool visible, Vector3 center, string title, Color color, ref MarkerShown shown)
     {
         Camera camera = Camera.main;
         VisualElement root = document != null ? document.rootVisualElement : null;
@@ -551,7 +666,7 @@ public class GameHud : MonoBehaviour
         SetVisible(marker, ok);
         if (!ok) return;
         var panel = new Vector2(width, height);
-        Vector2 at = MarkerPosition(camera.WorldToViewportPoint(center + Vector3.up * MarkerHeight), panel, 48f);
+        Vector2 at = MarkerPosition(camera.WorldToViewportPoint(center + Vector3.up * MarkerHeight), panel, MarkerMargin);
         marker.style.left = at.x;
         marker.style.top = at.y;
         Vector3 offset = camera.transform.position - center;
@@ -565,6 +680,9 @@ public class GameHud : MonoBehaviour
         {
             shown.color = color;
             label.style.color = color;
+            icon.style.borderTopColor = icon.style.borderRightColor = icon.style.borderBottomColor = icon.style.borderLeftColor = color;
+            icon.style.backgroundColor = new Color(color.r, color.g, color.b, 0.35f);
+            halo.style.backgroundColor = new Color(color.r, color.g, color.b, 0.16f);
         }
         float opacity = MarkerOpacity(at, panel);
         if (!shown.written || Mathf.Abs(opacity - shown.opacity) > 0.01f)
@@ -576,15 +694,15 @@ public class GameHud : MonoBehaviour
     }
 
     /// <summary>
-    /// L'opacité d'un repère posé en `at` sur un panneau de taille `panel` : estompé (au quart) tout près du réticule, au
-    /// centre de l'écran, pour ne pas gêner la visée, plein à partir de 15 % de la hauteur de l'écran. Fonction pure,
-    /// testée.
+    /// L'opacité d'un repère posé en `at` sur un panneau de taille `panel` : estompé tout près du réticule, au centre de
+    /// l'écran, pour ne pas gêner la visée, mais assez pour se voir quand on regarde vers la zone à travers un mur (au
+    /// quart, il disparaissait, 2026-11-04), plein à partir de 15 % de la hauteur de l'écran. Fonction pure, testée.
     /// </summary>
     public static float MarkerOpacity(Vector2 at, Vector2 panel)
     {
         if (panel.y <= 0f) return 1f;
         float fromCenter = Vector2.Distance(at, panel * 0.5f) / panel.y;
-        return Mathf.Lerp(0.25f, 1f, Mathf.InverseLerp(0.05f, 0.15f, fromCenter));
+        return Mathf.Lerp(0.45f, 1f, Mathf.InverseLerp(0.05f, 0.15f, fromCenter));
     }
 
     /// <summary>
@@ -1150,6 +1268,10 @@ public class GameHud : MonoBehaviour
                 return Mathf.Max(lightComing, FadeOut(rm.PhaseTimeRemaining));
             case RoundManager.Phase.Starting when RoundManager.HasPreparation(rm.Rules):
                 return 0f;
+            case RoundManager.Phase.WaitingForPlayers when rm.PhaseHasEnd:
+                // L'adversaire est arrivé : le match part à la fin de l'attente (RoundManager.MatchStartFade), le noir
+                // tombe d'abord.
+                return FadeOut(rm.PhaseTimeRemaining);
             case RoundManager.Phase.Tournament:
             {
                 // Au Tournoi, la salle d'attente s'ouvre sous le noir : au début du tournoi (tous y sont replacés), et au
@@ -1171,6 +1293,48 @@ public class GameHud : MonoBehaviour
 
     private float FadeOut(float untilEnd)
         => 1f - Mathf.Clamp01((untilEnd - fadeHold) / Mathf.Max(0.01f, fadeOutLead - fadeHold));
+
+    /// <summary>
+    /// Le noir de l'arrivée dans l'arène (2026-11-03) : complet tant que la partie n'est pas prête sur cette machine
+    /// (`readyFor` négatif : son robot ou l'arbitre de la manche pas encore là, les joueurs du salon en route), puis il
+    /// se lève comme au début d'une manche : `hold` secondes complet, puis en `fadeIn`. Sans lui, on voyait son robot
+    /// l'arme en main une seconde, puis le noir de la préparation coupait la vue (l'utilisateur : « ça fait tchip »).
+    /// Fonction pure, testée.
+    /// </summary>
+    public static float ArrivalBlack(float readyFor, float hold, float fadeIn)
+        => readyFor < 0f ? 1f : 1f - Mathf.Clamp01((readyFor - hold) / Mathf.Max(0.01f, fadeIn));
+
+    /// <summary>Une image ne compte pas plus de ce temps (s) dans l'arrivée (StepArrival).</summary>
+    public const float MaxArrivalStep = 1f / 30f;
+
+    /// <summary>
+    /// Le temps compté depuis que la partie est prête sur cette machine (-1 : pas encore, `ready` faux). Chaque image
+    /// n'en compte que MaxArrivalStep au plus : l'image qui charge l'arène, et la première qui la dessine, durent souvent
+    /// plus d'une demi-seconde, et le noir se levait pendant qu'elles figeaient l'écran (vu au banc le 2026-11-03 : le
+    /// joueur virtuel arrivait dans une arène déjà éclairée). Un match qui va partir de l'attente (`matchComing` : le
+    /// noir y retombe, RoundManager.MatchStartFade) l'arrête : le noir de l'arrivée ne se lève plus pendant qu'il
+    /// retombe (il se levait à moitié, puis revenait). Fonction pure, testée.
+    /// </summary>
+    public static float StepArrival(float readyFor, bool ready, bool matchComing, float dt)
+    {
+        if (!ready) return -1f;
+        if (readyFor < 0f) return 0f;
+        if (matchComing) return readyFor;
+        return readyFor + Mathf.Clamp(dt, 0f, MaxArrivalStep);
+    }
+
+    /// <summary>Ce que dit le noir du chargement : le retour au menu, les joueurs du salon en route, ou le chargement.
+    /// Fonction pure, testée.</summary>
+    public static string LoadingTitle(bool leaving, bool gathering)
+        => leaving ? "RETOUR AU MENU" : gathering ? "LES JOUEURS DU SALON ARRIVENT" : "CHARGEMENT";
+
+    private void ShowLoading(bool shown, string title)
+    {
+        SetVisible(loadingBlock, shown);
+        if (!shown || loadingTitle == null || title == shownLoadingTitle) return;
+        shownLoadingTitle = title;
+        loadingTitle.text = title;
+    }
 
     private void SetFade(float alpha)
     {

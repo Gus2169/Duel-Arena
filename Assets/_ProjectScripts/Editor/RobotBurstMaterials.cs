@@ -7,7 +7,7 @@ using UnityEngine.Rendering;
 /// Les matériaux des gerbes d'un robot qui vole en pièces (RobotBurst, 2026-11-03) : Duel Arena > Mort > Préparer les
 /// éclats du robot. L'huile (des gouttes rondes qui luisent, ambre sombre par la couleur des particules), les étincelles
 /// (une lueur ajoutée), les éclats de blindage (de petites plaques éclairées, grises ou à la couleur du robot), et le
-/// sillage de la balle du replay (une lueur ajoutée sans texture). Dans Resources, que RobotBurst charge par leur nom :
+/// sillage de la balle de la kill cam (une lueur ajoutée sans texture). Dans Resources, que RobotBurst charge par leur nom :
 /// ils vont dans la build avec leurs shaders (URP Particles). Les deux textures (la goutte, la lueur) sont dessinées ici.
 /// On corrige ce script et on relance le menu, jamais les matériaux.
 /// </summary>

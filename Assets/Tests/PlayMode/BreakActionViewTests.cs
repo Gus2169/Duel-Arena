@@ -10,8 +10,10 @@ using UnityEngine.TestTools;
 /// (vu des autres) et sur les bras de la vue subjective : le canon bascule comme le dit le geste, dans le bon sens ; la
 /// chambre montre la douille vide sans sa balle, puis rien, puis la cartouche neuve ; la douille vide tombe une fois,
 /// quand elle quitte la chambre ; la cartouche neuve est dans la main gauche de la saisie à la présentation, la suit,
-/// puis rejoint la chambre sans à-coup ; à la fin, l'arme est intacte et chargée. Interrompu, le rechargement rend
-/// l'arme intacte ; vide, hors du rechargement, elle a son chien abattu et sa douille vide dans la chambre.
+/// puis rejoint la chambre sans à-coup ; le pouce droit prend les poses du geste ; à la fin, l'arme est intacte et
+/// chargée. Interrompu, le rechargement rend
+/// l'arme intacte ; vide, hors du rechargement, elle a son chien abattu et sa douille vide dans la chambre. L'arme en
+/// main, au repos comme pendant le rechargement, la main droite prend la tenue du geste (ses doigts épousent la crosse).
 ///
 /// Ce qui casse ici ne lève aucune erreur : un canon qui s'ouvre vers le bas, une cartouche qui flotte à côté de la main
 /// ou saute en entrant, une douille qui ne tombe pas, ou une arme qui reste ouverte. On mesure à chaque image, juste
@@ -29,12 +31,13 @@ public class BreakActionViewTests
     private BreakActionView bodyOpening, armsOpening;
     private readonly MagazineSwap.Drop drop = new MagazineSwap.Drop();
     private bool reloading, empty;
-    private System.Action record;
+    private System.Action before, record;
 
     [TearDown]
     public void TearDown()
     {
         Time.captureDeltaTime = 0f;
+        before = null;
         record = null;
         if (stepper != null) Object.DestroyImmediate(stepper);
         if (instance != null) Object.DestroyImmediate(instance);
@@ -99,6 +102,7 @@ public class BreakActionViewTests
     /// <summary>Ce que fait MagazineSwap après l'Animator : la part du geste montrée, puis l'arme qui s'ouvre.</summary>
     private void Step()
     {
+        before?.Invoke();
         bodyView.Step(BodyModel, gesture, reloading, Vector3.zero, drop, Time.deltaTime);
         armsView.Step(ArmsModel, gesture, reloading, Vector3.zero, drop, Time.deltaTime);
         bodyOpening.Step(BodyModel, gesture, bodyView.Progress, empty, Vector3.zero, drop, Time.deltaTime);
@@ -146,7 +150,8 @@ public class BreakActionViewTests
         Assert.IsTrue(Intact(BodyModel, rest) && Intact(ArmsModel, rest), "Garde : avant le rechargement, l'arme est au repos, chargée.");
 
         var failures = new List<string>();
-        int frames = 0, dropsBody = 0, dropsArms = 0;
+        var wantedThumb = new Quaternion[BreakActionGesture.ThumbBones];
+        int frames = 0, dropsBody = 0, dropsArms = 0, thumbFrames = 0;
         float maxOpen = 0f, heldFrom = float.NaN, heldUntil = float.NaN, rigid = 0f, jump = float.NaN;
         bool haveRef = false, counted = false;
         Vector3 refPos = Vector3.zero;
@@ -171,6 +176,18 @@ public class BreakActionViewTests
                 if (Shown(Part(model, gesture.casePath)) != wantCase || Shown(Part(model, gesture.bulletPath)) != wantBullet)
                     failures.Add($"{who}, f={g:F3} : la chambre montre {(Shown(Part(model, gesture.casePath)) ? "une douille" : "rien")}"
                                  + $"{(Shown(Part(model, gesture.bulletPath)) ? " et sa balle" : "")}");
+            }
+            // le pouce droit, qui abaisse le levier puis arme le chien : posé comme le dit le geste, l'Animator n'en
+            // rejouant pas la torsion
+            foreach ((MagazineSwap.View view, BreakActionView opening, string who) in new[] { (bodyView, bodyOpening, "corps"), (armsView, armsOpening, "bras") })
+            {
+                float g = view.Progress;
+                if (float.IsNaN(g) || BreakActionGesture.ThumbWeight(g) < 1f || !gesture.ThumbAt(g, wantedThumb)) continue;
+                thumbFrames++;
+                for (int b = 0; b < BreakActionGesture.ThumbBones; b++)
+                    if (Quaternion.Angle(opening.Thumb[b].localRotation, wantedThumb[b]) > 0.5f)
+                        failures.Add($"{who}, f={g:F3} : la phalange {b + 1} du pouce droit n'est pas posée comme le dit le geste "
+                                     + $"({Quaternion.Angle(opening.Thumb[b].localRotation, wantedThumb[b]):F1}°)");
             }
             float f = bodyView.Progress;
             if (float.IsNaN(f)) return;
@@ -211,6 +228,7 @@ public class BreakActionViewTests
 
         float frame = (1f / 60f) / weapon.reloadDuration + 0.002f;   // une image, en part du rechargement
         Assert.Greater(frames, 100, "Garde : le geste s'est joué.");
+        Assert.Greater(thumbFrames, 100, "Garde : le pouce a été regardé pendant le geste, sur le corps et les bras.");
         Assert.AreEqual(gesture.barrelAngle, maxOpen, 1f, "Le canon ne s'ouvre pas jusqu'à l'horizontale.");
         Assert.AreEqual(1, dropsBody, "Le corps ne fait pas tomber sa douille vide (une seule).");
         Assert.AreEqual(1, dropsArms, "Les bras ne font pas tomber leur douille vide (une seule).");
@@ -264,6 +282,56 @@ public class BreakActionViewTests
         empty = false;   // rechargé
         yield return null;
         Assert.IsTrue(Intact(BodyModel, rest) && Intact(ArmsModel, rest), "Rechargée, l'arme n'est pas au repos, chargée.");
+    }
+
+    [UnityTest]
+    public IEnumerator LeBigDEnMain_LaMainDroitePrendLaTenue_AuRepos_CommePendantLeRechargement()
+    {
+        Setup();
+        Assert.IsTrue(gesture.HasHold, "Garde : le geste du Big D a la tenue de la main droite.");
+        int bones = BreakActionGesture.HoldOrder.Length;
+        var animated = new Quaternion[bones];
+        var worst = new float[bones];
+        float apart = 0f;
+        int atRest = 0, reloadingFrames = 0;
+        // la pose de l'Animator, avant que la vue ne pose la tenue : si elle était déjà la tenue, le test ne prouverait rien
+        before = () =>
+        {
+            for (int b = 0; b < bones; b++) animated[b] = bodyOpening.Hand[b].localRotation;
+        };
+        record = () =>
+        {
+            for (int b = BreakActionGesture.ThumbBones; b < bones; b++)
+                apart = Mathf.Max(apart, Quaternion.Angle(animated[b], gesture.rightHold[b]));
+            foreach ((MagazineSwap.View view, BreakActionView opening) in new[] { (bodyView, bodyOpening), (armsView, armsOpening) })
+            {
+                float g = view.Progress;
+                if (float.IsNaN(g)) atRest++;
+                else reloadingFrames++;
+                // pendant le geste, le pouce passe de la tenue à ses poses (le test du geste le regarde) : les autres doigts
+                // gardent la tenue
+                int first = !float.IsNaN(g) && BreakActionGesture.ThumbWeight(g) > 0f ? BreakActionGesture.ThumbBones : 0;
+                for (int b = first; b < bones; b++)
+                    worst[b] = Mathf.Max(worst[b], Quaternion.Angle(opening.Hand[b].localRotation, gesture.rightHold[b]));
+            }
+        };
+        Drive(false);
+        yield return Wait(0.4f);
+        Drive(true);
+        yield return Wait(weapon.reloadDuration + 0.2f);
+        Drive(false);
+        yield return Wait(0.3f);
+        before = null;
+        record = null;
+
+        Assert.Greater(atRest, 40, "Garde : la main a été regardée l'arme au repos, sur le corps et les bras.");
+        Assert.Greater(reloadingFrames, 200, "Garde : la main a été regardée pendant le geste, sur le corps et les bras.");
+        Assert.Greater(apart, 10f, "Garde : les doigts de l'Animator sont déjà dans la tenue (rien n'aurait été reposé).");
+        var failures = new List<string>();
+        for (int b = 0; b < bones; b++)
+            if (worst[b] > 0.1f)
+                failures.Add($"{BreakActionGesture.HoldOrder[b]} n'est pas dans la tenue ({worst[b]:F1}° au pire)");
+        Assert.IsEmpty(failures, string.Join("\n", failures));
     }
 }
 #endif

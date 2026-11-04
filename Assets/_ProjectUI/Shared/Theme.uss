@@ -626,6 +626,43 @@
     -unity-text-align: middle-center;
 }
 
+/* ---------- Le chargement d'une partie (2026-11-03) : le même dans le menu et dans le noir de l'arène ---------- */
+
+.loading-screen {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgb(0, 0, 0);
+}
+
+.loading-block {
+    align-items: center;
+}
+
+.loading-block__logo {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 22px;
+}
+
+.loading-block__title {
+    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-BlackItalic.ttf");
+    font-size: 30px;
+    letter-spacing: 2px;
+    color: var(--text);
+    margin: 0 0 18px 0;
+    padding: 0;
+}
+
+.loading-block__spinner {
+    width: 30px;
+    height: 30px;
+}
+
 /* ---------- Curseurs, sélecteurs ‹ › ---------- */
 
 .da-slider {

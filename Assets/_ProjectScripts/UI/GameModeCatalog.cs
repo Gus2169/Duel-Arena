@@ -119,7 +119,7 @@ public static class GameModeCatalog
         new GameMode(GameModeId.Zone, "Zone",
             "Tenir la zone qui se déplace : chaque seconde dedans rapporte.",
             "Une zone se déplace dans l'arène, annoncée un peu avant. Chaque seconde dedans rapporte des points ; à deux dedans, plus rien n'avance.",
-            "RÉAPPARITIONS", "En continu, avec réapparitions", "2 À 6", "2 à 6", "Le premier à 3 000 points",
+            "RÉAPPARITIONS", "En continu, avec réapparitions", "2 À 6", "2 à 6", "Le premier à 3 000 points, ou le plus de points en 10 minutes",
             GameModeAvailability.Playable, "ico-zone"),
         new GameMode(GameModeId.TagTeam, "Tag Team",
             "En équipes : quand un duelliste tombe, son coéquipier entre.",

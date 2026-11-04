@@ -33,6 +33,7 @@ public class MatchAudio : MonoBehaviour
     // Le match suivi : au Tournoi, il change (le couloir de son match, la salle d'attente).
     private RoundManager trackedMatch;
     private RoundManager.Phase lastPhase;
+    private bool roundEndPending;
     private double lastPhaseStartedAt;
     private int lastCountdown;
     private bool reconstructionPlayed;
@@ -102,6 +103,13 @@ public class MatchAudio : MonoBehaviour
             reconstructionPlayed = false;
         }
 
+        // Le son de la fin de manche attend que la kill cam ait montré le coup.
+        if (roundEndPending && !KillCamRunning(rm))
+        {
+            roundEndPending = false;
+            if (phase == RoundManager.Phase.RoundOver || phase == RoundManager.Phase.MatchOver) PlayRoundEnd(rm, local.OwnerClientId);
+        }
+
         if (phase == RoundManager.Phase.Starting && TryCountdownTick(ref lastCountdown, rm.PhaseTimeRemaining))
             Play(sounds != null ? sounds.countdownBeep : null);
 
@@ -156,6 +164,20 @@ public class MatchAudio : MonoBehaviour
         bool roundEnded = (phase == RoundManager.Phase.RoundOver || phase == RoundManager.Phase.MatchOver)
                           && previous == RoundManager.Phase.Active;
         if (!roundEnded) return;
+        // Sous la kill cam, la balle vole encore : la fin de manche s'entendra quand elle aura tout montré.
+        if (KillCamRunning(rm)) roundEndPending = true;
+        else PlayRoundEnd(rm, me);
+    }
+
+    private static bool KillCamRunning(RoundManager rm)
+    {
+        KillCam.Info info = rm.KillCamNow;
+        return info.Scheduled && rm.KillCamElapsed < KillCam.DurationOf(info);
+    }
+
+    private void PlayRoundEnd(RoundManager rm, ulong me)
+    {
+        if (sounds == null) return;
         Play(sounds.roundOver);
         // Au Tag Team, toute l'équipe gagnante entend sa victoire, ceux qui attendaient sur la tribune compris.
         PlayerMatchState mine = PlayerMatchState.Of(me);

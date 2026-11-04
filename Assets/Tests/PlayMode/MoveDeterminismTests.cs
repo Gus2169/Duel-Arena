@@ -685,6 +685,43 @@ public class MoveDeterminismTests
     }
 
     [UnityTest]
+    public IEnumerator UneCaisseContreUnMur_LeRobotMonteDessus_EtLeMurLArrete()
+    {
+        yield return null;
+
+        // Les caisses collées au bloc central de l'arène (2026-11-04) : le contrôleur coupé, rien n'arrêtait le robot,
+        // et la sonde de la face arrière trouvait son arrivée de l'autre côté du mur. Le robot se hisse sur la caisse.
+        obstacle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        obstacle.name = "TestCaisse";
+        obstacle.transform.position = new Vector3(0f, 0.5f, 3f);
+        obstacle.transform.localScale = new Vector3(4f, 1f, 1f);
+        obstacle2 = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        obstacle2.name = "TestMur";
+        obstacle2.transform.position = new Vector3(0f, 1.5f, 3.75f);
+        obstacle2.transform.localScale = new Vector3(8f, 3f, 0.5f);
+        Physics.SyncTransforms();
+
+        Settle();
+
+        bool vaultObserve = false;
+        float highest = 0f;
+        for (int i = 0; i < 200; i++)
+        {
+            player.TestMove(Vector2.up, 0f, false, false, false, true, 0, Dt);
+            if (player.IsVaulting) vaultObserve = true;
+            highest = Mathf.Max(highest, player.TestCaptureState().position.y);
+        }
+
+        Vector3 end = player.TestCaptureState().position;
+        Assert.IsTrue(vaultObserve, "Le robot se hisse sur la caisse.");
+        Assert.AreEqual(1f, end.y, 0.1f, "Il finit debout sur la caisse.");
+        Assert.Less(end.z, 3.5f - 0.3f, "Le mur l'arrête, de son côté.");
+        Assert.Greater(end.z, 2.5f, "Il est bien sur la caisse, pas devant.");
+        // Le point haut de l'arc, pas plus : compté depuis le sol, il lançait les yeux du robot au-dessus d'un mur de 3 m.
+        Assert.Less(highest, 1.25f, "Le robot ne saute pas plus haut que la caisse et sa marge.");
+    }
+
+    [UnityTest]
     public IEnumerator VaultRejoue_SuitExactementLeMemeArc()
     {
         yield return null;

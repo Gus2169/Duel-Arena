@@ -441,6 +441,29 @@ public class AnimatorStateTests
         AssertStateSurCouche(1, "Arme");
     }
 
+    /// <summary>L'arme que le mode met en main sort par la fin du geste de rechargement (2026-11-04) : le haut du corps y entre
+    /// sans passer par son début, puis rend l'arme.</summary>
+    [UnityTest]
+    public IEnumerator UneArmeImposee_SortParLaFinDuGeste_PuisRendLArme()
+    {
+        yield return Setup();
+        animator.SetFloat("SpeedMult", 1f);
+        animator.SetFloat("ReloadSpeed", 1f);
+        yield return Settle(0.3f);
+        AssertStateSurCouche(1, "Arme");
+
+        animator.SetBool("Reloading", true);
+        PlayerAnimator.PlayReloadEnd(animator, 1.66f, 1f);
+        yield return Settle(0.2f);
+        AssertStateSurCouche(1, "Recharge");
+        float clipTime = animator.GetCurrentAnimatorStateInfo(1).normalizedTime * 3.3f;
+        Assert.That(clipTime, Is.InRange(1.66f, 2.1f), "Il part de la fin du geste, pas de son début (0,4 s).");
+
+        animator.SetBool("Reloading", false);
+        yield return Settle(0.5f);
+        AssertStateSurCouche(1, "Arme");
+    }
+
     /// <summary>
     /// Allongé, le rechargement (2026-10-10) : le haut du corps joue le geste couché de Mixamo.
     /// Joué sur le corps entier, ce clip roule le robot sur le flanc, tête 33 cm sur le côté et

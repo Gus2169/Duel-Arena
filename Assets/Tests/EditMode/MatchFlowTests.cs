@@ -308,4 +308,42 @@ public class MatchFlowTests
 
         Assert.AreEqual(100f, GameHud.StepHealthTrail(60f, 100f, 0f, dt, hold, speed), "Une nouvelle manche la remplit aussitôt.");
     }
+
+    /// <summary>L'arrivée dans l'arène (2026-11-03, l'utilisateur : « on voit notre joueur avec une arme dans la main,
+    /// puis ça passe sur le lancement de la game, ça fait tchip ») : le noir reste tant que la partie n'est pas prête sur
+    /// cette machine, puis se lève comme au début d'une manche.</summary>
+    [Test]
+    public void LArriveeDansLArene_GardeLeNoir_JusquACeQueLaPartieSoitPrete()
+    {
+        const float hold = 0.3f, fadeIn = 0.45f;
+        Assert.AreEqual(1f, GameHud.ArrivalBlack(-1f, hold, fadeIn), "Pas encore prête : tout noir.");
+        Assert.AreEqual(1f, GameHud.ArrivalBlack(0f, hold, fadeIn), "Prête à l'instant : encore noir.");
+        Assert.AreEqual(1f, GameHud.ArrivalBlack(0.25f, hold, fadeIn), "Le noir tient un instant, comme au début d'une manche.");
+        Assert.AreEqual(0.5f, GameHud.ArrivalBlack(hold + fadeIn * 0.5f, hold, fadeIn), 1e-4f, "Il se lève en douceur.");
+        Assert.AreEqual(0f, GameHud.ArrivalBlack(hold + fadeIn, hold, fadeIn), "Puis on voit la partie.");
+        Assert.AreEqual(0f, GameHud.ArrivalBlack(60f, hold, fadeIn));
+        float previous = 1f;
+        for (float t = 0f; t <= hold + fadeIn; t += 0.05f)
+        {
+            float black = GameHud.ArrivalBlack(t, hold, fadeIn);
+            Assert.LessOrEqual(black, previous, $"À {t:F2} s, le noir revient.");
+            previous = black;
+        }
+
+        // Compté image par image : l'image que le chargement a figée ne lève pas le noir d'un coup (vu au banc : le joueur
+        // virtuel arrivait dans une arène déjà éclairée).
+        float ready = GameHud.StepArrival(-1f, false, false, 0.016f);
+        Assert.AreEqual(-1f, ready, "Pas prête.");
+        ready = GameHud.StepArrival(ready, true, false, 0.8f);
+        Assert.AreEqual(0f, ready, "Prête : on commence à compter.");
+        ready = GameHud.StepArrival(ready, true, false, 0.8f);
+        Assert.AreEqual(GameHud.MaxArrivalStep, ready, 1e-6f, "L'image qui a figé l'écran 0,8 s ne compte qu'un trentième de seconde.");
+        Assert.AreEqual(1f, GameHud.ArrivalBlack(ready, hold, fadeIn), "Le noir tient toujours.");
+        Assert.AreEqual(ready, GameHud.StepArrival(ready, true, true, 0.016f), "Le match qui part de l'attente l'arrête : le noir y retombe.");
+        Assert.AreEqual(-1f, GameHud.StepArrival(ready, false, false, 0.016f), "Les joueurs du salon encore en route : on recommence.");
+
+        Assert.AreEqual("CHARGEMENT", GameHud.LoadingTitle(false, false));
+        StringAssert.Contains("ARRIVENT", GameHud.LoadingTitle(false, true), "Les joueurs du salon en route.");
+        Assert.AreEqual("RETOUR AU MENU", GameHud.LoadingTitle(true, true), "Le retour au menu passe avant tout.");
+    }
 }

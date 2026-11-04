@@ -136,9 +136,17 @@ public class GameModesTests
         Assert.AreEqual(1, magazine.ammo, "Chargée.");
         Assert.AreEqual(0.0, magazine.reloadEndsAt, "Le rechargement en cours est abandonné.");
         Assert.AreEqual(10.35, magazine.readyAt, 1e-6, "Elle se sort.");
+        Assert.IsTrue(magazine.imposedRaise, "Par la fin du geste de rechargement.");
 
         WeaponController.ForceWeapon(ref magazine, WeaponController.GoldenGunSlot, 20.0, 0.35f, 1);
         Assert.AreEqual(10.35, magazine.readyAt, 1e-6, "Déjà en main : elle ne se ressort pas.");
+
+        // Une arme qu'on choisit, ou qu'on ramasse, sort comme avant.
+        Assert.IsTrue(WeaponController.TrySwitchWeapon(ref magazine, 4, 30.0, 0.5f, 25));
+        Assert.IsFalse(magazine.imposedRaise, "Une arme choisie remonte, sans geste de rechargement.");
+        magazine.imposedRaise = true;
+        WeaponController.ApplyPowerUp(ref magazine, 1, 40.0, 0.8f, 5);
+        Assert.IsFalse(magazine.imposedRaise, "Une arme ramassée aussi.");
     }
 
     [Test]
@@ -551,12 +559,14 @@ public class GameModesTests
     [Test]
     public void UnModule_SePrendEnPassantDessus_ParSonVainqueurOuSaVictime()
     {
-        var module = new Vector3(10f, 0.8f, 10f);
+        var module = new Vector3(10f, KillConfirmed.FloatHeight, 10f);
         var near = new Vector3(10.9f, 0f, 10.6f);
         var far = new Vector3(11.3f, 0f, 10f);
         Assert.IsTrue(KillConfirmed.Reaches(module, near), "À 1,08 m, on le ramasse en passant.");
         Assert.IsFalse(KillConfirmed.Reaches(module, far), "À 1,3 m, on passe à côté.");
         Assert.IsTrue(KillConfirmed.Reaches(module, new Vector3(10f, 1f, 10f)), "Debout sur une caisse basse, à côté.");
+        Assert.IsTrue(KillConfirmed.Reaches(module + Vector3.up, new Vector3(10.5f, 0f, 10f)),
+                      "Au sol, sous le module d'un robot tombé sur une caisse d'un mètre.");
         Assert.IsFalse(KillConfirmed.Reaches(module, new Vector3(10f, 4.5f, 10f)), "Sur la passerelle, au-dessus : trop haut.");
         Assert.IsFalse(KillConfirmed.Reaches(module, new Vector3(10f, -2f, 10f)), "Bien en dessous : trop bas.");
 
@@ -672,7 +682,7 @@ public class GameModesTests
         Assert.AreEqual("premier à 3\u00A0000 points", zone.Format);
         Assert.AreEqual("Zone · premier à 3\u00A0000 points · toujours les mêmes · arme libre", GameModeCatalog.Summary(GameModeId.Zone, zone));
         Assert.AreEqual(GameModeId.Zone, OnlineSession.ParseRules(OnlineSession.FormatRules(zone)).mode, "Le mode voyage dans les réglages du salon.");
-        Assert.Less(ZoneMode.PointsPerKill, ZoneMode.PointsPerSecond * 10, "Une élimination rapporte moins qu'un moment dans la zone (Z1, Z4).");
+        Assert.Less(ZoneMode.PointsPerKill, ZoneMode.PointsPerTick / ZoneMode.TickInterval * 10f, "Une élimination rapporte moins qu'un moment dans la zone (Z1, Z4).");
         Assert.AreEqual("1\u00A0500", ZoneMode.Points(1500));
         Assert.AreEqual("20", ZoneMode.Points(20));
     }
@@ -701,19 +711,54 @@ public class GameModesTests
         Assert.AreEqual(ZoneMode.Hold.Held, ZoneMode.HoldOf(1), "Seul dedans : il la tient.");
         Assert.AreEqual(ZoneMode.Hold.Contested, ZoneMode.HoldOf(2), "À deux dedans, plus rien n'avance (Z5).");
 
-        // 20 points par seconde, comptés image par image, sans rien perdre des fractions.
-        float carry = 0f;
+        // Par paliers (2026-11-04) : rien avant la seconde pleine, 20 d'un coup à la seconde, le reste pour le suivant.
+        float held = 0f;
         int total = 0;
-        for (int i = 0; i < 300; i++) total += ZoneMode.Earn(1f / 300f, ref carry);
-        Assert.AreEqual(ZoneMode.PointsPerSecond, total, "Une seconde en 300 images.");
-        for (int i = 0; i < 90; i++) total += ZoneMode.Earn(1f / 60f, ref carry);
-        Assert.AreEqual(ZoneMode.PointsPerSecond * 2.5f, total, 1f, "Puis une seconde et demie en 90 images.");
+        for (int i = 0; i < 299; i++) total += ZoneMode.Earn(1f / 300f, ref held);
+        Assert.AreEqual(0, total, "Rien avant la seconde pleine.");
+        total += ZoneMode.Earn(2f / 300f, ref held);
+        Assert.AreEqual(ZoneMode.PointsPerTick, total, "D'un coup, à la seconde.");
+        for (int i = 0; i < 90; i++) total += ZoneMode.Earn(1f / 60f, ref held);
+        Assert.AreEqual(ZoneMode.PointsPerTick * 2, total, "Une seconde et demie de plus : un palier, et de quoi commencer le suivant.");
+        Assert.AreEqual(0.5f, held, 0.01f);
+        Assert.AreEqual(ZoneMode.PointsPerTick * 3, ZoneMode.Earn(3f, ref held), "Une longue image n'en perd aucun.");
 
         var center = new Vector3(18f, 0f, 30f);
         Assert.IsTrue(ZoneMode.Contains(center, 4f, new Vector3(21f, 0f, 32f)), "À 3,6 m du centre : dedans.");
         Assert.IsFalse(ZoneMode.Contains(center, 4f, new Vector3(22.5f, 0f, 30f)), "À 4,5 m : dehors.");
         Assert.IsTrue(ZoneMode.Contains(center, 4f, new Vector3(18f, 1f, 30f)), "Debout sur une caisse basse dedans.");
         Assert.IsFalse(ZoneMode.Contains(center, 4f, new Vector3(18f, 4.5f, 30f)), "Sur la passerelle, au-dessus : pas dedans.");
+    }
+
+    /// <summary>Le chrono (2026-11-04, l'utilisateur : « pour pas que ça soit trop long ») : à sa fin, le plus de points gagne ;
+    /// à égalité, le match continue, et le prochain point fait le vainqueur.</summary>
+    [Test]
+    public void LeChronoDeLaZone_DonneLaVictoireAuPlusDePoints_EtALEgaliteOnContinue()
+    {
+        Assert.AreEqual(600f, ZoneMode.MatchDuration, "Dix minutes.");
+        Assert.AreEqual(600f, ZoneMode.TimeLeft(0f), 1e-3f);
+        Assert.AreEqual(90f, ZoneMode.TimeLeft(510f), 1e-3f);
+        Assert.AreEqual(0f, ZoneMode.TimeLeft(700f), 1e-3f, "Pas de temps négatif en prolongation.");
+        Assert.IsFalse(ZoneMode.TimeUp(599.9f));
+        Assert.IsTrue(ZoneMode.TimeUp(600f));
+
+        Assert.AreEqual(1, ZoneMode.LeaderOf(new[] { 1500, 1520 }), "Le plus de points.");
+        Assert.AreEqual(0, ZoneMode.LeaderOf(new[] { 20, 0 }));
+        Assert.AreEqual(-1, ZoneMode.LeaderOf(new[] { 1500, 1500 }), "À égalité, personne ne mène.");
+        Assert.AreEqual(-1, ZoneMode.LeaderOf(new[] { 0, 0 }));
+        Assert.AreEqual(2, ZoneMode.LeaderOf(new[] { 400, 400, 420 }), "Une égalité derrière le premier ne compte pas.");
+        Assert.AreEqual(-1, ZoneMode.LeaderOf(new[] { 420, 400, 420 }), "Une égalité en tête, si.");
+        Assert.AreEqual(-1, ZoneMode.LeaderOf(new int[0]), "Personne.");
+    }
+
+    [Test]
+    public void LaBarreDesPoints_SeRemplitVersLObjectif()
+    {
+        Assert.AreEqual(0f, GameHud.GaugeFill(0, 3000), 1e-4f);
+        Assert.AreEqual(0.5f, GameHud.GaugeFill(1500, 3000), 1e-4f);
+        Assert.AreEqual(1f, GameHud.GaugeFill(3000, 3000), 1e-4f, "Pleine à l'objectif.");
+        Assert.AreEqual(1f, GameHud.GaugeFill(3080, 3000), 1e-4f, "Une élimination sur la fin ne la fait pas déborder.");
+        Assert.AreEqual(0f, GameHud.GaugeFill(10, 0), 1e-4f, "Sans objectif : vide.");
     }
 
     [Test]
@@ -738,7 +783,7 @@ public class GameModesTests
 
         // Sur le réticule, il s'estompe ; à l'écart, il est plein.
         var panel = new Vector2(1920f, 1080f);
-        Assert.AreEqual(0.25f, GameHud.MarkerOpacity(panel * 0.5f, panel), 1e-3f, "Sur le réticule : estompé.");
+        Assert.AreEqual(0.45f, GameHud.MarkerOpacity(panel * 0.5f, panel), 1e-3f, "Sur le réticule : estompé, mais il se voit.");
         Assert.Less(GameHud.MarkerOpacity(panel * 0.5f + new Vector2(80f, 0f), panel), 0.7f, "À 80 points du réticule : encore estompé.");
         Assert.AreEqual(1f, GameHud.MarkerOpacity(new Vector2(200f, 540f), panel), 1e-3f, "Au bord de l'écran : plein.");
         Assert.AreEqual(1f, GameHud.MarkerOpacity(panel * 0.5f + new Vector2(0f, 170f), panel), 1e-3f, "À 15 % de la hauteur : plein.");
@@ -774,6 +819,10 @@ public class GameModesTests
             Assert.IsEmpty(layout.GetComponentsInChildren<Collider>(true), "Une zone n'arrête rien.");
             var so = new UnityEditor.SerializedObject(layout);
             Assert.IsNotNull(so.FindProperty("zoneMaterial").objectReferenceValue, "Sa lumière.");
+            var column = so.FindProperty("columnMaterial").objectReferenceValue as Material;
+            Assert.IsNotNull(column, "Sa colonne, vue à travers les murs.");
+            Assert.AreEqual("DuelArena/ZoneColonne", column.shader.name);
+            Assert.Greater(so.FindProperty("columnBottom").floatValue, 1.805f + 0.3f, "Elle ne voile pas la tête d'un robot qui tient la zone.");
             Assert.IsNotNull(so.FindProperty("arcMaterial").objectReferenceValue, "Ses arcs quand on la tient.");
             Assert.IsNotNull(so.FindProperty("sounds").objectReferenceValue, "Son grésillement.");
             var spawns = new UnityEditor.SerializedObject(posts).FindProperty("spawnPoints");
@@ -826,6 +875,7 @@ public class GameModesTests
             Assert.AreNotEqual("Éliminations", row.label);
         }
         StringAssert.Contains("3\u00A0000 points", Row(rows, "Le but").hint);
+        StringAssert.Contains("10 minutes", Row(rows, "Le but").hint, "Le chrono aussi.");
         Assert.AreEqual("Libre", Row(rows, "L'arme").choices[0].label);
     }
 

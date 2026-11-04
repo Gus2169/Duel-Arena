@@ -154,6 +154,11 @@ public class RoundManager : NetworkBehaviour
     private readonly NetworkVariable<double> phaseEndsAt = new NetworkVariable<double>(
         0d, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+    /// <summary>Les joueurs d'un salon en ligne arrivent encore dans l'arène (`gathering`, publié le 2026-11-03) :
+    /// chacun garde le noir du chargement jusqu'à ce qu'ils soient tous là (GameHud).</summary>
+    private readonly NetworkVariable<bool> gatheringShown = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
     private readonly NetworkVariable<int> roundNumber = new NetworkVariable<int>(
         0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
@@ -161,14 +166,15 @@ public class RoundManager : NetworkBehaviour
     private readonly NetworkVariable<ulong> lastRoundWinner = new NetworkVariable<ulong>(
         NoWinner, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    /// <summary>Le replay du coup mortel de la fin de manche en cours (KillReplay, 2026-11-03) : quand il commence, qui,
+    /// <summary>La kill cam de la fin de manche en cours (KillCam, 2026-11-04) : quand il commence, qui,
     /// comment, avec quoi, de combien. Effacé à chaque changement de phase.</summary>
-    private readonly NetworkVariable<KillReplay.Info> killReplay = new NetworkVariable<KillReplay.Info>(
+    private readonly NetworkVariable<KillCam.Info> killCam = new NetworkVariable<KillCam.Info>(
         default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     // Serveur : la dernière élimination vue (son auteur, sa victime, comment), et quand.
-    private KillReplay.Info lastKill;
+    private KillCam.Info lastKill;
     private double lastKillAt;
+    private bool judgingKill;   // le serveur juge le coup qui vient de tuer (ServerJudgeKill)
 
     /// <summary>Le match en cours (en MatchOver) a-t-il été gagné par forfait ?</summary>
     private readonly NetworkVariable<bool> wonByForfeit = new NetworkVariable<bool>(
@@ -223,7 +229,10 @@ public class RoundManager : NetworkBehaviour
         NoWinner, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<bool> zoneContested = new NetworkVariable<bool>(
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-    private readonly Dictionary<ulong, float> zoneCarry = new Dictionary<ulong, float>();
+
+    // Qui tient la zone sans interruption, et depuis combien de temps après son dernier palier.
+    private ulong zoneTicking = NoWinner;
+    private float zoneHeld;
 
     /// <summary>Les points des deux équipes du Tag Team.</summary>
     public struct TeamScore : INetworkSerializeByMemcpy, System.IEquatable<TeamScore>
@@ -653,6 +662,12 @@ public class RoundManager : NetworkBehaviour
     /// <summary>Secondes avant que la zone ne change de place (pendant le match).</summary>
     public float ZoneTimeLeft => ZoneMode.TimeUntilMove(PhaseElapsed);
 
+    /// <summary>Secondes avant la fin du chrono de la Zone (pendant le match).</summary>
+    public float ZoneMatchTimeLeft => ZoneMode.TimeLeft(PhaseElapsed);
+
+    /// <summary>La Zone se joue-t-elle en prolongation : le chrono fini, à égalité, le prochain point gagne.</summary>
+    public bool ZoneOvertime => Mode == GameModeId.Zone && phase.Value == Phase.Active && ZoneMode.TimeUp(PhaseElapsed);
+
     /// <summary>Un duelliste peut-il prendre une arme posée (lancée par la tribune) ? Pas quand le mode impose
     /// l'arme (GDD § 11, T7). Sans RoundManager, oui.</summary>
     public static bool WeaponPickupAllowed
@@ -694,19 +709,19 @@ public class RoundManager : NetworkBehaviour
     /// <summary>Le temps qui sépare la dernière mort du match de l'écran de fin : la kill cam quand il y en a une, puis
     /// le temps pendant lequel le gagnant garde la main (le même qu'entre deux manches). Au Tournoi, aucun : le champion a
     /// déjà gardé la main dans la finale, son écran vient tout de suite.</summary>
-    public float EndScreenDelay => KillReplay.EndScreenDelay(TournamentMode, roundOverDuration, ReplayNow);
+    public float EndScreenDelay => KillCam.EndScreenDelay(TournamentMode, roundOverDuration, KillCamNow);
 
-    // Le replay publié est-il celui de cette phase ?
-    private bool ReplayInPhase => KillReplay.BelongsTo(killReplay.Value, phaseStartedAt.Value);
+    // La kill cam publiée est-elle celle de cette phase ?
+    private bool KillCamInPhase => KillCam.BelongsTo(killCam.Value, phaseStartedAt.Value);
 
-    /// <summary>Le replay du coup mortel de cette fin de manche (KillReplay), ou rien.</summary>
-    public KillReplay.Info ReplayNow => ReplayInPhase ? killReplay.Value : default;
+    /// <summary>La kill cam de cette fin de manche (KillCam), ou rien.</summary>
+    public KillCam.Info KillCamNow => KillCamInPhase ? killCam.Value : default;
 
-    /// <summary>Le temps écoulé depuis le début du replay (s, horloge du serveur ; négatif avant), ou -∞ sans replay.</summary>
-    public float ReplayElapsed => ReplayInPhase ? (float)(Now - killReplay.Value.startsAt) : float.NegativeInfinity;
+    /// <summary>Le temps écoulé depuis le début de la kill cam (s, horloge du serveur ; négatif avant), ou -∞ sans kill cam.</summary>
+    public float KillCamElapsed => KillCamInPhase ? (float)(Now - killCam.Value.startsAt) : float.NegativeInfinity;
 
-    /// <summary>Les joueurs sont-ils gelés par le replay ? (KillReplay.Freezes)</summary>
-    public bool ReplayFreezes => KillReplay.Freezes(killReplay.Value, phaseStartedAt.Value, Now);
+    /// <summary>Les joueurs sont-ils gelés par la kill cam ? (KillCam.Freezes)</summary>
+    public bool KillCamFreezes => KillCam.Freezes(killCam.Value, phaseStartedAt.Value, Now);
 
     private double Now => NetworkManager != null ? NetworkManager.ServerTime.Time : Time.timeAsDouble;
 
@@ -734,6 +749,14 @@ public class RoundManager : NetworkBehaviour
 
     /// <summary>La phase a-t-elle une fin programmée ?</summary>
     public bool PhaseHasEnd => phaseEndsAt.Value > 0d;
+
+    /// <summary>Les joueurs du salon en ligne arrivent-ils encore dans l'arène ? (GameHud : le noir du chargement)</summary>
+    public bool Gathering => gatheringShown.Value;
+
+    /// <summary>Le temps que le noir tombe avant un match qui part d'une attente (2026-11-03 ; GameHud.fadeOutLead) :
+    /// l'adversaire arrivé, la fin de l'attente est publiée, le noir tombe en fondu, puis le match part et replace
+    /// tout le monde dessous. Il coupait la vue d'un coup (l'utilisateur : « ça fait tchip »).</summary>
+    public const float MatchStartFade = 0.9f;
 
     /// <summary>L'instant (horloge du serveur) où la phase courante a commencé, le même sur toutes
     /// les machines : de quoi y tirer un hasard partagé (les célébrations de l'écran de fin).</summary>
@@ -794,8 +817,8 @@ public class RoundManager : NetworkBehaviour
     public static bool MovementAllowedFor(ulong clientId, bool alive)
     {
         RoundManager rm = For(clientId);
-        // Pendant le replay du coup mortel, rien ne bouge sous lui (KillReplay.Freezes).
-        return rm == null ? alive : PlayAllowed(rm.phase.Value, alive) && !rm.ReplayFreezes;
+        // Pendant la kill cam, rien ne bouge sous elle (KillCam.Freezes).
+        return rm == null ? alive : PlayAllowed(rm.phase.Value, alive) && !rm.KillCamFreezes;
     }
 
     /// <summary>Même règle que le déplacement : le tir et le taser sont permis exactement quand
@@ -848,12 +871,13 @@ public class RoundManager : NetworkBehaviour
             return;
         }
         cached = this;
-        KillReplay.Ensure(gameObject.scene);
+        KillCam.Ensure(gameObject.scene);
         if (!IsServer) return;
         rules.Value = SessionFlow.ActiveRules.Sanitized();
         // Lancée d'un salon en ligne : tous ses joueurs se connectent à la fois, dans un ordre que rien ne
         // prédit. On les attend un peu pour donner les places de duelliste dans l'ordre du salon (2026-10-27).
         gathering = SessionFlow.LaunchOrder.Count > 0;
+        gatheringShown.Value = gathering;
         launchedOnline = gathering;
         gatheringEndsAt = Now + gatheringTimeout;
         EnterWaiting();
@@ -897,7 +921,8 @@ public class RoundManager : NetworkBehaviour
                     else EnterSalon();
                     break;
                 }
-                if (!gathering && HasEnoughPlayers()) StartMatch();
+                if (!gathering && HasEnoughPlayers()) ServerStartMatchAfterFade();
+                else if (phaseEndsAt.Value > 0d) phaseEndsAt.Value = 0d;   // reparti pendant le noir : on attend encore
                 break;
 
             case Phase.Preparation:
@@ -1059,6 +1084,7 @@ public class RoundManager : NetworkBehaviour
         }
         if (!everyoneHere && Now < gatheringEndsAt) return;
         gathering = false;
+        gatheringShown.Value = false;
         SessionFlow.LaunchOrder.Clear();
         SessionFlow.LaunchTeams.Clear();
         Debug.Log(everyoneHere ? "[Round] Les joueurs du salon sont tous dans l'arène." : "[Round] Des joueurs du salon ne sont pas arrivés : la partie commence sans eux.");
@@ -1454,7 +1480,8 @@ public class RoundManager : NetworkBehaviour
     // ------------------------------------------------------------------
 
     /// <summary>Serveur : qui tient la zone du moment à cette image (seul dedans et en vie : ZoneMode.HoldOf), publié ;
-    /// il en gagne les points (ZoneMode.Earn). Vrai si le match vient de se finir.</summary>
+    /// il en gagne les points (ZoneMode.Earn), à chaque seconde pleine sans interruption, et le chrono finit le match.
+    /// Vrai si le match vient de se finir.</summary>
     private bool ServerTickZone()
     {
         ZoneLayout layout = ZoneLayout.Instance;
@@ -1475,13 +1502,43 @@ public class RoundManager : NetworkBehaviour
         bool contested = hold == ZoneMode.Hold.Contested;
         if (zoneHolder.Value != holder) zoneHolder.Value = holder;
         if (zoneContested.Value != contested) zoneContested.Value = contested;
-        if (holder == NoWinner) return false;
 
-        zoneCarry.TryGetValue(holder, out float carry);
-        int points = ZoneMode.Earn(Time.deltaTime, ref carry);
-        zoneCarry[holder] = carry;
-        return points > 0 && ServerAddPoints(holder, points);
+        if (holder != zoneTicking)
+        {
+            zoneTicking = holder;
+            zoneHeld = 0f;
+        }
+        if (holder != NoWinner)
+        {
+            int points = ZoneMode.Earn(Time.deltaTime, ref zoneHeld);
+            if (points > 0 && ServerAddPoints(holder, points)) return true;
+        }
+        return ServerZoneTimeUp();
     }
+
+    /// <summary>Serveur : le chrono fini, le plus de points gagne ; à égalité, on continue, et le prochain point gagne. Un
+    /// vainqueur tombé juste avant se relève : c'est lui qui garde la main. Vrai si le match vient de se finir.</summary>
+    private bool ServerZoneTimeUp()
+    {
+        if (!ZoneMode.TimeUp(PhaseElapsed)) return false;
+        zonePoints.Clear();
+        foreach (PlayerLocomotion player in roundPlayers) zonePoints.Add(WinsOf(player.OwnerClientId));
+        int leader = ZoneMode.LeaderOf(zonePoints);
+        if (leader < 0) return false;
+        PlayerLocomotion winner = roundPlayers[leader];
+        PlayerMatchState state = PlayerMatchState.Of(winner.OwnerClientId);
+        if (state != null)
+        {
+            state.ServerSetRespawnAt(0d);
+            state.ServerRecordRoundWin(PhaseElapsed);
+            if (state.TryGetComponent(out Health health) && health.IsDead) health.ResetHealth();
+        }
+        Debug.Log($"[Round] Zone : le chrono est fini, {PlayerMatchState.NameOf(winner.OwnerClientId)} mène avec {ZoneMode.Points(zonePoints[leader])} points.");
+        ServerEndMatch(winner.OwnerClientId, false, 0f);
+        return true;
+    }
+
+    private readonly List<int> zonePoints = new List<int>();
 
     /// <summary>Serveur : `points` à `clientId`, à la Zone ; le premier au compte gagne le match. Vrai s'il vient de le
     /// gagner.</summary>
@@ -1499,7 +1556,8 @@ public class RoundManager : NetworkBehaviour
     /// <summary>Serveur : personne ne tient la zone, rien n'est en cours (un match commence ou s'arrête).</summary>
     private void ServerResetZone()
     {
-        zoneCarry.Clear();
+        zoneTicking = NoWinner;
+        zoneHeld = 0f;
         if (zoneHolder.Value != NoWinner) zoneHolder.Value = NoWinner;
         if (zoneContested.Value) zoneContested.Value = false;
     }
@@ -1561,32 +1619,68 @@ public class RoundManager : NetworkBehaviour
     private void EndRound(ulong winner)
     {
         lastRoundWinner.Value = winner;
-        // Une manche (ou le match) finie sur une élimination se revoit tout de suite (la kill cam, KillReplay), puis le
-        // gagnant garde la main.
-        bool replay = ServerReplayWanted(winner);
-        float replayTime = replay ? KillReplay.PhaseExtension(lastKill) : 0f;
+        // Une manche (ou le match) finie sur une élimination se joue au ralenti (la kill cam, KillCam), puis le gagnant
+        // garde la main.
+        bool shown = ServerKillCamWanted(winner);
+        float killCamTime = shown ? KillCam.PhaseExtension(lastKill) : 0f;
         if (TryGetMatchWinner(out ulong matchWinner))
         {
-            ServerClearModules();
-            ServerResetZone();
-            lastRoundWinner.Value = matchWinner;
-            Debug.Log($"[Round] Match remporté par {PlayerMatchState.NameOf(matchWinner)}.");
-            SetPhase(Phase.MatchOver, (lanePrefab ? roundOverDuration : roundOverDuration + endScreenDuration) + replayTime);
-            if (replay) ServerPublishReplay();
+            ServerEndMatch(matchWinner, shown, killCamTime);
             return;
         }
 
         if (winner != NoWinner) Debug.Log($"[Round] {PlayerMatchState.NameOf(winner)} gagne la manche {roundNumber.Value}.");
-        SetPhase(Phase.RoundOver, roundOverDuration + replayTime);
-        if (replay) ServerPublishReplay();
+        SetPhase(Phase.RoundOver, roundOverDuration + killCamTime);
+        if (shown) ServerPublishKillCam();
+    }
+
+    /// <summary>Serveur : `winner` remporte le match, la kill cam d'abord s'il y en a une (`killCamTime` de plus).</summary>
+    private void ServerEndMatch(ulong winner, bool shown, float killCamTime)
+    {
+        ServerClearModules();
+        ServerResetZone();
+        lastRoundWinner.Value = winner;
+        Debug.Log($"[Round] Match remporté par {PlayerMatchState.NameOf(winner)}.");
+        SetPhase(Phase.MatchOver, (lanePrefab ? roundOverDuration : roundOverDuration + endScreenDuration) + killCamTime);
+        if (shown) ServerPublishKillCam();
     }
 
     // ------------------------------------------------------------------
-    // Le replay du coup mortel (KillReplay, 2026-11-03)
+    // La kill cam (KillCam, 2026-11-04)
     // ------------------------------------------------------------------
 
+    /// <summary>
+    /// Serveur : un tir ou un coup de gant vient de tuer `victim`. Le tir est instantané : le serveur sait ici, avant tous
+    /// les joueurs, si ce coup finit la manche. Il n'attend donc pas son sondage : il le fait tout de suite, avec les règles
+    /// de chaque mode, et dit si cette mort a sa kill cam (le coup part avec ce qu'il faut pour que chaque machine la montre
+    /// à l'arrivée de la balle).
+    /// </summary>
+    public bool ServerJudgeKill(ulong victim)
+    {
+        if (!IsServer || !IsSpawned) return false;
+        if (phase.Value == Phase.Active)
+        {
+            judgingKill = true;
+            try
+            {
+                if (lanePrefab) TickActiveRound();
+                else if (HasEnoughPlayers())
+                {
+                    if (Respawns) TickRespawnRound();
+                    else TickActiveRound();
+                }
+            }
+            finally
+            {
+                judgingKill = false;
+            }
+        }
+        KillCam.Info info = KillCamNow;
+        return info.Scheduled && info.victim == victim;
+    }
+
     /// <summary>Serveur : un duelliste vient de tomber (vu par sondage) : son vainqueur, comment, avec quelle arme et de
-    /// combien, au cas où cette mort finit la manche. Se tuer, ou tomber sans auteur connu, ne se revoit pas.</summary>
+    /// combien, au cas où cette mort finit la manche. Se tuer, ou tomber sans auteur connu, n'a pas de kill cam.</summary>
     private void ServerNoteKill(PlayerLocomotion victim, Health health)
     {
         lastKillAt = 0d;
@@ -1596,32 +1690,33 @@ public class RoundManager : NetworkBehaviour
         PlayerMatchState killer = PlayerMatchState.Of(killerId);
         if (killer == null) return;
         WeaponController weapon = killer.GetComponentInChildren<WeaponController>();
-        lastKill = new KillReplay.Info
+        lastKill = new KillCam.Info
         {
             killer = killerId,
             victim = victim.OwnerClientId,
             cause = health.ServerKillCause,
             weaponSlot = weapon != null ? weapon.PublishedSlot : (byte)0,
-            distanceDm = KillReplay.Decimeters(Vector3.Distance(killer.transform.position, victim.transform.position)),
+            distanceDm = KillCam.Decimeters(Vector3.Distance(killer.transform.position, victim.transform.position)),
         };
         lastKillAt = Now;
     }
 
-    /// <summary>Serveur : la fin de manche (ou de match) gagnée par `winner` se revoit-elle ? Oui si elle tombe sur
-    /// l'élimination qu'il vient de faire (KillReplay.IsFresh) ; pas une zone tenue, un module ramassé, un forfait.</summary>
-    private bool ServerReplayWanted(ulong winner)
-        => winner != NoWinner && KillReplay.IsFresh(lastKillAt, Now) && lastKill.killer == winner
+    /// <summary>Serveur : la fin de manche (ou de match) gagnée par `winner` a-t-elle sa kill cam ? Oui si elle tombe sur
+    /// le coup que le serveur juge à l'instant (ServerJudgeKill) ; pas une zone tenue, un module ramassé, un forfait, ni une
+    /// mort sans coup, que rien ne montre arriver.</summary>
+    private bool ServerKillCamWanted(ulong winner)
+        => judgingKill && winner != NoWinner && KillCam.IsFresh(lastKillAt, Now) && lastKill.killer == winner
            && PlayerMatchState.Of(lastKill.victim) != null;
 
-    /// <summary>Serveur : la kill cam de la dernière élimination part aussitôt (KillReplay.LeadIn : le temps de voir le
-    /// coup porter). Appelé juste après SetPhase, qui efface celle d'avant.</summary>
-    private void ServerPublishReplay()
+    /// <summary>Serveur : la kill cam de la dernière élimination part à cet instant. Appelé juste après SetPhase, qui efface
+    /// celle d'avant.</summary>
+    private void ServerPublishKillCam()
     {
-        KillReplay.Info info = lastKill;
-        info.startsAt = Now + KillReplay.LeadIn;
-        killReplay.Value = info;
+        KillCam.Info info = lastKill;
+        info.startsAt = Now;
+        killCam.Value = info;
         lastKillAt = 0d;
-        Debug.Log($"[Round] Kill cam du coup de {PlayerMatchState.NameOf(info.killer)} ({KillReplay.DurationOf(info):F1} s).");
+        Debug.Log($"[Round] Kill cam du coup de {PlayerMatchState.NameOf(info.killer)} ({KillCam.DurationOf(info):F1} s).");
     }
 
     private void StartMatch()
@@ -1819,6 +1914,13 @@ public class RoundManager : NetworkBehaviour
         // tourne, la préparation dure d'autant plus : 10 s pour la famille, puis 20 pour l'arme (GDD § 11, P2).
         if (HasPreparation(rules.Value)) SetPhase(Phase.Preparation, preparationDuration + (tossed ? CoinFlip.TossSeconds : 0f));
         else SetPhase(Phase.Starting, startingDuration);
+    }
+
+    /// <summary>Assez de joueurs dans l'attente : la fin de l'attente se publie (MatchStartFade), puis le match part.</summary>
+    private void ServerStartMatchAfterFade()
+    {
+        if (phaseEndsAt.Value <= 0d) phaseEndsAt.Value = Now + MatchStartFade;
+        else if (Now >= phaseEndsAt.Value) StartMatch();
     }
 
     /// <summary>Plus assez de joueurs : on attend le suivant. Ceux qui restent sont soignés (un
@@ -2022,7 +2124,7 @@ public class RoundManager : NetworkBehaviour
         double now = Now;
         // Un match qui finit entre au tableau de la soirée (pas le match d'un couloir du Tournoi : le tournoi compte).
         bool matchEnds = next == Phase.MatchOver && phase.Value != Phase.MatchOver && !lanePrefab;
-        if (killReplay.Value.Scheduled) killReplay.Value = default;
+        if (killCam.Value.Scheduled) killCam.Value = default;
         phase.Value = next;
         phaseStartedAt.Value = now;
         phaseEndsAt.Value = duration > 0f ? now + duration : 0d;
@@ -2292,9 +2394,9 @@ public class RoundManager : NetworkBehaviour
         if (state != null && !forfeit) state.ServerRecordRoundWin(PhaseElapsed);
         Debug.Log(forfeit ? $"[Round] Tag Team : l'autre équipe est partie, {TagTeam.Name(team)} gagne par forfait."
                           : $"[Round] Tag Team : {TagTeam.Name(team)} remporte le match.");
-        bool replay = !forfeit && ServerReplayWanted(scorer);
-        SetPhase(Phase.MatchOver, roundOverDuration + endScreenDuration + (replay ? KillReplay.PhaseExtension(lastKill) : 0f));
-        if (replay) ServerPublishReplay();
+        bool shown = !forfeit && ServerKillCamWanted(scorer);
+        SetPhase(Phase.MatchOver, roundOverDuration + endScreenDuration + (shown ? KillCam.PhaseExtension(lastKill) : 0f));
+        if (shown) ServerPublishKillCam();
     }
 
     /// <summary>Serveur : une équipe n'a plus personne en plein match : l'autre gagne par forfait. Son combattant, mort

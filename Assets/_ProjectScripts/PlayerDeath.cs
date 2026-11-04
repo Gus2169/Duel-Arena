@@ -12,6 +12,10 @@ using UnityEngine;
 /// (KilledClientRpc) : elle peut arriver juste avant ou juste après la mort, et les deux ordres sont
 /// gérés.
 ///
+/// Un coup qui a sa kill cam (KillCam, 2026-11-04) se montre à l'arrivée de la balle : le message de la
+/// mort le dit, et le robot reste debout à l'écran, sa mort retenue, jusqu'à ce que la kill cam la lâche
+/// (ReleaseLiveKill). Rien de la simulation n'attend : il est mort sur le serveur.
+///
 /// Catégorie C pure : rien de la simulation ne lit l'épave ni la caméra du mort. Ce qui, de la
 /// mort, touche la simulation (le survivant traverse la place du mort, ses tirs ne s'arrêtent plus
 /// sur une surface touchable invisible) est dans PlayerLocomotion.ApplyLifeState.
@@ -61,7 +65,16 @@ public class PlayerDeath : NetworkBehaviour
     private bool pendingImpulse;
     private Vector3 pendingPoint;
     private Vector3 pendingForce;
+    private float pendingCloseness;
+    private int pendingSeed;
     private float pendingAt;
+
+    // La mort que la kill cam montrera à l'impact : le robot reste debout à l'écran d'ici là, et son épave héritera de sa
+    // vitesse d'à présent. Une kill cam qui ne viendrait pas ne la retient pas plus que ce filet.
+    private const float MaxLiveKillHold = KillCam.FlightMax + 1f;
+    private bool liveKill;
+    private float liveKillAt;
+    private Vector3 liveKillVelocity;
 
     // La vue du mort.
     private bool deathCamera;
@@ -78,7 +91,7 @@ public class PlayerDeath : NetworkBehaviour
     /// <summary>L'épave affichée, null tant que le joueur est en vie.</summary>
     public RobotCorpse Corpse => corpse;
 
-    /// <summary>Les sons de la mort (le robot qui s'éteint) : le replay du coup mortel les rejoue (KillReplay).</summary>
+    /// <summary>Les sons de la mort (le robot qui s'éteint) : la kill cam les joue au ralenti (KillCam).</summary>
     public GameSounds Sounds => sounds;
 
     /// <summary>
@@ -152,9 +165,10 @@ public class PlayerDeath : NetworkBehaviour
         motion.Add(Time.time, transform.position);
 
         bool dead = IsSpawned && health != null && health.IsDead;
-        if (dead != shownDead)
+        if (liveKill && Time.unscaledTime - liveKillAt > MaxLiveKillHold) ReleaseLiveKill();
+        if (dead != shownDead && !(dead && liveKill))
         {
-            if (dead) ShowDeath();
+            if (dead) ShowDeath(motion.Velocity);
             else ShowAlive();
         }
     }
@@ -190,10 +204,10 @@ public class PlayerDeath : NetworkBehaviour
     // Mort et retour en jeu
     // ------------------------------------------------------------------
 
-    private void ShowDeath()
+    private void ShowDeath(Vector3 velocity)
     {
         shownDead = true;
-        corpse = RobotCorpse.Spawn(modelAnimator, motion.Velocity);
+        corpse = RobotCorpse.Spawn(modelAnimator, velocity);
         if (corpse != null && paint != null)
         {
             foreach (Renderer live in paint.PaintedRenderers) paint.PaintOnce(corpse.TwinOf(live));
@@ -214,7 +228,7 @@ public class PlayerDeath : NetworkBehaviour
         }
         hiddenRenderers = shown.ToArray();
 
-        if (corpse != null && pendingImpulse && Time.time - pendingAt < 1f) Strike(pendingPoint, pendingForce);
+        if (corpse != null && pendingImpulse && Time.time - pendingAt < 1f) Strike(pendingPoint, pendingForce, pendingCloseness, pendingSeed);
         pendingImpulse = false;
         PlayDeathSound();
 
@@ -247,6 +261,7 @@ public class PlayerDeath : NetworkBehaviour
         }
         hiddenRenderers = System.Array.Empty<Renderer>();
         pendingImpulse = false;
+        liveKill = false;
 
         if (firstPersonView != null) firstPersonView.SetHidden(false);
         StopDeathCamera();
@@ -258,41 +273,70 @@ public class PlayerDeath : NetworkBehaviour
     private void PlayDeathSound()
     {
         if (sounds == null) return;
-        Vector3 at = corpse != null ? corpse.Center : transform.position + Vector3.up;
-        float far = 300f;
-        sounds.deathShutdown?.PlayAt(at, sounds.deathMinDistance, far);
-        sounds.deathCrackle?.PlayAt(at, sounds.deathMinDistance, far);
+        // Sous la kill cam, c'est elle qui les joue, au ralenti et de près.
+        if (!KillCam.Covers)
+        {
+            Vector3 at = corpse != null ? corpse.Center : transform.position + Vector3.up;
+            float far = 300f;
+            sounds.deathShutdown?.PlayAt(at, sounds.deathMinDistance, far);
+            sounds.deathCrackle?.PlayAt(at, sounds.deathMinDistance, far);
+        }
         if (corpse != null) corpse.EnableImpactSounds(sounds.corpseImpact);
     }
 
-    /// <summary>Serveur : ce joueur vient d'être tué par un coup reçu en `point`, poussé de
-    /// `impulse` (N·s). Diffusé à tous pour que l'épave parte dans le bon sens.</summary>
-    public void ServerNotifyKilled(Vector3 point, Vector3 impulse)
+    /// <summary>Serveur : ce joueur vient d'être tué par un coup reçu en `point`, poussé de `impulse` (N·s), de la proximité
+    /// `closeness` (1 à bout portant, 0 au bout de la portée de l'arme). Diffusé à tous, avec le hasard de sa chute
+    /// (CorpseFall) : chaque machine la voit partir pareil. `live` : ce coup a sa kill cam, sa mort attend l'arrivée de la
+    /// balle à l'écran. Retenue ici aussi : chez l'hôte, la mort se verrait avant l'arrivée du message.</summary>
+    public void ServerNotifyKilled(Vector3 point, Vector3 impulse, float closeness, bool live = false)
     {
         if (!IsServer || !IsSpawned) return;
-        KilledClientRpc(point, impulse);
+        if (live) HoldForKillCam();
+        KilledClientRpc(point, impulse, closeness, Random.Range(int.MinValue, int.MaxValue), live);
     }
 
     [ClientRpc]
-    private void KilledClientRpc(Vector3 point, Vector3 impulse)
+    private void KilledClientRpc(Vector3 point, Vector3 impulse, float closeness, int seed, bool live)
     {
+        if (live) HoldForKillCam();
         Vector3 force = impulse * impulseScale;
         if (shownDead && corpse != null)
         {
-            Strike(point, force);
+            Strike(point, force, closeness, seed);
             return;
         }
         pendingImpulse = true;
         pendingPoint = point;
         pendingForce = force;
+        pendingCloseness = closeness;
+        pendingSeed = seed;
         pendingAt = Time.time;
     }
 
-    // Le coup mortel : il pousse l'épave, et la fait voler en pièces (RobotCorpse.Burst : des pièces arrachées, l'huile,
-    // les étincelles et des éclats aux couleurs du robot).
-    private void Strike(Vector3 point, Vector3 force)
+    // Une machine qui regarde un autre match (la salle d'attente du Tournoi) ne joue pas sa kill cam : rien à retenir.
+    private void HoldForKillCam()
     {
-        corpse.ApplyImpulse(point, force);
+        if (liveKill || shownDead || RoundManager.Local != RoundManager.For(OwnerClientId)) return;
+        liveKill = true;
+        liveKillAt = Time.unscaledTime;
+        liveKillVelocity = motion.Velocity;
+    }
+
+    /// <summary>La balle est arrivée (ou la kill cam ne viendra pas) : la mort retenue se voit, le robot vole en pièces.
+    /// Dans sa pose du moment : appelé après l'animation.</summary>
+    public void ReleaseLiveKill()
+    {
+        if (!liveKill) return;
+        liveKill = false;
+        pendingAt = Time.time;
+        if (IsSpawned && health != null && health.IsDead && !shownDead) ShowDeath(liveKillVelocity);
+    }
+
+    // Le coup mortel : il fait tomber l'épave (RobotCorpse.Fall, chaque fois à sa façon), et voler en pièces (Burst : des
+    // pièces arrachées, l'huile, les étincelles et des éclats aux couleurs du robot).
+    private void Strike(Vector3 point, Vector3 force, float closeness, int seed)
+    {
+        corpse.Fall(point, force, closeness, seed);
         corpse.Burst(point, force, paint != null ? (Color)paint.Paint : Color.clear);
     }
 

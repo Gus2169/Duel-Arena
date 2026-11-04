@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using UnityEngine;
 using ReloadSound = WeaponAudio.ReloadSound;
 
 /// <summary>
@@ -96,6 +97,41 @@ public class WeaponAudioTests
         // Annulé puis relancé entre deux publications du serveur : l'ancien se tait, le nouveau commence.
         Assert.AreEqual(ReloadSound.Interrupted | ReloadSound.Started,
             WeaponAudio.ClassifyReload(Chargeur(5, 12.0), Chargeur(5, 13.0), Fusil, false));
+    }
+
+    /// <summary>L'arme que le mode met en main s'entend par le dernier bruit de son rechargement (2026-11-04) : chacune en a un,
+    /// et il part pendant sa sortie.</summary>
+    [Test]
+    public void ChaqueArme_ArriveAvecLeDernierBruitDeSonRechargement()
+    {
+        var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/_ProjectArena/PlayerPrefab/Player.prefab");
+        WeaponController weapon = prefab.GetComponentInChildren<WeaponController>(true);
+        Assert.AreEqual(12, weapon.SlotCount, "Garde : l'arsenal.");
+        foreach (WeaponData data in weapon.Loadout)
+        {
+            Assert.IsTrue(WeaponAudio.ArrivalSound(data, data.raiseTime, out AudioClip[] clips, out float volume, out float delay), $"Le {data.weaponName} arrive sans bruit.");
+            Assert.IsNotNull(clips[0], data.weaponName);
+            Assert.Greater(volume, 0f, data.weaponName);
+            Assert.That(delay, Is.InRange(0f, data.raiseTime), $"Le bruit du {data.weaponName} part pendant sa sortie.");
+        }
+
+        // Le FA-07 : son armement, à sa place dans la fin du geste (72 % d'un geste joué à partir de 60 %, en 0,6 s).
+        WeaponData assault = weapon.DataOf(0);
+        WeaponAudio.ArrivalSound(assault, 0.6f, out AudioClip[] arming, out _, out float armingDelay);
+        Assert.AreSame(assault.reloadCues[assault.reloadCues.Length - 1].clips, arming, "La dernière étape.");
+        Assert.AreEqual(0.18f, armingDelay, 1e-3f);
+        // Le pompe n'a pas d'étapes : le bruit de sa fin, tout de suite.
+        WeaponData pump = weapon.DataOf(2);
+        Assert.IsEmpty(pump.reloadCues, "Garde : il recharge cartouche par cartouche.");
+        WeaponAudio.ArrivalSound(pump, pump.raiseTime, out AudioClip[] pumpClips, out _, out float pumpDelay);
+        Assert.AreSame(pump.reloadEndSounds, pumpClips);
+        Assert.AreEqual(0f, pumpDelay, 1e-4f);
+        // Une arme laser : sa seule étape, avant la fin du geste, part tout de suite.
+        WeaponAudio.ArrivalSound(weapon.DataOf(3), 0.4f, out _, out _, out float laserDelay);
+        Assert.AreEqual(0f, laserDelay, 1e-4f);
+
+        Assert.IsFalse(WeaponAudio.ArrivalSound(weapon.DataOf(WeaponController.GloveSlot), 0.4f, out _, out _, out _), "Le gant n'a rien à recharger.");
+        Assert.IsFalse(WeaponAudio.ArrivalSound(null, 0.4f, out _, out _, out _));
     }
 
     [Test]

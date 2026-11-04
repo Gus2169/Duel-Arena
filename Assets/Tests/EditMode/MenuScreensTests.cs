@@ -407,4 +407,18 @@ public class MenuScreensTests
         Assert.AreEqual(-1, index);
         Assert.IsFalse(OnlineSession.ParseColor(null, out index));
     }
+
+    /// <summary>L'écran de chargement du menu (2026-11-03) : une partie part (l'hôte, un client connecté, un membre d'un
+    /// salon en ligne qui se connecte de lui-même), pas une connexion en réseau local qui se cherche encore, qu'on doit
+    /// pouvoir annuler.</summary>
+    [Test]
+    public void LEcranDeChargement_CouvreUnePartieQuiPart_PasUneConnexionQuiSeCherche()
+    {
+        Assert.IsFalse(MainMenuController.LaunchUnderway(false, false, false, false), "Rien ne tourne.");
+        Assert.IsTrue(MainMenuController.LaunchUnderway(true, true, true, false), "L'hôte, l'arène se charge.");
+        Assert.IsTrue(MainMenuController.LaunchUnderway(true, false, true, false), "Un client connecté : l'arène suit.");
+        Assert.IsFalse(MainMenuController.LaunchUnderway(true, false, false, false), "Une connexion qui se cherche : le bouton Annuler reste.");
+        Assert.IsTrue(MainMenuController.LaunchUnderway(true, false, false, true), "Le salon en ligne lance la partie : ses membres se connectent seuls.");
+        Assert.IsFalse(MainMenuController.LaunchUnderway(false, false, false, true), "Dans le salon, avant le lancement.");
+    }
 }

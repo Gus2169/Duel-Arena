@@ -3,8 +3,9 @@ using UnityEngine;
 /// <summary>
 /// La Zone (GDD § 11, 2026-11-02, à la façon du Hardpoint de Call of Duty) : une partie aux points, avec réapparitions.
 /// Une zone change de place à intervalles fixes, parmi les emplacements de l'arène (ZoneLayout), dans un ordre fixe,
-/// annoncée un peu avant ; elle s'ouvre dès le départ. Seul dedans, on gagne des points ; à deux dedans, plus rien
-/// n'avance ; en sortant, on garde ce qu'on a pris. Une élimination rapporte moins. Le premier au compte gagne.
+/// annoncée un peu avant ; elle s'ouvre dès le départ. Seul dedans, on gagne des points, par paliers ; à deux dedans, plus
+/// rien n'avance ; en sortant, on garde ce qu'on a pris. Une élimination rapporte moins. Le premier au compte gagne, ou le
+/// plus de points au bout du chrono ; à égalité, la prolongation : le prochain point gagne.
 ///
 /// Le serveur juge qui tient la zone et compte (RoundManager) ; chaque machine montre la zone (ZoneLayout) et ce qui
 /// s'y passe (GameHud). Les valeurs sont les propositions de Claude du GDD, à régler en jouant. Fonctions pures, testées.
@@ -17,8 +18,14 @@ public static class ZoneMode
     /// <summary>La suivante s'annonce tant de secondes avant (GDD § 11, Z9).</summary>
     public const float AnnounceLead = 10f;
 
-    /// <summary>Points par seconde, seul dans la zone (les 100 toutes les 5 s de l'utilisateur, comptés en continu).</summary>
-    public const int PointsPerSecond = 20;
+    /// <summary>Seul dans la zone, tant de points d'un coup, à chaque intervalle plein (2026-11-04, l'utilisateur :
+    /// « augmenté de X points toutes les X secondes » ; le rythme des 100 toutes les 5 s de Z1).</summary>
+    public const int PointsPerTick = 20;
+    public const float TickInterval = 1f;
+
+    /// <summary>Le chrono du match (2026-11-04, l'utilisateur : « pour pas que ça soit trop long ») : à sa fin, le plus de
+    /// points gagne.</summary>
+    public const float MatchDuration = 600f;
 
     /// <summary>Points d'une élimination : moins qu'un temps passé dans la zone (Z1, Z4).</summary>
     public const int PointsPerKill = 100;
@@ -72,14 +79,38 @@ public static class ZoneMode
         return dx * dx + dz * dz <= radius * radius;
     }
 
-    /// <summary>Les points qu'on prend en `seconds` secondes seul dans la zone, ajoutés à ce qui restait (`carry`, une
-    /// fraction de point) : les points entiers à compter, et ce qui reste pour la suite.</summary>
-    public static int Earn(float seconds, ref float carry)
+    /// <summary>Les points qu'on prend en `seconds` secondes seul dans la zone, ajoutées au temps déjà tenu depuis le dernier
+    /// palier (`held`) : un palier par intervalle plein, et ce qui reste pour le suivant.</summary>
+    public static int Earn(float seconds, ref float held)
     {
-        carry += PointsPerSecond * Mathf.Max(0f, seconds);
-        int whole = Mathf.FloorToInt(carry);
-        carry -= whole;
-        return whole;
+        held += Mathf.Max(0f, seconds);
+        int ticks = Mathf.FloorToInt(held / TickInterval);
+        held -= ticks * TickInterval;
+        return ticks * PointsPerTick;
+    }
+
+    /// <summary>Secondes avant la fin du chrono, `elapsed` secondes après le début du match.</summary>
+    public static float TimeLeft(float elapsed) => Mathf.Max(0f, MatchDuration - elapsed);
+
+    /// <summary>Le chrono est-il fini ? À égalité, le match continue : c'est la prolongation.</summary>
+    public static bool TimeUp(float elapsed) => elapsed >= MatchDuration;
+
+    /// <summary>Qui mène ces `points` (sa place dans la liste), ou -1 à égalité en tête, et sans personne.</summary>
+    public static int LeaderOf(System.Collections.Generic.IReadOnlyList<int> points)
+    {
+        int leader = -1, best = int.MinValue;
+        bool tied = false;
+        for (int i = 0; i < points.Count; i++)
+        {
+            if (points[i] > best)
+            {
+                best = points[i];
+                leader = i;
+                tied = false;
+            }
+            else if (points[i] == best) tied = true;
+        }
+        return tied ? -1 : leader;
     }
 
     /// <summary>Des points à la française : « 3 000 » (un espace insécable entre les milliers).</summary>

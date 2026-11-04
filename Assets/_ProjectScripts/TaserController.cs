@@ -114,6 +114,9 @@ public class TaserController : NetworkBehaviour
     /// commencé, et un abonnement à OnStrike ratait le coup. Cosmétique.</summary>
     public float LastStrikeSeenAt { get; private set; } = float.NegativeInfinity;
 
+    /// <summary>Cette machine montre-t-elle un coup en ce moment ? Pour les autres aussi, contrairement à IsStriking.</summary>
+    public bool ShowsStrike => Time.time - LastStrikeSeenAt < strikeDuration;
+
     private bool IsNetworked => NetworkObject != null && IsSpawned;
 
     /// <summary>Un spectateur n'a pas de taser (2026-10-13).</summary>
@@ -270,6 +273,9 @@ public class TaserController : NetworkBehaviour
         if (ownWasQueryable) ownHitbox.SetQueryable(false);
 
         var rewound = new List<PlayerLocomotion>();
+        PlayerDeath killed = null;
+        Vector3 killPoint = Vector3.zero;
+        bool confirmKill = false;
         try
         {
             if (rewind > 0f)
@@ -297,9 +303,11 @@ public class TaserController : NetworkBehaviour
                 // Statistiques du match (pendant la manche seulement) et épave poussée par le coup.
                 if (matchState != null && RoundManager.StatsRecordingFor(OwnerClientId)) matchState.ServerRecordDamage(before);
                 if (target.IsDead && target.TryGetComponent(out PlayerDeath death))
-                    death.ServerNotifyKilled(hit.ClosestPoint(origin), DeathImpulse(serverStrikeDirection));
-                // Le retour de touche, comme au tir (2026-10-13) : le coup qui tue.
-                if (weapon != null && before > 0f && target.IsDead) weapon.ServerConfirmHit(WeaponController.HitKind.Kill);
+                {
+                    killed = death;
+                    killPoint = hit.ClosestPoint(origin);
+                }
+                confirmKill = weapon != null && before > 0f && target.IsDead;
             }
         }
         finally
@@ -311,6 +319,17 @@ public class TaserController : NetworkBehaviour
             if (ownWasQueryable) ownHitbox.SetQueryable(true);
             Physics.SyncTransforms();
         }
+
+        // Comme au tir : le rewind fini, le serveur juge si ce coup finit la manche (KillCam), et le retour du coup qui tue
+        // attend alors l'impact qu'elle montre.
+        bool live = false;
+        if (killed != null)
+        {
+            RoundManager rm = RoundManager.For(OwnerClientId);
+            live = rm != null && rm.ServerJudgeKill(killed.OwnerClientId);
+            killed.ServerNotifyKilled(killPoint, DeathImpulse(serverStrikeDirection), 1f, live);
+        }
+        if (confirmKill && !live) weapon.ServerConfirmHit(WeaponController.HitKind.Kill);
     }
 
     /// <summary>
@@ -397,10 +416,6 @@ public class TaserController : NetworkBehaviour
     }
 
     private void PlayZapSound() => PlayOneOf(zapSounds, zapVolume);
-
-    /// <summary>La décharge du gant et son volume : le replay du coup mortel la rejoue, au ralenti (KillReplay).</summary>
-    public IReadOnlyList<AudioClip> ZapSounds => zapSounds;
-    public float ZapVolume => zapVolume;
 
     private void PlayOneOf(AudioClip[] clips, float volume)
     {

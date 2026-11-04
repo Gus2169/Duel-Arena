@@ -197,7 +197,7 @@ public sealed class SalonView
         }
         // La Zone se gagne aux points, à un compte fixe.
         else if (r.CountsPoints)
-            rows.Add(new Row("Le but", $"Le premier à {ZoneMode.Points(ZoneMode.TargetPoints)} points : {ZoneMode.PointsPerSecond} par seconde seul dans la zone, {ZoneMode.PointsPerKill} par élimination"));
+            rows.Add(new Row("Le but", $"Le premier à {ZoneMode.Points(ZoneMode.TargetPoints)} points, ou le plus de points en {Mathf.RoundToInt(ZoneMode.MatchDuration / 60f)} minutes : {ZoneMode.PointsPerTick} par seconde seul dans la zone, {ZoneMode.PointsPerKill} par élimination"));
         // Au Death match du classique (sa case est sous « Plus de réglages ») et à l'Élimination confirmée, les
         // éliminations à faire à la place des manches.
         else if (r.CountsKills) rows.Add(KillsRow(r));

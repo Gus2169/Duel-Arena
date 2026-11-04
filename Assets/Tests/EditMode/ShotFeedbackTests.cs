@@ -98,6 +98,40 @@ public class ShotFeedbackTests
     }
 
     [Test]
+    public void LeLaser_VaLaOuRegardeLeJoueur_SaufPendantUnGesteQuiEcarteLArme()
+    {
+        Assert.IsTrue(TacticalLaser.FollowsGaze(false, false, false, false, false), "L'arme tenue, à la hanche comme en visée.");
+        Assert.IsFalse(TacticalLaser.FollowsGaze(true, false, false, false, false), "Il recharge.");
+        Assert.IsFalse(TacticalLaser.FollowsGaze(false, true, false, false, false), "Il sort son arme.");
+        Assert.IsFalse(TacticalLaser.FollowsGaze(false, false, true, false, false), "Il sprinte.");
+        Assert.IsFalse(TacticalLaser.FollowsGaze(false, false, false, true, false), "Il franchit.");
+        Assert.IsFalse(TacticalLaser.FollowsGaze(false, false, false, false, true), "Il frappe au gant.");
+    }
+
+    [Test]
+    public void DOuQuePartLeFaisceau_IlVaAuPointQueRegardeLeJoueur()
+    {
+        // La même pose vue de deux machines : l'arme des bras à hauteur d'épaule, celle du corps baissée vers le sol.
+        Vector3 gazePoint = new Vector3(-4f, 1.65f, 25.5f);
+        var emitters = new[] { new Vector3(-3.8f, 1.35f, 12.4f), new Vector3(-3.6f, 0.95f, 12.3f) };
+        Vector3 lowered = new Vector3(0.3f, -0.8f, 0.5f).normalized;
+        foreach (Vector3 emitter in emitters)
+        {
+            Vector3 direction = TacticalLaser.TowardGaze(emitter, lowered, gazePoint, 1f);
+            Vector3 toPoint = gazePoint - emitter;
+            Assert.AreEqual(1f, direction.magnitude, 1e-4f);
+            Assert.Less(Vector3.Cross(toPoint, direction).magnitude, 1e-3f, "Le faisceau passe par le point.");
+            Assert.Greater(Vector3.Dot(toPoint, direction), 0f, "Vers lui.");
+        }
+
+        Assert.AreEqual(lowered, TacticalLaser.TowardGaze(emitters[0], lowered, gazePoint, 0f), "Pendant un geste, il suit l'arme.");
+        Vector3 toward = (gazePoint - emitters[0]).normalized;
+        Vector3 half = TacticalLaser.TowardGaze(emitters[0], lowered, gazePoint, 0.5f);
+        Assert.AreEqual(Vector3.Angle(lowered, toward) * 0.5f, Vector3.Angle(lowered, half), 0.1f, "Il passe de l'un à l'autre sans saut.");
+        Assert.AreEqual(lowered, TacticalLaser.TowardGaze(gazePoint, lowered, gazePoint, 1f), "Sur le point lui-même, il garde sa direction.");
+    }
+
+    [Test]
     public void EnRechargeant_OnNeVisePas()
     {
         Assert.IsTrue(PlayerLocomotion.GateAim(true, false), "Hors rechargement, la visée passe.");

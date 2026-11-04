@@ -6,7 +6,7 @@ using UnityEngine.Rendering;
 /// L'épave d'un robot tué : une copie de son modèle, figée dans la pose où il est mort, qui tombe
 /// en ragdoll (2026-10-12, GDD § 6 : « le châssis vole en pièces »). Depuis le 2026-11-03 (l'utilisateur, d'après Sniper
 /// Elite et Mortal Kombat), le coup qui tue l'arrache en partie : des pièces volent, l'huile gicle, des étincelles et des
-/// éclats partent (Burst, RobotBurst).
+/// éclats partent (Burst, RobotBurst). Le coup choisit aussi comment il tombe (Fall, CorpseFall).
 ///
 /// Une COPIE, et non le modèle lui-même : l'Animator, le calage des pieds, le buste et le lean
 /// réécrivent les os à chaque image, ils se battraient avec la physique. Le modèle vivant est
@@ -18,8 +18,9 @@ using UnityEngine.Rendering;
 /// pareil sur deux écrans, et rien de jouable n'en dépend. Elle vit sur le layer Corpse, qui ne
 /// touche que le décor (voir CorpseLayer).
 ///
-/// Les corps et les limites des articulations reprennent ceux de l'assistant Ragdoll d'Unity (bassin,
-/// buste, tête, bras, avant-bras, cuisses, jambes), relatives à la pose de la mort.
+/// Les corps reprennent ceux de l'assistant Ragdoll d'Unity (bassin, buste, tête, bras, avant-bras,
+/// cuisses, jambes). Les limites des membres se comptent depuis la pose de la mort, comme un corps
+/// qui peut encore se plier et se tendre (AddArm, AddLeg).
 /// </summary>
 public class RobotCorpse : MonoBehaviour
 {
@@ -132,8 +133,79 @@ public class RobotCorpse : MonoBehaviour
         return twin != null ? twin.GetComponent<Renderer>() : null;
     }
 
-    /// <summary>Le coup qui a tué : une impulsion (N·s) reçue en `point`, sur la pièce la plus proche.</summary>
-    public void ApplyImpulse(Vector3 point, Vector3 impulse) => Push(NearestBody(point), point, impulse);
+    /// <summary>
+    /// Le coup qui a tué fait tomber l'épave (`impulse`, N·s, reçu en `point`, de la proximité `closeness` : 1 à bout portant,
+    /// 0 au bout de la portée de l'arme) : une façon de tomber choisie selon lui et la graine `seed` (CorpseFall).
+    /// </summary>
+    public void Fall(Vector3 point, Vector3 impulse, float closeness, int seed)
+    {
+        if (!float.IsFinite(point.x) || !float.IsFinite(point.y) || !float.IsFinite(point.z)) return;
+        if (!float.IsFinite(impulse.x) || !float.IsFinite(impulse.y) || !float.IsFinite(impulse.z)) return;
+        Vector3 center = CenterOfMass();
+        CorpseFall.Plan plan = PlanFor(point, impulse, closeness, seed);
+        LastFall = plan;
+        Push(NearestBody(point), point, plan.Push);
+        // La rotation de tout le corps, d'un bloc : à chaque pièce la vitesse que lui donne sa place. Rien ne fouette.
+        foreach (Rigidbody body in bodies)
+        {
+            if (body == null) continue;
+            body.AddForce(Vector3.Cross(plan.Spin, body.worldCenterOfMass - center), ForceMode.VelocityChange);
+            body.AddTorque(plan.Spin, ForceMode.VelocityChange);
+        }
+        foreach (RagdollPart part in UpperBody) AddVelocity(part, Vector3.down * plan.Slump);
+        Vector3 forward = transform.forward;
+        AddVelocity(RagdollPart.LeftThigh, forward * plan.LeftKnee);
+        AddVelocity(RagdollPart.LeftCalf, forward * (plan.LeftKnee * 0.4f));
+        AddVelocity(RagdollPart.RightThigh, forward * plan.RightKnee);
+        AddVelocity(RagdollPart.RightCalf, forward * (plan.RightKnee * 0.4f));
+        AddSpin(RagdollPart.LeftArm, plan.LeftArm);
+        AddSpin(RagdollPart.LeftForearm, plan.LeftArm * 0.6f);
+        AddSpin(RagdollPart.RightArm, plan.RightArm);
+        AddSpin(RagdollPart.RightForearm, plan.RightArm * 0.6f);
+    }
+
+    /// <summary>La chute que le coup a choisie.</summary>
+    public CorpseFall.Plan LastFall { get; private set; }
+
+    private CorpseFall.Plan PlanFor(Vector3 point, Vector3 impulse, float closeness, int seed) => CorpseFall.For(new CorpseFall.Blow
+    {
+        Impulse = impulse,
+        Mass = totalMass,
+        Hit = NearestPart(point),
+        Side = Mathf.Clamp(Vector3.Dot(point - CenterOfMass(), transform.right) / 0.2f, -1f, 1f),
+        Forward = transform.forward,
+        Closeness = closeness,
+        Seed = seed,
+    });
+
+    private static readonly RagdollPart[] UpperBody =
+    {
+        RagdollPart.Pelvis, RagdollPart.Torso, RagdollPart.Head,
+        RagdollPart.LeftArm, RagdollPart.LeftForearm, RagdollPart.RightArm, RagdollPart.RightForearm,
+    };
+
+    private void AddVelocity(RagdollPart part, Vector3 velocity)
+    {
+        if (parts.TryGetValue(part, out Rigidbody body) && body != null) body.AddForce(velocity, ForceMode.VelocityChange);
+    }
+
+    private void AddSpin(RagdollPart part, Vector3 spin)
+    {
+        if (parts.TryGetValue(part, out Rigidbody body) && body != null) body.AddTorque(spin, ForceMode.VelocityChange);
+    }
+
+    private Vector3 CenterOfMass()
+    {
+        Vector3 sum = Vector3.zero;
+        float mass = 0f;
+        foreach (Rigidbody body in bodies)
+        {
+            if (body == null) continue;
+            sum += body.worldCenterOfMass * body.mass;
+            mass += body.mass;
+        }
+        return mass > 0f ? sum / mass : transform.position;
+    }
 
     // ------------------------------------------------------------------
     // Voler en pièces (2026-11-03)
@@ -229,10 +301,10 @@ public class RobotCorpse : MonoBehaviour
         _ => part,
     };
 
-    /// <summary>Les os des pièces arrachées : le replay du coup mortel y fait gicler l'huile, chez lui.</summary>
+    /// <summary>Les os des pièces arrachées.</summary>
     public IReadOnlyList<Transform> Detached => detached;
 
-    /// <summary>L'épave a-t-elle volé en pièces (Burst), et comment : le replay du coup mortel refait la même gerbe.</summary>
+    /// <summary>L'épave a-t-elle volé en pièces (Burst), et comment.</summary>
     public bool HasBurst => burst;
     public BurstSeverity Severity { get; private set; }
     public Vector3 BurstPoint { get; private set; }
@@ -295,6 +367,9 @@ public class RobotCorpse : MonoBehaviour
 #if UNITY_EDITOR || UNITY_INCLUDE_TESTS
     /// <summary>Surface de test : la pièce que touche un coup reçu en `point`.</summary>
     public RagdollPart TestNearestPart(Vector3 point) => NearestPart(point);
+
+    /// <summary>Surface de test : le plan que donnerait ce coup, sans le porter.</summary>
+    public CorpseFall.Plan TestPlan(Vector3 point, Vector3 impulse, float closeness, int seed) => PlanFor(point, impulse, closeness, seed);
 #endif
 
     // Le robot montré est-il fait de pièces rigides, chacune sur un seul os (le CT-01, l'OS-02) ?
@@ -431,8 +506,7 @@ public class RobotCorpse : MonoBehaviour
     // ------------------------------------------------------------------
 
     /// <summary>Ne garde de la copie que son apparence : plus aucun script (arme, viseur, étincelles
-    /// du taser), plus d'Animator (il réécrirait les os), plus de lumière, de son, de caméra ni de collider. Sert à l'épave
-    /// et aux marionnettes du replay du coup mortel (KillReplay).</summary>
+    /// du taser), plus d'Animator (il réécrirait les os), plus de lumière, de son, de caméra ni de collider. Sert à l'épave.</summary>
     public static void StripToAppearance(GameObject copy)
     {
         // Les scripts d'abord : ce sont eux qui dépendent des autres composants.
@@ -491,41 +565,56 @@ public class RobotCorpse : MonoBehaviour
         AddSphere(head, head.position + up * 0.09f, 0.115f);
         AddJoint(headBody, torso, right, forward, -40f, 25f, 25f);
 
-        // Bras : épaule vers le buste, coude en charnière. Côté droit en miroir.
-        AddArm(Bone(HumanBodyBones.LeftUpperArm), Bone(HumanBodyBones.LeftLowerArm), Bone(HumanBodyBones.LeftHand), torso, up, forward, false);
-        AddArm(Bone(HumanBodyBones.RightUpperArm), Bone(HumanBodyBones.RightLowerArm), Bone(HumanBodyBones.RightHand), torso, -up, forward, true);
+        // Bras : épaule vers le buste, coude en charnière.
+        Vector3 spineDown = (hips.position - neckPoint).normalized;
+        AddArm(Bone(HumanBodyBones.LeftUpperArm), Bone(HumanBodyBones.LeftLowerArm), Bone(HumanBodyBones.LeftHand), torso, spineDown, right, false);
+        AddArm(Bone(HumanBodyBones.RightUpperArm), Bone(HumanBodyBones.RightLowerArm), Bone(HumanBodyBones.RightHand), torso, spineDown, right, true);
 
         // Jambes : hanche vers le bassin, genou en charnière, pied rattaché à la jambe.
-        AddLeg(leftThigh, Bone(HumanBodyBones.LeftLowerLeg), Bone(HumanBodyBones.LeftFoot), Bone(HumanBodyBones.LeftToes), right, forward, copyRoot, false);
-        AddLeg(rightThigh, Bone(HumanBodyBones.RightLowerLeg), Bone(HumanBodyBones.RightFoot), Bone(HumanBodyBones.RightToes), right, forward, copyRoot, true);
+        AddLeg(leftThigh, Bone(HumanBodyBones.LeftLowerLeg), Bone(HumanBodyBones.LeftFoot), Bone(HumanBodyBones.LeftToes), spineDown, right, forward, copyRoot, false);
+        AddLeg(rightThigh, Bone(HumanBodyBones.RightLowerLeg), Bone(HumanBodyBones.RightFoot), Bone(HumanBodyBones.RightToes), spineDown, right, forward, copyRoot, true);
 
         FinishBodies(velocity);
     }
 
-    private void AddArm(Transform upper, Transform lower, Transform hand, Rigidbody torso, Vector3 twistAxis, Vector3 forward, bool rightSide)
+    // Les limites d'une articulation se comptent depuis la pose de la mort, or un robot meurt en visant, accroupi, en courant :
+    // celles de l'assistant Ragdoll, faites pour un robot en T, retenaient les bras en l'air là où ils visaient, et le robot
+    // finissait sur le dos les bras en croix (2026-11-04). Elles se comptent donc depuis l'articulation telle qu'elle est.
+    private const float ElbowMaxBend = 145f, KneeMaxBend = 140f;
+    private const float ShoulderBehind = 20f, ShoulderRaise = 50f, ShoulderSwing = 40f;
+    private const float HipFlexion = 115f, HipExtension = 20f;
+
+    private void AddArm(Transform upper, Transform lower, Transform hand, Rigidbody torso, Vector3 spineDown, Vector3 right, bool rightSide)
     {
         if (upper == null || lower == null) return;
         Rigidbody arm = AddBody(upper, ArmMass, rightSide ? RagdollPart.RightArm : RagdollPart.LeftArm);
         AddCapsule(upper, lower.position, 0.055f);
-        AddJoint(arm, torso, twistAxis, forward, -70f, 10f, 50f);
+        // L'épaule : le bras redescend jusqu'à longer le corps, sans passer loin derrière, ni monter beaucoup plus.
+        Vector3 armDirection = (lower.position - upper.position).normalized;
+        Vector3 down = Vector3.Cross(armDirection, spineDown);
+        down = down.sqrMagnitude > 0.01f ? down.normalized : right;
+        AddFreeJoint(arm, torso, down, armDirection, -Mathf.Min(170f, Vector3.Angle(armDirection, spineDown) + ShoulderBehind), ShoulderRaise, ShoulderSwing, ShoulderSwing);
 
         Rigidbody forearm = AddBody(lower, ForearmMass, rightSide ? RagdollPart.RightForearm : RagdollPart.LeftForearm);
         Vector3 end = hand != null ? hand.position + (hand.position - lower.position).normalized * 0.08f : lower.position + (lower.position - upper.position);
         AddCapsule(lower, end, 0.045f);
-        AddJoint(forearm, arm, forward, twistAxis, -90f, 0f, 0f);
+        AddHinge(forearm, arm, upper.position, lower.position, end, -right, ElbowMaxBend);
     }
 
-    private void AddLeg(Transform thigh, Transform calf, Transform foot, Transform toes, Vector3 right, Vector3 forward, Transform characterRoot,
+    private void AddLeg(Transform thigh, Transform calf, Transform foot, Transform toes, Vector3 spineDown, Vector3 right, Vector3 forward, Transform characterRoot,
                         bool rightSide)
     {
         if (thigh == null || calf == null) return;
         Rigidbody thighBody = AddBody(thigh, ThighMass, rightSide ? RagdollPart.RightThigh : RagdollPart.LeftThigh);
         AddCapsule(thigh, calf.position, 0.085f);
-        AddJoint(thighBody, pelvis, right, forward, -20f, 70f, 30f);
+        // La hanche : la cuisse remonte vers le ventre, un peu vers l'arrière.
+        float flexion = -Vector3.SignedAngle(spineDown, (calf.position - thigh.position).normalized, right);
+        AddFreeJoint(thighBody, pelvis, right, forward, -Mathf.Max(0f, HipExtension + flexion), Mathf.Max(0f, HipFlexion - flexion), 30f, 0f);
 
         Rigidbody calfBody = AddBody(calf, CalfMass, rightSide ? RagdollPart.RightCalf : RagdollPart.LeftCalf);
-        AddCapsule(calf, foot != null ? foot.position : calf.position + (calf.position - thigh.position), 0.07f);
-        AddJoint(calfBody, thighBody, right, forward, -80f, 0f, 0f);
+        Vector3 ankle = foot != null ? foot.position : calf.position + (calf.position - thigh.position);
+        AddCapsule(calf, ankle, 0.07f);
+        AddHinge(calfBody, thighBody, thigh.position, calf.position, ankle, right, KneeMaxBend);
 
         // Le pied suit la jambe : son bloc fait partie du même corps (aucun Rigidbody sur le pied).
         if (foot != null)
@@ -582,6 +671,38 @@ public class RobotCorpse : MonoBehaviour
         joint.highTwistLimit = new SoftJointLimit { limit = highTwist };
         joint.swing1Limit = new SoftJointLimit { limit = swing };
         joint.swing2Limit = new SoftJointLimit { limit = 0f };
+    }
+
+    /// <summary>Une articulation d'axes exacts : la rotation autour de `worldTwistAxis`, de `lowTwist` à `highTwist` (un angle
+    /// négatif tourne dans le sens direct autour de l'axe : c'est le sens de ceux de l'assistant Ragdoll).</summary>
+    private static void AddFreeJoint(Rigidbody body, Rigidbody parent, Vector3 worldTwistAxis, Vector3 worldSwingAxis,
+                                     float lowTwist, float highTwist, float swing1, float swing2)
+    {
+        if (body == null || parent == null) return;
+        var joint = body.gameObject.AddComponent<CharacterJoint>();
+        joint.connectedBody = parent;
+        Vector3 axis = worldTwistAxis.normalized;
+        Vector3 swing = Vector3.ProjectOnPlane(worldSwingAxis, axis);
+        swing = swing.sqrMagnitude > 1e-4f ? swing.normalized : Vector3.Cross(axis, Vector3.up).normalized;
+        joint.axis = body.transform.InverseTransformDirection(axis);
+        joint.swingAxis = body.transform.InverseTransformDirection(swing);
+        joint.anchor = Vector3.zero;
+        joint.enablePreprocessing = false;
+        joint.enableProjection = true;
+        joint.lowTwistLimit = new SoftJointLimit { limit = lowTwist };
+        joint.highTwistLimit = new SoftJointLimit { limit = highTwist };
+        joint.swing1Limit = new SoftJointLimit { limit = swing1 };
+        joint.swing2Limit = new SoftJointLimit { limit = swing2 };
+    }
+
+    // Un coude, un genou : une charnière dans le plan du membre (de `from` à `joint` à `to`), de tendu à plié de `maxBend` ; un
+    // membre tendu n'a pas de plan, il plie autour de `straightAxis`.
+    private static void AddHinge(Rigidbody body, Rigidbody parent, Vector3 from, Vector3 joint, Vector3 to, Vector3 straightAxis, float maxBend)
+    {
+        Vector3 upper = (joint - from).normalized, lower = (to - joint).normalized;
+        Vector3 axis = Vector3.Cross(upper, lower);
+        float bent = Vector3.Angle(upper, lower);
+        AddFreeJoint(body, parent, axis.sqrMagnitude > 0.01f ? axis : straightAxis, lower, -Mathf.Max(0f, maxBend - bent), Mathf.Min(170f, bent), 0f, 0f);
     }
 
     private static void AddCapsule(Transform bone, Vector3 endWorld, float radiusWorld)

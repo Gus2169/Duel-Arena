@@ -18,9 +18,13 @@
 
         <!-- La Zone (2026-11-02) : ses repères à l'écran, la zone du moment et la suivante, avec leur distance. -->
         <ui:VisualElement name="zoneMarker" class="zone-marker hidden" picking-mode="Ignore">
+            <ui:VisualElement name="zoneMarkerHalo" class="zone-marker__halo" picking-mode="Ignore" />
+            <ui:VisualElement name="zoneMarkerIcon" class="zone-marker__icon" picking-mode="Ignore" />
             <ui:Label name="zoneMarkerLabel" class="zone-marker__label" picking-mode="Ignore" />
         </ui:VisualElement>
         <ui:VisualElement name="nextZoneMarker" class="zone-marker zone-marker--next hidden" picking-mode="Ignore">
+            <ui:VisualElement name="nextZoneMarkerHalo" class="zone-marker__halo" picking-mode="Ignore" />
+            <ui:VisualElement name="nextZoneMarkerIcon" class="zone-marker__icon" picking-mode="Ignore" />
             <ui:Label name="nextZoneMarkerLabel" class="zone-marker__label" picking-mode="Ignore" />
         </ui:VisualElement>
 
@@ -31,18 +35,25 @@
                 <ui:Label name="leftWeapon" class="score-weapon hidden" picking-mode="Ignore" />
                 <ui:Label name="leftName" class="score-name" picking-mode="Ignore" />
                 <ui:Label name="leftPoints" class="score-points hidden" picking-mode="Ignore" />
+                <ui:VisualElement name="leftGauge" class="score-gauge hidden" picking-mode="Ignore">
+                    <ui:VisualElement name="leftGaugeFill" class="score-gauge__fill" picking-mode="Ignore" />
+                </ui:VisualElement>
                 <ui:VisualElement name="leftPips" class="score-pips" picking-mode="Ignore" />
             </ui:VisualElement>
             <ui:Label name="roundTimer" class="round-timer" picking-mode="Ignore" />
             <ui:VisualElement class="score-side score-side--right" picking-mode="Ignore">
                 <ui:VisualElement name="rightPips" class="score-pips" picking-mode="Ignore" />
+                <ui:VisualElement name="rightGauge" class="score-gauge score-gauge--mirror hidden" picking-mode="Ignore">
+                    <ui:VisualElement name="rightGaugeFill" class="score-gauge__fill" picking-mode="Ignore" />
+                </ui:VisualElement>
                 <ui:Label name="rightPoints" class="score-points hidden" picking-mode="Ignore" />
                 <ui:Label name="rightName" class="score-name" picking-mode="Ignore" />
                 <ui:Label name="rightWeapon" class="score-weapon hidden" picking-mode="Ignore" />
             </ui:VisualElement>
         </ui:VisualElement>
 
-        <!-- La Zone : qui la tient, et quand elle bouge -->
+        <!-- La Zone : le compte à atteindre, qui la tient, et quand elle bouge -->
+        <ui:Label name="scoreGoal" class="score-goal hidden" picking-mode="Ignore" />
         <ui:Label name="zoneStatus" class="zone-status hidden" picking-mode="Ignore" />
 
         <!-- La vie, façon Rainbow Six : le chiffre, et une jauge dont la part perdue rougit un instant -->
@@ -137,20 +148,23 @@
             <ui:Instance template="SalonView" />
         </ui:VisualElement>
 
-        <!-- Le replay du coup mortel (2026-11-03, piloté par GameHud d'après KillReplay) : des bandes noires en haut
-             et en bas, et en bas à gauche ce qu'on revoit : qui, avec quoi, où, de combien. -->
-        <ui:VisualElement name="replayFrame" class="replay-frame hidden" picking-mode="Ignore">
-            <ui:VisualElement class="replay-frame__band replay-frame__band--top" picking-mode="Ignore" />
-            <ui:VisualElement class="replay-frame__band replay-frame__band--bottom" picking-mode="Ignore" />
-            <ui:VisualElement class="replay-caption" picking-mode="Ignore">
-                <ui:Label name="replayTitle" class="replay-caption__title" text="LE COUP MORTEL" picking-mode="Ignore" />
-                <ui:Label name="replayLine" class="replay-caption__line" picking-mode="Ignore" />
-            </ui:VisualElement>
+        <!-- La légende de la kill cam (2026-11-04, pilotée par GameHud d'après KillCam), en bas à gauche : qui, avec
+             quoi, où, de combien. -->
+        <ui:VisualElement name="killCamCaption" class="kill-cam-caption hidden" picking-mode="Ignore">
+            <ui:Label name="killCamTitle" class="kill-cam-caption__title" text="LE COUP MORTEL" picking-mode="Ignore" />
+            <ui:Label name="killCamLine" class="kill-cam-caption__line" picking-mode="Ignore" />
         </ui:VisualElement>
 
         <!-- Fondu au noir entre deux manches (GDD § 5), et autour de l'écran de fin : il couvre
-             tout sauf le menu d'Échap -->
-        <ui:VisualElement name="fade" class="fade" picking-mode="Ignore" />
+             tout sauf le menu d'Échap. À l'arrivée dans l'arène (2026-11-03), il porte l'écran de chargement, le même
+             que celui du menu (Theme.uss), jusqu'à ce que la partie soit prête. -->
+        <ui:VisualElement name="fade" class="fade" picking-mode="Ignore">
+            <ui:VisualElement name="loadingBlock" class="loading-block hidden" picking-mode="Ignore">
+                <da:ArenaLogo class="loading-block__logo" picking-mode="Ignore" />
+                <ui:Label name="loadingTitle" class="loading-block__title" text="CHARGEMENT" picking-mode="Ignore" />
+                <da:Spinner class="loading-block__spinner" />
+            </ui:VisualElement>
+        </ui:VisualElement>
 
         <!-- Menu d'Échap : reprendre, options, quitter la partie -->
         <ui:VisualElement name="pauseRoot" class="pause-root hidden">

@@ -61,15 +61,15 @@ MonoBehaviour:
   reloadCues:
   - clips:
     - {fileID: 8300000, guid: f75db620a58756e4991d23a25584e353, type: 3}
-    at: 0.08
+    at: 0.12
     volume: 0.7
   - clips:
     - {fileID: 8300000, guid: 34ddabedbf33995409877878dec5d404, type: 3}
-    at: 0.62
+    at: 0.57
     volume: 0.75
   - clips:
     - {fileID: 8300000, guid: 2b75be781975d1d4cb86cf41ea27d726, type: 3}
-    at: 0.82
+    at: 0.705
     volume: 0.7
   reloadRoundSounds: []
   reloadEndSounds: []

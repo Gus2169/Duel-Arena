@@ -137,7 +137,7 @@ public class OnlineSessionTests
     [Test]
     public void UneConnexionALaPartieQuiEchoue_DitPourquoi()
     {
-        Assert.AreEqual("L'hôte a quitté la partie.", OnlineSession.DescribeNetworkFailure("Disconnected due to host shutting down.", "HM8TQL"));
+        StringAssert.StartsWith("L'hôte a quitté la partie.", OnlineSession.DescribeNetworkFailure("Disconnected due to host shutting down.", "HM8TQL"));
         StringAssert.StartsWith("Connexion refusée : Versions différentes",
             OnlineSession.DescribeNetworkFailure("Versions différentes : l'hôte joue la 0.2.0, toi la 0.1.0. Il faut la même build.", "HM8TQL"));
         StringAssert.Contains("HM8TQL", OnlineSession.DescribeNetworkFailure("", "HM8TQL"), "Sans raison : le relais. On redonne le code pour réessayer.");

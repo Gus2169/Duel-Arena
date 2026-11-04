@@ -16,11 +16,14 @@ public class RobotCorpseTests
     private GameObject model;
     private RobotCorpse corpse;
     private GameObject walker;
+    private readonly List<RobotCorpse> others = new List<RobotCorpse>();
 
     [TearDown]
     public void TearDown()
     {
         if (corpse != null) Object.Destroy(corpse.gameObject);
+        foreach (RobotCorpse other in others) if (other != null) Object.Destroy(other.gameObject);
+        others.Clear();
         if (model != null) Object.Destroy(model);
         if (ground != null) Object.Destroy(ground);
         if (walker != null) Object.Destroy(walker);
@@ -60,7 +63,7 @@ public class RobotCorpseTests
         Assert.IsNull(corpse.GetComponentInChildren<Animator>(), "L'épave n'a plus d'Animator : il réécrirait les os.");
 
         // Le coup mortel, comme un tir de sniper dans le dos.
-        corpse.ApplyImpulse(corpse.Center + Vector3.up * 0.5f, Vector3.forward * 60f);
+        corpse.Fall(corpse.Center + Vector3.up * 0.5f, Vector3.forward * 60f, 0.8f, 1);
 
         float until = Time.time + 3f;
         float lowest = float.MaxValue;
@@ -92,9 +95,8 @@ public class RobotCorpseTests
     /// <summary>
     /// Le coup qui tue fait voler l'épave en pièces (2026-11-03, avec la kill cam) : brutal (le pompe, le gant), la tête,
     /// les bras, les jambes et le buste s'en détachent, sans articulation, et s'éloignent ; l'huile, les étincelles et les
-    /// éclats partent, sur le layer de l'épave (la caméra du replay ne les voit pas, elle a les siens) ; une balle légère à
-    /// la tête n'arrache que la tête ; le prototype, à la peau continue, ne perd rien mais crache sa gerbe. Vu échouer, les
-    /// articulations gardées.
+    /// éclats partent, sur le layer de l'épave ; une balle légère à la tête n'arrache que la tête ; le prototype, à la peau
+    /// continue, ne perd rien mais crache sa gerbe. Vu échouer, les articulations gardées.
     /// </summary>
     [UnityTest]
     public IEnumerator LeCoupQuiTue_FaitVolerLEpaveEnPieces()
@@ -230,6 +232,20 @@ public class RobotCorpseTests
         Debug.Log($"[EPAVE] {label} : {result}");
     }
 
+    /// <summary>La première graine qui donne à ce coup la façon de tomber `style`.</summary>
+    private static int SeedFor(RobotCorpse target, CorpseFall.Style style, Vector3 point, Vector3 impulse, float closeness)
+    {
+        for (int seed = 1; seed < 5000; seed++)
+        {
+            if (target.TestPlan(point, impulse, closeness, seed).Style == style) return seed;
+        }
+        Assert.Fail($"Aucune graine ne donne {style} à ce coup.");
+        return 0;
+    }
+
+    private static void Blow(RobotCorpse target, CorpseFall.Style style, Vector3 point, Vector3 impulse, float closeness)
+        => target.Fall(point, impulse, closeness, SeedFor(target, style, point, impulse, closeness));
+
     private static WeaponData Weapon(string asset)
     {
         WeaponData data = UnityEditor.AssetDatabase.LoadAssetAtPath<WeaponData>($"Assets/_ProjectArena/Weapon/{asset}.asset");
@@ -255,25 +271,37 @@ public class RobotCorpseTests
         Assert.AreEqual(WeaponController.DeathImpulse(1000f), WeaponController.KillImpulse(sniper, Vector3.back, sniperHead).magnitude, 1e-3f,
             "Garde : le sniper en pleine tête pousse autant qu'une arme ordinaire le peut.");
 
+        Vector3 force = WeaponController.KillImpulse(sniper, Vector3.back, sniperHead);
         var alone = new Fall();
         yield return MeasureFall("chute seule", null, alone);
         var head = new Fall();
-        yield return MeasureFall("sniper en pleine tête",
-            (c, face) => c.ApplyImpulse(face, WeaponController.KillImpulse(sniper, Vector3.back, sniperHead)), head);
+        yield return MeasureFall("sniper en pleine tête, renversé", (c, face) => Blow(c, CorpseFall.Style.Thrown, face, force, 0.8f), head);
         // Chez l'hôte, le robot d'un client avance par à-coups : sa vitesse sur une image de
         // rattrapage pouvait atteindre 12 m/s (la borne d'alors), et l'épave en héritait.
         var running = new Fall();
-        yield return MeasureFall("sniper en pleine course (12 m/s hérités)",
-            (c, face) => c.ApplyImpulse(face, WeaponController.KillImpulse(sniper, Vector3.back, sniperHead)), running,
+        yield return MeasureFall("sniper en pleine course (12 m/s hérités)", (c, face) => Blow(c, CorpseFall.Style.Thrown, face, force, 0.8f), running,
             velocity: Vector3.back * 12f);
+        // Les autres chutes tiennent les mêmes promesses.
+        var others = new List<(string, Fall)>();
+        foreach (CorpseFall.Style style in new[] { CorpseFall.Style.Heap, CorpseFall.Style.Dive, CorpseFall.Style.Spin })
+        {
+            var fall = new Fall();
+            yield return MeasureFall($"sniper en pleine tête, {style}", (c, face) => Blow(c, style, face, force, 0.8f), fall);
+            others.Add((style.ToString(), fall));
+        }
 
         Assert.Greater(alone.peakSpeed, 2f, "Garde : sans coup, l'épave tombe bien (sa chute fait de la vitesse).");
         Assert.Greater(head.push, alone.push + 0.3f, $"Garde : le sniper repousse vraiment l'épave ({head}).");
 
-        Assert.Less(head.peakSpeed, alone.peakSpeed + 1.5f, $"Aucune pièce ne part plus vite qu'en tombant seule, ou presque ({head}).");
-        Assert.Less(head.lift, 0.1f, $"L'épave n'est pas soulevée ({head}).");
-        Assert.Less(head.backward - alone.backward, 1f, $"Elle recule d'un pas, sans glisser au loin ({head}).");
-        Assert.Less(head.highestAtEnd, 0.6f, $"Elle finit couchée ({head}).");
+        others.Add(("renversé", head));
+        foreach ((string name, Fall fall) in others)
+        {
+            Assert.Less(fall.peakSpeed, alone.peakSpeed + 3f, $"{name} : aucune pièce ne part beaucoup plus vite qu'en tombant seule ({fall}).");
+            Assert.Less(fall.lift, 0.1f, $"{name} : l'épave n'est pas soulevée ({fall}).");
+            Assert.Less(fall.backward - alone.backward, 1f, $"{name} : elle recule d'un pas, sans glisser au loin ({fall}).");
+            Assert.Less(fall.travel, 3f, $"{name} : elle reste où elle était tombée ({fall}).");
+            Assert.Less(fall.highestAtEnd, 0.6f, $"{name} : elle finit couchée ({fall}).");
+        }
 
         // Tué en pleine course, le robot roule encore un peu : jamais à la vitesse d'un sprint.
         Assert.Less(running.peakSpeed, 10f, $"Course : aucune pièce ne file à la vitesse héritée d'une image de rattrapage ({running}).");
@@ -301,15 +329,15 @@ public class RobotCorpseTests
             "Un coup puissant se règle en vitesse, convertie par la masse d'une épave : c'est bien la sienne.");
         var shotgunFall = new Fall();
         yield return MeasureFall("pompe à bout portant, en pleine tête",
-            (c, face) => c.ApplyImpulse(face, WeaponController.KillImpulse(shotgun, Vector3.back, pointBlank)), shotgunFall);
+            (c, face) => Blow(c, CorpseFall.Style.Thrown, face, WeaponController.KillImpulse(shotgun, Vector3.back, pointBlank), 1f), shotgunFall);
         float spreadShotgun = LastSpread();
         var taser = new Fall();
         yield return MeasureFall("taser au visage",
-            (c, face) => c.ApplyImpulse(face, TaserController.DeathImpulse(Vector3.back)), taser);
+            (c, face) => Blow(c, CorpseFall.Style.Thrown, face, TaserController.DeathImpulse(Vector3.back), 1f), taser);
         float spreadTaser = LastSpread();
         var far = new Fall();
         yield return MeasureFall("pompe de loin, trois plombs à mi-dégâts",
-            (c, face) => c.ApplyImpulse(face, WeaponController.KillImpulse(shotgun, Vector3.back, 3 * shotgun.damagePerHit * 0.5f)), far);
+            (c, face) => Blow(c, CorpseFall.Style.Thrown, face, WeaponController.KillImpulse(shotgun, Vector3.back, 3 * shotgun.damagePerHit * 0.5f), 0.4f), far);
 
         foreach ((string name, Fall fall, float spread, float speed) in new[]
                  { ("pompe", shotgunFall, spreadShotgun, shotgun.killKnockback), ("taser", taser, spreadTaser, TaserController.StrikeKnockback) })
@@ -422,6 +450,181 @@ public class RobotCorpseTests
         Vector3 origin = target + new Vector3(0f, 1.2f, -2f);
         Vector3 end = origin + (target - origin).normalized * 10f;
         return RobotCorpse.TryHit(origin, end, impulse, out _, out _);
+    }
+
+    /// <summary>Une épave de plus, décalée de `offset`, à partir du même robot (les épaves ne se touchent pas entre elles).</summary>
+    private RobotCorpse SpawnOther(Animator animator, Vector3 offset)
+    {
+        RobotCorpse other = RobotCorpse.Spawn(animator, Vector3.zero);
+        other.transform.position += offset;
+        Physics.SyncTransforms();
+        others.Add(other);
+        return other;
+    }
+
+    private static Vector3 Grid(int index) => new Vector3((index % 5) * 4f - 8f, 0f, (index / 5) * 5f - 8f);
+
+    // L'axe du corps : du bassin à la tête.
+    private static Vector3 Spine(RobotCorpse target) => (target.Bodies[2].position - target.Bodies[0].position).normalized;
+
+    /// <summary>
+    /// Une même balle ne fait pas deux fois la même chute (2026-11-04, retour de l'utilisateur : « souvent la même chute en arrière ») :
+    /// dix épaves frappées de la même balle de fusil d'assaut, au même endroit, à la graine près, partent en tas, en plongeon, en vrille
+    /// ou renversées, finissent tournées de tous les côtés, et pas toutes sur le dos. Vu échouer, le plan rendu le même pour toutes.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator UneMemeBalle_NeFaitPasDeuxFoisLaMemeChute()
+    {
+        WeaponData assault = Weapon("MP5");
+        Vector3 force = WeaponController.KillImpulse(assault, Vector3.back, assault.damagePerHit);
+        yield return SpawnCorpse();
+        Animator animator = model.GetComponent<Animator>();
+        var chests = new List<Vector3>();
+        var styles = new HashSet<CorpseFall.Style>();
+        for (int i = 0; i < 10; i++)
+        {
+            RobotCorpse fallen = SpawnOther(animator, Grid(i));
+            chests.Add(Quaternion.Inverse(fallen.Bodies[1].rotation) * fallen.transform.forward);
+            fallen.Fall(fallen.Center + Vector3.up * 0.3f + fallen.transform.forward * 0.14f, force, 0.8f, 7919 * (i + 1));
+            styles.Add(fallen.LastFall.Style);
+        }
+        yield return new WaitForSeconds(3f);
+
+        var faces = new HashSet<string>();
+        float widest = 0f;
+        for (int i = 0; i < others.Count; i++)
+        {
+            float chest = (others[i].Bodies[1].rotation * chests[i]).y;
+            faces.Add(chest > 0.5f ? "dos" : chest < -0.5f ? "ventre" : "côté");
+            for (int j = 0; j < i; j++)
+            {
+                Vector3 a = Spine(others[i]), b = Spine(others[j]);
+                widest = Mathf.Max(widest, Vector2.Angle(new Vector2(a.x, a.z), new Vector2(b.x, b.z)));
+            }
+            Assert.Less(others[i].Bodies[2].worldCenterOfMass.y, 0.6f, "Chacune finit couchée.");
+        }
+        Debug.Log($"[EPAVE] {styles.Count} façons de tomber, finies sur {string.Join(", ", faces)}, jusqu'à {widest:F0}° d'écart");
+        Assert.GreaterOrEqual(styles.Count, 3, "Plusieurs façons de tomber.");
+        Assert.GreaterOrEqual(faces.Count, 2, "Pas toutes sur le dos.");
+        Assert.Greater(widest, 90f, "Elles ne finissent pas toutes tournées pareil.");
+    }
+
+    /// <summary>
+    /// Tué en visant, le robot ne finit pas les bras en croix (2026-11-04, retour de l'utilisateur) : les limites de l'assistant Ragdoll,
+    /// comptées depuis cette pose, retenaient ses bras à l'horizontale, à 90° du buste. Vu échouer avec elles.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator TueEnVisant_LesBrasRetombentLeLongDuCorps()
+    {
+        WeaponData sniper = Weapon("Arme_Sniper");
+        Vector3 force = WeaponController.KillImpulse(sniper, Vector3.back, 60f);
+        yield return SpawnCorpse();
+        Animator animator = model.GetComponent<Animator>();
+        Object.Destroy(corpse.gameObject);
+        animator.SetBool("Aiming", true);
+        yield return new WaitForSeconds(1f);
+        float raised = Vector3.Angle(animator.GetBoneTransform(HumanBodyBones.RightLowerArm).position - animator.GetBoneTransform(HumanBodyBones.RightUpperArm).position, Vector3.down);
+        Assert.Greater(raised, 35f, "Garde : il vise, le bras levé devant lui.");
+
+        for (int i = 0; i < 10; i++)
+        {
+            RobotCorpse fallen = SpawnOther(animator, Grid(i));
+            fallen.Fall(fallen.Center + Vector3.up * 0.3f + fallen.transform.forward * 0.14f, force, 0.8f, 104729 * (i + 1));
+        }
+        yield return new WaitForSeconds(3f);
+
+        int crosses = 0, lowered = 0;
+        foreach (RobotCorpse fallen in others)
+        {
+            Vector3 down = -Spine(fallen);
+            float left = Vector3.Angle(fallen.Bodies[4].position - fallen.Bodies[3].position, down);
+            float right = Vector3.Angle(fallen.Bodies[6].position - fallen.Bodies[5].position, down);
+            if (left > 60f && left < 125f && right > 60f && right < 125f) crosses++;
+            if (left < 45f) lowered++;
+            if (right < 45f) lowered++;
+        }
+        Debug.Log($"[EPAVE] tué en visant : {crosses} croix sur {others.Count}, {lowered} bras le long du corps");
+        // Mesuré : 0 croix et 16 bras le long du corps ; avec les limites de l'assistant, 2 croix et 6 bras.
+        Assert.LessOrEqual(crosses, 1, "Les deux bras à l'horizontale, c'est la croix.");
+        Assert.GreaterOrEqual(lowered, 11, "Les bras retombent le long du corps.");
+    }
+
+    // De combien un membre (de `upper` à `lower`, jusqu'à `tip`) est plié, dans le sens de sa charnière.
+    private static float Bend(Rigidbody upper, Rigidbody lower, Vector3 tip)
+    {
+        Vector3 axis = lower.transform.TransformDirection(lower.GetComponent<CharacterJoint>().axis);
+        return Vector3.SignedAngle(lower.position - upper.position, tip - lower.position, axis);
+    }
+
+    /// <summary>
+    /// Les genoux et les coudes ne plient que dans leur sens, de tendus à pliés, quelle que soit la pose de la mort : debout, en
+    /// visant, accroupi. Ils se comptent depuis cette pose : mal comptés, ils plieraient à l'envers sans que rien ne le dise.
+    /// Mesuré à chaque pas de physique, pendant la chute. Vu échouer, les limites inversées.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator LesGenouxEtLesCoudes_NePlientQueDansLeurSens()
+    {
+        WeaponData assault = Weapon("MP5");
+        Vector3 force = WeaponController.KillImpulse(assault, Vector3.back, assault.damagePerHit);
+        yield return SpawnCorpse();
+        Animator animator = model.GetComponent<Animator>();
+        Object.Destroy(corpse.gameObject);
+        int index = 0;
+        foreach (bool crouched in new[] { false, true })
+        {
+            foreach (bool aiming in new[] { false, true })
+            {
+                animator.SetInteger("Stance", crouched ? 1 : 0);
+                animator.SetFloat("StanceF", crouched ? 1f : 0f);
+                animator.SetBool("Aiming", aiming);
+                yield return new WaitForSeconds(0.7f);
+                for (int i = 0; i < 3; i++, index++)
+                {
+                    RobotCorpse fallen = SpawnOther(animator, Grid(index));
+                    fallen.Fall(fallen.Center + Vector3.up * 0.3f + fallen.transform.forward * 0.14f, force, 0.8f, 15485863 * (index + 1));
+                }
+            }
+        }
+        var tips = new Dictionary<RobotCorpse, (Transform leftHand, Transform rightHand, Transform leftFoot, Transform rightFoot)>();
+        foreach (RobotCorpse fallen in others)
+        {
+            Transform Find(string name)
+            {
+                foreach (Transform t in fallen.GetComponentsInChildren<Transform>(true)) if (t.name.EndsWith(name)) return t;
+                Assert.Fail(name);
+                return null;
+            }
+            tips[fallen] = (Find("LeftHand"), Find("RightHand"), Find("LeftFoot"), Find("RightFoot"));
+        }
+
+        float lowest = float.MaxValue, highest = float.MinValue, lowestKnee = float.MaxValue, highestKnee = float.MinValue;
+        float until = Time.time + 2.5f;
+        while (Time.time < until)
+        {
+            yield return new WaitForFixedUpdate();
+            foreach (RobotCorpse fallen in others)
+            {
+                var b = fallen.Bodies;
+                var tip = tips[fallen];
+                foreach (float elbow in new[] { Bend(b[3], b[4], tip.leftHand.position), Bend(b[5], b[6], tip.rightHand.position) })
+                {
+                    lowest = Mathf.Min(lowest, elbow);
+                    highest = Mathf.Max(highest, elbow);
+                }
+                foreach (float knee in new[] { Bend(b[7], b[8], tip.leftFoot.position), Bend(b[9], b[10], tip.rightFoot.position) })
+                {
+                    lowestKnee = Mathf.Min(lowestKnee, knee);
+                    highestKnee = Mathf.Max(highestKnee, knee);
+                }
+            }
+        }
+        Debug.Log($"[EPAVE] coudes de {lowest:F0}° à {highest:F0}°, genoux de {lowestKnee:F0}° à {highestKnee:F0}°");
+        // À 20° près : un choc passe un instant la butée (13° mesurés au coude, le bras qui frappe le sol).
+        Assert.Greater(lowest, -20f, "Un coude ne plie pas à l'envers.");
+        Assert.Less(highest, 165f, "Ni au-delà de ce qu'il peut.");
+        Assert.Greater(lowestKnee, -20f, "Un genou ne plie pas à l'envers.");
+        Assert.Less(highestKnee, 160f, "Ni au-delà de ce qu'il peut.");
+        Assert.Greater(highestKnee, 60f, "Garde : les jambes lâchent, les genoux plient vraiment.");
     }
 
     [UnityTest]

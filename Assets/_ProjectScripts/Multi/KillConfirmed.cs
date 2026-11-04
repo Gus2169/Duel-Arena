@@ -13,16 +13,18 @@ using UnityEngine;
 /// </summary>
 public static class KillConfirmed
 {
-    /// <summary>Le module flotte à cette hauteur (m) au-dessus du sol où le robot est tombé : à mi-cuisse, qu'on le
-    /// voie par-dessus les barricades basses (proposition de Claude, à régler en jouant).</summary>
-    public const float FloatHeight = 0.8f;
+    /// <summary>Le module flotte à cette hauteur (m) au-dessus du sol où le robot est tombé : à hauteur de poitrine,
+    /// au-dessus des barricades de 1,25 m et sous l'œil d'un robot debout (1,65 m), qui le voit passer sous lui en le
+    /// ramassant. Monté de 0,8 à 1,4 m le 2026-11-03 (l'utilisateur : « doit voler plus haut »).</summary>
+    public const float FloatHeight = 1.4f;
 
     /// <summary>On prend un module en passant à moins de ce rayon (m), mesuré à plat depuis ses pieds.</summary>
     public const float PickupRadius = 1.2f;
 
     /// <summary>Le module doit être à hauteur du robot : de ce qu'il descend sous ses pieds (un robot debout sur une
-    /// caisse, à côté) à ce qu'il monte au-dessus (un robot au sol, sous un module tombé du toit d'une caisse).</summary>
-    public const float PickupMinRise = -0.5f, PickupMaxRise = 2f;
+    /// caisse, à côté) à ce qu'il monte au-dessus (un robot au sol, sous un module tombé du toit d'une caisse d'un
+    /// mètre : 1 m plus FloatHeight).</summary>
+    public const float PickupMinRise = -0.5f, PickupMaxRise = 2.6f;
 
     /// <summary>Le sol se cherche jusqu'à cette profondeur (m) sous le robot tombé : un robot tué en plein
     /// franchissement lâche son module au sol, sous lui.</summary>

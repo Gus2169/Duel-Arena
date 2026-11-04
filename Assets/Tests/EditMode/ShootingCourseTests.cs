@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -415,6 +416,12 @@ public class ShootingCourseTests
                       $"Au pas {step}, l'obstacle a un dessus.");
         float height = top.point.y - p.y;
         Assert.That(height, Is.InRange(0.3f, 1.3f), $"Au pas {step}, l'obstacle se franchit (0,3 à 1,3 m) : {height:0.00} m.");
+
+        // Le franchissement du jeu passe bien ici, à 40 cm de l'obstacle : ce qui suit ne regarde que ce que le tour demande.
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/_ProjectArena/PlayerPrefab/Player.prefab");
+        Vector3 near = new Vector3(front.point.x, p.y, front.point.z) - dir * 0.4f;
+        Assert.IsTrue(PlayerLocomotion.FindVault(near, dir, prefab.GetComponent<PlayerLocomotion>().VaultGeometryOf(prefab.GetComponent<CharacterController>()), out _, out _),
+                      $"Au pas {step}, le jeu accepte le franchissement.");
         Assert.IsTrue(Physics.Raycast(front.point + dir * 3f + Vector3.up * 0.15f, -dir, out RaycastHit back, 3f, world, QueryTriggerInteraction.Ignore),
                       $"Au pas {step}, l'obstacle a un autre côté.");
         float thickness = Vector3.Distance(front.point, back.point);

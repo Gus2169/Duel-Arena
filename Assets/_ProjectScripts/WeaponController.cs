@@ -214,6 +214,9 @@ public class WeaponController : NetworkBehaviour
         /// comptées : le joueur prend la nouvelle dès qu'il voit ce compte changer, même avec des tirs encore en
         /// route (ReconcileMagazine). Au Gun Game, l'arme suivante arrive en pleine rafale (2026-11-02).</summary>
         public byte forced;
+        /// <summary>L'arme en main, c'est le mode qui l'a donnée : elle sort par la fin du geste de rechargement et son
+        /// dernier bruit (IsArriving), pour qu'on comprenne qu'elle a changé (2026-11-04, demandé par l'utilisateur).</summary>
+        public bool imposedRaise;
     }
 
     private readonly NetworkVariable<MagazineState> networkMagazine = new NetworkVariable<MagazineState>(
@@ -478,6 +481,27 @@ public class WeaponController : NetworkBehaviour
             return first + Mathf.Max(0, MagazineSizeOf(slot) - m.ammo - 1) * ReloadDurationOf(slot);
         }
     }
+
+    /// <summary>La part du geste de rechargement d'où part l'arme que le mode met en main, jouée le temps de sa sortie :
+    /// la fin d'un rechargement, l'armement compris. Elle ne dure pas plus qu'une sortie d'arme ordinaire.</summary>
+    public const float ArrivalStart = 0.6f;
+
+    /// <summary>L'arme que le mode vient de mettre en main sort-elle encore ? Rien que de l'affichage : ni le chargeur ni
+    /// le tir n'en dépendent, qui ne regardent que la sortie (readyAt).</summary>
+    public bool IsArriving
+    {
+        get
+        {
+            MagazineState m = ShownMagazine;
+            return m.imposedRaise && ShownClock < m.readyAt && !DisplayedUnarmed;
+        }
+    }
+
+    /// <summary>Le robot montre-t-il le geste de rechargement : un vrai, ou la fin de celui d'une arme qui arrive ?</summary>
+    public bool ShowsReloadGesture => IsReloading || IsArriving;
+
+    /// <summary>Temps restant (s) jusqu'à la sortie de l'arme en main.</summary>
+    public float RaiseTimeRemaining => Mathf.Max(0f, (float)(ShownMagazine.readyAt - ShownClock));
 
     /// <summary>Sortie de l'arme en main, de 0 (on vient d'en changer) à 1 (prête à tirer).</summary>
     public float RaiseProgress
@@ -1132,9 +1156,12 @@ public class WeaponController : NetworkBehaviour
                     // flamme de bouche.
                     if (data.shotIsBeam)
                         visualFeedback.SpawnTracer(origin, end, data.tracerColor, BeamWeight(data, charge) * FlashScaleOf(firedSlot));
-                    if (hitSomething) visualFeedback.SpawnImpact(end, localNormal);
                 }
-                if (hitSomething) impacts.Add(end, onBody);
+                if (hitSomething)
+                {
+                    ShotImpacts.Show(end, localNormal, onBody, data);
+                    impacts.Add(end, onBody);
+                }
             }
         }
         finally
@@ -1240,7 +1267,7 @@ public class WeaponController : NetworkBehaviour
 
     /// <summary>Levé à chaque tir MONTRÉ par cette machine (chez le tireur depuis Fire(), chez les autres depuis
     /// BroadcastShotClientRpc), avec son origine et le point d'arrivée de chaque balle ou plomb tels qu'elle les a
-    /// montrés (2026-11-03). Le replay du coup mortel y retrouve le coup (KillReplay) ; rien du jeu ne s'y fie.</summary>
+    /// montrés (2026-11-03). La kill cam y retrouve le coup (KillCam) ; rien du jeu ne s'y fie.</summary>
     public static event System.Action<WeaponController, Vector3, IReadOnlyList<Vector3>> ShotShown;
 
     // Les points d'arrivée d'un tir montré, pour ShotShown (sans allouer à chaque tir).
@@ -1725,6 +1752,15 @@ public class WeaponController : NetworkBehaviour
         bool diagHitWithRewind = false;
         Vector3 diagPastCenter = Vector3.zero;
 #endif
+        // Ce que le tir a fait, annoncé une fois le rewind fini.
+        Vector3[] ends = null;
+        Vector3[] normals = null;
+        int hitMask = 0;
+        int bodyMask = 0; // les plombs arrêtés par un robot (le son de l'impact, 2026-10-13)
+        bool hitSomeone = false;
+        bool headHit = false;
+        bool killed = false;
+        var kills = new List<KilledTarget>();
         try
         {
             if (NetworkManager.ServerTime.Time - targetTime > 1e-4)
@@ -1757,15 +1793,11 @@ public class WeaponController : NetworkBehaviour
             // tombent en une fois.
             int count = data.PelletCount;
             ServerShotFired?.Invoke(this, count);
-            var ends = new Vector3[count];
-            var normals = new Vector3[count];
-            int hitMask = 0;
-            int bodyMask = 0; // les plombs arrêtés par un robot (le son de l'impact, 2026-10-13)
+            ends = new Vector3[count];
+            normals = new Vector3[count];
             var damage = new Dictionary<Health, float>();
             var firstHitPoint = new Dictionary<Health, Vector3>();
             var headTargets = new HashSet<Health>();
-            bool headHit = false;
-            bool killed = false;
             var zones = new System.Text.StringBuilder();
             bool headshotsOnly = RoundManager.HeadshotsOnlyFor(OwnerClientId);
             for (int i = 0; i < count; i++)
@@ -1831,7 +1863,13 @@ public class WeaponController : NetworkBehaviour
                 if (before > 0f && pair.Key.IsDead && pair.Key.TryGetComponent(out PlayerDeath death))
                 {
                     Vector3 point = firstHitPoint.TryGetValue(pair.Key, out Vector3 p) ? p : pair.Key.transform.position + Vector3.up;
-                    death.ServerNotifyKilled(point, KillImpulse(data, shot, pair.Value));
+                    kills.Add(new KilledTarget
+                    {
+                        death = death,
+                        point = point,
+                        impulse = KillImpulse(data, shot, pair.Value),
+                        closeness = Closeness(Vector3.Distance(origin, point), data.maxRange),
+                    });
                 }
 
                 // Le robot touché voit d'où vient le tir, comme un caillou (2026-10-29, HitIndicatorHud) : le
@@ -1848,10 +1886,7 @@ public class WeaponController : NetworkBehaviour
             // compte pour un tir, touché si un plomb a touché.
             if (matchState != null && RoundManager.StatsRecordingFor(OwnerClientId)) matchState.ServerRecordShot(damage.Count > 0, headHit, dealt);
 
-            // Le retour de touche (GDD § 6) : décidé ici, entendu par le tireur seul.
-            if (damage.Count > 0) ServerConfirmHit(ClassifyHit(headHit, killed));
-
-            BroadcastShotClientRpc(origin, ends, normals, hitMask, bodyMask, magazine.equipped, (byte)Mathf.RoundToInt(charge * 255f));
+            hitSomeone = damage.Count > 0;
         }
         finally
         {
@@ -1906,6 +1941,40 @@ public class WeaponController : NetworkBehaviour
 
             if (hitboxWasEnabled) ownHitbox.SetQueryable(true);
         }
+
+        // Le rewind fini, le serveur juge si ce coup finit la manche : il le sait ici, avant tous les joueurs, et la mort part
+        // avec ce qu'il faut pour que chaque machine la montre à l'arrivée de la balle (KillCam).
+        bool live = ServerAnnounceKills(kills);
+
+        // Le retour de touche (GDD § 6) : décidé ici, entendu par le tireur seul ; sous la kill cam, à l'impact qu'elle
+        // montre.
+        if (hitSomeone && !live) ServerConfirmHit(ClassifyHit(headHit, killed));
+
+        BroadcastShotClientRpc(origin, ends, normals, hitMask, bodyMask, magazine.equipped, (byte)Mathf.RoundToInt(charge * 255f), live);
+    }
+
+    /// <summary>Un robot que ce tir a tué : ce que son épave recevra.</summary>
+    private struct KilledTarget
+    {
+        public PlayerDeath death;
+        public Vector3 point;
+        public Vector3 impulse;
+        public float closeness;
+    }
+
+    // Serveur : chaque mort de ce tir, jugée puis annoncée (l'annonce part avant le tir diffusé) ; vrai si l'une d'elles a sa
+    // kill cam.
+    private bool ServerAnnounceKills(List<KilledTarget> kills)
+    {
+        bool live = false;
+        RoundManager rm = RoundManager.For(OwnerClientId);
+        foreach (KilledTarget kill in kills)
+        {
+            bool shown = rm != null && rm.ServerJudgeKill(kill.death.OwnerClientId);
+            kill.death.ServerNotifyKilled(kill.point, kill.impulse, kill.closeness, shown);
+            live |= shown;
+        }
+        return live;
     }
 
     /// <summary>Serveur : chaque balle (ou plomb) qui touche, avec sa cible, sa zone, ses dégâts et sa
@@ -2366,6 +2435,7 @@ public class WeaponController : NetworkBehaviour
         {
             magazine.equipped = (byte)slot;
             magazine.readyAt = now + Mathf.Max(0f, raiseTime);
+            magazine.imposedRaise = true;
         }
         magazine.reloadEndsAt = 0.0;
         Refill(ref magazine, magazineSize);
@@ -2381,6 +2451,7 @@ public class WeaponController : NetworkBehaviour
         magazine.equipped = (byte)slot;
         magazine.reloadEndsAt = 0.0;
         magazine.readyAt = now + Mathf.Max(0f, raiseTime);
+        magazine.imposedRaise = false;
         Refill(ref magazine, magazineSize);
         return true;
     }
@@ -2560,9 +2631,10 @@ public class WeaponController : NetworkBehaviour
     /// traçants, impacts et le son de tir, tels que DÉCIDÉS PAR LE SERVEUR dans ServerFire : un
     /// point d'arrivée par plomb (ou par balle), un bit par plomb qui a touché quelque chose, un bit
     /// par plomb arrêté par un robot (le son de l'impact n'est pas le même, 2026-10-13), et la charge
-    /// du tir (0 à 255 : le rayon d'un tir chargé se voit plus épais).</summary>
+    /// du tir (0 à 255 : le rayon d'un tir chargé se voit plus épais). `live` : ce coup a sa kill cam, le robot n'est pas
+    /// encore touché à l'écran (KillCam).</summary>
     [ClientRpc]
-    private void BroadcastShotClientRpc(Vector3 origin, Vector3[] ends, Vector3[] normals, int hitMask, int bodyMask, byte slot, byte charge)
+    private void BroadcastShotClientRpc(Vector3 origin, Vector3[] ends, Vector3[] normals, int hitMask, int bodyMask, byte slot, byte charge, bool live)
     {
         if (IsOwner) return; // déjà joué/affiché localement par le tireur, dans Fire()
 
@@ -2596,9 +2668,12 @@ public class WeaponController : NetworkBehaviour
                 if (data == null || data.shotIsBeam)
                     visualFeedback.SpawnTracer(origin, end, data != null ? data.tracerColor : Color.yellow,
                                                BeamWeight(data, charge / 255f) * FlashScaleOf(DataSlot(slot)));
-                if (hit) visualFeedback.SpawnImpact(end, normal);
             }
-            if (hit) impacts.Add(end, onBody);
+            if (hit && !(live && onBody))
+            {
+                ShotImpacts.Show(end, normal, onBody, data);
+                impacts.Add(end, onBody);
+            }
         }
         ShotShown?.Invoke(this, origin, shownEnds);
 
@@ -2741,6 +2816,9 @@ public class WeaponController : NetworkBehaviour
         OnHitConfirmed?.Invoke(kind);
     }
 
+    /// <summary>Chez le tireur : le retour du coup qui tue, à l'impact que montre la kill cam (KillCam).</summary>
+    public void ShowKillConfirmed() => OnHitConfirmed?.Invoke(HitKind.Kill);
+
     private int hitTakenCount;
     private Vector3 lastHitTakenFrom;
 
@@ -2780,6 +2858,11 @@ public class WeaponController : NetworkBehaviour
     /// sniper et au pompe qu'au fusil d'assaut. Réduit le 2026-10-12 (70 au plus avant ; « violent »
     /// au pompe, retour de l'utilisateur) : l'épave recule d'un pas, elle ne s'envole pas.</summary>
     public static float DeathImpulse(float damage) => Mathf.Clamp(damage * 0.35f, 14f, 45f);
+
+    /// <summary>La proximité d'un tir à `distance` mètres, pour la chute de l'épave (CorpseFall) : 1 à bout portant, 0 au bout
+    /// de la portée de l'arme. Fonction pure, testée.</summary>
+    public static float Closeness(float distance, float maxRange)
+        => maxRange > 0f && float.IsFinite(distance) ? 1f - Mathf.Clamp01(distance / maxRange) : 1f;
 
     /// <summary>La part d'un coup puissant que garde un tir qui n'a pas tout mis au but (le pompe de
     /// loin, quelques plombs) : il projette moins, jamais moins que cette part.</summary>

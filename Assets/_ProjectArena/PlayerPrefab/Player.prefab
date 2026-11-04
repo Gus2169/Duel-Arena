@@ -455,7 +455,7 @@ MonoBehaviour:
     cameraHeight: 0.36
     cameraForward: 0.25
     cameraSide: -0.15
-    moveSpeedMultiplier: 0.085
+    moveSpeedMultiplier: 0.13
   standCrouchTransition: 0.3
   crouchProneTransition: 0.65
   standProneTransition: 0.9
@@ -761,6 +761,7 @@ MonoBehaviour:
   crouchingPlaybackScale: 1
   pronePlaybackScale: 1.4
   maxLegCadence: 1.6
+  maxProneLegCadence: 2.4
   minLegCadence: 0.2
   torsoAlignSmoothing: 0.12
   torsoAimBlendSpeed: 6

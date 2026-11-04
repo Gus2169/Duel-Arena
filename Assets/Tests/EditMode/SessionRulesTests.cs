@@ -83,7 +83,9 @@ public class SessionRulesTests
         const string Transport = "[Disconnect Event][Client-0][TransportClientId-0][TransportShutdown] NetworkConnectionManager was shutdown. The transport was shutdown.";
         Assert.AreEqual("", SessionFlow.MenuMessageFor(Transport, true), "L'hôte qui s'arrête n'a rien à apprendre.");
         StringAssert.Contains("perdue", SessionFlow.MenuMessageFor(Transport, false), "Le client a perdu la connexion.");
-        Assert.AreEqual("L'hôte a quitté la partie.", SessionFlow.MenuMessageFor("Disconnected due to host shutting down.", false));
+        StringAssert.StartsWith("L'hôte a quitté la partie.", SessionFlow.MenuMessageFor("Disconnected due to host shutting down.", false));
+        StringAssert.Contains("arrêtée", SessionFlow.MenuMessageFor(SessionFlow.HostLeftReason, false),
+                              "La raison que donne l'hôte qui s'en va : on dit aussi pourquoi on revient au menu.");
         StringAssert.Contains("perdue", SessionFlow.MenuMessageFor("", false));
         StringAssert.Contains("perdue", SessionFlow.MenuMessageFor(null, false));
 

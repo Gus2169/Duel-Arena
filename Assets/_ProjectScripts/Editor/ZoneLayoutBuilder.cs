@@ -16,6 +16,7 @@ public static class ZoneLayoutBuilder
     public const string GroupName = "Zones";
     public const string ScenePath = "Assets/_ProjectScenes/MultiTestScene.unity";
     private const string MaterialPath = "Assets/_ProjectArena/Modes/Zone_Lueur.mat";
+    private const string ColumnMaterialPath = "Assets/_ProjectArena/Modes/Zone_Colonne.mat";
     private const string ArcMaterialPath = "Assets/_ProjectArena/Weapon/Gant/ArcElectrique.mat";
     private const string SoundsPath = "Assets/_ProjectArt/Audio/GameSounds.asset";
     private const int WorldMask = 1;
@@ -80,6 +81,7 @@ public static class ZoneLayoutBuilder
             names.GetArrayElementAtIndex(i).stringValue = Places[i].name;
         }
         so.FindProperty("zoneMaterial").objectReferenceValue = zoneMaterial;
+        so.FindProperty("columnMaterial").objectReferenceValue = ColumnMaterial();
         so.FindProperty("arcMaterial").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Material>(ArcMaterialPath);
         so.FindProperty("sounds").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameSounds>(SoundsPath);
         so.ApplyModifiedPropertiesWithoutUndo();
@@ -87,6 +89,12 @@ public static class ZoneLayoutBuilder
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
         return $"{made.Length} zones posées dans {scene.name}.";
+    }
+
+    /// <summary>La colonne de lumière, vue à travers les murs : sa couleur se pose en jeu (ZoneLayout).</summary>
+    private static Material ColumnMaterial()
+    {
+        return RobotChassisBuilder.SaveMaterial(ColumnMaterialPath, new Material(Shader.Find("DuelArena/ZoneColonne")));
     }
 
     /// <summary>La lumière de la zone : URP Particles/Unlit, transparente, ajoutée, des deux faces ; sa couleur se pose

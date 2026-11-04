@@ -417,50 +417,26 @@
 
 /* -------------------- Fondu au noir -------------------- */
 
-/* -------------------- Le replay du coup mortel (2026-11-03) -------------------- */
+/* -------------------- La kill cam (2026-11-04) -------------------- */
 
-.replay-frame {
-    position: absolute;
-    left: 0;
-    top: 0;
-    right: 0;
-    bottom: 0;
-}
-
-.replay-frame__band {
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 9%;
-    background-color: rgb(0, 0, 0);
-}
-
-.replay-frame__band--top {
-    top: 0;
-}
-
-.replay-frame__band--bottom {
-    bottom: 0;
-}
-
-.replay-caption {
+.kill-cam-caption {
     position: absolute;
     left: 56px;
-    bottom: 12%;
+    bottom: 8%;
     padding: 8px 18px 10px 16px;
     background-color: rgba(10, 13, 17, 0.62);
     border-left-width: 4px;
     border-left-color: rgb(244, 190, 28);
 }
 
-.replay-caption__title {
+.kill-cam-caption__title {
     font-size: 18px;
     -unity-font-style: bold;
     letter-spacing: 4px;
     color: rgb(244, 190, 28);
 }
 
-.replay-caption__line {
+.kill-cam-caption__line {
     margin-top: 2px;
     font-size: 34px;
     -unity-font-style: bold;
@@ -477,6 +453,8 @@
     bottom: 0;
     background-color: rgb(0, 0, 0);
     opacity: 0;
+    align-items: center;
+    justify-content: center;
 }
 
 /* -------------------- Écran de fin -------------------- */
@@ -836,9 +814,53 @@
     margin-right: 4px;
 }
 
+/* Les barres des points : elles montent vers le chrono, le compte à atteindre dessous (2026-11-04). */
+.score-gauge {
+    width: 190px;
+    height: 14px;
+    margin-left: 6px;
+    margin-right: 6px;
+    flex-direction: row;
+    background-color: rgba(10, 13, 17, 0.62);
+    border-width: 1px;
+    border-color: rgba(240, 242, 245, 0.35);
+}
+
+.score-gauge--mirror {
+    flex-direction: row-reverse;
+}
+
+.score-gauge__fill {
+    height: 100%;
+    width: 0;
+    transition-property: width;
+    transition-duration: 0.12s;
+}
+
+.score-goal {
+    position: absolute;
+    top: 54px;
+    left: 0;
+    right: 0;
+    -unity-text-align: upper-center;
+    font-size: 12px;
+    -unity-font-style: bold;
+    letter-spacing: 1px;
+    color: rgb(200, 205, 212);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.75);
+}
+
+.round-timer--long {
+    width: 150px;
+    font-size: 15px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
 .zone-status {
     position: absolute;
-    top: 66px;
+    top: 72px;
     left: 0;
     right: 0;
     -unity-text-align: upper-center;
@@ -853,21 +875,37 @@
 .zone-marker {
     position: absolute;
     translate: -50% -50%;
-    padding: 2px 8px;
-    background-color: rgba(10, 13, 17, 0.55);
-    border-left-width: 3px;
-    border-left-color: rgba(240, 242, 245, 0.9);
+    align-items: center;
 }
 
 .zone-marker--next {
     opacity: 0.75;
 }
 
+/* Le losange : le halo, large et faible, derrière le cadre. */
+.zone-marker__halo {
+    position: absolute;
+    top: -8px;
+    width: 54px;
+    height: 54px;
+    rotate: 45deg;
+}
+
+.zone-marker__icon {
+    width: 38px;
+    height: 38px;
+    rotate: 45deg;
+    margin-bottom: 14px;
+    border-width: 4px;
+}
+
 .zone-marker__label {
-    font-size: 14px;
+    padding: 2px 8px;
+    font-size: 17px;
     -unity-font-style: bold;
     letter-spacing: 1px;
     color: rgb(240, 242, 245);
+    background-color: rgba(10, 13, 17, 0.72);
     -unity-text-outline-width: 1px;
     -unity-text-outline-color: rgba(0, 0, 0, 0.7);
 }

@@ -144,13 +144,16 @@ public static class MagazineReloadImporter
         public BreakSteps etapes;
         public float[] paumeConception;
         public float angleCanon, angleChien, angleLevier, sortieDouille, approcheCartouche, dureeRechargement;
+        public float departCanon, departFermeture, rebondCanon, enfonceLevier, relacheLevier;
+        public float[] pouceDroit;   // les phalanges du pouce droit, x, y, z, w à la suite (pouce_droit_unity)
+        public float[] tenueDroite;  // la main droite qui tient l'arme, x, y, z, w par phalange (tenue_golden_gun.py)
     }
 
     [System.Serializable]
     private class BreakSteps
     {
-        public float[] levier, ouverture, ejection, insertion, fermeture, armement;
-        public float saisie, retour;
+        public float[] levier, ouverture, rebond, ejection, insertion, fermeture, armement;
+        public float saisie, lacher, retour;
     }
 
     private sealed class Built
@@ -220,7 +223,7 @@ public static class MagazineReloadImporter
         BreakSheet sheet = text != null ? JsonUtility.FromJson<BreakSheet>(text.text) : null;
         BreakSteps e = sheet?.etapes;
         if (sheet == null || sheet.utile == null || sheet.utile.Length != 2 || e == null || !Pair(e.levier) || !Pair(e.ouverture)
-            || !Pair(e.ejection) || !Pair(e.insertion) || !Pair(e.fermeture) || !Pair(e.armement))
+            || !Pair(e.rebond) || !Pair(e.ejection) || !Pair(e.insertion) || !Pair(e.fermeture) || !Pair(e.armement))
         {
             Debug.LogError("[Rechargement] La fiche " + SheetPath(code) + " est introuvable ou incomplète. Exporter d'abord depuis Blender.");
             return null;
@@ -405,6 +408,7 @@ public static class MagazineReloadImporter
         gesture.weapons = new[] { weapon };
         gesture.latchStep = Step(e.levier);
         gesture.openStep = Step(e.ouverture);
+        gesture.reboundStep = Step(e.rebond);
         gesture.ejectStep = Step(e.ejection);
         gesture.insertStep = Step(e.insertion);
         gesture.closeStep = Step(e.fermeture);
@@ -412,6 +416,29 @@ public static class MagazineReloadImporter
         gesture.barrelAngle = sheet.angleCanon;
         gesture.hammerAngle = sheet.angleChien;
         gesture.latchAngle = sheet.angleLevier;
+        gesture.latchPress = sheet.enfonceLevier;
+        gesture.latchRelease = sheet.relacheLevier;
+        gesture.openKick = sheet.departCanon;
+        gesture.closeKick = sheet.departFermeture;
+        gesture.reboundAngle = sheet.rebondCanon;
+        float[] thumb = sheet.pouceDroit;
+        if (thumb == null || thumb.Length == 0 || thumb.Length % (4 * BreakActionGesture.ThumbBones) != 0)
+        {
+            Debug.LogError("[Rechargement] La fiche " + SheetPath(b.code) + " n'a pas les poses du pouce droit. Exporter d'abord depuis Blender.");
+            return null;
+        }
+        gesture.rightThumb = new Quaternion[thumb.Length / 4];
+        for (int i = 0; i < gesture.rightThumb.Length; i++)
+            gesture.rightThumb[i] = new Quaternion(thumb[4 * i], thumb[4 * i + 1], thumb[4 * i + 2], thumb[4 * i + 3]);
+        float[] hold = sheet.tenueDroite;
+        if (hold == null || hold.Length != 4 * BreakActionGesture.HoldOrder.Length)
+        {
+            Debug.LogError("[Rechargement] La fiche " + SheetPath(b.code) + " n'a pas la tenue de la main droite (tenue_golden_gun.py, puis l'export du geste).");
+            return null;
+        }
+        gesture.rightHold = new Quaternion[BreakActionGesture.HoldOrder.Length];
+        for (int i = 0; i < gesture.rightHold.Length; i++)
+            gesture.rightHold[i] = new Quaternion(hold[4 * i], hold[4 * i + 1], hold[4 * i + 2], hold[4 * i + 3]);
         gesture.caseTravel = sheet.sortieDouille;
         gesture.cartridgeApproach = sheet.approcheCartouche;
         gesture.reloadSeconds = sheet.dureeRechargement;

@@ -10,9 +10,8 @@ using UnityEngine.Rendering;
 /// traînée d'huile.
 ///
 /// Catégorie C : des systèmes de particules faits à la volée (matériaux dans Resources, construits par Duel Arena > Mort >
-/// Préparer les éclats du robot, RobotBurstMaterials), sur le layer qu'on leur donne : Corpse pour l'épave du jeu (la
-/// caméra du replay ne le dessine pas), Preview pour ceux du replay du coup mortel (que seule sa caméra dessine), qui règle
-/// leur vitesse au ralenti (SetSpeed).
+/// Préparer les éclats du robot, RobotBurstMaterials), sur le layer de l'épave, dont la kill cam règle la vitesse au ralenti
+/// (SetSpeed).
 /// </summary>
 public static class RobotBurst
 {
@@ -29,7 +28,7 @@ public static class RobotBurst
     public const string DebrisMaterialName = "EclatsDebris";
     public const string WakeMaterialName = "SillageBalle";
 
-    /// <summary>Une lueur ajoutée, sans texture : le sillage de la balle du replay (KillReplay), qui s'éteint vers le noir.</summary>
+    /// <summary>Une lueur ajoutée, sans texture : le sillage de la balle de la kill cam (KillCam), qui s'éteint vers le noir.</summary>
     public static Material WakeMaterial => wakeMaterial != null ? wakeMaterial : wakeMaterial = LoadOrMake(WakeMaterialName, true);
 
     // L'huile moteur : de l'ambre doré à l'ambre brûlé, la goutte luisante (sa texture). Plus sombre, elle disparaissait
@@ -95,7 +94,7 @@ public static class RobotBurst
         return root;
     }
 
-    /// <summary>Le ralenti du replay : chaque système de `effect` avance à `speed` fois le temps (et l'éclair aussi).</summary>
+    /// <summary>Le ralenti de la kill cam : chaque système de `effect` avance à `speed` fois le temps (et l'éclair aussi).</summary>
     public static void SetSpeed(GameObject effect, float speed)
     {
         if (effect == null) return;
@@ -319,6 +318,9 @@ public static class RobotBurst
         main.playOnAwake = true;
         main.simulationSpace = ParticleSystemSimulationSpace.World;
         main.scalingMode = ParticleSystemScalingMode.Shape;
+        // Sur une pièce qui vole, la vitesse de son Rigidbody ferait partir les particules d'où elle aurait été une image
+        // plus tôt : la gerbe du cou flottait à 15 cm du robot (vu à la kill cam le 2026-11-04).
+        main.emitterVelocityMode = ParticleSystemEmitterVelocityMode.Transform;
         var renderer = go.GetComponent<ParticleSystemRenderer>();
         renderer.sharedMaterial = material;
         renderer.shadowCastingMode = ShadowCastingMode.Off;
@@ -355,6 +357,9 @@ public static class RobotBurst
 
     private static Material OilMaterial() => oilMaterial != null ? oilMaterial : oilMaterial = LoadOrMake(OilMaterialName, false);
     private static Material SparkMaterial() => sparkMaterial != null ? sparkMaterial : sparkMaterial = LoadOrMake(SparkMaterialName, true);
+
+    /// <summary>Le matériau des étincelles, pour celles d'un tir (ShotImpacts).</summary>
+    public static Material SparkParticles => SparkMaterial();
     private static Material DebrisMaterial() => debrisMaterial != null ? debrisMaterial : debrisMaterial = LoadOrMake(DebrisMaterialName, false);
 
     // Les matériaux préparés (Resources) ; à défaut, un matériau simple, en attendant qu'on les prépare (l'Editor
@@ -386,7 +391,7 @@ public static class RobotBurst
     }
 }
 
-/// <summary>L'éclair d'une gerbe : il s'éteint en 0,12 s (à la vitesse du ralenti, dans le replay).</summary>
+/// <summary>L'éclair d'une gerbe : il s'éteint en 0,12 s (à la vitesse du ralenti, sous la kill cam).</summary>
 public class BurstFlash : MonoBehaviour
 {
     public float peak = 5f;

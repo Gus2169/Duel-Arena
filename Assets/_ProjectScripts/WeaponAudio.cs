@@ -232,7 +232,15 @@ public class WeaponAudio : MonoBehaviour
     /// `afterData` : celle d'après (la même, sauf changement d'arme, qui la fait sortir).</summary>
     public void Hear(in WeaponController.MagazineState before, in WeaponController.MagazineState after, WeaponData data, WeaponData afterData)
     {
-        if (after.equipped != before.equipped && afterData != null) PlayMechanism(afterData.raiseSounds);
+        bool switched = after.equipped != before.equipped && afterData != null;
+        bool arrival = switched && after.imposedRaise && after.forced != before.forced;
+        if (switched && !arrival) PlayMechanism(afterData.raiseSounds);
+        HearMagazine(before, after, data);
+        if (arrival) HearArrival(afterData, controller != null ? controller.RaiseTimeOf(after.equipped) : afterData.raiseTime);
+    }
+
+    private void HearMagazine(in WeaponController.MagazineState before, in WeaponController.MagazineState after, WeaponData data)
+    {
         if (data == null) return;
         int capacity = controller != null ? controller.MagazineSizeOf(before.equipped) : data.magazineSize;
         float duration = controller != null ? controller.ReloadDurationOf(before.equipped) : data.reloadDuration;
@@ -289,6 +297,44 @@ public class WeaponAudio : MonoBehaviour
         }
         bool done = usesHeat ? after.heat <= 0f && !after.overheated : after.ammo >= magazineSize;
         return sound | (done ? ReloadSound.Completed : ReloadSound.Interrupted);
+    }
+
+    /// <summary>
+    /// Le dernier bruit du rechargement de `data`, que fait entendre l'arme quand le mode la met en main (2026-11-04,
+    /// demandé par l'utilisateur : « pour comprendre qu'on change d'arme ») : la dernière étape de son rechargement, à sa
+    /// place dans la fin du geste (WeaponController.ArrivalStart, jouée en `raiseTime`), tout de suite si elle tombe avant ;
+    /// une arme chargée cartouche par cartouche a le bruit de sa fin (la pompe). Faux si elle n'en a pas (le gant).
+    /// Fonction pure, testée.
+    /// </summary>
+    public static bool ArrivalSound(WeaponData data, float raiseTime, out AudioClip[] clips, out float volume, out float delay)
+    {
+        clips = null;
+        volume = 0f;
+        delay = 0f;
+        if (data == null) return false;
+        if (data.reloadCues != null && data.reloadCues.Length > 0)
+        {
+            ReloadCue last = data.reloadCues[0];
+            foreach (ReloadCue cue in data.reloadCues)
+                if (cue.at >= last.at) last = cue;
+            clips = last.clips;
+            volume = last.volume;
+            delay = Mathf.Max(0f, last.at - WeaponController.ArrivalStart) * raiseTime / (1f - WeaponController.ArrivalStart);
+        }
+        else
+        {
+            clips = data.reloadEndSounds;
+            volume = data.reloadVolume;
+        }
+        return clips != null && clips.Length > 0;
+    }
+
+    private void HearArrival(WeaponData data, float raiseTime)
+    {
+        if (!ArrivalSound(data, raiseTime, out AudioClip[] clips, out float volume, out float delay)) return;
+        StopReloadNow();
+        AudioClip clip = Pick(clips);
+        if (clip != null) Schedule(Time.time + delay, clip, volume, reload: true);
     }
 
     private void StartReload(WeaponData data, float duration)

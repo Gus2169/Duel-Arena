@@ -24,7 +24,7 @@ Shader "DuelArena/ViseurReticule"
 {
     Properties
     {
-        _CouleurVitre ("Teinte de la vitre (alpha = opacité)", Color) = (0.45, 0.72, 0.80, 0.10)
+        _CouleurVitre ("Teinte du reflet de la vitre (alpha = assombrissement vu de face)", Color) = (0.45, 0.72, 0.80, 0.05)
         _CouleurReticule ("Couleur de la réticule", Color) = (1.0, 0.16, 0.10, 1.0)
         _Intensite ("Intensité de la réticule", Float) = 4
         [NoScaleOffset] _Reticule ("Image du réticule (distances : rouge lumineux, vert gravé)", 2D) = "white" {}
@@ -131,15 +131,20 @@ Shader "DuelArena/ViseurReticule"
                 float reticule = (1.0 - smoothstep(-douceur.x, douceur.x, d.x)) * devant;
                 float gravure = (1.0 - smoothstep(-douceur.y, douceur.y, d.y)) * devant * (1.0 - reticule);
 
-                // Un léger reflet quand on regarde la vitre de biais : elle se lit comme du verre.
+                // La vitre filtre, elle n'éclaire pas (2026-11-03) : vue de face, elle assombrit à peine ce
+                // qu'il y a derrière (l'alpha de _CouleurVitre), sans y ajouter sa teinte. Ajoutée, la teinte
+                // voilait la vue d'un bleu laiteux : le jeu se rend en espace linéaire, et le décor sombre de
+                // l'arène y vaut 0,01 à 0,03 quand 12 % d'une teinte claire en ajoutaient 0,05 à 0,10
+                // (l'utilisateur : « une teinte bleue trop opaque »). Seul un reflet, de biais, porte sa
+                // couleur : elle se lit comme du verre vue de côté.
                 float biais = 1.0 - saturate(abs(dot(normalize(input.normalWS), -regard)));
-                half vitre = saturate(_CouleurVitre.a + biais * _Reflet * 0.5);
+                half reflet = saturate(biais * _Reflet * 0.5);
                 // Le réticule couvre ce qu'il y a derrière lui : ajouté à la lumière d'un mur blanc ou
                 // du ciel, il virait au rose (vu à deux instances le 2026-10-16). Il reste rouge. Les
                 // traits gravés sont noirs : ils couvrent, sans lumière.
                 half couvert = saturate(reticule + gravure);
-                half alpha = saturate(vitre + couvert);
-                half3 couleur = _CouleurVitre.rgb * vitre * (1.0 - couvert) + _CouleurReticule.rgb * (_Intensite * reticule);
+                half alpha = saturate(_CouleurVitre.a + reflet + couvert);
+                half3 couleur = _CouleurVitre.rgb * reflet * (1.0 - couvert) + _CouleurReticule.rgb * (_Intensite * reticule);
                 return half4(couleur, alpha);
             }
             ENDHLSL

@@ -474,7 +474,7 @@ public class MagazineSwap : MonoBehaviour
     {
         if (weapon == null) return;
         ReloadGesture gesture = CurrentGesture;
-        bool reloading = weapon.IsReloading && (locomotion == null || locomotion.IsAlive);
+        bool reloading = weapon.ShowsReloadGesture && (locomotion == null || locomotion.IsAlive);
         float dt = Time.deltaTime;
         var opening = gesture as BreakActionGesture;
         bool empty = weapon.DisplayedAmmo <= 0;   // le coup parti, le rechargement pas encore commencé

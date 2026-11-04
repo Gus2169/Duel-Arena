@@ -97,6 +97,33 @@ public class WeaponAudioPlayModeTests
         Assert.IsTrue(audio.TestReloadPlaying, "La seconde étape part à sa part de la durée du rechargement.");
     }
 
+    /// <summary>Le mode met une arme en main, en plein rechargement de l'autre (2026-11-04) : le rechargement se tait, et le
+    /// dernier bruit de celui de la nouvelle arme part. Une arme qu'on choisit, elle, n'en fait pas.</summary>
+    [UnityTest]
+    public IEnumerator UneArmeQueLeModeMetEnMain_SEntendParLaFinDeSonRechargement()
+    {
+        data.raiseTime = 0.6f;
+        var before = Chargeur(5, 100.0);
+        var imposed = Chargeur(30);
+        imposed.equipped = 1;
+        imposed.forced = 1;
+        imposed.imposedRaise = true;
+        audio.Hear(before, imposed, data, data);
+        yield return null;
+        yield return null;
+        Assert.IsTrue(audio.TestReloadPlaying, "Le dernier bruit du rechargement part.");
+
+        yield return Wait(0.45f);
+        Assert.IsFalse(audio.TestReloadPlaying, "Garde : il est fini.");
+        var chosen = Chargeur(30);
+        chosen.equipped = 2;
+        chosen.forced = 1;
+        audio.Hear(imposed, chosen, data, data);
+        yield return null;
+        yield return null;
+        Assert.IsFalse(audio.TestReloadPlaying, "Une arme choisie ne fait pas entendre de rechargement.");
+    }
+
     [UnityTest]
     public IEnumerator UneRafale_NeGardeQuUneQueueDeReverberation()
     {

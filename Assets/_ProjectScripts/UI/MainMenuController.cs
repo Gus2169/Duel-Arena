@@ -70,6 +70,9 @@ public class MainMenuController : MonoBehaviour
     private VisualElement backdropDim;
     private VisualElement quitModal;
     private VisualElement pseudoModal;
+    private VisualElement sessionEndModal;
+    private Label sessionEndText;
+    private VisualElement loadingScreen;
     private TextField pseudoField;
     private ArenaLogo pseudoModalLogo;
     private readonly List<Button> playerCards = new();
@@ -92,8 +95,9 @@ public class MainMenuController : MonoBehaviour
 
     public MenuArtwork Artwork => artwork;
 
-    /// <summary>Une fenêtre (Quitter, le pseudo) est ouverte : les écrans dessous ne lisent pas le clavier.</summary>
-    public bool ModalOpen => IsOpen(quitModal) || IsOpen(pseudoModal);
+    /// <summary>Une fenêtre (Quitter, le pseudo, le retour au menu) est ouverte, ou une partie se charge : les écrans
+    /// dessous ne lisent pas le clavier.</summary>
+    public bool ModalOpen => IsOpen(quitModal) || IsOpen(pseudoModal) || IsOpen(sessionEndModal) || IsOpen(loadingScreen);
 
     private void OnEnable()
     {
@@ -133,13 +137,17 @@ public class MainMenuController : MonoBehaviour
         }
 
         ShowScreenByName(TitleScreen);
+        SessionFlow.ArrivedInMenu();
+        loadingScreen?.AddToClassList("hidden");
 
-        // De retour d'une partie (l'hôte est parti, la connexion est tombée...) : l'écran Jouer,
-        // avec la raison (SessionFlow.ReturnToMenu).
+        // De retour d'une partie (l'hôte est parti, la connexion est tombée...) : l'écran Jouer, et une fenêtre
+        // qui dit pourquoi (SessionFlow.ReturnToMenu ; 2026-11-03 : la seule ligne au bas de l'écran Jouer passait
+        // inaperçue, et les clients revenaient au menu sans comprendre).
         if (!string.IsNullOrEmpty(SessionFlow.PendingMenuMessage))
         {
             ShowScreenByName(PlayScreen);
             SetStatus(SessionFlow.PendingMenuMessage, true);
+            OpenSessionEnd(SessionFlow.PendingMenuMessage);
             SessionFlow.PendingMenuMessage = "";
         }
     }
@@ -239,9 +247,29 @@ public class MainMenuController : MonoBehaviour
     /// </summary>
     private void Update()
     {
+        // Une partie se charge (2026-11-03) : l'écran de chargement, du lancement jusqu'à l'arène, qui garde le même
+        // dans son noir (GameHud). Le menu dessous ne bouge plus.
+        NetworkManager nm = NetworkManager.Singleton;
+        bool launching = nm != null && LaunchUnderway(nm.IsListening, nm.IsServer, nm.IsConnectedClient, nm.IsClient && OnlineSession.InSession);
+        if (loadingScreen != null && launching == loadingScreen.ClassListContains("hidden"))
+        {
+            loadingScreen.EnableInClassList("hidden", !launching);
+            if (launching) root.panel?.focusController?.focusedElement?.Blur();
+        }
+        if (launching) return;
+
         UnityEngine.InputSystem.Keyboard keyboard = UnityEngine.InputSystem.Keyboard.current;
         if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame) GoBack();
     }
+
+    /// <summary>
+    /// Une partie part de ce menu : Netcode tourne en hôte, ou connecté à un hôte, ou lancé par le salon en ligne
+    /// (`onlineLaunch` : ses membres se connectent d'eux-mêmes), et l'arène (ou le stand) va remplacer le menu. Une
+    /// connexion en réseau local qui se cherche encore n'en est pas une : le menu reste, avec son bouton Annuler.
+    /// Fonction pure, testée.
+    /// </summary>
+    public static bool LaunchUnderway(bool listening, bool server, bool connectedClient, bool onlineLaunch)
+        => listening && (server || connectedClient || onlineLaunch);
 
     /// <summary>
     /// L'écran où Échap ramène depuis `shown`, ou null. Jouer, Personnalisation et Options reviennent à
@@ -264,6 +292,7 @@ public class MainMenuController : MonoBehaviour
     private void GoBack()
     {
         if (root == null) return;
+        if (IsOpen(sessionEndModal)) { CloseSessionEnd(); return; }
         if (IsOpen(quitModal)) { CloseQuit(); return; }
         if (IsOpen(pseudoModal)) { ClosePseudo(); return; }
         if (OptionsController.AnyRebinding) return;
@@ -302,6 +331,10 @@ public class MainMenuController : MonoBehaviour
     {
         quitModal = root.Q<VisualElement>("quitModal");
         pseudoModal = root.Q<VisualElement>("pseudoModal");
+        sessionEndModal = root.Q<VisualElement>("sessionEndModal");
+        sessionEndText = root.Q<Label>("sessionEndText");
+        loadingScreen = root.Q<VisualElement>("loadingScreen");
+        root.Q<Button>("sessionEndOkButton").clicked += CloseSessionEnd;
         pseudoField = root.Q<TextField>("pseudoField");
         pseudoModalLogo = root.Q<ArenaLogo>("pseudoModalLogo");
 
@@ -329,6 +362,16 @@ public class MainMenuController : MonoBehaviour
     }
 
     private void CloseQuit() => quitModal?.AddToClassList("hidden");
+
+    private void OpenSessionEnd(string message)
+    {
+        if (sessionEndModal == null) return;
+        if (sessionEndText != null) sessionEndText.text = message;
+        root.panel?.focusController?.focusedElement?.Blur();
+        sessionEndModal.RemoveFromClassList("hidden");
+    }
+
+    private void CloseSessionEnd() => sessionEndModal?.AddToClassList("hidden");
 
     private void OpenPseudo()
     {

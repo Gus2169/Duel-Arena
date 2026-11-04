@@ -45,7 +45,7 @@ public class LocomotionFootTests
     private struct Tuning
     {
         public float strafe, backward; // la direction retire à la vitesse (2026-10-10)
-        public float walk, run, sneak, ads, idleScale, minPlayback, minLeg, maxLeg;
+        public float walk, run, sneak, ads, idleScale, minPlayback, minLeg, maxLeg, maxProneLeg;
         public float[] stanceMultiplier;
         public float[] playbackScale;
     }
@@ -80,6 +80,7 @@ public class LocomotionFootTests
             minPlayback = anim.FindProperty("minPlaybackSpeed").floatValue,
             minLeg = anim.FindProperty("minLegCadence").floatValue,
             maxLeg = anim.FindProperty("maxLegCadence").floatValue,
+            maxProneLeg = anim.FindProperty("maxProneLegCadence").floatValue,
         };
     }
 
@@ -110,7 +111,7 @@ public class LocomotionFootTests
             animator.SetFloat("MainsNues", mainsNues ? 1f : 0f);
             Vector3 v = instance.transform.InverseTransformDirection(probe.Velocity);
             PlayerAnimator.DriveGait(animator, ref state, move, reference, (PlayerLocomotion.Stance)stance,
-                                     new Vector2(v.x, v.z), idle, upper, t.minLeg, t.maxLeg, Dt);
+                                     new Vector2(v.x, v.z), idle, upper, t.minLeg, stance == 2 ? t.maxProneLeg : t.maxLeg, Dt);
             animator.Update(Dt);
             if (i < 180) continue;
 

@@ -359,5 +359,31 @@
             </da:SlantBox>
         </ui:VisualElement>
 
+        <!-- ================= Fenêtre : pourquoi on revient au menu (2026-11-03 : l'hôte est parti, la connexion
+             est tombée ; SessionFlow.MenuMessageFor) ================= -->
+        <ui:VisualElement name="sessionEndModal" class="modal-overlay hidden">
+            <da:SlantBox class="modal">
+                <da:ArenaLogo class="modal__logo" />
+                <ui:Label class="modal__title" text="RETOUR AU MENU" />
+                <ui:Label name="sessionEndText" class="modal__text" text="" />
+                <ui:VisualElement class="modal__buttons">
+                    <ui:Button name="sessionEndOkButton" class="da-btn da-btn--primary ui-confirm" focusable="false">
+                        <da:SlantBox class="slant-bg" />
+                        <ui:Label class="da-btn__label" text="OK" picking-mode="Ignore" />
+                    </ui:Button>
+                </ui:VisualElement>
+            </da:SlantBox>
+        </ui:VisualElement>
+
+        <!-- ================= Le chargement d'une partie (2026-11-03) : du lancement jusqu'à l'arène, qui garde le
+             même écran dans son noir (GameHud) ================= -->
+        <ui:VisualElement name="loadingScreen" class="loading-screen hidden">
+            <ui:VisualElement class="loading-block" picking-mode="Ignore">
+                <da:ArenaLogo class="loading-block__logo" picking-mode="Ignore" />
+                <ui:Label name="loadingScreenTitle" class="loading-block__title" text="CHARGEMENT" picking-mode="Ignore" />
+                <da:Spinner class="loading-block__spinner" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
     </ui:VisualElement>
 </ui:UXML>

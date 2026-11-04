@@ -87,6 +87,7 @@ public class PlayerLocomotion : NetworkBehaviour
         Grounded = 1,
         Vaulting = 2,
         Aiming = 4,
+        Sprinting = 8,
     }
 
     [System.Serializable]
@@ -149,12 +150,14 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         controllerHeight = 1.1f, controllerRadius = 0.35f, cameraHeight = 1.05f, cameraForward = 0.10f, moveSpeedMultiplier = 0.6f
     };
-    // Allongé, on rampe à la vitesse de l'animation (2026-10-10) : la reptation avance à 0,28 m/s,
-    // et ×0,085 donne 0,43 m/s à l'allure de marche, soit une cadence de ×1,5. À 1,25 m/s (×0,25
-    // jusque-là), le corps glissait trois fois plus vite que ses mains et ses genoux.
+    // Allongé, on rampe à la vitesse de l'animation (2026-10-10) : la reptation avance à 0,28 m/s.
+    // ×0,13 donne 0,65 m/s à l'allure de marche (0,43 m/s à ×0,085 jusqu'au 2026-11-03, l'utilisateur :
+    // « plus vite sur tous les axes »), soit une cadence de ×2,3, sous le plafond propre à l'allongé
+    // (PlayerAnimator.maxProneLegCadence). À 1,25 m/s (×0,25 avant le 2026-10-10), le corps glissait
+    // trois fois plus vite que ses mains et ses genoux.
     [SerializeField] private StanceProfile proneProfile = new StanceProfile
     {
-        controllerHeight = 0.5f, controllerRadius = 0.4f, cameraHeight = 0.36f, cameraForward = 0.25f, cameraSide = -0.15f, moveSpeedMultiplier = 0.085f
+        controllerHeight = 0.5f, controllerRadius = 0.4f, cameraHeight = 0.36f, cameraForward = 0.25f, cameraSide = -0.15f, moveSpeedMultiplier = 0.13f
     };
 
     [Header("Transitions de posture (ressenti, à régler en jouant)")]
@@ -304,6 +307,10 @@ public class PlayerLocomotion : NetworkBehaviour
     /// franchissement instantanément — ce qui compte pour son ombre, la seule partie de son
     /// modèle qu'il voit.</summary>
     public bool DisplayVaulting => Simulates ? IsVaulting : HasDisplayFlag(DisplayFlags.Vaulting);
+
+    /// <summary>Le joueur sprinte-t-il, du point de vue de l'AFFICHAGE ? Le laser tactique le lit : l'arme portée en travers,
+    /// il la suit, au lieu du regard.</summary>
+    public bool DisplaySprinting => Simulates ? IsSprinting : HasDisplayFlag(DisplayFlags.Sprinting);
 
     /// <summary>Durée d'un franchissement, en secondes. Exposée pour que l'ANIMATION puisse s'y
     /// accorder : son clip est lu à la vitesse qu'il faut pour tenir exactement dans cet
@@ -1937,7 +1944,7 @@ public class PlayerLocomotion : NetworkBehaviour
             sprintHeld = input.SprintHeld && sprintAllowed,
             sneakHeld = input.SneakHeld,
             // Un spectateur n'épaule rien : son clic droit lève sa garde, quand ses poings sont sortis.
-            aimHeld = spectating ? guard : GateAim(input.AimHeld, weapon != null && weapon.IsReloading, unarmed),
+            aimHeld = spectating ? guard : GateAim(input.AimHeld, weapon != null && weapon.ShowsReloadGesture, unarmed),
             aimPitch = cameraLook != null ? cameraLook.Pitch : 0f,
             fireHeld = input.FireHeld,
             firePressedThisFrame = input.FirePressedThisFrame,
@@ -2420,6 +2427,7 @@ public class PlayerLocomotion : NetworkBehaviour
         if (controller.enabled && controller.isGrounded) flags |= DisplayFlags.Grounded;
         if (IsVaulting) flags |= DisplayFlags.Vaulting;
         if (IsAiming) flags |= DisplayFlags.Aiming;
+        if (IsSprinting) flags |= DisplayFlags.Sprinting;
 
         float charge = weapon != null ? serverCharge.Displayed(weapon.ServerChargeTime) : 0f;
 
@@ -2575,7 +2583,7 @@ public class PlayerLocomotion : NetworkBehaviour
         bool spectating = IsSpectator;
         bool movementAllowed = spectating ? SpectatorMovementAllowed(simTime) : RoundManager.MovementAllowedFor(OwnerClientId, IsAlive);
         if (snap.jumpPressed && !spectating && movementAllowed && stanceProgress >= 1f
-            && TryFindVaultTarget(out Vector3 vaultLanding, out float vaultTop, false))
+            && TryFindVaultTarget(out Vector3 vaultLanding, out float vaultTop))
         {
             BeginVault(vaultLanding, vaultTop);
             AdvanceVault(dt);
@@ -3413,7 +3421,32 @@ public class PlayerLocomotion : NetworkBehaviour
     // identique côté serveur. Ne restent ici que la RECHERCHE de cible et les données de tuning.
     // ------------------------------------------------------------------
 
-    private bool TryFindVaultTarget(out Vector3 landingPoint, out float obstacleTopY, bool drawDebug)
+    /// <summary>Ce que le franchissement sait du robot et de ses réglages : de quoi le chercher sans joueur (FindVault).</summary>
+    public struct VaultGeometry
+    {
+        public float radius, skinWidth, stepOffset, standingHeight, tuckedHeight;
+        public float checkDistance, minHeight, maxHeight, landingProbeDistance, maxLandingDrop, obstacleClearance;
+        public int obstacleMask;
+    }
+
+    /// <summary>Le franchissement du robot debout : sa capsule (`body`, pour sa peau et sa marche), les réglages du joueur.</summary>
+    public VaultGeometry VaultGeometryOf(CharacterController body) => new VaultGeometry
+    {
+        radius = standingProfile.controllerRadius,
+        skinWidth = body.skinWidth,
+        stepOffset = body.stepOffset,
+        standingHeight = standingProfile.controllerHeight,
+        tuckedHeight = crouchingProfile.controllerHeight,
+        checkDistance = vaultCheckDistance,
+        minHeight = vaultMinHeight,
+        maxHeight = vaultMaxHeight,
+        landingProbeDistance = vaultLandingProbeDistance,
+        maxLandingDrop = vaultMaxLandingDrop,
+        obstacleClearance = vaultObstacleClearance,
+        obstacleMask = obstacleMask,
+    };
+
+    private bool TryFindVaultTarget(out Vector3 landingPoint, out float obstacleTopY)
     {
         landingPoint = default;
         obstacleTopY = 0f;
@@ -3423,41 +3456,47 @@ public class PlayerLocomotion : NetworkBehaviour
             return false;
         }
 
-        float frontProbeHeight = vaultMinHeight * 0.5f;
-        Vector3 origin = transform.position + Vector3.up * frontProbeHeight;
-        Vector3 forward = transform.forward;
+        return FindVault(transform.position, transform.forward, VaultGeometryOf(controller), out landingPoint, out obstacleTopY);
+    }
 
-        bool hasFrontHit = Physics.Raycast(origin, forward, out RaycastHit frontHit, vaultCheckDistance, obstacleMask, QueryTriggerInteraction.Ignore);
-        if (drawDebug) Debug.DrawRay(origin, forward * vaultCheckDistance, hasFrontHit ? Color.yellow : Color.red);
-        if (!hasFrontHit) return false;
+    /// <summary>
+    /// Y a-t-il de quoi franchir devant ces pieds, et où arrive-t-on ? Ne lit que la géométrie STATIQUE du monde : le
+    /// même calcul chez le client qui prédit, sur le serveur, et dans les tests, sur la vraie arène.
+    /// </summary>
+    public static bool FindVault(Vector3 position, Vector3 forward, in VaultGeometry g, out Vector3 landingPoint, out float obstacleTopY)
+    {
+        landingPoint = default;
+        obstacleTopY = 0f;
 
-        Vector3 topProbeOrigin = frontHit.point + forward * 0.15f + Vector3.up * (vaultMaxHeight + 0.3f);
-        bool hasTopHit = Physics.Raycast(topProbeOrigin, Vector3.down, out RaycastHit topHit, vaultMaxHeight + 0.5f, obstacleMask, QueryTriggerInteraction.Ignore);
-        if (drawDebug) Debug.DrawRay(topProbeOrigin, Vector3.down * (vaultMaxHeight + 0.5f), hasTopHit ? Color.yellow : Color.red);
-        if (!hasTopHit) return false;
+        float frontProbeHeight = g.minHeight * 0.5f;
+        Vector3 origin = position + Vector3.up * frontProbeHeight;
 
-        float obstacleHeight = topHit.point.y - transform.position.y;
-        if (obstacleHeight < vaultMinHeight || obstacleHeight > vaultMaxHeight)
+        if (!Physics.Raycast(origin, forward, out RaycastHit frontHit, g.checkDistance, g.obstacleMask, QueryTriggerInteraction.Ignore))
         {
-            if (drawDebug) Debug.DrawLine(topHit.point, topHit.point + Vector3.up * 0.3f, Color.red);
             return false;
         }
 
-        float clearanceRadius = controller.radius * 0.9f;
-        Vector3 clearancePoint = topHit.point + Vector3.up * (clearanceRadius + 0.05f);
-        bool clearanceBlocked = Physics.CheckSphere(clearancePoint, clearanceRadius, obstacleMask, QueryTriggerInteraction.Ignore);
-        if (drawDebug)
+        Vector3 topProbeOrigin = frontHit.point + forward * 0.15f + Vector3.up * (g.maxHeight + 0.3f);
+        if (!Physics.Raycast(topProbeOrigin, Vector3.down, out RaycastHit topHit, g.maxHeight + 0.5f, g.obstacleMask, QueryTriggerInteraction.Ignore))
         {
-            Debug.DrawLine(clearancePoint - Vector3.right * clearanceRadius, clearancePoint + Vector3.right * clearanceRadius, clearanceBlocked ? Color.red : Color.cyan);
-            Debug.DrawLine(clearancePoint - Vector3.forward * clearanceRadius, clearancePoint + Vector3.forward * clearanceRadius, clearanceBlocked ? Color.red : Color.cyan);
+            return false;
         }
-        if (clearanceBlocked)
+
+        float obstacleHeight = topHit.point.y - position.y;
+        if (obstacleHeight < g.minHeight || obstacleHeight > g.maxHeight)
+        {
+            return false;
+        }
+
+        float clearanceRadius = g.radius * 0.9f;
+        Vector3 clearancePoint = topHit.point + Vector3.up * (clearanceRadius + 0.05f);
+        if (Physics.CheckSphere(clearancePoint, clearanceRadius, g.obstacleMask, QueryTriggerInteraction.Ignore))
         {
             return false;
         }
 
         // Le point d'arrivée horizontal, au-delà de l'obstacle.
-        Vector3 horizontalLanding = topHit.point + forward * vaultLandingProbeDistance;
+        Vector3 horizontalLanding = topHit.point + forward * g.landingProbeDistance;
 
         // La capsule ENTIÈRE doit arriver derrière l'obstacle. À 0,25 m derrière une barricade de
         // 0,50 m de profondeur, une capsule de 0,35 m de rayon mordait encore 10 cm sur son arête, et
@@ -3466,13 +3505,16 @@ public class PlayerLocomotion : NetworkBehaviour
         // banc le 2026-10-13). On cherche la face arrière, par un rayon tiré de l'autre côté vers
         // l'obstacle juste sous son sommet, et l'arrivée est repoussée d'un rayon de capsule (plus la
         // peau) au-delà. Géométrie statique : le même calcul chez le client qui prédit et le serveur.
-        float backClearance = controller.radius + controller.skinWidth;
-        float backProbeReach = vaultLandingProbeDistance + backClearance + 0.5f;
+        // De biais, il faut aller plus loin le long du regard pour s'écarter d'autant de la face
+        // (`facing`) : à 45°, la capsule mordait encore l'arête.
+        float backClearance = g.radius + g.skinWidth;
+        float backProbeReach = g.landingProbeDistance + backClearance + 0.5f;
         Vector3 backProbeOrigin = topHit.point + forward * backProbeReach + Vector3.down * 0.05f;
-        if (Physics.Raycast(backProbeOrigin, -forward, out RaycastHit backHit, backProbeReach, obstacleMask, QueryTriggerInteraction.Ignore))
+        if (Physics.Raycast(backProbeOrigin, -forward, out RaycastHit backHit, backProbeReach, g.obstacleMask, QueryTriggerInteraction.Ignore))
         {
-            float needed = Vector3.Dot(backHit.point - topHit.point, forward) + backClearance;
-            if (needed > vaultLandingProbeDistance) horizontalLanding = topHit.point + forward * needed;
+            float facing = Mathf.Max(0.5f, Mathf.Abs(Vector3.Dot(backHit.normal, forward)));
+            float needed = Vector3.Dot(backHit.point - topHit.point, forward) + backClearance / facing;
+            if (needed > g.landingProbeDistance) horizontalLanding = topHit.point + forward * needed;
         }
 
         // SONDE DE SOL. Sans elle, on atterrissait à l'ALTITUDE DU SOMMET de l'obstacle : le
@@ -3483,27 +3525,102 @@ public class PlayerLocomotion : NetworkBehaviour
         // déjà "LandingProbeDistance" : la sonde était prévue, elle n'avait jamais été écrite.
         //
         // La chute est BORNÉE : sans plafond, franchir une barricade au bord d'un vide
-        // téléporterait au fond. Au-delà de la borne on garde l'arrivée haute et c'est la
-        // gravité qui fait le reste, ce qui est le comportement sûr.
+        // téléporterait au fond. Au-delà de la borne, pas de passage (GDD § 7 : « du sol
+        // derrière ») : du haut d'une caisse de 2 m, le robot tombait au fond du bloc central
+        // de l'arène, une pièce sans toit et sans issue (2026-11-04).
         Vector3 probeOrigin = horizontalLanding + Vector3.up * 0.1f;
-        if (Physics.Raycast(probeOrigin, Vector3.down, out RaycastHit groundHit,
-                            vaultMaxLandingDrop + 0.1f, obstacleMask, QueryTriggerInteraction.Ignore))
-        {
-            landingPoint = groundHit.point;
-        }
-        else
-        {
-            landingPoint = horizontalLanding;
-        }
+        bool groundBehind = Physics.Raycast(probeOrigin, Vector3.down, out RaycastHit groundHit, g.maxLandingDrop + 0.1f, g.obstacleMask, QueryTriggerInteraction.Ignore);
 
         obstacleTopY = topHit.point.y;
-
-        if (drawDebug)
+        float peakY = obstacleTopY + g.obstacleClearance;
+        if (groundBehind && VaultPathClear(topHit.point, groundHit.point, peakY, g))
         {
-            Debug.DrawLine(topHit.point, horizontalLanding, Color.green);
-            Debug.DrawLine(horizontalLanding, landingPoint, Color.magenta);
+            landingPoint = groundHit.point;
+            return true;
         }
+
+        // Le passage est fermé : le robot se hisse sur l'obstacle, s'il y tient.
+        return FindPerch(topHit.point, forward, g, out landingPoint)
+            && VaultPathClear(topHit.point, landingPoint, peakY, g);
+    }
+
+    /// <summary>
+    /// Où le robot se tient sur l'obstacle quand le passage est fermé (2026-11-04, demandé par l'utilisateur : devant une caisse
+    /// collée à un mur, il se hisse dessus) : au plus aussi loin qu'une arrivée ordinaire, sa capsule entière devant ce qui la
+    /// ferme, et ses pieds sur le dessus. Un dessus trop étroit ne le porte pas : une barricade, ou le mur de 50 cm du bloc
+    /// central, où il marcherait à 3 m de haut. Le balayage ignore ce que la capsule touche à son départ : VaultPathClear juge
+    /// ensuite si elle y tient.
+    /// </summary>
+    private static bool FindPerch(Vector3 onTop, Vector3 forward, in VaultGeometry g, out Vector3 perch)
+    {
+        float reach = g.landingProbeDistance;
+        Vector3 feet = onTop + Vector3.up * (g.stepOffset + g.radius);
+        Vector3 head = onTop + Vector3.up * (g.standingHeight - g.radius);
+        if (Physics.CapsuleCast(feet, head, g.radius, forward, out RaycastHit wall, reach + g.skinWidth, g.obstacleMask, QueryTriggerInteraction.Ignore))
+        {
+            reach = Mathf.Max(0f, wall.distance - g.skinWidth);
+        }
+
+        // La face arrière, cherchée du bord de ses pieds, juste sous le dessus : au-dessus de l'obstacle, ce rayon part de
+        // l'intérieur et ne voit rien. La sonde d'une arrivée ordinaire, elle, peut buter sur le mur qui ferme le passage.
+        float footing = g.radius * 0.9f;
+        Vector3 underTop = onTop + forward * (reach + footing) + Vector3.down * 0.05f;
+        if (Physics.Raycast(underTop, -forward, out RaycastHit back, reach + footing, g.obstacleMask, QueryTriggerInteraction.Ignore))
+        {
+            reach -= back.distance;
+        }
+
+        // Ses pieds portent de tous les côtés, à ce que le contrôleur enjambe près : de biais, un mur de 50 cm est profond le
+        // long du regard, et huit rayons n'en laissent passer aucun.
+        perch = onTop + forward * reach;
+        Vector3 above = perch + Vector3.up * g.stepOffset;
+        for (int i = 0; i < 8; i++)
+        {
+            Vector3 foot = above + Quaternion.AngleAxis(i * 45f, Vector3.up) * forward * footing;
+            if (!Physics.Raycast(foot, Vector3.down, 2f * g.stepOffset, g.obstacleMask, QueryTriggerInteraction.Ignore)) return false;
+        }
+
+        if (!Physics.Raycast(above, Vector3.down, out RaycastHit ground, 2f * g.stepOffset, g.obstacleMask, QueryTriggerInteraction.Ignore))
+        {
+            return false;
+        }
+
+        perch = ground.point;
         return true;
+    }
+
+    /// <summary>
+    /// Le robot peut-il aller d'au-dessus de l'obstacle à son arrivée (2026-11-04, l'utilisateur : « il passe à travers
+    /// les murs ») ? Le contrôleur est coupé pendant l'arc : rien d'autre n'arrête le robot. Une caisse collée à un mur
+    /// le faisait passer dedans, ou derrière : la sonde de la face arrière, partie de l'autre côté du mur, y trouvait une
+    /// arrivée libre (le bloc central de l'arène, fermé, s'ouvrait ainsi).
+    ///
+    /// Le robot passe ramassé (`tuckedHeight`, la hauteur d'un robot accroupi), les pieds au sommet de l'arc (`peakY`),
+    /// du point au-dessus de l'obstacle jusqu'au-dessus de son arrivée, puis descend, et il faut qu'il y tienne debout :
+    /// à partir de ce que le contrôleur enjambe, pour qu'une marche à l'arrivée ne refuse rien. Le chevauchement s'ajoute
+    /// aux balayages, qui ignorent ce qu'ils touchent au départ.
+    /// </summary>
+    private static bool VaultPathClear(Vector3 overObstacle, Vector3 landing, float peakY, in VaultGeometry g)
+    {
+        float radius = g.radius * 0.9f;
+        Vector3 toHead = Vector3.up * Mathf.Max(0f, g.tuckedHeight - 2f * radius);
+        Vector3 from = new Vector3(overObstacle.x, peakY + radius, overObstacle.z);
+        Vector3 to = new Vector3(landing.x, peakY + radius, landing.z);
+        if (Physics.CheckCapsule(from, from + toHead, radius, g.obstacleMask, QueryTriggerInteraction.Ignore)) return false;
+
+        Vector3 across = to - from;
+        float distance = across.magnitude;
+        if (distance > 1e-3f && Physics.CapsuleCast(from, from + toHead, radius, across / distance, distance, g.obstacleMask, QueryTriggerInteraction.Ignore))
+            return false;
+
+        float standingBottom = landing.y + g.stepOffset + radius;
+        float descent = to.y - standingBottom;
+        if (descent > 1e-3f && Physics.CapsuleCast(to, to + toHead, radius, Vector3.down, descent, g.obstacleMask, QueryTriggerInteraction.Ignore))
+            return false;
+
+        Vector3 feet = new Vector3(landing.x, standingBottom, landing.z);
+        Vector3 head = new Vector3(landing.x, landing.y + g.standingHeight - radius, landing.z);
+        return !Physics.CheckCapsule(feet, head, radius, g.obstacleMask, QueryTriggerInteraction.Ignore);
     }
 
     private float vaultTimer;
@@ -3573,7 +3690,12 @@ public class PlayerLocomotion : NetworkBehaviour
         // La reference est le point BAS des deux extremites, pas leur moyenne : c'est le choix
         // conservateur, il garantit le franchissement meme quand depart et arrivee sont a des
         // hauteurs differentes.
-        float basDeLArc = Mathf.Min(vaultStart.y, vaultEnd.y);
+        //
+        // Sauf pour monter sur l'obstacle (2026-11-04) : l'interpolation eleve deja le robot, et
+        // depuis le point bas, l'arc le lancait 50 cm au-dessus d'une caisse d'un metre, les yeux
+        // par-dessus un mur de 3 m. Depuis le milieu, le haut de l'arc tombe sur vaultPeakY, la ou
+        // FindVault a verifie le passage.
+        float basDeLArc = vaultEnd.y > vaultStart.y ? (vaultStart.y + vaultEnd.y) * 0.5f : Mathf.Min(vaultStart.y, vaultEnd.y);
         float amplitude = Mathf.Max(vaultArcHeight, vaultPeakY - basDeLArc);
         float arc = vaultHeightCurve.Evaluate(t) * amplitude;
 

@@ -855,6 +855,85 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(UnityEngine.Rendering.ShadowCastingMode.Off, seenSight.Lens.shadowCastingMode, "Toujours sans ombre.");
     }
 
+    /// <summary>La vitre d'un viseur filtre, elle n'éclaire pas (2026-11-03) : vue de face, elle n'ajoute rien à un
+    /// décor noir, et n'assombrit un décor gris que de son alpha. Elle y ajoutait 12 % de sa teinte : dans la
+    /// pénombre de l'arène, la vue se voilait de bleu (l'utilisateur : « pas assez transparents »). Un vrai rendu,
+    /// avec la vitre de chaque viseur, celle des pistolets comprise, loin de son réticule.</summary>
+    [Test]
+    public void LaVitreDUnViseur_NeVoilePasLeDecor_VueDeFace()
+    {
+        const int layer = 31, size = 64;
+        var target = new RenderTexture(size, size, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
+        var read = new Texture2D(size, size, TextureFormat.RGBA32, false, true);
+        var cameraObject = new GameObject("Caméra (test des vitres)");
+        created.Add(cameraObject);
+        cameraObject.transform.position = new Vector3(0f, -1000f, 0f);
+        var camera = cameraObject.AddComponent<Camera>();
+        camera.enabled = false;
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.cullingMask = 1 << layer;
+        camera.fieldOfView = 30f;
+        camera.nearClipPlane = 0.01f;
+        camera.farClipPlane = 10f;
+        camera.allowHDR = false;
+        camera.allowMSAA = false;
+        camera.targetTexture = target;
+
+        // La vitre devant la caméra, son axe (+Z) dans le regard : le réticule au centre de l'image. On lit à
+        // 200 mrad de l'axe, hors de son image (60 mrad).
+        GameObject lens = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        created.Add(lens);
+        Object.DestroyImmediate(lens.GetComponent<Collider>());
+        lens.layer = layer;
+        lens.transform.SetPositionAndRotation(cameraObject.transform.position + Vector3.forward * 0.5f, Quaternion.identity);
+        var renderer = lens.GetComponent<MeshRenderer>();
+
+        Color Render(Material material, Color background)
+        {
+            renderer.sharedMaterial = material;
+            camera.backgroundColor = background;
+            camera.Render();
+            RenderTexture previous = RenderTexture.active;
+            RenderTexture.active = target;
+            read.ReadPixels(new Rect(0, 0, size, size), 0, 0);
+            read.Apply();
+            RenderTexture.active = previous;
+            return read.GetPixel(8, size / 2);
+        }
+
+        var lenses = new List<(string name, Material material)>();
+        AttachmentCatalog catalog = Catalog();
+        for (int sight = 1; sight <= WeaponAttachments.SightCount; sight++)
+        {
+            WeaponAttachment a = catalog.SightPrefab(sight).GetComponent<WeaponAttachment>();
+            lenses.Add((a.Code, a.Lens.sharedMaterial));
+            if (a.PistolLens != null) lenses.Add((a.Code + " (pistolet)", a.PistolLens));
+        }
+        try
+        {
+            // La couleur du fond est en sRGB ; le rendu se lit en linéaire.
+            var gray = new Color(0.5f, 0.5f, 0.5f, 1f);
+            Color behind = gray.linear;
+            foreach ((string name, Material material) in lenses)
+            {
+                Color onBlack = Render(material, Color.black);
+                Assert.Less(Mathf.Max(onBlack.r, onBlack.g, onBlack.b), 0.01f, $"{name} : sa vitre éclaire un décor noir ({onBlack}).");
+                Color onGray = Render(material, gray);
+                Assert.Greater(onGray.g, behind.g * 0.93f, $"{name} : sa vitre assombrit trop un décor gris ({onGray}).");
+                Assert.Less(onGray.b, behind.b + 0.02f, $"{name} : sa vitre teinte un décor gris ({onGray}).");
+            }
+            // Garde : on lit bien le rendu (le décor gris ressort gris, pas noir).
+            Assert.Greater(Render(lenses[0].material, gray).g, behind.g * 0.8f, "Garde : la caméra ne rend rien.");
+            Assert.Greater(lenses.Count, WeaponAttachments.SightCount, "Garde : les vitres des pistolets sont là.");
+        }
+        finally
+        {
+            camera.targetTexture = null;
+            Object.DestroyImmediate(target);
+            Object.DestroyImmediate(read);
+        }
+    }
+
     [Test]
     public void UnViseurMonte_CacheLesOrganesDeVisee_EtLesRendQuandIlPart()
     {

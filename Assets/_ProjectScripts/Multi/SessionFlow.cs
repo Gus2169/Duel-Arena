@@ -63,6 +63,7 @@ public class SessionFlow : MonoBehaviour
         approvedPlayerIds.Clear();
         LaunchOrder.Clear();
         LaunchTeams.Clear();
+        LeavingToMenu = false;
     }
 
     /// <summary>
@@ -119,6 +120,17 @@ public class SessionFlow : MonoBehaviour
     /// <summary>Message à montrer à l'arrivée dans le menu (pourquoi on y revient), vide sinon.
     /// MainMenuController le lit et le vide.</summary>
     public static string PendingMenuMessage { get; set; } = "";
+
+    /// <summary>La raison que l'hôte qui s'en va donne à ses clients : celle de Netcode quand l'hôte s'arrête
+    /// (NetworkManager.ProcessServerShutdown), que MenuMessageFor traduit.</summary>
+    public const string HostLeftReason = "Disconnected due to host shutting down.";
+
+    /// <summary>Cette machine revient au menu (ReturnToMenu), jusqu'à ce que le menu soit là (ArrivedInMenu) :
+    /// l'arène reste sous le noir en attendant (GameHud).</summary>
+    public static bool LeavingToMenu { get; private set; }
+
+    /// <summary>Le menu est là : le retour est fini (MainMenuController).</summary>
+    public static void ArrivedInMenu() => LeavingToMenu = false;
 
     private NetworkManager networkManager;
     private bool returningToMenu;
@@ -415,10 +427,12 @@ public class SessionFlow : MonoBehaviour
     public static string MenuMessageFor(string disconnectReason, bool wasHost)
     {
         string reason = disconnectReason ?? "";
+        // Dit pourquoi on revient au menu, pas seulement ce qui s'est passé (2026-11-03, l'utilisateur : les clients
+        // revenaient au menu sans comprendre pourquoi ; la raison n'était qu'une ligne au bas de l'écran Jouer).
         if (reason.IndexOf("host shutting down", System.StringComparison.OrdinalIgnoreCase) >= 0)
-            return "L'hôte a quitté la partie.";
+            return "L'hôte a quitté la partie. Sans lui, elle ne peut pas continuer : elle s'est arrêtée pour tout le monde.";
         if (reason.Length == 0 || reason.StartsWith("[Disconnect Event]", System.StringComparison.Ordinal))
-            return wasHost ? "" : "La connexion avec l'hôte a été perdue, ou il a quitté la partie.";
+            return wasHost ? "" : "La connexion avec l'hôte a été perdue : il a peut-être fermé le jeu, ou le réseau a coupé. La partie s'est arrêtée.";
         return reason;
     }
 
@@ -430,6 +444,7 @@ public class SessionFlow : MonoBehaviour
     public static void ReturnToMenu(string message)
     {
         PendingMenuMessage = message ?? "";
+        LeavingToMenu = true;
         LaunchOrder.Clear();
         LaunchTeams.Clear();
         Cursor.lockState = CursorLockMode.None;
@@ -465,6 +480,23 @@ public class SessionFlow : MonoBehaviour
     /// </summary>
     private IEnumerator LeaveSession()
     {
+        // L'hôte qui s'en va le dit à ses clients avant de fermer quoi que ce soit (2026-11-03) : en ligne, le salon
+        // qu'il ferme arrête Netcode sans eux, et ils n'apprenaient pas pourquoi la partie s'arrêtait. En réseau local,
+        // Netcode leur donne la même raison en s'arrêtant (ProcessServerShutdown) ; ils sont alors déjà partis.
+        if (networkManager.IsServer && networkManager.IsListening)
+        {
+            bool others = false;
+            foreach (ulong clientId in new List<ulong>(networkManager.ConnectedClientsIds))
+            {
+                if (clientId == NetworkManager.ServerClientId) continue;
+                networkManager.DisconnectClient(clientId, HostLeftReason);
+                others = true;
+            }
+            float told = Time.realtimeSinceStartup + 1f;
+            while (others && networkManager.ConnectedClientsIds.Count > (networkManager.IsHost ? 1 : 0) && Time.realtimeSinceStartup < told)
+                yield return null;
+        }
+
         if (OnlineSession.InSession)
         {
             Task leaving = OnlineSession.LeaveAsync();

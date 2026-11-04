@@ -33,7 +33,11 @@ public class MenuUxmlTests
             "playBackButton", "customBackButton", "optionsBackButton", "quitModal", "pseudoModal", "pseudoField",
             "pseudoModalLogo", "quitCancelButton", "quitBackHint", "quitConfirmButton", "pseudoOkButton",
             "joinCodeButton", "joinCodeField", "hostPortField", "joinIpField", "joinPortField", "hostButton",
-            "joinButton", "joinButtonLabel", "localIpLabel", "lanRulesLabel", "playStatusLabel");
+            "joinButton", "joinButtonLabel", "localIpLabel", "lanRulesLabel", "playStatusLabel",
+            "sessionEndModal", "sessionEndText", "sessionEndOkButton", "loadingScreen");
+        VisualElement loading = root.Q("loadingScreen");
+        Assert.AreEqual(loading.parent.childCount - 1, loading.parent.IndexOf(loading), "Le chargement passe par-dessus tout le menu.");
+        Assert.AreEqual(GameHud.LoadingTitle(false, false), root.Q<Label>("loadingScreenTitle").text, "Le même mot que dans le noir de l'arène.");
         AssertNames(root, "PlayScreenController",
             "playTabModes", "playTabLobbies", "playTabTraining", "playTabRanking", "playPageModes", "playPageLobbies",
             "playPageTraining", "modeGrid", "trainingGrid", "playDetailImage", "playDetailCaption", "playDetailTitle",
@@ -62,6 +66,18 @@ public class MenuUxmlTests
         AssertNames(root, "PauseMenu", "pauseRoot", "pauseInviteLabel", "pauseMain", "pauseOptions",
             "pauseResumeButton", "pauseOptionsButton", "pauseQuitButton", "pauseOptionsBackButton");
         AssertOptionsPanel(root);
+    }
+
+    /// <summary>La Zone (2026-11-04) : les barres des points, l'objectif et les losanges des repères que cherche GameHud.</summary>
+    [Test]
+    public void LaZone_PorteSesBarresEtSesReperes()
+    {
+        VisualElement root = Clone("Assets/_ProjectUI/Game/GameHud.uxml");
+        AssertNames(root, "GameHud", "scoreGoal", "leftGauge", "leftGaugeFill", "rightGauge", "rightGaugeFill", "zoneStatus",
+            "zoneMarker", "zoneMarkerIcon", "zoneMarkerHalo", "zoneMarkerLabel",
+            "nextZoneMarker", "nextZoneMarkerIcon", "nextZoneMarkerHalo", "nextZoneMarkerLabel");
+        Assert.IsTrue(root.Q("rightGauge").ClassListContains("score-gauge--mirror"), "À droite, la barre monte aussi vers le chrono.");
+        Assert.IsTrue(root.Q("leftGauge").ClassListContains("hidden") && root.Q("scoreGoal").ClassListContains("hidden"), "Hors de la Zone, rien.");
     }
 
     /// <summary>Le menu de pause du stand de tir (2026-10-27) : le même que celui de la partie, les Options
@@ -169,20 +185,33 @@ public class MenuUxmlTests
         Assert.AreEqual(PickingMode.Ignore, board.pickingMode, "Il ne prend jamais la souris.");
     }
 
-    /// <summary>Le replay du coup mortel (2026-11-03) : les éléments que cherche GameHud, cachés au départ, qui ne prennent
-    /// jamais la souris, et sous le noir, qui le couvre au passage.</summary>
+    /// <summary>La légende de la kill cam (2026-11-04) : les éléments que cherche GameHud, cachés au départ, qui ne prennent
+    /// jamais la souris, et sous le noir de la fin de manche.</summary>
     [Test]
-    public void LeHud_PorteLeBandeauDuReplay()
+    public void LeHud_PorteLaLegendeDeLaKillCam()
     {
         VisualElement root = Clone("Assets/_ProjectUI/Game/GameHud.uxml");
-        AssertNames(root, "GameHud", "replayFrame", "replayTitle", "replayLine");
-        VisualElement frame = root.Q("replayFrame");
-        Assert.IsTrue(frame.ClassListContains("hidden"), "Caché hors du replay.");
-        Assert.AreEqual(PickingMode.Ignore, frame.pickingMode, "Il ne prend jamais la souris.");
-        Assert.AreEqual("LE COUP MORTEL", root.Q<Label>("replayTitle").text);
+        AssertNames(root, "GameHud", "killCamCaption", "killCamTitle", "killCamLine");
+        VisualElement frame = root.Q("killCamCaption");
+        Assert.IsTrue(frame.ClassListContains("hidden"), "Cachée hors de la kill cam.");
+        Assert.AreEqual(PickingMode.Ignore, frame.pickingMode, "Elle ne prend jamais la souris.");
+        Assert.AreEqual("LE COUP MORTEL", root.Q<Label>("killCamTitle").text);
         VisualElement fade = root.Q("fade");
         Assert.AreEqual(frame.parent, fade.parent);
         Assert.Less(frame.parent.IndexOf(frame), fade.parent.IndexOf(fade), "Le noir passe par-dessus le bandeau.");
+    }
+
+    /// <summary>Le chargement dans l'arène (2026-11-03) : ce que cherche GameHud, porté par le noir, qui l'emporte quand
+    /// il se lève, et qui ne prend jamais la souris.</summary>
+    [Test]
+    public void LeHud_PorteLEcranDeChargement_DansLeNoir()
+    {
+        VisualElement root = Clone("Assets/_ProjectUI/Game/GameHud.uxml");
+        AssertNames(root, "GameHud", "fade", "loadingBlock", "loadingTitle");
+        VisualElement block = root.Q("loadingBlock");
+        Assert.AreEqual(root.Q("fade"), block.parent, "Dans le noir : il se lève avec lui.");
+        Assert.AreEqual(PickingMode.Ignore, block.pickingMode, "Il ne prend jamais la souris.");
+        Assert.AreEqual(GameHud.LoadingTitle(false, false), root.Q<Label>("loadingTitle").text, "Le même mot que le menu.");
     }
 
     /// <summary>La vue d'un robot touché par un caillou (2026-10-27) : l'élément que cherche HitIndicatorHud, un
