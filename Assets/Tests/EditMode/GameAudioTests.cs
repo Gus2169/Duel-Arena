@@ -107,6 +107,24 @@ public class GameAudioTests
         Assert.IsFalse(WeaponController.TryPickFlyby(origin, null, 0, ear, WeaponController.FlybyRadius, out _));
     }
 
+    /// <summary>Un tir reçu est relu dans un tampon partagé, plus long que lui (ShotPacket) : ce qui suit ses plombs vient
+    /// d'un tir d'avant, qui ne siffle pas une seconde fois.</summary>
+    [Test]
+    public void UnTirRecu_NeSifflePasPourLesPlombsDUnTirDAvant()
+    {
+        var origin = Vector3.zero;
+        var ear = new Vector3(0f, 0f, 20f);
+        var ends = new[]
+        {
+            new Vector3(8f, 0f, 40f),  // trop loin de l'oreille
+            new Vector3(1f, 0f, 40f),  // passe à 0,5 m, mais il reste du tir d'avant
+        };
+        Assert.IsTrue(WeaponController.TryPickFlyby(origin, ends, 2, 0, ear, WeaponController.FlybyRadius, out _),
+            "Garde : comptés tous les deux, ils sifflent.");
+        Assert.IsFalse(WeaponController.TryPickFlyby(origin, ends, 1, 0, ear, WeaponController.FlybyRadius, out _),
+            "Seuls les plombs de ce tir comptent.");
+    }
+
     // ------------------------------------------------------------------ Franchir, retomber
 
     /// <summary>Une image du serveur : (franchissait, franchit, était au sol, est au sol, vitesse de chute).</summary>
@@ -303,6 +321,25 @@ public class GameAudioTests
             }
         }
         Assert.IsNotNull(sounds.ambienceLoop, "ambienceLoop");
+    }
+
+    /// <summary>Une musique se lit en flux : décodée d'un bloc, celle du menu arrêtait le fil principal à son premier Play et
+    /// gardait une trentaine de mégaoctets en mémoire. L'importeur répond, pas le .meta. Vu échouer, celle du menu remise en
+    /// « Decompress On Load ».</summary>
+    [Test]
+    public void LesMusiques_SeLisentEnFlux()
+    {
+        var sounds = UnityEditor.AssetDatabase.LoadAssetAtPath<GameSounds>(GameSoundsPath);
+        Assert.IsNotNull(sounds, "Asset introuvable : " + GameSoundsPath);
+        var tracks = new List<MusicTrack>(sounds.victoryMusic) { sounds.menuMusic, sounds.preparationMusic };
+        foreach (MusicTrack track in tracks)
+        {
+            string path = UnityEditor.AssetDatabase.GetAssetPath(track.clip);
+            var importer = UnityEditor.AssetImporter.GetAtPath(path) as UnityEditor.AudioImporter;
+            Assert.IsNotNull(importer, "Pas d'importeur audio : " + path);
+            Assert.AreEqual(AudioClipLoadType.Streaming, importer.defaultSampleSettings.loadType, path);
+            Assert.IsTrue(importer.loadInBackground, path);
+        }
     }
 
     [Test]

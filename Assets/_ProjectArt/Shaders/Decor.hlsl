@@ -106,7 +106,7 @@ SAMPLER(sampler_MarquageTex);
 // Le rendu de toute la scène (Shader.SetGlobalFloat) : 0 low poly propre, 1 cel-shading, 2 les deux mêlés.
 float _DecorStyle;
 
-// Le replay du coup mortel assombrit le décor autour des robots (KillReplay, le temps du rendu de sa caméra
+// La kill cam assombrit le décor autour des robots (le temps du rendu de sa caméra
 // seulement ; 0 partout ailleurs) : de 0 à 1, vers un gris froid presque noir, désaturé.
 float _ReplayDim;
 
@@ -116,6 +116,7 @@ half3 DecorReplayDim(half3 color)
     return lerp(color, gris * half3(0.15, 0.16, 0.19), (half)_ReplayDim);
 }
 
+#define ARME_HACHAGE_RAPIDE
 #include "UsureBlender.hlsl"
 
 // --- le repère ------------------------------------------------------------------------------------
@@ -282,7 +283,7 @@ ArmeSurface DecorArchitecture(float3 positionWS, float3 aligne, float3 normaleAl
             // Des taches d'huile au sol, rares : plus sombres, luisantes, aux bords fondus.
             float t = ArmeBruit(aligne * 0.55 + 41.0, 1.0, 2, 0.6);
             float o = smoothstep(0.70 - 0.08 * _Huiles, 0.80 - 0.08 * _Huiles, t);
-            if (o > 0.0 && proche > 0.0) o *= lerp(1.0, 0.55 + 0.45 * ArmeBruit(aligne * 3.0 + 7.0, 1.0, 1, 0.5), proche);
+            if (o > 0.0 && proche > 0.0) o *= lerp(1.0, 0.55 + 0.45 * ArmeBruit(aligne + 7.0 / 3.0, 3.0, 1, 0.5), proche);
             couleur *= 1.0 - o * 0.35;
             rug = lerp(rug, 0.3, o);
         }
@@ -313,10 +314,10 @@ ArmeSurface DecorArchitecture(float3 positionWS, float3 aligne, float3 normaleAl
         float wH = max(fwidth(hauteur), 1e-4);
         float bande = saturate((_Soubassement.x - hauteur) / wH + 0.5);
         float lisere = saturate((hauteur - _Soubassement.y) / wH + 0.5) * saturate((_Soubassement.z - hauteur) / wH + 0.5);
-        if (usure && _Soubassement.w > 0.0 && proche > 0.0)
+        if (usure && _Soubassement.w > 0.0 && proche > 0.0 && max(bande, lisere) > 0.0)
         {
             // La peinture s'en va par petites plaques, surtout en bas, où l'on frotte.
-            float n = ArmeBruit(aligne * 7.0 + 13.0, 1.0, 3, 0.6);
+            float n = ArmeBruit(aligne + 13.0 / 7.0, 7.0, 3, 0.6);
             float seuil = 0.74 - 0.2 * _Soubassement.w * (1.0 - saturate(hauteur / 0.6) * 0.7);
             float partie = ArmeAuDessus(n, seuil) * proche;
             bande *= 1.0 - partie;
@@ -337,7 +338,7 @@ ArmeSurface DecorArchitecture(float3 positionWS, float3 aligne, float3 normaleAl
         float bandes = DecorTrait(abs(frac(s) - 0.25), 0.25);
         float h = dans * bandes;
         if (usure && _Hachures.w > 0.0 && proche > 0.0 && h > 0.0)
-            h *= 1.0 - ArmeAuDessus(ArmeBruit(aligne * 4.1 + 29.0, 1.0, 3, 0.6), 0.70 - 0.2 * _Hachures.w) * proche;
+            h *= 1.0 - ArmeAuDessus(ArmeBruit(aligne + 29.0 / 4.1, 4.1, 3, 0.6), 0.70 - 0.2 * _Hachures.w) * proche;
         couleur = lerp(couleur, _CouleurHachures.rgb, h);
         rug = lerp(rug, 0.55, h);
     }
@@ -417,29 +418,29 @@ float DecorProche(float3 positionWS)
     return saturate((26.0 - distance(positionWS, GetCameraPositionWS())) / 8.0);
 }
 
+// Une pièce de Blender en cel-shading pur : sa couleur, sans aucun bruit.
+ArmeSurface DecorPieceUnie()
+{
+    ArmeSurface s;
+    s.albedo = _Base.rgb;
+    s.metallic = _Metal;
+    s.smoothness = 1.0 - _Rug;
+    s.emission = _EmissionCouleur.rgb * _ForceEmission;
+    s.occlusion = 1.0;
+    s.coat = _Coat;
+    return s;
+}
+
 // La surface, selon l'espace et le rendu. `positionOS`, `normalOS`, `uv` : ceux de la pièce (espace 1). `proche` : la
 // part de détail fin (DecorProche ; 1 pour la cuisson de la lumière).
 ArmeSurface DecorSurface(float3 positionWS, float3 aligne, float3 normaleAlignee, float3 positionOS, float3 normalOS,
                          float2 uv, float bord, float proche)
 {
     bool usure = _DecorStyle < 0.5 || _DecorStyle > 1.5;
-    ArmeSurface s;
-    if (_Espace > 0.5)
-    {
-        s = ArmeUsure(positionOS, normalOS, uv, bord);
-        if (!usure)
-        {
-            s.albedo = _Base.rgb;
-            s.metallic = _Metal;
-            s.smoothness = 1.0 - _Rug;
-            s.occlusion = 1.0;
-        }
-        DecorCrassePiece(s, positionWS, usure);
-    }
-    else
-    {
-        s = DecorArchitecture(positionWS, aligne, normaleAlignee, bord, usure, proche);
-    }
+    if (_Espace <= 0.5) return DecorArchitecture(positionWS, aligne, normaleAlignee, bord, usure, proche);
+    if (!usure) return DecorPieceUnie();
+    ArmeSurface s = ArmeUsure(positionOS, normalOS, uv, bord);
+    DecorCrassePiece(s, positionWS, usure);
     return s;
 }
 

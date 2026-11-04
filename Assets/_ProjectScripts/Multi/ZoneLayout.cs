@@ -78,10 +78,12 @@ public class ZoneLayout : MonoBehaviour
     private ArcLines arcs;
     [System.NonSerialized] private MaterialPropertyBlock block;
     private float nextCrackle;
+    private bool zoneShown;
 
     private void Awake()
     {
         if (!Application.isPlaying || zoneMaterial == null) return;
+        zoneShown = false;
         Mesh ring = RingMesh(radius - 0.12f, radius, 72);
         Mesh wall = WallMesh(radius, wallHeight, 72);
         Mesh column = ColumnMesh(columnRadius, columnBottom, columnTop, 24);
@@ -110,6 +112,9 @@ public class ZoneLayout : MonoBehaviour
         bool live = rm != null && rm.IsSpawned;
         int shown = live ? rm.ShownZone : -1;
         int next = live ? rm.AnnouncedZone : -1;
+        bool anyShown = shown >= 0 || next >= 0;
+        if (!MustDraw(anyShown, zoneShown)) return;
+        zoneShown = anyShown;
         Camera viewer = Camera.main;
         for (int i = 0; i < zones.Length; i++)
         {
@@ -138,6 +143,11 @@ public class ZoneLayout : MonoBehaviour
         }
         Crackle(rm, shown);
     }
+
+    /// <summary>Y a-t-il quelque chose à faire à cette image ? Hors de la Zone, rien ne se montre et rien ne coûte ; mais une
+    /// dernière fois après la zone montrée à l'image d'avant, pour éteindre ses anneaux, ses parois, ses colonnes et ses
+    /// arcs. Fonction pure, testée.</summary>
+    public static bool MustDraw(bool anyShown, bool shownBefore) => anyShown || shownBefore;
 
     /// <summary>
     /// La part de son éclat que garde la paroi pour qui la regarde à `distance` mètres (à plat) du centre d'une zone de

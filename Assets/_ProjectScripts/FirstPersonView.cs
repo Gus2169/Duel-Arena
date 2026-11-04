@@ -40,7 +40,7 @@ public class FirstPersonView : NetworkBehaviour
     [SerializeField] private Camera playerCamera;
 
     [Header("Tenue de l'arme (ressenti)")]
-    [Tooltip("En visée : où tombe le centre de l'écran du viseur (repère « Mire » du fusil), dans le repère de la caméra (m). Sur l'axe, à la distance de l'œil : l'écran se regarde de face, la réticule au centre.")]
+    [Tooltip("En visée : où tombe la mire (repère « Mire » de l'arme ou du viseur), dans le repère de la caméra (m). Sur l'axe, à la distance de l'œil : la mire se regarde de face, la réticule au centre.")]
     [SerializeField] private Vector3 aimSightPosition = new Vector3(0f, 0f, 0.10f);
 
     [Tooltip("Sans viser : décalage de l'arme par rapport à la position de visée (m) — à droite, en bas.")]
@@ -126,7 +126,7 @@ public class FirstPersonView : NetworkBehaviour
     private Animator viewAnimator;
     private Transform sight;
     private Camera armsCamera;
-    private WeaponSight viewSight;
+    private bool armsPostProcessing;   // la caméra des bras porte le post-traitement de la pile (ShowArmsCamera)
     private PlayerLocomotion locomotion;
     private float aimBlend;
     private Vector3 lastPosition;
@@ -142,6 +142,8 @@ public class FirstPersonView : NetworkBehaviour
     private PlayerWeaponLooks weaponLooks;
     private PlayerChassis chassis;
     private PlayerWeaponAttachments weaponAttachments;
+    private Renderer viewSkin;        // une pièce de la copie : ses ombres sont celles de l'arme qu'on y met
+    private bool gloveWorn;           // le gant du taser est sur la copie (seulement pendant le coup)
     private MaterialPropertyBlock lensBlock;
     private static readonly int AxeCameraId = Shader.PropertyToID("_AxeCamera");
     private Transform viewRightHand;
@@ -169,11 +171,10 @@ public class FirstPersonView : NetworkBehaviour
     public Animator ViewAnimator => viewAnimator;
 
     /// <summary>L'œil est dans l'axe du viseur : c'est sa réticule qui marque le centre, le
-    /// réticule du HUD s'efface (CrosshairUI). Seulement pour une arme à viseur : un viseur monté
-    /// (2026-10-16, AttachmentMount) ou l'écran numérique de l'ancien fusil d'assaut ; une mire
-    /// métallique n'a pas de réticule, le HUD garde la sienne.</summary>
+    /// réticule du HUD s'efface (CrosshairUI). Seulement pour un viseur monté (2026-10-16,
+    /// AttachmentMount) ; une mire métallique n'a pas de réticule, le HUD garde la sienne.</summary>
     public bool SightOnAxis => view != null && !hidden && !spectatorMode && aimBlend > 0.9f && shownModel != null
-                               && (shownSight != null || (viewSight != null && viewSight.gameObject == shownModel.gameObject));
+                               && shownSight != null;
 
     /// <summary>Par où l'on regarde une fois l'arme épaulée.</summary>
     public enum ScopeView
@@ -246,8 +247,27 @@ public class FirstPersonView : NetworkBehaviour
     public void SetHidden(bool value)
     {
         hidden = value;
-        if (armsCamera != null) armsCamera.enabled = !value && !Scoped;
-        if (value && viewSight != null) viewSight.UpdateScreen(playerCamera, armsCamera, 0f);
+        ShowArmsCamera(!value && !Scoped);
+    }
+
+    /// <summary>
+    /// Allume ou éteint la caméra des bras. Le post-traitement passe sur la dernière caméra qui dessine dans la pile : celle
+    /// des bras, qui le reçoivent ainsi comme le monde, sinon celle du joueur. Sur les deux, il s'appliquerait deux fois.
+    /// </summary>
+    private void ShowArmsCamera(bool shown)
+    {
+        if (armsCamera == null) return;
+        armsCamera.enabled = shown;
+        if (shown == armsPostProcessing) return;
+        armsPostProcessing = shown;
+        AssignPostProcessing(playerCamera, armsCamera, shown);
+    }
+
+    /// <summary>Qui porte le post-traitement de la pile. Fonction testée.</summary>
+    public static void AssignPostProcessing(Camera player, Camera arms, bool armsShown)
+    {
+        arms.GetUniversalAdditionalCameraData().renderPostProcessing = armsShown;
+        player.GetUniversalAdditionalCameraData().renderPostProcessing = !armsShown;
     }
 
     /// <summary>La caméra des bras (layer Viewmodel), que la vue subjective du spectateur partage.</summary>
@@ -256,9 +276,6 @@ public class FirstPersonView : NetworkBehaviour
     /// <summary>La caméra du joueur, à laquelle les bras sont accrochés.</summary>
     public Camera PlayerCamera => playerCamera;
 
-    /// <summary>Le joueur est-il en mode spectateur (copie armée éteinte) ? Aussi un duelliste au gant seul.</summary>
-    public bool SpectatorMode => spectatorMode;
-
     private void ApplySpectatorMode(bool value)
     {
         spectatorMode = value;
@@ -266,8 +283,7 @@ public class FirstPersonView : NetworkBehaviour
         if (value)
         {
             aimBlend = 0f;
-            if (viewSight != null) viewSight.UpdateScreen(playerCamera, armsCamera, 0f);
-            if (armsCamera != null) armsCamera.enabled = !hidden;
+            ShowArmsCamera(!hidden);
         }
         hold.Reset();
     }
@@ -312,28 +328,26 @@ public class FirstPersonView : NetworkBehaviour
         if (viewGrip != null) viewGrip.Chassis = id;
     }
 
-    private void HandleWeaponLooks(WeaponLooks looks)
-        => BuildWeapons(looks, weaponAttachments != null && weaponAttachments.Published ? weaponAttachments.Attachments : WeaponAttachments.None);
+    private void HandleWeaponLooks(WeaponLooks looks) => ShowPublishedWeapon(looks, PublishedAttachments);
 
-    private void HandleWeaponAttachments(WeaponAttachments attachments)
-        => BuildWeapons(weaponLooks != null && weaponLooks.Published ? weaponLooks.Looks : WeaponLooks.Default, attachments);
+    private void HandleWeaponAttachments(WeaponAttachments attachments) => ShowPublishedWeapon(PublishedLooks, attachments);
 
-    private void BuildWeapons(WeaponLooks looks, WeaponAttachments attachments)
+    private WeaponLooks PublishedLooks => weaponLooks != null && weaponLooks.Published ? weaponLooks.Looks : WeaponLooks.Default;
+    private WeaponAttachments PublishedAttachments
+        => weaponAttachments != null && weaponAttachments.Published ? weaponAttachments.Attachments : WeaponAttachments.None;
+
+    private void ShowPublishedWeapon(WeaponLooks looks, WeaponAttachments attachments)
     {
         if (view == null || viewRightHand == null || weaponController == null) return;
-        // les nouvelles pièces prennent les réglages de la copie : ni ombre portée, ni ombre reçue
-        Renderer like = view.GetComponentInChildren<SkinnedMeshRenderer>(true);
-        HeldWeapons.Build(viewRightHand, weaponController.AllWeapons, looks, attachments, like);
-        AimLensesAtCamera();
-        ShowWeapon(weaponController.Data);
+        ShowWeapon(weaponController.Data, looks, attachments);
     }
 
     /// <summary>Sur les bras, le réticule des viseurs marque le centre de l'écran, d'où part le tir
     /// (DuelArena/ViseurReticule, _AxeCamera) : l'arme balance au rythme des pas, pas le réticule.</summary>
-    private void AimLensesAtCamera()
+    private void AimLensesAtCamera(WeaponModel model)
     {
         lensBlock ??= new MaterialPropertyBlock();
-        foreach (WeaponAttachment attachment in viewRightHand.GetComponentsInChildren<WeaponAttachment>(true))
+        foreach (WeaponAttachment attachment in model.GetComponentsInChildren<WeaponAttachment>(true))
         {
             if (attachment.Lens == null) continue;
             attachment.Lens.GetPropertyBlock(lensBlock);
@@ -348,7 +362,11 @@ public class FirstPersonView : NetworkBehaviour
         if (weaponLooks != null) weaponLooks.Changed -= HandleWeaponLooks;
         if (weaponAttachments != null) weaponAttachments.Changed -= HandleWeaponAttachments;
         if (view != null) Destroy(view);
-        if (armsCamera != null) Destroy(armsCamera.gameObject);
+        if (armsCamera != null)
+        {
+            ShowArmsCamera(false);
+            Destroy(armsCamera.gameObject);
+        }
         view = null;
         viewAnimator = null;
     }
@@ -376,6 +394,7 @@ public class FirstPersonView : NetworkBehaviour
             return;
         }
         viewRightHand = viewAnimator.GetBoneTransform(HumanBodyBones.RightHand);
+        viewSkin = view.GetComponentInChildren<SkinnedMeshRenderer>(true);
 
         taserLayer = viewAnimator.GetLayerIndex("Taser");
         HeldWeapons.WearTaserGlove(viewAnimator, false);
@@ -398,6 +417,8 @@ public class FirstPersonView : NetworkBehaviour
         }
 
         armsCamera = BuildArmsCamera(playerCamera, layer, armsFieldOfView);
+        armsPostProcessing = false;
+        ShowArmsCamera(true);
     }
 
     private void LateUpdate()
@@ -410,7 +431,8 @@ public class FirstPersonView : NetworkBehaviour
                           || weaponController != null && weaponController.DisplayedUnarmed;
         if (spectating != spectatorMode) ApplySpectatorMode(spectating);
         if (hidden || spectatorMode) return;
-        if (weaponController != null && weaponController.Data != shownWeapon) ShowWeapon(weaponController.Data);
+        if (weaponController != null && weaponController.Data != shownWeapon)
+            ShowWeapon(weaponController.Data, PublishedLooks, PublishedAttachments);
         if (sight == null) return;
 
         bool aiming = locomotion != null && locomotion.DisplayAiming;
@@ -429,7 +451,11 @@ public class FirstPersonView : NetworkBehaviour
         float strikeWeight = taserLayer >= 0 ? viewAnimator.GetLayerWeight(taserLayer) : 0f;
         bool striking = strikeWeight > 0.01f;
         // Le gant n'apparaît que pendant le coup de taser (voir HeldWeapons.WearTaserGlove).
-        HeldWeapons.WearTaserGlove(viewAnimator, striking);
+        if (striking != gloveWorn)
+        {
+            gloveWorn = striking;
+            HeldWeapons.WearTaserGlove(viewAnimator, striking);
+        }
         hold.Step(viewAnimator, align, pivot, ironPivot, striking, Time.deltaTime, holdSmoothing);
 
         Vector3 offsets = (pistolHold ? pistolHipOffset : hipOffset) * (1f - Mathf.SmoothStep(0f, 1f, aimBlend)) + WalkBob();
@@ -523,11 +549,9 @@ public class FirstPersonView : NetworkBehaviour
         if (armsCamera != null)
         {
             armsCamera.fieldOfView = eyepiece ? PlayerCameraLook.ZoomedFov(armsFieldOfView, shownSight.Magnification) : armsFieldOfView;
-            armsCamera.enabled = !Scoped;
+            ShowArmsCamera(!Scoped);
         }
         ShowEyepieceOnly(eyepiece ? shownSight : null);
-        bool screenWeapon = viewSight != null && viewSight.gameObject.activeInHierarchy;
-        if (viewSight != null) viewSight.UpdateScreen(playerCamera, armsCamera, screenWeapon ? aimBlend : 0f);
     }
 
     /// <summary>Dans une lunette d'accessoire, ne montre que son œilleton et sa vitre (le reste de son tube
@@ -648,12 +672,14 @@ public class FirstPersonView : NetworkBehaviour
     /// <summary>Montre sur les bras le modèle de l'arme en main, et reprend sa mire et sa distance de
     /// visée (2026-10-11). L'alignement repart de la pose de cette arme : avec un pistolet, les bras
     /// jouent la pose de pistolet (PlayerAnimator), tendus, à deux mains.</summary>
-    private void ShowWeapon(WeaponData data)
+    private void ShowWeapon(WeaponData data, WeaponLooks looks, WeaponAttachments attachments)
     {
         shownWeapon = data;
+        // ce qu'on y met prend les réglages de la copie : ni ombre portée, ni ombre reçue
         WeaponModel model = data != null && weaponController != null
-            ? HeldWeapons.Show(viewRightHand, weaponController.AllWeapons, data) : null;
+            ? HeldWeapons.Show(viewRightHand, weaponController.AllWeapons, data, looks, attachments, viewSkin) : null;
         shownModel = model;
+        if (model != null) AimLensesAtCamera(model);
         shownSight = model != null ? AttachmentMount.Mounted(model.transform, AttachmentCategory.Sight) : null;
         // la mire du viseur monté s'il y en a un, et sa distance à l'œil (AttachmentMount.SightOf)
         Transform modelSight = model != null ? AttachmentMount.SightOf(model, out aimEyeDistance) : null;
@@ -661,16 +687,6 @@ public class FirstPersonView : NetworkBehaviour
         if (model == null) aimEyeDistance = aimSightPosition.z;
         pistolHold = model != null && model.PistolHold;
         hold.Reset();
-
-        // L'écran d'un viseur numérique, sur la copie seulement : l'arme vue par les autres garde le
-        // sien. Celui de l'arme qu'on range s'éteint.
-        WeaponSight next = model != null ? model.GetComponent<WeaponSight>() : null;
-        if (next != viewSight)
-        {
-            if (viewSight != null) viewSight.UpdateScreen(playerCamera, armsCamera, 0f);
-            viewSight = next;
-            if (viewSight != null) viewSight.EnableDigitalScreen(playerCamera);
-        }
     }
 
     /// <summary>Le balancement de l'arme au rythme du pas, dans le repère de la caméra : un huit
@@ -710,7 +726,8 @@ public class FirstPersonView : NetworkBehaviour
 
     /// <summary>
     /// Copie le personnage sous la caméra et le prépare : layer des bras, aucune ombre, tête, cou, buste et
-    /// jambes repliés. La copie garde son Animator et son contrôleur. Sans état, testée.
+    /// jambes repliés. La copie garde son Animator et son contrôleur, pas la sonde du déplacement de racine (sa seule
+    /// présence le fait calculer, et personne ne le lit ici). Sans état, testée.
     /// </summary>
     public static GameObject BuildView(GameObject modelSource, Transform cameraTransform, int layer,
                                        out Animator animator, out Transform sight)
@@ -732,6 +749,7 @@ public class FirstPersonView : NetworkBehaviour
 
         animator = copy.GetComponent<Animator>();
         animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+        if (copy.TryGetComponent(out AnimatorRootMotionProbe probe)) Destroy(probe);
 
         // Replier la tête (on est dedans), le cou et les jambes (inutiles, et visibles en baissant les
         // yeux pendant certaines animations). Le cou : au pistolet, l'œil est 40 cm derrière la mire, à
@@ -836,6 +854,9 @@ public class FirstPersonView : NetworkBehaviour
         if (bone != null) bone.localScale = Vector3.zero;
     }
 
+    /// <summary>La place du renderer des bras (PC_Renderer_Bras) dans la liste du pipeline d'URP.</summary>
+    public const int ArmsRendererIndex = 1;
+
     /// <summary>La caméra des bras : une caméra Overlay qui ne dessine que leur layer, par-dessus
     /// le monde (profondeur effacée), empilée sur la caméra du joueur.</summary>
     private static Camera BuildArmsCamera(Camera baseCamera, int layer, float fieldOfView)
@@ -853,6 +874,11 @@ public class FirstPersonView : NetworkBehaviour
         var data = cam.GetUniversalAdditionalCameraData();
         data.renderType = CameraRenderType.Overlay;
         data.renderShadows = false;
+        // Son renderer à lui : pas de SSAO ni de prépasse pour deux bras collés à l'œil. Avec celui du monde, elle coûtait
+        // près de la moitié de la caméra du joueur sur le fil principal (mesuré le 2026-11-04).
+        data.SetRenderer(ArmsRendererIndex);
+        data.requiresDepthOption = CameraOverrideOption.Off;
+        data.requiresColorOption = CameraOverrideOption.Off;
         baseCamera.GetUniversalAdditionalCameraData().cameraStack.Add(cam);
         return cam;
     }

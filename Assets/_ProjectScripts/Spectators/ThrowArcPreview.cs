@@ -26,6 +26,11 @@ public class ThrowArcPreview : MonoBehaviour
     public const float RingRadius = 0.3f;
     /// <summary>La largeur apparente (rad) des traits, à toute distance : 4 à 5 pixels en 1080p.</summary>
     public const float ApparentWidth = 0.005f;
+    /// <summary>La trajectoire montrée vaut tant que le lancer ne bouge pas : son départ de moins de 1 cm (m), sa direction de
+    /// moins de 0,05° (rad), et pas plus de tant de temps (s). Chaque calcul coûte une sonde par point, jusqu'à 120.</summary>
+    public const float MaxOriginDrift = 0.01f;
+    public const float MaxAimDrift = 0.05f * Mathf.Deg2Rad;
+    public const float RefreshPeriod = 1f / 30f;
 
     private static readonly Color ArcColor = new Color(1f, 1f, 1f, 0.9f);
     private static readonly Color ArcEndColor = new Color(1f, 1f, 1f, 0.55f);
@@ -35,13 +40,22 @@ public class ThrowArcPreview : MonoBehaviour
     private LineRenderer ring;
     private readonly Vector3[] points = new Vector3[MaxPoints];
     private readonly Vector3[] ringPoints = new Vector3[RingSegments];
+    // Le lancer dont `points` est la trajectoire, et le centre du cercle de son point de chute.
+    [System.NonSerialized] private bool traced;
+    [System.NonSerialized] private Vector3 tracedOrigin;
+    [System.NonSerialized] private Vector3 tracedVelocity;
+    [System.NonSerialized] private float tracedAt;
+    [System.NonSerialized] private Vector3 ringCenter;
 
+    /// <summary>Le nombre de points de la trajectoire montrée.</summary>
+    public int ShownPointCount { get; private set; }
+
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
     /// <summary>La trajectoire est-elle montrée ? (tests)</summary>
     public bool Shown => arc != null && arc.enabled;
-
-    /// <summary>Le nombre de points de la trajectoire montrée, et son dernier point (tests).</summary>
-    public int ShownPointCount { get; private set; }
+    /// <summary>Son dernier point (tests).</summary>
     public Vector3 ShownEnd => ShownPointCount > 0 ? points[ShownPointCount - 1] : transform.position;
+#endif
 
     /// <summary>Le spectateur dont on montre le lancer.</summary>
     public void Bind(SpectatorController owner) => spectator = owner;
@@ -64,20 +78,42 @@ public class ThrowArcPreview : MonoBehaviour
     public void Show(Vector3 origin, Vector3 velocity, float gravity, float radius, LayerMask mask, Material material, Camera viewer)
     {
         EnsureLines(material);
-        int count = Trace(origin, velocity, gravity, radius, mask, points, out bool hit, out Vector3 hitPoint, out Vector3 hitNormal);
-        ShownPointCount = count;
-        if (count < 2)
+        if (TraceOutdated(origin, velocity)) Retrace(origin, velocity, gravity, radius, mask);
+        if (ShownPointCount < 2)
         {
             Hide();
             return;
         }
 
+        // La largeur suit la distance à l'œil, du départ au bout : la même largeur apparente partout.
         Vector3 eye = viewer != null ? viewer.transform.position : origin;
+        arc.startWidth = ApparentWidth * Mathf.Max(0.3f, Vector3.Distance(eye, points[0]));
+        arc.endWidth = ApparentWidth * Mathf.Max(0.3f, Vector3.Distance(eye, points[ShownPointCount - 1]));
+        if (ring.enabled) ring.widthMultiplier = ApparentWidth * 1.4f * Mathf.Max(0.3f, Vector3.Distance(eye, ringCenter));
+    }
+
+    /// <summary>Le lancer a-t-il bougé depuis la dernière trajectoire ? Pour un petit angle, l'écart des deux vitesses rapporté
+    /// à leur norme est cet angle.</summary>
+    private bool TraceOutdated(Vector3 origin, Vector3 velocity)
+    {
+        if (!traced || Time.time - tracedAt >= RefreshPeriod) return true;
+        if ((origin - tracedOrigin).sqrMagnitude > MaxOriginDrift * MaxOriginDrift) return true;
+        return (velocity - tracedVelocity).sqrMagnitude > MaxAimDrift * MaxAimDrift * velocity.sqrMagnitude;
+    }
+
+    /// <summary>Refait la trajectoire et le cercle de son point de chute.</summary>
+    private void Retrace(Vector3 origin, Vector3 velocity, float gravity, float radius, LayerMask mask)
+    {
+        int count = Trace(origin, velocity, gravity, radius, mask, points, out bool hit, out Vector3 hitPoint, out Vector3 hitNormal);
+        ShownPointCount = count;
+        traced = true;
+        tracedOrigin = origin;
+        tracedVelocity = velocity;
+        tracedAt = Time.time;
+        if (count < 2) return;
+
         arc.positionCount = count;
         arc.SetPositions(points);
-        // La largeur suit la distance à l'œil, du départ au bout : la même largeur apparente partout.
-        arc.startWidth = ApparentWidth * Mathf.Max(0.3f, Vector3.Distance(eye, points[0]));
-        arc.endWidth = ApparentWidth * Mathf.Max(0.3f, Vector3.Distance(eye, points[count - 1]));
         arc.startColor = ArcColor;
         arc.endColor = ArcEndColor;
         if (!arc.enabled) arc.enabled = true;
@@ -91,20 +127,20 @@ public class ThrowArcPreview : MonoBehaviour
         Vector3 normal = hitNormal.sqrMagnitude > 1e-6f ? hitNormal.normalized : Vector3.up;
         Vector3 tangent = Vector3.Cross(normal, Mathf.Abs(normal.y) < 0.95f ? Vector3.up : Vector3.forward).normalized;
         Vector3 bitangent = Vector3.Cross(normal, tangent);
-        Vector3 center = hitPoint + normal * 0.02f;
+        ringCenter = hitPoint + normal * 0.02f;
         for (int i = 0; i < RingSegments; i++)
         {
             float angle = i * (Mathf.PI * 2f / RingSegments);
-            ringPoints[i] = center + (tangent * Mathf.Cos(angle) + bitangent * Mathf.Sin(angle)) * RingRadius;
+            ringPoints[i] = ringCenter + (tangent * Mathf.Cos(angle) + bitangent * Mathf.Sin(angle)) * RingRadius;
         }
         ring.SetPositions(ringPoints);
-        ring.widthMultiplier = ApparentWidth * 1.4f * Mathf.Max(0.3f, Vector3.Distance(eye, center));
         ring.startColor = ring.endColor = ArcColor;
         if (!ring.enabled) ring.enabled = true;
     }
 
     public void Hide()
     {
+        traced = false;
         ShownPointCount = 0;
         if (arc != null && arc.enabled) arc.enabled = false;
         if (ring != null && ring.enabled) ring.enabled = false;

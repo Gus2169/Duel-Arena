@@ -64,6 +64,23 @@ public class LeanMotionTests
     }
 
     [Test]
+    public void UnLeanArrive_EstExactementSurSaCible_EtNeBougePlus()
+    {
+        // SmoothDamp approche sa cible sans l'atteindre : le lean changeait encore 3 s après s'être redressé,
+        // dans les flottants dénormalisés, et les zones touchables se réécrivaient à chaque image
+        // (PlayerHitbox.ApplyBlended ne s'arrête que sur une pose identique).
+        float vitesse = 0f;
+        float penche = Simuler(0f, 0.35f, 1f, ref vitesse);
+        Assert.AreEqual(0.35f, penche, "Penché, le buste est sur sa cible.");
+        Assert.AreEqual(0f, vitesse, "Et il s'est arrêté.");
+
+        float redresse = Simuler(penche, 0f, 1f, ref vitesse);
+        Assert.AreEqual(0f, redresse, "Redressé, le buste est droit, pas à un cheveu de l'être.");
+        Assert.AreEqual(0f, vitesse, "Et il s'est arrêté.");
+        Assert.AreEqual(0f, PlayerLocomotion.StepLean(redresse, 0f, ref vitesse, SmoothTime, Dt), "Il n'en bouge plus.");
+    }
+
+    [Test]
     public void SansTempsEcoule_RienNeBouge()
     {
         float vitesse = 0f;

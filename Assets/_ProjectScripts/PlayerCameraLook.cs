@@ -103,9 +103,9 @@ public class PlayerCameraLook : MonoBehaviour
     {
         if (leanPivot == null || locomotion == null) return;
 
-        leanPivot.localPosition = Quaternion.Inverse(transform.localRotation) * locomotion.LeanCameraOffset;
         Vector3 jolt = CurrentJolt();
-        leanPivot.localRotation = Quaternion.Euler(jolt.x, jolt.y, locomotion.LeanCameraTilt + jolt.z);
+        leanPivot.SetLocalPositionAndRotation(Quaternion.Inverse(transform.localRotation) * locomotion.LeanCameraOffset,
+                                              Quaternion.Euler(jolt.x, jolt.y, locomotion.LeanCameraTilt + jolt.z));
     }
 
     // ------------------------------------------------------------------

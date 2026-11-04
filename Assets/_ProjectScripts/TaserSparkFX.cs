@@ -81,6 +81,7 @@ public class TaserSparkFX : MonoBehaviour
     private int viewLayer;
     private bool onView;
     private ArcLines arcs;
+    private bool prepared;
     private int shownShape = int.MinValue;
     private float shownStrike = float.NaN;
     private bool contact;
@@ -145,6 +146,7 @@ public class TaserSparkFX : MonoBehaviour
         viewCamera = null;
         if (arcs != null) arcs.Destroy();   // elles vivent sous l'ancienne racine
         arcs = null;
+        prepared = false;
     }
 
     private void OnDisable() => Hide();
@@ -163,6 +165,7 @@ public class TaserSparkFX : MonoBehaviour
         // La copie des bras prend le layer Viewmodel après sa création (FirstPersonView.BuildView).
         onView = viewLayer >= 0 && gameObject.layer == viewLayer;
         bool playerHasView = firstPersonView != null && firstPersonView.ViewAnimator != null;
+        if (!prepared) PrepareArcs(playerHasView);
         bool dead = health != null && health.IsDead;   // un attaquant tué pendant le geste ne frappe pas
         if (phase == Phase.None || dead || !ShouldDraw(onView, playerHasView) || arcMaterial == null || electrodes.Length < 2)
         {
@@ -186,6 +189,32 @@ public class TaserSparkFX : MonoBehaviour
             ? DischargeStrength(since - taser.ContactDelay, dischargeDuration)
             : ChargeStrength;
         Draw(phase == Phase.Discharge, seed, strength);
+    }
+
+    // À l'apparition du robot : créées à son premier coup, ses lignes coûteraient une image en plein geste. Le corps d'un joueur
+    // qui a sa vue subjective ne dessine rien (ShouldDraw) : il prépare celles de ses bras, dont le gant dort jusqu'au coup.
+    private void PrepareArcs(bool playerHasView)
+    {
+        prepared = true;
+        if (taser == null || arcMaterial == null || electrodes.Length < 2) return;
+        if (ShouldDraw(onView, playerHasView))
+        {
+            EnsureArcs();
+            return;
+        }
+        Transform viewGlove = HeldWeapons.TaserGlove(firstPersonView.ViewAnimator);
+        TaserSparkFX viewArcs = viewGlove != null ? viewGlove.GetComponentInChildren<TaserSparkFX>(true) : null;
+        if (viewArcs != null) viewArcs.PrepareAsleep();
+    }
+
+    // Le gant des bras, éteint : son LateUpdate ne tourne pas. Copié d'un gant éteint, il n'a même pas eu son Awake : il
+    // ne sait pas encore sur quel layer dessiner, ses lignes viendront à son premier coup.
+    private void PrepareAsleep()
+    {
+        if (boundRoot == null) return;
+        if (transform.root != boundRoot) Bind();
+        onView = viewLayer >= 0 && gameObject.layer == viewLayer;
+        EnsureArcs();
     }
 
     /// <summary>Les arcs de cette image. Leur forme ne dépend que de la graine (celle du coup et de la
@@ -376,7 +405,7 @@ public class TaserSparkFX : MonoBehaviour
     }
 
 #if UNITY_EDITOR || UNITY_INCLUDE_TESTS
-    /// <summary>Surface de test : les lignes de ce gant (null tant qu'il n'a rien dessiné).</summary>
+    /// <summary>Surface de test : les lignes de ce gant (null tant qu'elles ne sont pas prêtes).</summary>
     public ArcLines TestArcs => arcs;
 
     /// <summary>Surface de test : le nombre de lignes des éclairs principaux et de leurs branches (les

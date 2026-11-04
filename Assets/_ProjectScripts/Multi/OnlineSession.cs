@@ -45,10 +45,8 @@ public static class OnlineSession
     public const string NameKey = "pseudo";
 
     /// <summary>Propriété de chaque joueur : la couleur choisie pour son robot (son rang dans la palette, -1
-    /// sans choix), pour les portraits du salon (2026-10-17).</summary>
+    /// sans choix), pour la liste des joueurs du salon (2026-10-17).</summary>
     public const string ColorKey = "couleur";
-    /// <summary>Le châssis choisi par chaque joueur (son rang, ChassisId), pour les portraits du salon (2026-10-26).</summary>
-    public const string ChassisKey = "chassis";
 
     /// <summary>Le salon de cette machine, null hors d'une partie en ligne.</summary>
     public static ISession Current { get; private set; }
@@ -484,7 +482,6 @@ public static class OnlineSession
         {
             [NameKey] = new PlayerProperty(PlayerMatchState.SanitizeName(GameSettings.PlayerName), VisibilityPropertyOptions.Member),
             [ColorKey] = new PlayerProperty(GameSettings.PreferredColorIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), VisibilityPropertyOptions.Member),
-            [ChassisKey] = new PlayerProperty(((int)GameSettings.PreferredChassis).ToString(System.Globalization.CultureInfo.InvariantCulture), VisibilityPropertyOptions.Member),
         };
 
     /// <summary>Le pseudo d'un joueur du salon (vide s'il n'en a pas donné).</summary>
@@ -494,13 +491,6 @@ public static class OnlineSession
     /// <summary>La couleur choisie par un joueur du salon (son rang dans la palette), -1 sans choix.</summary>
     public static int ColorOf(IReadOnlyPlayer player)
         => player != null && ParseColor(PropertyValue(player.Properties, ColorKey), out int index) ? index : -1;
-
-    /// <summary>Le châssis choisi par un joueur du salon : le CT-01 sans choix lisible.</summary>
-    public static ChassisId ChassisOf(IReadOnlyPlayer player)
-        => player != null && int.TryParse(PropertyValue(player.Properties, ChassisKey), System.Globalization.NumberStyles.None,
-                                          System.Globalization.CultureInfo.InvariantCulture, out int value)
-            ? RobotChassis.Sanitized(value)
-            : ChassisId.CT01;
 
     /// <summary>Le rang de couleur publié par un joueur : un entier de -1 à 63, sinon rien. Fonction pure,
     /// testée.</summary>

@@ -151,6 +151,7 @@ public class PlayerDeath : NetworkBehaviour
         input = GetComponent<PlayerInputReader>();
         modelRoot = transform.Find("Model");
         modelAnimator = modelRoot != null ? modelRoot.GetComponent<Animator>() : null;
+        RobotBurst.Prepare();
         if (playerCamera == null)
         {
             foreach (Camera c in GetComponentsInChildren<Camera>(true))
@@ -190,6 +191,19 @@ public class PlayerDeath : NetworkBehaviour
         base.OnDestroy();
     }
 
+    /// <summary>Cette machine montre-t-elle ce qui arrive au joueur `clientId` ? Au Tournoi, un joueur en plein match ne voit
+    /// rien des autres arènes, à 2 km de la sienne, et n'a pas à y payer d'effets. La salle d'attente voit tout : les écrans
+    /// du direct filment chaque arène. Partout ailleurs, oui.</summary>
+    public static bool ShowsEffectsOf(ulong clientId)
+    {
+        RoundManager mine = RoundManager.Local;
+        return mine == null || ShowsEffects(mine.IsLane, mine == RoundManager.For(clientId));
+    }
+
+    /// <summary>La règle de ShowsEffectsOf : `inLane`, cette machine joue un match du Tournoi ; `sameLane`, ce joueur aussi,
+    /// le même. Fonction pure, testée.</summary>
+    public static bool ShowsEffects(bool inLane, bool sameLane) => !inLane || sameLane;
+
     /// <summary>Le joueur revient-il en plein match (une réapparition), et non au début d'une manche, sous le noir ?</summary>
     private static bool RespawningInMatch
     {
@@ -207,17 +221,19 @@ public class PlayerDeath : NetworkBehaviour
     private void ShowDeath(Vector3 velocity)
     {
         shownDead = true;
-        corpse = RobotCorpse.Spawn(modelAnimator, velocity);
+        bool seen = ShowsEffectsOf(OwnerClientId);
+        corpse = seen ? RobotCorpse.Spawn(modelAnimator, velocity) : null;
         if (corpse != null && paint != null)
         {
             foreach (Renderer live in paint.PaintedRenderers) paint.PaintOnce(corpse.TwinOf(live));
         }
 
-        // Le modèle vivant disparaît, armes et gant compris (y compris ceux créés au lancement). Seuls
+        // Le modèle vivant disparaît, arme en main et gant compris. Seuls
         // ceux qu'on montrait reviendront : la vitre d'un viseur, éteinte sur le corps du propriétaire
-        // (AttachmentMount.SetUpLens), le reste.
+        // (AttachmentMount.SetUpLens), le reste. Sans épave (une mort d'un autre match du Tournoi), il reste : qui revient
+        // dans la salle d'attente voit ce robot sur les écrans du direct, et un vide n'y dirait rien.
         var shown = new System.Collections.Generic.List<Renderer>();
-        if (modelRoot != null)
+        if (seen && modelRoot != null)
         {
             foreach (Renderer r in modelRoot.GetComponentsInChildren<Renderer>(true))
             {
@@ -230,7 +246,7 @@ public class PlayerDeath : NetworkBehaviour
 
         if (corpse != null && pendingImpulse && Time.time - pendingAt < 1f) Strike(pendingPoint, pendingForce, pendingCloseness, pendingSeed);
         pendingImpulse = false;
-        PlayDeathSound();
+        if (seen) PlayDeathSound();
 
         if (IsOwner)
         {

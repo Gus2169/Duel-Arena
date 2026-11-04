@@ -49,7 +49,7 @@ public class SpectatorViewTests
         cameraGo = new GameObject("CameraTest");
         int layer = LayerMask.NameToLayer(FirstPersonView.LayerName);
         GameObject copy = FirstPersonView.BuildView(instance, cameraGo.transform, layer, out Animator arms, out _);
-        foreach (WeaponModel weapon in copy.GetComponentsInChildren<WeaponModel>(true)) weapon.gameObject.SetActive(false);
+        foreach (WeaponModel weapon in copy.GetComponentsInChildren<WeaponModel>(true)) Object.Destroy(weapon.gameObject);
         HeldWeapons.WearTaserGlove(arms, false);
         instance.SetActive(false);
         Transform head = arms.GetBoneTransform(HumanBodyBones.Head);

@@ -20,12 +20,24 @@ public static class NetStats
     // Sur le serveur, pour les joueurs qu'il simule.
     public static int InputPacketsReceived, InputsReceived, InputsLost, UselessPackets, QueueMax;
 
+    /// <summary>La réserve du tampon de lecture des inputs (voir InputPlayout) : le retard moyen tenu, en secondes.</summary>
+    public static float InputHoldSum;
+    public static int InputHoldSamples;
+
+    public static void NoteInputHold(float held)
+    {
+        InputHoldSum += held;
+        InputHoldSamples++;
+    }
+
     public static void Reset()
     {
         Corrections = Resyncs = StaleCorrections = InputPacketsSent = InputsSent = PosesReceived = 0;
         ErrorMax = RttSum = 0f;
         RttSamples = 0;
         InputPacketsReceived = InputsReceived = InputsLost = UselessPackets = QueueMax = 0;
+        InputHoldSum = 0f;
+        InputHoldSamples = 0;
     }
 }
 
@@ -54,7 +66,15 @@ public class NetDiagnostics : MonoBehaviour
     private float windowStart;
     private int frames, hitches, gcAtStart;
     private float worstFrame;
-    private string lastConnectionLine;
+    private int shownConnection = -1;
+
+    // Ce qui limite les images : le fil principal, le fil de rendu ou la carte graphique. Sans ça, un
+    // changement d'images par seconde ne dit pas quel fil a bougé (FrameTimingManager, « Frame Timing
+    // Stats » dans les réglages du joueur ; en millisecondes). Une carte qui ne sait pas répondre laisse le
+    // temps de la carte à zéro.
+    private readonly FrameTiming[] frameTiming = new FrameTiming[1];
+    private double cpuMainSum, cpuRenderSum, gpuSum, cpuMainWorst, gpuWorst;
+    private int timedFrames, gpuTimedFrames;
 
     private struct RemoteTrack
     {
@@ -97,7 +117,7 @@ public class NetDiagnostics : MonoBehaviour
             Write($"[DIAG] début {System.DateTime.Now:yyyy-MM-dd HH:mm:ss} version={Application.version} " +
                   $"{(Application.isEditor ? "editeur" : "build")} profil={OnlineSession.ProfileName()} " +
                   $"ecran={Screen.currentResolution.width}x{Screen.currentResolution.height}@{Screen.currentResolution.refreshRateRatio.value:F0}Hz " +
-                  $"vsync={QualitySettings.vSyncCount} plafond_images={Application.targetFrameRate} cpu={SystemInfo.processorType} gpu={SystemInfo.graphicsDeviceName}");
+                  $"vsync={QualitySettings.vSyncCount} plafond_images={Application.targetFrameRate} audio={AudioBuffer()} cpu={SystemInfo.processorType} gpu={SystemInfo.graphicsDeviceName}");
             Debug.Log($"[DIAG] journal de diagnostic : {path}");
         }
         catch (System.Exception e)
@@ -106,6 +126,13 @@ public class NetDiagnostics : MonoBehaviour
         }
         Application.logMessageReceived += OnLog;
         StartWindow();
+    }
+
+    /// <summary>Ce que le pilote du son accorde (échantillons x tampons) : ce qui sépare un son décidé d'un son entendu.</summary>
+    private static string AudioBuffer()
+    {
+        AudioSettings.GetDSPBufferSize(out int length, out int count);
+        return $"{length}x{count}";
     }
 
     private void OnDestroy()
@@ -140,6 +167,8 @@ public class NetDiagnostics : MonoBehaviour
         windowStart = Time.realtimeSinceStartup;
         frames = hitches = 0;
         worstFrame = 0f;
+        cpuMainSum = cpuRenderSum = gpuSum = cpuMainWorst = gpuWorst = 0.0;
+        timedFrames = gpuTimedFrames = 0;
         gcAtStart = System.GC.CollectionCount(0);
         NetStats.Reset();
         foreach (PlayerLocomotion key in new List<PlayerLocomotion>(remotes.Keys))
@@ -157,11 +186,28 @@ public class NetDiagnostics : MonoBehaviour
         frames++;
         if (dt > worstFrame) worstFrame = dt;
         if (dt > HitchSeconds) hitches++;
+        MeasureFrameTiming();
         TrackRemotes(Time.deltaTime);
         LogConnectionIfChanged();
         MeasureRelayRegionsOnce();
         if (Time.realtimeSinceStartup < windowStart) StartWindow(); // horloge repartie de zéro
         else if (Time.realtimeSinceStartup - windowStart >= Window) Report();
+    }
+
+    private void MeasureFrameTiming()
+    {
+        FrameTimingManager.CaptureFrameTimings();
+        if (FrameTimingManager.GetLatestTimings(1, frameTiming) == 0) return;
+        FrameTiming timing = frameTiming[0];
+        if (timing.cpuMainThreadFrameTime <= 0.0) return;
+        timedFrames++;
+        cpuMainSum += timing.cpuMainThreadFrameTime;
+        cpuRenderSum += timing.cpuRenderThreadFrameTime;
+        if (timing.cpuMainThreadFrameTime > cpuMainWorst) cpuMainWorst = timing.cpuMainThreadFrameTime;
+        if (timing.gpuFrameTime <= 0.0) return;
+        gpuTimedFrames++;
+        gpuSum += timing.gpuFrameTime;
+        if (timing.gpuFrameTime > gpuWorst) gpuWorst = timing.gpuFrameTime;
     }
 
     private bool relayRegionsMeasured;
@@ -213,8 +259,10 @@ public class NetDiagnostics : MonoBehaviour
     private void TrackRemotes(float dt)
     {
         if (dt <= 0f) return;
-        foreach (PlayerLocomotion player in PlayerLocomotion.SpawnedPlayers)
+        var players = PlayerLocomotion.SpawnedPlayers;
+        for (int i = 0; i < players.Count; i++)
         {
+            PlayerLocomotion player = players[i];
             if (player == null || !player.IsSpawned || player.IsOwner) continue;
             Vector3 position = player.transform.position;
             if (!remotes.TryGetValue(player, out RemoteTrack t))
@@ -239,25 +287,30 @@ public class NetDiagnostics : MonoBehaviour
         foreach (PlayerLocomotion player in gone) remotes.Remove(player);
     }
 
-    /// <summary>Une fois par connexion : direct ou par les relais, et lequel.</summary>
+    /// <summary>Une fois par connexion : direct ou par les relais, et lequel. À chaque image, on ne compare que ce qui ne coûte
+    /// rien : le texte n'est refait qu'au changement (en ligne, il passe par la réflexion, et alloue plus d'un Ko).</summary>
     private void LogConnectionIfChanged()
     {
         NetworkManager nm = NetworkManager.Singleton;
+        bool listening = nm != null && nm.IsListening;
+        UnityTransport transport = listening ? nm.NetworkConfig.NetworkTransport as UnityTransport : null;
+        bool relay = transport != null && transport.Protocol == UnityTransport.ProtocolType.RelayUnityTransport;
+        int connection = !listening ? 0 : 1 | (nm.IsHost ? 2 : 0) | (nm.IsServer ? 4 : 0) | (relay ? 8 : 0);
+        if (connection == shownConnection) return;
+        shownConnection = connection;
+
         string text = "hors ligne";
-        if (nm != null && nm.IsListening)
+        if (listening)
         {
             string role = nm.IsHost ? "hote" : nm.IsServer ? "serveur" : "client";
             string path = "?";
-            if (nm.NetworkConfig.NetworkTransport is UnityTransport transport)
+            if (transport != null)
             {
-                path = transport.Protocol == UnityTransport.ProtocolType.RelayUnityTransport
-                    ? "relais " + RelayEndpoint(transport)
-                    : $"direct {transport.ConnectionData.Address}:{transport.ConnectionData.Port}";
+                path = relay ? "relais " + RelayEndpoint(transport)
+                             : $"direct {transport.ConnectionData.Address}:{transport.ConnectionData.Port}";
             }
             text = $"{role} {path} tick={nm.NetworkConfig.TickRate}";
         }
-        if (text == lastConnectionLine) return;
-        lastConnectionLine = text;
         Write($"[DIAG] connexion : {text}");
     }
 
@@ -284,6 +337,13 @@ public class NetDiagnostics : MonoBehaviour
             .Append(" images>50ms=").Append(hitches)
             .Append(" gc=").Append(System.GC.CollectionCount(0) - gcAtStart)
             .Append(" memoire=").Append((System.GC.GetTotalMemory(false) / (1024 * 1024)).ToString()).Append("Mo");
+        if (timedFrames > 0)
+        {
+            line.Append(" cpu=").Append((cpuMainSum / timedFrames).ToString("F1")).Append('/').Append(cpuMainWorst.ToString("F0")).Append("ms")
+                .Append(" rendu=").Append((cpuRenderSum / timedFrames).ToString("F1")).Append("ms");
+            if (gpuTimedFrames > 0)
+                line.Append(" gpu=").Append((gpuSum / gpuTimedFrames).ToString("F1")).Append('/').Append(gpuWorst.ToString("F0")).Append("ms");
+        }
 
         if (nm != null && nm.IsListening && nm.NetworkConfig.NetworkTransport is UnityTransport transport)
         {
@@ -305,7 +365,8 @@ public class NetDiagnostics : MonoBehaviour
                     .Append(" inputs=").Append((NetStats.InputsReceived / elapsed).ToString("F0")).Append("/s")
                     .Append(" perdus=").Append(NetStats.InputsLost)
                     .Append(" sans_neuf=").Append(NetStats.UselessPackets)
-                    .Append(" file_max=").Append(NetStats.QueueMax);
+                    .Append(" file_max=").Append(NetStats.QueueMax)
+                    .Append(" reserve=").Append(Mathf.RoundToInt(1000f * NetStats.InputHoldSum / Mathf.Max(1, NetStats.InputHoldSamples))).Append("ms");
                 foreach (ulong id in nm.ConnectedClientsIds)
                 {
                     if (id == NetworkManager.ServerClientId) continue;

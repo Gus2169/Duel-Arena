@@ -346,4 +346,15 @@ public class MatchFlowTests
         StringAssert.Contains("ARRIVENT", GameHud.LoadingTitle(false, true), "Les joueurs du salon en route.");
         Assert.AreEqual("RETOUR AU MENU", GameHud.LoadingTitle(true, true), "Le retour au menu passe avant tout.");
     }
+
+    [Test]
+    public void LesMiettes_SeRamassentSousLeNoir_JamaisEnPleineManche()
+    {
+        Assert.IsTrue(RoundManager.CollectsGarbageEntering(Phase.RoundOver, Phase.Preparation), "le replacement d'une manche");
+        Assert.IsTrue(RoundManager.CollectsGarbageEntering(Phase.RoundOver, Phase.Starting), "une manche sans préparation (Golden Gun)");
+        Assert.IsTrue(RoundManager.CollectsGarbageEntering(Phase.MatchOver, Phase.Salon), "le salon de l'arène");
+        Assert.IsFalse(RoundManager.CollectsGarbageEntering(Phase.Starting, Phase.Active), "jamais au départ d'une manche");
+        Assert.IsFalse(RoundManager.CollectsGarbageEntering(Phase.Active, Phase.RoundOver), "jamais à la fin : le gagnant joue encore");
+        Assert.IsFalse(RoundManager.CollectsGarbageEntering(Phase.Preparation, Phase.Starting), "une préparation finie : rien n'est noir");
+    }
 }

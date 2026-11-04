@@ -50,7 +50,6 @@ public class CharacterPreviewController : MonoBehaviour
         if (document == null) document = GetComponent<UIDocument>();
         if (stage == null) stage = GetComponent<PreviewStage>();
         viewport = document.rootVisualElement.Q<Image>("characterPreviewImage");
-        BuildOnce();
     }
 
     private void OnDestroy()
@@ -101,8 +100,8 @@ public class CharacterPreviewController : MonoBehaviour
     /// tant qu'elle n'est pas regardée.</summary>
     public void Hide() => stage?.Hide();
 
-    /// <summary>Retenue si le robot n'est pas encore construit : l'ordre des OnEnable entre
-    /// ArmoryController (qui envoie la couleur initiale) et ce composant n'est pas garanti.</summary>
+    /// <summary>Retenue tant que le robot n'est pas construit : ArmoryController envoie la couleur initiale
+    /// dès son OnEnable, et le robot n'existe qu'à son premier affichage.</summary>
     public void SetPaint(Color32 color)
     {
         paint = color;

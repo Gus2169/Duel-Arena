@@ -155,46 +155,6 @@
                     "interactions": "",
                     "initialStateCheck": false,
                     "priority": 0
-                },
-                {
-                    "name": "Weapon1",
-                    "type": "Button",
-                    "id": "95ac448b-27d8-4a2b-9dc1-f3cb6695f0a4",
-                    "expectedControlType": "",
-                    "processors": "",
-                    "interactions": "",
-                    "initialStateCheck": false,
-                    "priority": 0
-                },
-                {
-                    "name": "Weapon2",
-                    "type": "Button",
-                    "id": "d6244597-956d-4aab-8773-a5b6cd11da76",
-                    "expectedControlType": "",
-                    "processors": "",
-                    "interactions": "",
-                    "initialStateCheck": false,
-                    "priority": 0
-                },
-                {
-                    "name": "Weapon3",
-                    "type": "Button",
-                    "id": "b60cb57f-eebe-4b33-8516-1e37b7942279",
-                    "expectedControlType": "",
-                    "processors": "",
-                    "interactions": "",
-                    "initialStateCheck": false,
-                    "priority": 0
-                },
-                {
-                    "name": "Weapon4",
-                    "type": "Button",
-                    "id": "7e3d349f-370c-4ec9-b594-de9b98ca5fa8",
-                    "expectedControlType": "",
-                    "processors": "",
-                    "interactions": "",
-                    "initialStateCheck": false,
-                    "priority": 0
                 }
             ],
             "bindings": [
@@ -415,50 +375,6 @@
                     "processors": "",
                     "groups": "",
                     "action": "SwapItem",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
-                    "id": "32ea9705-909a-49a6-92dc-22258913530f",
-                    "path": "<Keyboard>/1",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "",
-                    "action": "Weapon1",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
-                    "id": "c7197425-a692-4278-9ec3-9d28deaa560d",
-                    "path": "<Keyboard>/2",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "",
-                    "action": "Weapon2",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
-                    "id": "8544983d-c121-4296-868c-b95534bd91e6",
-                    "path": "<Keyboard>/3",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "",
-                    "action": "Weapon3",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
-                    "id": "f446ccb1-27ee-488d-b3f1-bf863905ff58",
-                    "path": "<Keyboard>/4",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "",
-                    "action": "Weapon4",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

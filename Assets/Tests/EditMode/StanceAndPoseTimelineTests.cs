@@ -131,6 +131,17 @@ public class StanceAndPoseTimelineTests
     }
 
     [Test]
+    public void Pose_PileSurUnePose_CEstLIntervalleQuiFinitSurElle()
+    {
+        var poses = new List<PlayerLocomotion.DisplayPose> { Pose(1.0, 0f, flags: 1), Pose(2.0, 5f, flags: 2), Pose(3.0, 9f, flags: 4), Pose(4.0, 12f, flags: 8) };
+        Assert.AreEqual(5f, PlayerLocomotion.SampleDisplayPose(poses, 2.0).position.x, Eps);
+        Assert.AreEqual(1, PlayerLocomotion.SampleDisplayPose(poses, 2.0).flags);
+        Assert.AreEqual(2, PlayerLocomotion.SampleDisplayPose(poses, 3.0).flags);
+        Assert.AreEqual(4, PlayerLocomotion.SampleDisplayPose(poses, 4.0).flags);
+        Assert.AreEqual(7f, PlayerLocomotion.SampleDisplayPose(poses, 2.5).position.x, Eps, "Garde anti-vacuité : entre deux poses, on interpole.");
+    }
+
+    [Test]
     public void Pose_LesDrapeauxDAnimationSuiventLaPoseDeDebutDIntervalle()
     {
         // Drapeaux discrets (au sol, franchissement, visée) : pas d'interpolation, celle du début.

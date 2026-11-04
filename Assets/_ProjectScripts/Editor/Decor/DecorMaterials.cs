@@ -115,13 +115,13 @@ public static class DecorMaterials
             // Le plafond : un béton presque noir, en grands panneaux.
             new Recette
             {
-                nom = "Decor_Plafond", couleur = new Color(0.12f, 0.12f, 0.125f), rug = 0.92f,
+                nom = "Decor_Plafond", couleur = new Color(0.12f, 0.12f, 0.125f), rug = 0.92f, nuages = 0f,
                 motif = 1, panneau = new Vector4(3f, 3f, 0.02f, 0.4f), crasse = new Vector4(0.01f, 0f, 0f, 0f), eclats = 0f,
             },
             // La charpente : des poutres d'acier peint sombre.
             new Recette
             {
-                nom = "Decor_Charpente", couleur = new Color(0.10f, 0.105f, 0.11f), rug = 0.55f, metal = 0.35f,
+                nom = "Decor_Charpente", couleur = new Color(0.10f, 0.105f, 0.11f), rug = 0.55f, metal = 0.35f, nuages = 0f,
                 crasse = new Vector4(0.01f, 0f, 0f, 0.5f), couleurEclats = AcierNu, eclats = 0.35f, contourLisse = false,
             },
             // Le garde-corps de la tribune : de l'acier peint, une bande de hachures en haut, vue de l'arène. Un gris

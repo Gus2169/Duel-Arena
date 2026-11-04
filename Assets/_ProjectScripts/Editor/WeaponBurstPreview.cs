@@ -83,7 +83,6 @@ public sealed class BurstPreview
 {
     public struct Bullet
     {
-        public int shot;
         /// <summary>Où part la balle (ou le plomb), en degrés depuis l'axe du premier coup.</summary>
         public Vector2 degrees;
         public HitboxZoneType? zone;
@@ -91,7 +90,6 @@ public sealed class BurstPreview
 
     public int Shots { get; private set; }
     public float Interval { get; private set; }
-    public bool Chains { get; private set; }
     /// <summary>Le regard au moment de chaque coup (degrés), le retour compris.</summary>
     public readonly List<Vector2> aim = new List<Vector2>();
     /// <summary>Le demi-angle du cône à la hanche à chaque coup (degrés).</summary>
@@ -119,7 +117,6 @@ public sealed class BurstPreview
         KillTime = 0f;
         Shots = data != null ? Mathf.Max(0, setup.shots) : 0;
         Interval = RecoilPattern.ShotInterval(data);
-        Chains = RecoilPattern.Chains(data);
         if (Shots == 0) return;
 
         RecoilPattern.Burst(data, Shots, setup.recoilScale, true, aim, setup.firstShots,
@@ -143,7 +140,7 @@ public sealed class BurstPreview
                 Vector2 degrees = axis + data.PelletOffset(pellet, setup.aiming, setup.laserFactor);
                 Vector2 onTarget = aimPoint + new Vector2(Mathf.Tan(degrees.x * Mathf.Deg2Rad), Mathf.Tan(degrees.y * Mathf.Deg2Rad)) * distance;
                 HitboxZoneType? zone = setup.target.ZoneAt(onTarget);
-                bullets.Add(new Bullet { shot = shot, degrees = degrees, zone = zone });
+                bullets.Add(new Bullet { degrees = degrees, zone = zone });
                 switch (zone)
                 {
                     case HitboxZoneType.Head: HeadHits++; break;
@@ -163,9 +160,6 @@ public sealed class BurstPreview
             }
         }
     }
-
-    /// <summary>Un angle (degrés) vu à `distance` mètres, en mètres dans le plan de la cible.</summary>
-    public static float Meters(float degrees, float distance) => Mathf.Tan(degrees * Mathf.Deg2Rad) * distance;
 
     /// <summary>Une longueur (mètres) dans le plan de la cible à `distance` mètres, en degrés.</summary>
     public static float Degrees(float meters, float distance) => Mathf.Atan2(meters, Mathf.Max(0.1f, distance)) * Mathf.Rad2Deg;

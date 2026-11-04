@@ -1,5 +1,8 @@
 using NUnit.Framework;
 using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
 
 /// <summary>
@@ -102,6 +105,50 @@ public class MenuUxmlTests
             "endQuitButton", "endVote", "endVoteStatus", "endVoteButtons", "endRematchButton", "endSalonButton");
         AssertNames(root, "SalonPanel", "salonPanel");
         AssertSalonView(root.Q("salonPanel"), "SalonPanel");
+    }
+
+    /// <summary>
+    /// Le salon de l'arène montre la vue d'ensemble et le nom de l'arène, ceux du salon du menu (MenuArtwork), posés sur
+    /// SalonPanel dans la scène : MenuArtwork et ses grandes images ne se chargent pas avec l'arène. Vus échouer : la scène
+    /// qui citait encore MenuArtwork, puis sans le nom, puis sans l'image.
+    /// </summary>
+    [Test]
+    public void LeSalonDeLArene_MontreLImageEtLeNomDeLArene_SansChargerLesImagesDuMenu()
+    {
+        const string scenePath = "Assets/_ProjectScenes/MultiTestScene.unity";
+        const string artworkPath = "Assets/_ProjectUI/Images/MenuArtwork.asset";
+        var artwork = AssetDatabase.LoadAssetAtPath<MenuArtwork>(artworkPath);
+        Assert.IsNotNull(artwork.arenaOverview, "Garde : l'image du salon du menu.");
+        Assert.IsNotEmpty(artwork.arenaName, "Garde : le nom de l'arène.");
+        CollectionAssert.DoesNotContain(AssetDatabase.GetDependencies(scenePath, true), artworkPath,
+            "L'arène ne charge pas les images du menu.");
+
+        Scene scene = SceneManager.GetSceneByPath(scenePath);
+        bool opened = !scene.isLoaded;
+        if (opened) scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
+        try
+        {
+            SalonPanel panel = null;
+            foreach (GameObject root in scene.GetRootGameObjects())
+                if (panel == null) panel = root.GetComponentInChildren<SalonPanel>(true);
+            Assert.IsNotNull(panel, "Garde : le salon est sur /GameUI.");
+            var serialized = new SerializedObject(panel);
+            var image = serialized.FindProperty("arenaImage").objectReferenceValue as Texture2D;
+            string name = serialized.FindProperty("arenaName").stringValue;
+            Assert.AreSame(artwork.arenaOverview, image, "L'image du salon du menu.");
+            Assert.AreEqual(artwork.arenaName, name, "Le nom du salon du menu.");
+
+            VisualElement hud = Clone("Assets/_ProjectUI/Game/GameHud.uxml");
+            var view = new SalonView(hud.Q("salonPanel"));
+            view.SetArena(image, name);
+            Assert.AreEqual(name, hud.Q<Label>("salonArenaName").text, "Le salon montre le nom.");
+            Assert.AreSame(image, hud.Q("salonArenaImage").style.backgroundImage.value.texture, "Le salon montre l'image.");
+            view.Dispose();
+        }
+        finally
+        {
+            if (opened) EditorSceneManager.CloseScene(scene, true);
+        }
     }
 
     /// <summary>

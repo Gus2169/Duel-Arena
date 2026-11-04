@@ -12,11 +12,92 @@ public class TrainingDummyTests
 {
     private const string DummyPrefabPath = "Assets/_ProjectArena/Stand/Mannequin.prefab";
     private GameObject dummy;
+    private GameObject lens;
+    private RenderTexture target;
 
     [TearDown]
     public void TearDown()
     {
         if (dummy != null) Object.Destroy(dummy);
+        if (lens != null) Object.Destroy(lens);
+        if (target != null)
+        {
+            target.Release();
+            Object.Destroy(target);
+        }
+    }
+
+    /// <summary>Les os du robot d'un mannequin, du bassin aux doigts.</summary>
+    private static Transform[] BonesOf(Animator animator) => animator.GetBoneTransform(HumanBodyBones.Hips).GetComponentsInChildren<Transform>();
+
+    private static Quaternion[] Pose(Transform[] bones)
+    {
+        var pose = new Quaternion[bones.Length];
+        for (int i = 0; i < bones.Length; i++) pose[i] = bones[i].localRotation;
+        return pose;
+    }
+
+    /// <summary>De combien (degrés) l'os qui a le plus tourné a quitté la pose `before`.</summary>
+    private static float MostTurned(Transform[] bones, Quaternion[] before)
+    {
+        float most = 0f;
+        for (int i = 0; i < bones.Length; i++) most = Mathf.Max(most, Quaternion.Angle(before[i], bones[i].localRotation));
+        return most;
+    }
+
+    /// <summary>Hors du champ, un mannequin ne coûte plus rien : ses os ne bougent pas (la salle d'attente du Tournoi, à 2 km,
+    /// est dans toutes les parties). Il est pourtant déjà dans son attente, pas en croix, pour la première image où on le
+    /// verra.</summary>
+    [UnityTest]
+    public IEnumerator UnMannequinHorsChamp_NeBougePlusSesOs()
+    {
+        GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(DummyPrefabPath);
+        dummy = Object.Instantiate(prefab, new Vector3(3000f, -3000f, 3000f), Quaternion.identity);
+        yield return null;
+
+        Animator animator = dummy.transform.Find("Apparence").GetComponent<Animator>();
+        float drop = animator.GetBoneTransform(HumanBodyBones.RightUpperArm).position.y - animator.GetBoneTransform(HumanBodyBones.RightHand).position.y;
+        Assert.Greater(drop, 0.3f, "Dans son attente, le bras le long du corps, avant même d'avoir été vu.");
+
+        Transform[] bones = BonesOf(animator);
+        Quaternion[] before = Pose(bones);
+        float until = Time.time + 0.5f;
+        while (Time.time < until) yield return null;
+        Assert.AreEqual(0f, MostTurned(bones, before), 1e-3f, "Personne ne le voit : ses os ne bougent plus.");
+
+        animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+        until = Time.time + 0.5f;
+        while (Time.time < until) yield return null;
+        Assert.Greater(MostTurned(bones, before), 0.05f, "Garde : son attente bouge bien ses os quand rien ne les coupe.");
+    }
+
+    /// <summary>Entré dans le champ d'une caméra, il reprend son attente : il ne s'arrête que quand personne ne le voit.</summary>
+    [UnityTest]
+    public IEnumerator UnMannequinVu_RespireDeNouveau()
+    {
+        GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(DummyPrefabPath);
+        dummy = Object.Instantiate(prefab, new Vector3(3000f, -3000f, 3000f), Quaternion.identity);
+        yield return null;
+
+        target = new RenderTexture(64, 64, 24, RenderTextureFormat.ARGB32);
+        target.Create();
+        lens = new GameObject("CameraTest");
+        lens.transform.position = dummy.transform.position + dummy.transform.forward * 3f + Vector3.up * 1.2f;
+        lens.transform.LookAt(dummy.transform.position + Vector3.up * 1.2f);
+        Camera camera = lens.AddComponent<Camera>();
+        camera.enabled = false;
+        camera.farClipPlane = 20f;
+
+        Transform[] bones = BonesOf(dummy.transform.Find("Apparence").GetComponent<Animator>());
+        Quaternion[] before = Pose(bones);
+        var request = new UnityEngine.Rendering.RenderPipeline.StandardRequest { destination = target };
+        float until = Time.time + 0.5f;
+        while (Time.time < until)
+        {
+            UnityEngine.Rendering.RenderPipeline.SubmitRenderRequest(camera, request);
+            yield return null;
+        }
+        Assert.Greater(MostTurned(bones, before), 0.05f, "Vu, il reprend son attente.");
     }
 
     private static HitboxZoneType? ShootAt(Vector3 origin, Vector3 target)

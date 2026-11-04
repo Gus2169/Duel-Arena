@@ -84,5 +84,4 @@ MonoBehaviour:
   championScreenDuration: 25
   lanePrefabAsset: {fileID: 0}
   lanePrefab: 1
-  roundTimeLimit: 0
   gatheringTimeout: 15

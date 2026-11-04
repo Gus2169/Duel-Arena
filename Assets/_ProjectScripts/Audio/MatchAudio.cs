@@ -134,7 +134,7 @@ public class MatchAudio : MonoBehaviour
 
         // La Zone : un bip quand la suivante s'annonce, un son quand elle change de place.
         int zone = rm.ShownZone;
-        bool announced = rm.AnnouncedZone >= 0;
+        bool announced = zone >= 0 && rm.AnnouncedZone >= 0;
         if (phase == RoundManager.Phase.Active && sounds != null)
         {
             if (announced && !lastZoneAnnounced) Play(sounds.countdownBeep);

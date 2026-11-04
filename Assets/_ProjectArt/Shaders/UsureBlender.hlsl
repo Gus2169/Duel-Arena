@@ -14,6 +14,23 @@ uint ArmeRot(uint x, uint k)
     return (x << k) | (x >> (32u - k));
 }
 
+// Le pied d'un pixel (dans l'espace des motifs) : au-delà, un motif plus fin que le pixel n'est plus calculé. 0 : pas de
+// limite. Les armes le laissent à 0 : leurs motifs restent ceux de Blender, au pixel près. Le décor le règle à chaque
+// pixel (DecorFragment) : une caisse à 30 m payait sinon cinq octaves de bruit pour du sous-pixel.
+static float ArmePied = 0.0;
+
+#ifdef ARME_HACHAGE_RAPIDE
+// Un mélange bien moins cher que lookup3, pour le décor : ses motifs ne doivent pas tomber aux mêmes endroits que dans
+// Blender, et le hachage y fait l'essentiel du coût de chaque pixel. Mêmes statistiques : seule leur place change.
+uint ArmeHachage(uint3 k)
+{
+    uint h = (k.x * 0x9E3779B1u) ^ (k.y * 0x85EBCA77u) ^ (k.z * 0xC2B2AE3Du);
+    h ^= h >> 15;
+    h *= 0x2C1B3C6Du;
+    h ^= h >> 12;
+    return h;
+}
+#else
 // lookup3 de Bob Jenkins (trois mots, sa fonction « final ») : le hachage des sommets du Perlin.
 uint ArmeHachage(uint3 k)
 {
@@ -32,6 +49,7 @@ uint ArmeHachage(uint3 k)
     c ^= b; c -= ArmeRot(b, 24u);
     return c;
 }
+#endif
 
 // PCG 3D en entiers signés (le décalage à droite garde le signe), ramené dans [0, 1] : le hachage
 // des cellules du Voronoï, le germe comme la couleur.
@@ -85,9 +103,13 @@ float ArmeBruit(float3 p, float echelle, int detail, float rugosite)
 {
     p *= echelle;
     float somme = 0.0, amplitude = 1.0, total = 0.0, frequence = 1.0;
+    float pied = ArmePied * echelle;
     [loop] for (int o = 0; o <= detail; o++)
     {
-        somme += ArmePerlin(p * frequence) * amplitude;
+        // Pleine tant qu'une cellule couvre deux pixels, éteinte à un pixel par cellule : sa moyenne est nulle, le
+        // retirer ne change pas la teinte, et l'effacement progressif ne se voit pas quand la caméra bouge.
+        float part = ArmePied > 0.0 ? saturate(2.0 - 2.0 * pied * frequence) : 1.0;
+        if (part > 0.0) somme += ArmePerlin(p * frequence) * amplitude * part;
         total += amplitude;
         amplitude *= rugosite;
         frequence *= 2.0;
@@ -201,7 +223,8 @@ ArmeSurface ArmeUsure(float3 positionOS, float3 normalOS, float2 uv, float bord)
     float large = 0.0;
     if (_ADessous > 0.5)
     {
-        if (_Bords > 0.0)
+        // Chaque bruit après son masque : `bord` est nul sur toute face plane, et les zones sur les trois quarts de la pièce.
+        if (_Bords > 0.0 && bord > 0.0)
         {
             float b = ArmeBruit(p + _DecBords.xyz, 38.0, 4, 0.6);
             masque = max(masque, bord * ArmeAuDessus(b, 0.64 - 0.24 * _Bords - frottement * 0.40));
@@ -209,18 +232,27 @@ ArmeSurface ArmeUsure(float3 positionOS, float3 normalOS, float2 uv, float bord)
         }
         if (_Eclats > 0.0)
         {
-            float e = ArmeBruit(p + _DecEclats.xyz, _EchelleEclats, 4, 0.6);
             float zone = ArmeAuDessus(ArmeBruit(p + _DecZoneEclats.xyz, 4.0, 2, 0.5), 0.56);
             if (_Zone0.w > 0.0) zone = max(zone, ArmeAuDessus(frottement, 0.25));
-            masque = max(masque, ArmeAuDessus(e, 0.70 - 0.08 * _Eclats - frottement * 0.30) * zone);
-            if (_ACouche > 0.5) large = max(large, ArmeAuDessus(e, 0.70 - 0.08 * _Eclats - 0.075 - frottement * 0.30) * zone);
+            if (zone > 0.0)
+            {
+                float e = ArmeBruit(p + _DecEclats.xyz, _EchelleEclats, 4, 0.6);
+                masque = max(masque, ArmeAuDessus(e, 0.70 - 0.08 * _Eclats - frottement * 0.30) * zone);
+                if (_ACouche > 0.5) large = max(large, ArmeAuDessus(e, 0.70 - 0.08 * _Eclats - 0.075 - frottement * 0.30) * zone);
+            }
         }
-        if (_Rayures > 0.0)
+        // Des traits de moins d'un millimètre : à plus de quelques mètres, ils couvrent moins d'un dixième de pixel, pour
+        // deux Voronoï de 27 cellules.
+        float rayuresNettes = ArmePied > 0.0 ? saturate((0.01 - ArmePied) / 0.005) : 1.0;
+        if (_Rayures > 0.0 && rayuresNettes > 0.0)
         {
             float zone = ArmeAuDessus(ArmeBruit(p + _DecZoneRayures.xyz, 3.0, 2, 0.5), 0.60 - 0.10 * _Rayures);
-            float r1 = ArmeRayures(p, 55.0, 0.00032, 0.011, 0.55 * _Rayures, _DecRayures1.xyz);
-            float r2 = ArmeRayures(p, 110.0, 0.00022, 0.005, 0.5 * _Rayures, _DecRayures2.xyz);
-            masque = max(masque, max(r1, r2) * zone);
+            if (zone > 0.0)
+            {
+                float r1 = ArmeRayures(p, 55.0, 0.00032, 0.011, 0.55 * _Rayures, _DecRayures1.xyz);
+                float r2 = ArmeRayures(p, 110.0, 0.00022, 0.005, 0.5 * _Rayures, _DecRayures2.xyz);
+                masque = max(masque, max(r1, r2) * zone * rayuresNettes);
+            }
         }
         couleur = lerp(couleur, _Couche.rgb, large);
         couleur = lerp(couleur, _Dessous.rgb, masque);
@@ -250,11 +282,18 @@ ArmeSurface ArmeUsure(float3 positionOS, float3 normalOS, float2 uv, float bord)
         float3 teinte = _TeinteRouille.rgb * (0.55 + r * 0.6);
         float rousse = saturate(creux * 2.4 * _Rouille * r);
         rousse = max(rousse, masque * ArmeAuDessus(r, 0.62 - 0.30 * _Rouille));
-        float cloques = ArmeAuDessus(ArmeBruit(p + _DecCloques.xyz, 16.0, 4, 0.7), 0.71 - 0.12 * _Rouille);
-        rousse = max(rousse, cloques * ArmeAuDessus(ArmeBruit(p + _DecZoneCloques.xyz, 2.5, 2, 0.5), 0.50));
-        float coulures = ArmeAuDessus(ArmeBruit(p * float3(1.0, 1.0, 0.14) + _DecCoulures.xyz, 14.0, 3, 0.6), 0.61 - 0.10 * _Rouille);
+        float zoneCloques = ArmeAuDessus(ArmeBruit(p + _DecZoneCloques.xyz, 2.5, 2, 0.5), 0.50);
+        if (zoneCloques > 0.0)
+        {
+            float cloques = ArmeAuDessus(ArmeBruit(p + _DecCloques.xyz, 16.0, 4, 0.7), 0.71 - 0.12 * _Rouille);
+            rousse = max(rousse, cloques * zoneCloques);
+        }
         float zone = ArmeAuDessus(ArmeBruit(p + _DecZoneCoulures.xyz, 3.0, 2, 0.5), 0.52);
-        rousse = max(rousse, coulures * zone * 0.6 * _Rouille);
+        if (zone > 0.0)
+        {
+            float coulures = ArmeAuDessus(ArmeBruit(p * float3(1.0, 1.0, 0.14) + _DecCoulures.xyz, 14.0, 3, 0.6), 0.61 - 0.10 * _Rouille);
+            rousse = max(rousse, coulures * zone * 0.6 * _Rouille);
+        }
         couleur = lerp(couleur, teinte, rousse);
         rugosite = lerp(rugosite, 0.92, rousse);
         metallique = lerp(metallique, 0.0, rousse);
@@ -281,19 +320,26 @@ ArmeSurface ArmeUsure(float3 positionOS, float3 normalOS, float2 uv, float bord)
     if (_Poussiere != 0.0)
     {
         float dessus = saturate((haut - 0.55) * 3.0);
-        float tache = 0.35 + ArmeBruit(p + _DecPoussiere.xyz, 14.0, 3, 0.6) * 0.65;
-        float d = saturate(max(creux * 2.6, dessus * 0.8) * tache * _Poussiere);
-        couleur = lerp(couleur, float3(0.32, 0.31, 0.29), d);
-        rugosite = lerp(rugosite, 0.95, d);
+        float expose = max(creux * 2.6, dessus * 0.8);
+        if (expose > 0.0)
+        {
+            float tache = 0.35 + ArmeBruit(p + _DecPoussiere.xyz, 14.0, 3, 0.6) * 0.65;
+            float d = saturate(expose * tache * _Poussiere);
+            couleur = lerp(couleur, float3(0.32, 0.31, 0.29), d);
+            rugosite = lerp(rugosite, 0.95, d);
+        }
     }
 
     // la suie de la bouche
     if (_Suie.w > 0.0)
     {
         float noirci = saturate(1.0 - distance(p, _Suie.xyz) / _Suie.w);
-        noirci = saturate(noirci * (0.55 + ArmeBruit(p + _DecSuie.xyz, 60.0, 3, 0.6) * 0.6));
-        couleur *= 1.0 - noirci * 0.85;
-        rugosite = lerp(rugosite, 0.85, noirci);
+        if (noirci > 0.0)
+        {
+            noirci = saturate(noirci * (0.55 + ArmeBruit(p + _DecSuie.xyz, 60.0, 3, 0.6) * 0.6));
+            couleur *= 1.0 - noirci * 0.85;
+            rugosite = lerp(rugosite, 0.85, noirci);
+        }
     }
 
     ArmeSurface s;

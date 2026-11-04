@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
@@ -7,8 +8,8 @@ using UnityEngine;
 /// <summary>
 /// Le menu refait le 2026-10-17 d'après les maquettes de l'utilisateur : ce qui s'y décide sans écran. Les
 /// modes de l'écran Jouer et les réglages qu'ils ouvrent (GameModeCatalog), ce qui se règle au salon et ce
-/// qu'il dit des joueurs (SalonView), qui le salon met en tête d'affiche (LobbyLineup), le nom des couleurs des robots (PaletteNames), la carte de l'arène
-/// (MenuArtwork.MapUV), la couleur que chaque joueur publie au salon (OnlineSession.ParseColor).
+/// qu'il dit des joueurs (SalonView), qui le salon met en tête d'affiche (LobbyLineup), le nom des couleurs des robots (PaletteNames),
+/// la couleur que chaque joueur publie au salon (OnlineSession.ParseColor).
 /// </summary>
 public class MenuScreensTests
 {
@@ -372,25 +373,6 @@ public class MenuScreensTests
         Assert.AreEqual("Noir", PaletteNames.NameOf(new Color32(10, 10, 12, 255)));
     }
 
-    // ------------------------------------------------------------------ La carte de l'arène
-
-    [Test]
-    public void LaCarte_MetLePlusZDuMondeEnHaut_EtLePlusXADroite()
-    {
-        var world = new Rect(-40f, -10f, 80f, 100f);   // x de -40 à 40, z de -10 à 90
-        AssertNear(new Vector2(0f, 1f), MenuArtwork.MapUV(world, new Vector2(-40f, -10f)), "Le coin x et z minimaux : en bas à gauche.");
-        AssertNear(new Vector2(1f, 0f), MenuArtwork.MapUV(world, new Vector2(40f, 90f)), "Le coin x et z maximaux : en haut à droite.");
-        AssertNear(new Vector2(0.5f, 0.5f), MenuArtwork.MapUV(world, new Vector2(0f, 40f)), "Le milieu.");
-        AssertNear(new Vector2(0.5f, 0.88f), MenuArtwork.MapUV(world, new Vector2(0f, 2f)), "Le point d'apparition A, près du bord sud : en bas.");
-        AssertNear(new Vector2(0.5f, 0.5f), MenuArtwork.MapUV(new Rect(0f, 0f, 0f, 10f), new Vector2(3f, 3f)), "Un rectangle vide ne divise pas par zéro.");
-    }
-
-    private static void AssertNear(Vector2 expected, Vector2 actual, string message)
-    {
-        Assert.AreEqual(expected.x, actual.x, 1e-4f, message);
-        Assert.AreEqual(expected.y, actual.y, 1e-4f, message);
-    }
-
     // ------------------------------------------------------------------ La couleur publiée au salon
 
     [Test]
@@ -420,5 +402,63 @@ public class MenuScreensTests
         Assert.IsFalse(MainMenuController.LaunchUnderway(true, false, false, false), "Une connexion qui se cherche : le bouton Annuler reste.");
         Assert.IsTrue(MainMenuController.LaunchUnderway(true, false, false, true), "Le salon en ligne lance la partie : ses membres se connectent seuls.");
         Assert.IsFalse(MainMenuController.LaunchUnderway(false, false, false, true), "Dans le salon, avant le lancement.");
+    }
+
+    /// <summary>Le plafond d'images du menu (2026-11-04) : sans lui, un écran fixe tournait à plus de 2 000 images/s, et
+    /// l'instance qui attend au menu prenait le GPU à celle qui joue.</summary>
+    [Test]
+    public void LeMenu_PlafonneSesImages_SansDepasserNiLEcranNiLesReglages()
+    {
+        Assert.AreEqual(60, MainMenuController.MenuFrameRate(60.0, 0), "Un écran à 60 Hz.");
+        Assert.AreEqual(75, MainMenuController.MenuFrameRate(74.97, 0), "La fréquence de l'écran, arrondie.");
+        Assert.AreEqual(MainMenuController.MenuMaxFrameRate, MainMenuController.MenuFrameRate(240.0, 0), "L'écran le plus rapide n'en demande pas plus.");
+        Assert.AreEqual(MainMenuController.MenuMaxFrameRate, MainMenuController.MenuFrameRate(0.0, 0), "Une fréquence inconnue.");
+        Assert.AreEqual(60, MainMenuController.MenuFrameRate(144.0, 60), "Le plafond des réglages l'emporte.");
+        Assert.AreEqual(MainMenuController.MenuMaxFrameRate, MainMenuController.MenuFrameRate(144.0, 240), "Un plafond plus haut ne change rien.");
+    }
+
+    /// <summary>L'arme de l'armurerie ne se redessine qu'à un changement (2026-11-04) : la caméra reste allumée quelques
+    /// images, puis la texture garde la dernière.</summary>
+    [Test]
+    public void LArmeImmobile_SeRedessineQuelquesImages_PuisPlus()
+    {
+        Assert.GreaterOrEqual(PreviewStage.RedrawFrames, 2, "Deux images au moins sont dessinées, quel que soit le moment où le changement tombe.");
+        int frames = PreviewStage.StepRedraw(0, true);
+        Assert.AreEqual(PreviewStage.RedrawFrames, frames, "Elle bouge : la caméra repart.");
+        for (int i = 0; i < PreviewStage.RedrawFrames; i++)
+        {
+            Assert.Greater(frames, 0, "La caméra reste allumée le temps de ses images.");
+            frames = PreviewStage.StepRedraw(frames, false);
+        }
+        Assert.AreEqual(0, frames, "Elle ne bouge plus : la caméra s'éteint.");
+        Assert.AreEqual(0, PreviewStage.StepRedraw(0, false), "Et le reste.");
+        Assert.AreEqual(PreviewStage.RedrawFrames, PreviewStage.StepRedraw(1, true), "Un nouveau geste repart du début.");
+    }
+
+    /// <summary>Le VSync et le plafond ne s'appliquaient qu'au bouton Appliquer, jamais au lancement (trouvé le 2026-11-04) : le
+    /// jeu tournait sans limite, quoi que disent les Options.</summary>
+    [Test]
+    public void LeVSyncEtLePlafond_SAppliquentAuLancement_CommeIlsSontEnregistres()
+    {
+        MethodInfo launch = typeof(GameSettings).GetMethod("ApplyFramePacingAtLaunch", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.IsNotNull(launch, "Rien ne les applique au lancement.");
+        var attribute = launch.GetCustomAttribute<RuntimeInitializeOnLoadMethodAttribute>();
+        Assert.IsNotNull(attribute, "Unity n'appelle pas cette fonction.");
+        Assert.AreEqual(RuntimeInitializeLoadType.BeforeSceneLoad, attribute.loadType, "Avant la scène : le menu pose ensuite son propre plafond.");
+
+        int vSync = QualitySettings.vSyncCount, rate = Application.targetFrameRate;
+        try
+        {
+            QualitySettings.vSyncCount = GameSettings.VSync ? 0 : 1;
+            Application.targetFrameRate = 7;
+            GameSettings.ApplyFramePacing();
+            Assert.AreEqual(GameSettings.VSync ? 1 : 0, QualitySettings.vSyncCount);
+            Assert.AreEqual(GameSettings.FrameRateCap > 0 ? GameSettings.FrameRateCap : -1, Application.targetFrameRate);
+        }
+        finally
+        {
+            QualitySettings.vSyncCount = vSync;
+            Application.targetFrameRate = rate;
+        }
     }
 }

@@ -99,13 +99,10 @@ public class SpectatorView : NetworkBehaviour
             spectator.OnThrow += HandleThrow;
             spectator.OnGuardHit += HandleGuardHit;
         }
-        BuildArms();
+        Camera cam = firstPersonView != null ? firstPersonView.PlayerCamera : null;
+        cameraTransform = cam != null ? cam.transform : null;
         chassis = GetComponent<PlayerChassis>();
-        if (chassis != null)
-        {
-            chassis.Changed += HandleChassis;
-            HandleChassis(chassis.Value);
-        }
+        if (chassis != null) chassis.Changed += HandleChassis;
     }
 
     public override void OnNetworkDespawn()
@@ -146,18 +143,17 @@ public class SpectatorView : NetworkBehaviour
         if (armsAnimator != null && armsAnimator.isActiveAndEnabled) armsAnimator.SetTrigger(GardeChocId);
     }
 
-    /// <summary>La copie du robot, à mains nues, accrochée à la caméra (comme la vue armée).</summary>
+    /// <summary>La copie du robot, à mains nues, accrochée à la caméra (comme la vue armée). Au premier besoin : un
+    /// duelliste s'en passe d'ordinaire, et ce qui pend à la caméra pèse sur chacune de ses écritures, même éteint.</summary>
     private void BuildArms()
     {
         Transform model = transform.Find("Model");
-        Camera cam = firstPersonView != null ? firstPersonView.PlayerCamera : null;
-        if (model == null || cam == null || layer < 0) return;
-        cameraTransform = cam.transform;
+        if (model == null || layer < 0) return;
 
         arms = FirstPersonView.BuildView(model.gameObject, cameraTransform, layer, out armsAnimator, out _);
         arms.name = "VueSpectateur";
         // À mains nues : ni arme, ni gant, rien de ce qu'il tenait à la copie.
-        foreach (WeaponModel weapon in arms.GetComponentsInChildren<WeaponModel>(true)) weapon.gameObject.SetActive(false);
+        foreach (WeaponModel weapon in arms.GetComponentsInChildren<WeaponModel>(true)) Destroy(weapon.gameObject);
         HeldWeapons.WearTaserGlove(armsAnimator, false);
         armsHead = armsAnimator.GetBoneTransform(HumanBodyBones.Head);
         armsLeftUpperArm = armsAnimator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
@@ -176,7 +172,19 @@ public class SpectatorView : NetworkBehaviour
                 if (twin != null && twin.TryGetComponent(out Renderer r)) paint.AddRenderer(r);
             }
         }
-        arms.SetActive(false);
+        if (chassis != null) HandleChassis(chassis.Value);
+    }
+
+    /// <summary>Au Gun Game, le gant seul arrive en plein combat (la dernière marche) : la copie se fait dès le début du match,
+    /// sous le noir, et pas au moment où ça compte.</summary>
+    private bool GloveAhead
+    {
+        get
+        {
+            if (firstPersonView == null || firstPersonView.ArmsCamera == null) return false;
+            RoundManager round = RoundManager.Local;
+            return round != null && round.IsSpawned && round.Mode == GameModeId.GunGame;
+        }
     }
 
     private void LateUpdate()
@@ -186,6 +194,7 @@ public class SpectatorView : NetworkBehaviour
         bool gloveOnly = locomotion != null && !locomotion.IsSpectator && weapon != null && weapon.DisplayedUnarmed;
         bool active = locomotion != null && (locomotion.IsSpectator || gloveOnly) && firstPersonView != null
                       && firstPersonView.ArmsCamera != null && firstPersonView.ArmsCamera.enabled;
+        if (arms == null && (active || GloveAhead)) BuildArms();
         if (arms != null && arms.activeSelf != active) arms.SetActive(active);
         if (!active)
         {

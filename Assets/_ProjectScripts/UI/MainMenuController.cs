@@ -37,6 +37,17 @@ public class MainMenuController : MonoBehaviour
     public const string CustomizeScreen = "screenCustomize";
     public const string OptionsScreen = "screenOptions";
 
+    /// <summary>Le plafond d'images du menu, sur l'écran le plus rapide : rien n'y bouge assez vite pour en demander plus.</summary>
+    public const int MenuMaxFrameRate = 120;
+
+    /// <summary>Le temps (ms) donné par image aux envois de textures et de maillages au GPU sous l'écran de chargement,
+    /// contre 2 dans les réglages de qualité, faits pour qu'un chargement ne saccade pas en jouant.</summary>
+    private const int LoadingUploadTimeSlice = 8;
+
+    /// <summary>Le temps (s) laissé à l'écran titre avant de préparer les services en ligne : d'abord son image et les
+    /// portraits des armes.</summary>
+    private const float OnlineWarmUpDelay = 3f;
+
     [Tooltip("Nom de la scène de jeu à charger une fois l'hébergement démarré. Doit être dans les Build Settings.")]
     [SerializeField] private string gameplaySceneName = "MultiTestScene";
 
@@ -93,6 +104,14 @@ public class MainMenuController : MonoBehaviour
     private bool onlineBusy;
     private VisualElement wiredScreen;   // l'écran titre de l'arbre branché (voir OnEnable)
 
+    private MenuThumbnails thumbnails;
+    private bool launchUnderway;         // ce qu'Update a vu à l'image d'avant (OnLaunchChanged)
+    [System.NonSerialized] private int menuFrameRate;   // le plafond posé par ce menu (CapFrameRate)
+    private bool loadingSpedUp;
+    private ThreadPriority loadingPriorityBefore;
+    private int uploadSliceBefore;
+    private float onlineWarmUpAt;
+
     public MenuArtwork Artwork => artwork;
 
     /// <summary>Une fenêtre (Quitter, le pseudo, le retour au menu) est ouverte, ou une partie se charge : les écrans
@@ -108,7 +127,12 @@ public class MainMenuController : MonoBehaviour
         if (playScreen == null) playScreen = GetComponent<PlayScreenController>();
         if (characterPreview == null) characterPreview = GetComponent<CharacterPreviewController>();
         if (options == null) options = GetComponent<OptionsController>();
+        if (thumbnails == null) thumbnails = GetComponent<MenuThumbnails>();
         root = document.rootVisualElement;
+
+        launchUnderway = false;
+        onlineWarmUpAt = Time.unscaledTime + OnlineWarmUpDelay;
+        CapFrameRate();
 
         // De retour d'une partie, la souris était encore verrouillée au centre de l'écran, invisible
         // (GameHud la verrouille en jeu) : un clic y pressait le bouton du milieu (vu par l'utilisateur
@@ -152,6 +176,13 @@ public class MainMenuController : MonoBehaviour
         }
     }
 
+    // Le plafond et les réglages du chargement survivent à la scène, et d'une session de Play Mode à l'autre.
+    private void OnDisable()
+    {
+        ReleaseFrameRate();
+        SpeedUpLoading(false);
+    }
+
     // Abonnement fait au Start, une fois tous les objets de la scène réveillés : dans OnEnable, le
     // NetworkManager de la scène pouvait ne pas encore être le singleton (ordre d'activation non
     // garanti, et au retour d'une partie l'ancien vient à peine d'être détruit, 2026-10-12).
@@ -170,7 +201,19 @@ public class MainMenuController : MonoBehaviour
             ShootingRangeBootstrap.StartRangeOnMenuLoad = false;
             StartShootingRange();
         }
+
+        // Mesurer une build sans la piloter : elle entre seule dans la scène, une fois par lancement, et le journal de
+        // diagnostic (cpu=, rendu=, gpu=) dit le reste. Sert à comparer deux réglages de lancement (-force-d3d12).
+        if (benchLaunched) return;
+        string[] arguments = System.Environment.GetCommandLineArgs();
+        bool stand = System.Array.IndexOf(arguments, "-banc-stand") >= 0, arena = System.Array.IndexOf(arguments, "-banc-arene") >= 0;
+        if (!stand && !arena) return;
+        benchLaunched = true;
+        if (stand) StartShootingRange();
+        else OnHostClicked();
     }
+
+    private static bool benchLaunched;
 
     private void OnDestroy()
     {
@@ -251,6 +294,7 @@ public class MainMenuController : MonoBehaviour
         // dans son noir (GameHud). Le menu dessous ne bouge plus.
         NetworkManager nm = NetworkManager.Singleton;
         bool launching = nm != null && LaunchUnderway(nm.IsListening, nm.IsServer, nm.IsConnectedClient, nm.IsClient && OnlineSession.InSession);
+        if (launching != launchUnderway) OnLaunchChanged(launching);
         if (loadingScreen != null && launching == loadingScreen.ClassListContains("hidden"))
         {
             loadingScreen.EnableInClassList("hidden", !launching);
@@ -258,8 +302,80 @@ public class MainMenuController : MonoBehaviour
         }
         if (launching) return;
 
+        // Appliquer, dans les Options, écrit le plafond des réglages (GameSettings.ApplyGraphics) à la place du sien.
+        if (Application.targetFrameRate != menuFrameRate) CapFrameRate();
+        WarmUpOnlineOnTitle();
+
         UnityEngine.InputSystem.Keyboard keyboard = UnityEngine.InputSystem.Keyboard.current;
         if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame) GoBack();
+    }
+
+    /// <summary>Une partie part de ce menu, ou n'en part plus (une connexion qui tombe avant l'arène) : le plafond du
+    /// menu tombe AVANT le chargement, compté par image, et ce qui reste des portraits se rend ici, sous les lumières du
+    /// plateau, que l'arène n'a pas (la préparation et le stand les montrent).</summary>
+    private void OnLaunchChanged(bool launching)
+    {
+        launchUnderway = launching;
+        SpeedUpLoading(launching);
+        if (launching)
+        {
+            ReleaseFrameRate();
+            thumbnails?.PrepareWeaponPortraits();
+        }
+        else CapFrameRate();
+    }
+
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+    /// <summary>Tests : ce que fait Update quand une partie part, ou n'en part plus.</summary>
+    public void TestLaunchChanged(bool launching) => OnLaunchChanged(launching);
+#endif
+
+    /// <summary>
+    /// Le plafond d'images du menu : la fréquence de l'écran (`screenRate`, Hz ; 0 si on ne la connaît pas), jamais plus
+    /// de MenuMaxFrameRate, ni plus que le plafond des réglages (`settingsCap`, 0 sans plafond). Sans lui, un écran fixe
+    /// tournait à plus de 2 000 images/s, et l'instance qui attend au menu prenait le GPU à celle qui joue. Fonction
+    /// pure, testée.
+    /// </summary>
+    public static int MenuFrameRate(double screenRate, int settingsCap)
+    {
+        int rate = screenRate >= 1.0 && screenRate < MenuMaxFrameRate ? (int)System.Math.Round(screenRate) : MenuMaxFrameRate;
+        return settingsCap > 0 ? Mathf.Min(rate, settingsCap) : rate;
+    }
+
+    private void CapFrameRate()
+    {
+        menuFrameRate = MenuFrameRate(Screen.currentResolution.refreshRateRatio.value, GameSettings.FrameRateCap);
+        Application.targetFrameRate = menuFrameRate;
+    }
+
+    /// <summary>Hors du menu, le plafond des réglages, comme GameSettings.ApplyGraphics le pose.</summary>
+    private static void ReleaseFrameRate()
+    {
+        int cap = GameSettings.FrameRateCap;
+        Application.targetFrameRate = cap > 0 ? cap : -1;
+    }
+
+    /// <summary>
+    /// Sous l'écran de chargement, personne ne joue : le chargement peut prendre de longues images, ce que ses réglages
+    /// habituels évitent. Rendus quand la partie ne part plus, ou que le menu laisse la place à la scène chargée : tout
+    /// est alors lu et intégré, et ils ne valent jamais pendant une manche.
+    /// </summary>
+    private void SpeedUpLoading(bool on)
+    {
+        if (on == loadingSpedUp) return;
+        loadingSpedUp = on;
+        if (on)
+        {
+            loadingPriorityBefore = Application.backgroundLoadingPriority;
+            uploadSliceBefore = QualitySettings.asyncUploadTimeSlice;
+            Application.backgroundLoadingPriority = ThreadPriority.High;
+            QualitySettings.asyncUploadTimeSlice = LoadingUploadTimeSlice;
+        }
+        else
+        {
+            Application.backgroundLoadingPriority = loadingPriorityBefore;
+            QualitySettings.asyncUploadTimeSlice = uploadSliceBefore;
+        }
     }
 
     /// <summary>
@@ -495,8 +611,19 @@ public class MainMenuController : MonoBehaviour
         playScreen?.OnShown();
 
         // Les services en ligne se préparent pendant que le joueur lit l'écran : créer ou rejoindre
-        // part ensuite sans attendre la connexion. Un échec (pas d'internet) se dira au clic.
+        // part ensuite sans attendre la connexion. Un échec (pas d'internet) se dira au clic. Déjà prêts
+        // (WarmUpOnlineOnTitle), cet appel ne fait rien.
         _ = WarmUpOnlineAsync();
+    }
+
+    /// <summary>La connexion aux services gèle une image : elle se fait sur l'écran titre, qui ne bouge pas, plutôt
+    /// qu'à l'arrivée sur l'écran Jouer. Une fois par ouverture du menu, et jamais sous les yeux d'un joueur parti sur
+    /// un autre écran (l'écran Jouer s'en charge alors, comme avant).</summary>
+    private void WarmUpOnlineOnTitle()
+    {
+        if (Time.unscaledTime < onlineWarmUpAt) return;
+        onlineWarmUpAt = float.PositiveInfinity;
+        if (CurrentScreen == TitleScreen) _ = WarmUpOnlineAsync();
     }
 
     private static async System.Threading.Tasks.Task WarmUpOnlineAsync()

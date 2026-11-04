@@ -2,18 +2,18 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Les armes tenues en main droite (2026-10-11) : une copie du modèle de chaque arme de l'arsenal,
-/// toutes accrochées au même point, une seule visible à la fois.
+/// L'arme tenue en main droite (2026-10-11) : une copie du modèle de l'arme en main, et d'elle seule.
 ///
-/// Le point est le repère « PriseArme » posé dans le préfab joueur sous la main droite, avec le
-/// décalage calculé sur la pose de visée (poignée au creux de la paume, canon dans l'axe de la main).
-/// Les modèles sont créés au lancement à partir de lui : leurs préfabs ont tous la poignée à l'origine
-/// et le canon vers +Z (WeaponModel). Fait AVANT que la vue subjective ne copie le modèle, pour que
-/// ses bras aient les mêmes armes, puis refait sur le corps et sur les bras quand l'apparence choisie
-/// à l'armurerie arrive du serveur (PlayerWeaponLooks, 2026-10-15) : la finition de chaque arme.
+/// Tout ce qui copie le robot reprend ce qu'il y a sous sa main : les bras de la vue subjective, ceux d'un
+/// spectateur, et surtout l'épave, à chaque mort et sur chaque machine, dans l'image de l'impact de la kill cam. Et
+/// tout ce qui bouge le robot parcourt ce qui pend à ses os. Une arme ne naît donc qu'à sa sortie, et s'en va quand
+/// une autre la remplace : une arme imposée en pleine manche (le Gun Game) coûte un préfab et ses accessoires.
 ///
-/// Chaque copie porte le nom de sa place (« Arme1 » à « Arme12 ») : c'est par lui qu'on la retrouve. Elle porte les accessoires choisis pour sa place
-/// (PlayerWeaponAttachments, 2026-10-16), montés par AttachmentMount.
+/// Elle se tient au repère « PriseArme » du préfab joueur, sous la main droite, avec le décalage calculé sur la pose
+/// de visée (poignée au creux de la paume, canon dans l'axe de la main) : ses préfabs ont tous la poignée à l'origine
+/// et le canon vers +Z (WeaponModel). La copie porte le nom de sa place (« Arme1 » à « Arme13 »), la finition choisie
+/// à l'armurerie (PlayerWeaponLooks, 2026-10-15) et les accessoires de sa place (PlayerWeaponAttachments, 2026-10-16),
+/// montés par AttachmentMount.
 ///
 /// Catégorie C pure. Sans état, testé.
 /// </summary>
@@ -26,95 +26,74 @@ public static class HeldWeapons
     public static string SlotName(int slot) => "Arme" + (slot + 1);
 
     /// <summary>
-    /// Met sous la main le modèle de chaque arme, avec sa finition : crée ce qui manque, remplace un
-    /// modèle qui n'est plus le bon (en gardant sa visibilité), et ne touche pas aux autres. `renderLike` donne les ombres des nouvelles pièces (celles du corps qui les porte :
-    /// ombre seule chez le propriétaire, aucune sur les bras de la vue subjective) ; sans lui, elles
-    /// gardent celles du préfab.
+    /// Met en main le modèle de l'arme `data`, avec sa finition et ses accessoires, et ôte de la main toute autre
+    /// arme. Renvoie le modèle (null si `data` n'est pas de `loadout` ou n'a pas de modèle : rien n'est montré, comme
+    /// pour un spectateur). `renderLike` donne les ombres de ce qui est créé (celles du corps qui le porte : ombre seule
+    /// chez le propriétaire, aucune sur les bras de la vue subjective) ; sans lui, elles gardent celles du préfab.
     /// </summary>
-    public static void Build(Transform rightHand, IReadOnlyList<WeaponData> loadout, WeaponLooks looks, Renderer renderLike = null)
-        => Build(rightHand, loadout, looks, WeaponAttachments.None, renderLike);
-
-    /// <summary>La même chose, avec les accessoires de chaque place (AttachmentMount.Apply).</summary>
-    public static void Build(Transform rightHand, IReadOnlyList<WeaponData> loadout, WeaponLooks looks, WeaponAttachments attachments,
-                             Renderer renderLike = null)
-    {
-        if (rightHand == null || loadout == null) return;
-        Transform anchor = rightHand.Find(GripAnchorName);
-        Vector3 position = anchor != null ? anchor.localPosition : Vector3.zero;
-        Quaternion rotation = anchor != null ? anchor.localRotation : Quaternion.identity;
-
-        for (int slot = 0; slot < loadout.Count; slot++)
-        {
-            WeaponData data = loadout[slot];
-            GameObject prefab = data != null ? data.modelPrefab : null;
-            if (prefab == null) continue;
-
-            Transform existing = rightHand.Find(SlotName(slot));
-            bool visible = existing != null && existing.gameObject.activeSelf;
-            if (existing != null && !SameModel(existing.gameObject, prefab))
-            {
-                // Destroy est différé : renommé et éteint, l'ancien ne se fait plus trouver d'ici là.
-                existing.name += " (remplacée)";
-                existing.gameObject.SetActive(false);
-                if (Application.isPlaying) Object.Destroy(existing.gameObject);
-                else Object.DestroyImmediate(existing.gameObject);
-                existing = null;
-            }
-
-            if (existing == null)
-            {
-                GameObject model = Object.Instantiate(prefab, rightHand, false);
-                model.name = SlotName(slot);
-                model.transform.localPosition = position;
-                model.transform.localRotation = rotation;
-                model.transform.localScale = Vector3.one;
-                // Layer et ombres : ceux du corps qui le porte (ombre seule chez le propriétaire, layer
-                // des bras sur la copie de la vue subjective).
-                int layer = rightHand.gameObject.layer;
-                foreach (Transform t in model.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = layer;
-                if (renderLike != null)
-                {
-                    foreach (Renderer r in model.GetComponentsInChildren<Renderer>(true))
-                    {
-                        r.shadowCastingMode = renderLike.shadowCastingMode;
-                        r.receiveShadows = renderLike.receiveShadows;
-                    }
-                }
-                model.SetActive(visible);
-                existing = model.transform;
-            }
-
-            if (existing.TryGetComponent(out WeaponFinishes finishes) && finishes.Shown != looks.Finish(slot))
-                finishes.Apply(looks.Finish(slot));
-            AttachmentMount.Apply(existing, data, attachments, slot, looks.Finish(slot), renderLike);
-        }
-    }
-
-    /// <summary>La copie sous la main est-elle ce préfab ? (même désignation de modèle)</summary>
-    private static bool SameModel(GameObject copy, GameObject prefab)
-    {
-        var a = copy.GetComponent<WeaponModel>();
-        var b = prefab.GetComponent<WeaponModel>();
-        if (a == null || b == null) return a == b;
-        return a.Designation == b.Designation;
-    }
-
-    /// <summary>Montre l'arme de `data` et cache les autres armes de l'arsenal. Renvoie le modèle
-    /// montré (null s'il n'existe pas sous cette main, ou si `data` n'est pas de l'arsenal : rien
-    /// n'est montré).</summary>
-    public static WeaponModel Show(Transform rightHand, IReadOnlyList<WeaponData> loadout, WeaponData data)
+    public static WeaponModel Show(Transform rightHand, IReadOnlyList<WeaponData> loadout, WeaponData data, WeaponLooks looks,
+                                   WeaponAttachments attachments, Renderer renderLike = null)
     {
         if (rightHand == null || loadout == null) return null;
-        WeaponModel shown = null;
-        for (int slot = 0; slot < loadout.Count; slot++)
+        int slot = SlotOf(loadout, data);
+        WeaponModel wanted = slot >= 0 && data.modelPrefab != null ? data.modelPrefab.GetComponent<WeaponModel>() : null;
+
+        WeaponModel held = null;
+        for (int i = rightHand.childCount - 1; i >= 0; i--)
         {
-            Transform model = rightHand.Find(SlotName(slot));
-            if (model == null) continue;
-            bool visible = data != null && loadout[slot] == data;
-            if (model.gameObject.activeSelf != visible) model.gameObject.SetActive(visible);
-            if (visible) shown = model.GetComponent<WeaponModel>();
+            // Une arme que porte un spectateur (ArenaItem.CreateVisual) est un modèle inerte : à lui, pas à cette main.
+            if (!rightHand.GetChild(i).TryGetComponent(out WeaponModel copy) || !copy.enabled) continue;
+            if (held == null && wanted != null && copy.Designation == wanted.Designation) held = copy;
+            else PutAway(copy.gameObject);
         }
-        return shown;
+        if (wanted == null) return null;
+        if (held == null) held = Create(wanted, rightHand, slot, renderLike);
+
+        WeaponFinish finish = looks.Finish(slot);
+        if (held.TryGetComponent(out WeaponFinishes finishes) && finishes.Shown != finish) finishes.Apply(finish);
+        AttachmentMount.Apply(held.transform, data, attachments, slot, finish, renderLike);
+        return held;
+    }
+
+    private static int SlotOf(IReadOnlyList<WeaponData> loadout, WeaponData data)
+    {
+        if (data == null) return -1;
+        for (int slot = 0; slot < loadout.Count; slot++)
+            if (loadout[slot] == data) return slot;
+        return -1;
+    }
+
+    private static WeaponModel Create(WeaponModel prefab, Transform rightHand, int slot, Renderer renderLike)
+    {
+        Transform anchor = rightHand.Find(GripAnchorName);
+        WeaponModel model = Object.Instantiate(prefab, rightHand, false);
+        model.name = SlotName(slot);
+        Transform copy = model.transform;
+        copy.localPosition = anchor != null ? anchor.localPosition : Vector3.zero;
+        copy.localRotation = anchor != null ? anchor.localRotation : Quaternion.identity;
+        copy.localScale = Vector3.one;
+        // Layer et ombres : ceux du corps qui le porte (ombre seule chez le propriétaire, layer des bras sur la copie de
+        // la vue subjective).
+        int layer = rightHand.gameObject.layer;
+        foreach (Transform t in model.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = layer;
+        if (renderLike != null)
+        {
+            foreach (Renderer r in model.GetComponentsInChildren<Renderer>(true))
+            {
+                r.shadowCastingMode = renderLike.shadowCastingMode;
+                r.receiveShadows = renderLike.receiveShadows;
+            }
+        }
+        return model;
+    }
+
+    private static void PutAway(GameObject copy)
+    {
+        // Destroy est différé : sortie de la main et éteinte tout de suite, elle ne se fait plus trouver ni copier d'ici là.
+        copy.SetActive(false);
+        copy.transform.SetParent(null, false);
+        if (Application.isPlaying) Object.Destroy(copy);
+        else Object.DestroyImmediate(copy);
     }
 
     /// <summary>Le gant à décharge du taser (2026-10-11), posé dans le préfab joueur sur l'avant-bras

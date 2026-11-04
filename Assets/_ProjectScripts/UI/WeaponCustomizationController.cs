@@ -339,6 +339,7 @@ public class WeaponCustomizationController : MonoBehaviour
             AttachmentMount.Apply(weaponInstance.transform, CurrentData, attachments, currentSlot, finish);
         }
         if (rebuilt || resetRotation) stage.ShowWeapon(weaponBounds, viewport, resetRotation);
+        else stage.Redraw();
     }
 
     private void BuildWeaponInstance()
@@ -600,13 +601,6 @@ public class WeaponCustomizationController : MonoBehaviour
     private static string TitleOf(GameObject prefab, string fallback)
         => prefab != null && prefab.TryGetComponent(out WeaponAttachment a) && !string.IsNullOrEmpty(a.Title) ? a.Title : fallback;
 
-    private static string ModelTitle(WeaponModel model) => model == null ? "" : model.ModelFamily switch
-    {
-        WeaponModel.Family.Stock => "Stock",
-        WeaponModel.Family.Serie30 => "Série 30",
-        _ => "Prototype laser",
-    };
-
     /// <summary>Ce qui s'écrit sur un emplacement et sur la case d'un choix : la désignation de l'accessoire
     /// ou du modèle, les balles du chargeur, l'abrégé de la finition.</summary>
     private string ChoiceCode(Rubric rubric, int variant)
@@ -657,33 +651,6 @@ public class WeaponCustomizationController : MonoBehaviour
             BarrelKind.Long => laser ? "FL" : "CL",
             _ => laser ? "FC" : "CC",
         };
-    }
-
-    /// <summary>
-    /// Une arme résumée : sa désignation et son rang dans sa famille (« FA-30 · Série 30 »), puis sa finition et les
-    /// accessoires que l'arme porte vraiment (« Repeinte · PI-1 · LT-1 · chargeur 45 ») : ce qu'elle ne prend
-    /// pas, le serveur le ferait tomber.
-    /// </summary>
-    public static void Summarize(WeaponData data, int slot, WeaponLooks looks, WeaponAttachments attachments,
-                                 out string model, out string details)
-    {
-        GameObject prefab = data != null ? data.modelPrefab : null;
-        WeaponModel weaponModel = prefab != null ? prefab.GetComponent<WeaponModel>() : null;
-        model = weaponModel != null ? $"{weaponModel.Designation} · {ModelTitle(weaponModel)}" : data != null ? data.weaponName : "";
-
-        var parts = new List<string> { WeaponLooks.FinishLabel(looks.Finish(slot)) };
-        foreach (AttachmentCategory category in new[]
-                 { AttachmentCategory.Sight, AttachmentCategory.Barrel, AttachmentCategory.Grip, AttachmentCategory.Laser, AttachmentCategory.Stock })
-        {
-            int variant = attachments.Variant(slot, category);
-            if (variant > 0 && WeaponAttachments.Accepts(data, category, variant))
-                parts.Add(AttachmentCode(data, weaponModel, category, variant));
-        }
-        int magazine = attachments.Variant(slot, AttachmentCategory.Magazine);
-        if (magazine > 0 && WeaponAttachments.Accepts(data, AttachmentCategory.Magazine, magazine))
-            parts.Add($"chargeur {AttachmentCode(data, weaponModel, AttachmentCategory.Magazine, magazine)}");
-        if (parts.Count == 1) parts.Add("sans accessoire");
-        details = string.Join(" · ", parts);
     }
 
     private string ChoiceTitle(Rubric rubric, int variant)
@@ -744,7 +711,6 @@ public class WeaponCustomizationController : MonoBehaviour
     private string ChoiceMessage(Rubric rubric, int variant)
     {
         WeaponData data = CurrentData;
-        AttachmentCatalog catalog = Catalog;
         string title = ChoiceTitle(rubric, variant);
         string code = ChoiceCode(rubric, variant);
         switch (rubric)
@@ -981,10 +947,10 @@ public class WeaponCustomizationController : MonoBehaviour
             group.Add(row);
             weaponList.Add(group);
         }
-        RefreshWeaponRows();
     }
 
-    /// <summary>La vignette de chaque arme, telle qu'elle est équipée.</summary>
+    /// <summary>La vignette de chaque arme, telle qu'elle est équipée : à l'ouverture de l'onglet (Open), et quand
+    /// ce qui est équipé change. Personne ne les regarde avant.</summary>
     private void RefreshWeaponRows()
     {
         WeaponLooks looks = GameSettings.WeaponLooks;

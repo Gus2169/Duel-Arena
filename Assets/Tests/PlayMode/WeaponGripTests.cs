@@ -170,16 +170,14 @@ public class WeaponGripTests
         armsGrip = new WeaponGrip(arms);
     }
 
-    /// <summary>Les mêmes armes en main du corps et des bras, celle de `slot` visible.</summary>
+    /// <summary>La même arme en main du corps et des bras : celle de `slot`.</summary>
     private void Hold(IReadOnlyList<WeaponData> loadout, WeaponLooks looks, WeaponAttachments attachments, int slot,
                       out WeaponModel bodyModel, out WeaponModel armsModel)
     {
         Transform bodyHand = body.GetBoneTransform(HumanBodyBones.RightHand);
         Transform armsHand = arms.GetBoneTransform(HumanBodyBones.RightHand);
-        HeldWeapons.Build(bodyHand, loadout, looks, attachments);
-        HeldWeapons.Build(armsHand, loadout, looks, attachments);
-        bodyModel = HeldWeapons.Show(bodyHand, loadout, loadout[slot]);
-        armsModel = HeldWeapons.Show(armsHand, loadout, loadout[slot]);
+        bodyModel = HeldWeapons.Show(bodyHand, loadout, loadout[slot], looks, attachments);
+        armsModel = HeldWeapons.Show(armsHand, loadout, loadout[slot], looks, attachments);
     }
 
     /// <summary>La visée debout, comme PlayerAnimator la pose sur le corps et la recopie sur les bras.</summary>
@@ -202,6 +200,26 @@ public class WeaponGripTests
         armsGrip.RestoreWeapon();
         bodyGrip.Apply(bodyModel, catalog, holding, 1f, settings, Time.deltaTime);
         armsGrip.Apply(armsModel, catalog, holding, 1f, settings, Time.deltaTime);
+    }
+
+    /// <summary>Sur un robot que personne ne voit, PlayerAnimator ne pose pas les mains (StepHold) : le bras n'est pas
+    /// touché, mais la main gauche va vers l'arme ou s'en écarte, pour être où il faut quand on le revoit.</summary>
+    [UnityTest]
+    public IEnumerator SansRendu_LeBrasNeBougePas_MaisLaMainGaucheSuitSonPoids()
+    {
+        Setup();
+        Hold(Loadout(), WeaponLooks.Default, WeaponAttachments.None, 0, out WeaponModel bodyModel, out _);
+        yield return null;
+
+        WeaponGrip.Settings settings = Settings();
+        Transform forearm = body.GetBoneTransform(HumanBodyBones.LeftLowerArm);
+        Quaternion before = forearm.rotation;
+        Assert.AreEqual(0f, bodyGrip.LeftWeight, "Garde : la main gauche ne tient pas encore l'arme.");
+        bodyGrip.StepHold(bodyModel, true, settings, settings.blendTime);
+        Assert.AreEqual(1f, bodyGrip.LeftWeight, 1e-4f, "La main gauche ne va pas vers l'arme.");
+        Assert.Less(Quaternion.Angle(before, forearm.rotation), 1e-3f, "Le bras a bougé.");
+        bodyGrip.StepHold(bodyModel, false, settings, settings.blendTime);
+        Assert.AreEqual(0f, bodyGrip.LeftWeight, 1e-4f, "La main gauche ne lâche pas l'arme.");
     }
 
     /// <summary>Joue `step` à chaque image pendant `seconds`. Une mesure se prend dans la même image qu'un

@@ -288,11 +288,13 @@ public class WeaponAttachmentsTests
         Assert.AreEqual(WeaponAttachments.None, asked.Sanitized(null), "Sans panoplie, rien.");
     }
 
-    /// <summary>La partie ARMES de Personnalisation résume chaque arme (2026-10-16) : elle ne montre que
-    /// ce que le serveur garderait, avec la désignation de chaque accessoire (le laser de poing sous un
-    /// pistolet). Un viseur demandé sur le sniper n'y figure pas : en partie, il n'y serait pas.</summary>
+    /// <summary>Ce qui s'écrit sur les emplacements de l'armurerie (WeaponCustomizationController.AttachmentCode) : la
+    /// désignation de chaque accessoire que l'arme porte vraiment (WeaponAttachments.Accepts), le laser de poing sous un
+    /// pistolet, les balles du chargeur ; ce qu'elle ne prend pas, le serveur le ferait tomber. Un viseur demandé sur le
+    /// sniper n'y figure pas : en partie, il n'y serait pas. Vus échouer : le laser d'épaule sous un pistolet, un viseur
+    /// accepté sur toutes les armes, la poignée acceptée sur un pistolet, le chargeur d'origine écrit à la place du grand.</summary>
     [Test]
-    public void LeResumeDePersonnalisation_NeMontreQueCeQueLArmePorte()
+    public void LesEmplacementsDeLArmurerie_NeDesignentQueCeQueLArmePorte()
     {
         IReadOnlyList<WeaponData> loadout = Loadout();
         AttachmentCatalog catalog = Catalog();
@@ -301,19 +303,29 @@ public class WeaponAttachmentsTests
             .With(Rifle, HoloA, GripKind.Vertical, true, true)
             .With(Sniper, RedDotA, GripKind.None, false, false)
             .With(Pistol, ReflexA, GripKind.Vertical, true, false);
-        WeaponLooks looks = WeaponLooks.Default.WithFinish(Rifle, WeaponFinish.Rouillee);
+        var written = new List<string>();
+        void Carried(int slot)
+        {
+            WeaponData data = loadout[slot];
+            var model = data.modelPrefab.GetComponent<WeaponModel>();
+            written.Clear();
+            foreach (AttachmentCategory category in new[]
+                     { AttachmentCategory.Sight, AttachmentCategory.Grip, AttachmentCategory.Laser, AttachmentCategory.Magazine })
+            {
+                int variant = asked.Variant(slot, category);
+                if (variant > 0 && WeaponAttachments.Accepts(data, category, variant))
+                    written.Add(WeaponCustomizationController.AttachmentCode(data, model, category, variant));
+            }
+        }
 
-        WeaponCustomizationController.Summarize(loadout[Rifle], Rifle, looks, asked, out string model, out string details);
-        StringAssert.StartsWith(loadout[Rifle].Designation, model, "La désignation de l'arme d'abord.");
-        Assert.AreEqual($"Rouillée · {Code(catalog.SightPrefab(HoloA))} · {Code(catalog.verticalGrip)} · {Code(catalog.laser)} · "
-                        + $"chargeur {AttachmentCatalog.MagazineSize(loadout[Rifle], true)}", details);
-
-        WeaponCustomizationController.Summarize(loadout[Sniper], Sniper, looks, asked, out _, out details);
-        Assert.AreEqual("D'origine · sans accessoire", details, "Le sniper garde sa lunette : le point rouge demandé n'y est pas.");
-
-        WeaponCustomizationController.Summarize(loadout[Pistol], Pistol, looks, asked, out _, out details);
-        Assert.AreEqual($"D'origine · {Code(catalog.SightPrefab(ReflexA))} · {Code(catalog.pistolLaser)}", details,
-                        "Un pistolet : le réflex et le laser de poing, pas de poignée.");
+        Carried(Rifle);
+        CollectionAssert.AreEqual(new[] { Code(catalog.SightPrefab(HoloA)), Code(catalog.verticalGrip), Code(catalog.laser),
+                                          AttachmentCatalog.MagazineSize(loadout[Rifle], true).ToString() }, written);
+        Carried(Sniper);
+        CollectionAssert.IsEmpty(written, "Le sniper garde sa lunette : le point rouge demandé n'y est pas.");
+        Carried(Pistol);
+        CollectionAssert.AreEqual(new[] { Code(catalog.SightPrefab(ReflexA)), Code(catalog.pistolLaser) }, written,
+                                  "Un pistolet : le réflex et le laser de poing, pas de poignée.");
     }
 
     [Test]
@@ -968,6 +980,36 @@ public class WeaponAttachmentsTests
         Assert.IsTrue(Shown(weapon, "Guidon_Base"));
         Assert.AreSame(model.Sight, AttachmentMount.SightOf(model, out eye));
         Assert.AreEqual(model.AimEyeDistance, eye, 1e-6f);
+    }
+
+    /// <summary>Ce qui est monté se cherche une fois, puis se relit à chaque image (la prise des mains, le laser). Un
+    /// montage doit se voir aussitôt, même sur une copie déjà lue, et chaque copie a les siens : une copie faite sans
+    /// Apply (les bras de la vue subjective, copiés du corps) ne lit pas ceux de son original.</summary>
+    [Test]
+    public void CeQuiEstMonte_SeRelit_SansConfondreLesCopies_EtSuitChaqueMontage()
+    {
+        WeaponData rifle = Loadout()[Rifle];
+        Transform weapon = Instantiate("FA07");
+        Transform bare = Instantiate("FA07");
+        foreach (AttachmentCategory category in System.Enum.GetValues(typeof(AttachmentCategory)))
+            Assert.IsNull(AttachmentMount.Mounted(weapon, category), $"Garde : rien de monté en {category}, et c'est retenu.");
+
+        AttachmentMount.Apply(weapon, rifle, WeaponAttachments.None.WithSight(Rifle, HoloA), Rifle, WeaponFinish.Origine);
+        WeaponAttachment sight = AttachmentMount.Mounted(weapon, AttachmentCategory.Sight);
+        Assert.IsNotNull(sight, "Un montage se voit aussitôt, sur une copie déjà lue.");
+        Assert.AreEqual("HO-A", sight.Code);
+        Assert.IsNull(AttachmentMount.Mounted(bare, AttachmentCategory.Sight), "L'autre copie n'a rien.");
+
+        var copy = Object.Instantiate(weapon.gameObject);
+        created.Add(copy);
+        WeaponAttachment copied = AttachmentMount.Mounted(copy.transform, AttachmentCategory.Sight);
+        Assert.IsNotNull(copied, "Une copie faite sans Apply garde ses accessoires.");
+        Assert.AreNotSame(sight, copied);
+        Assert.IsTrue(copied.transform.IsChildOf(copy.transform), "Ce sont les siens, pas ceux de son original.");
+
+        AttachmentMount.Apply(weapon, rifle, WeaponAttachments.None, Rifle, WeaponFinish.Origine);
+        Assert.IsNull(AttachmentMount.Mounted(weapon, AttachmentCategory.Sight), "Retiré, il ne se lit plus.");
+        Assert.AreEqual("HO-A", AttachmentMount.Mounted(copy.transform, AttachmentCategory.Sight).Code, "Retiré de l'autre seulement.");
     }
 
     [Test]

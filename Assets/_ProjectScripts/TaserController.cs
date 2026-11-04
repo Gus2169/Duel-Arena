@@ -98,6 +98,7 @@ public class TaserController : NetworkBehaviour
 
     private readonly Collider[] overlapBuffer = new Collider[16];
     private readonly Collider[] previewBuffer = new Collider[16];
+    private readonly List<PlayerLocomotion> rewound = new List<PlayerLocomotion>();
 
     public float StrikeDuration => strikeDuration;
     public float ContactDelay => contactDelay;
@@ -209,7 +210,10 @@ public class TaserController : NetworkBehaviour
         Vector3 offset = origin - transform.root.position;
         if (offset.sqrMagnitude > maxOriginDistanceFromPlayer * maxOriginDistanceFromPlayer)
         {
+            WeaponController.ServerNoteRefusal("coup de taser d'une origine trop loin du joueur");
+#if UNITY_EDITOR
             Debug.LogWarning($"[Serveur] Coup de taser rejeté : origine à {offset.magnitude:F1} m du joueur (max {maxOriginDistanceFromPlayer} m).", this);
+#endif
             return;
         }
         serverLastStrikeAt = now;
@@ -231,10 +235,11 @@ public class TaserController : NetworkBehaviour
         serverStrikeViewTime = viewServerTime + contactDelay;
     }
 
-    [ClientRpc]
+    /// <summary>Le geste, chez les autres : le joueur l'a déjà joué à l'appui. Le serveur seul peut l'envoyer (une RPC
+    /// universelle le permettrait sinon à n'importe quel client).</summary>
+    [Rpc(SendTo.NotOwner, InvokePermission = RpcInvokePermission.Server)]
     private void StrikeClientRpc()
     {
-        if (IsOwner) return; // déjà joué à l'appui
         LastStrikeSeenAt = Time.time;
         OnStrike?.Invoke();
         PlayStrikeSound();
@@ -250,7 +255,10 @@ public class TaserController : NetworkBehaviour
         // touche rien.
         if (locomotion != null && locomotion.ServerSprintedSince(serverStrikeFirstInput))
         {
+            WeaponController.ServerNoteRefusal("coup de taser en sprintant");
+#if UNITY_EDITOR
             Debug.LogWarning("[Serveur] Coup de taser annulé : le joueur sprintait pendant le geste.", this);
+#endif
             return;
         }
 
@@ -259,7 +267,10 @@ public class TaserController : NetworkBehaviour
         // honnête ne peut faire ni l'un ni l'autre (TaserController.Update, PlayerLocomotion.ReadLocalInput).
         if (locomotion != null && locomotion.ServerVaultedSince(serverStrikeFirstInput - 1))
         {
+            WeaponController.ServerNoteRefusal("coup de taser en franchissant un obstacle");
+#if UNITY_EDITOR
             Debug.LogWarning("[Serveur] Coup de taser annulé : le joueur franchissait un obstacle.", this);
+#endif
             return;
         }
 
@@ -272,21 +283,13 @@ public class TaserController : NetworkBehaviour
         bool ownWasQueryable = ownHitbox != null && ownHitbox.IsQueryable;
         if (ownWasQueryable) ownHitbox.SetQueryable(false);
 
-        var rewound = new List<PlayerLocomotion>();
+        rewound.Clear();
         PlayerDeath killed = null;
         Vector3 killPoint = Vector3.zero;
         bool confirmKill = false;
         try
         {
-            if (rewind > 0f)
-            {
-                foreach (PlayerLocomotion other in PlayerLocomotion.SpawnedPlayers)
-                {
-                    if (other == null || other == locomotion) continue;
-                    other.ServerBeginRewind(targetTime);
-                    rewound.Add(other);
-                }
-            }
+            if (rewind > 0f) WeaponController.ServerRewindReachable(locomotion, OwnerClientId, targetTime, rewound);
             // Sans cette synchronisation, la requête verrait les hitbox à leur place actuelle et
             // le rewind serait silencieusement sans effet (voir le tir).
             Physics.SyncTransforms();
@@ -298,7 +301,9 @@ public class TaserController : NetworkBehaviour
                 // Mort instantanée (GDD § 6) : quelle que soit la vie restante.
                 float before = target.Current;
                 target.ApplyDamage(float.PositiveInfinity, transform.root.gameObject, Health.DamageCause.Glove);
+#if UNITY_EDITOR
                 Debug.Log($"[Serveur] Taser : {hit.transform.root.name} neutralisé (rewind {rewind * 1000f:F0} ms).");
+#endif
 
                 // Statistiques du match (pendant la manche seulement) et épave poussée par le coup.
                 if (matchState != null && RoundManager.StatsRecordingFor(OwnerClientId)) matchState.ServerRecordDamage(before);

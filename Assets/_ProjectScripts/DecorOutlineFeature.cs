@@ -4,11 +4,12 @@ using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine.Rendering.Universal;
 
 /// <summary>
-/// Le contour du décor en cel-shading et en mêlés (2026-10-27, le réglage du rendu) : la passe « DecorContour » du
-/// shader DuelArena/Decor (une coque retournée), dessinée après les opaques, seulement quand le rendu en a un
-/// (RenderStyle.Outlines). Sous l'étiquette ordinaire (SRPDefaultUnlit), URP la dessinait pour chaque objet même vide :
-/// elle coûtait en low poly propre, et il fallait la couper matériau par matériau. Ajoutée au renderer d'URP du jeu
-/// par Duel Arena > Rendu > Préparer le réglage du rendu.
+/// Le contour du décor et des robots en cel-shading et en mêlés (2026-10-27, le réglage du rendu) : la passe
+/// « DecorContour » des shaders DuelArena/Decor et DuelArena/RobotCelShading (une coque retournée), dessinée après les
+/// opaques, seulement quand le rendu en a un (RenderStyle.Outlines). Sous l'étiquette ordinaire (SRPDefaultUnlit), URP la
+/// dessinait pour chaque objet même vide : elle coûtait en low poly propre, il fallait la couper matériau par matériau, et
+/// sous le depth priming (opaques à profondeur égale à la prépasse), une coque plus large que l'objet ne passait plus.
+/// Ajoutée au renderer d'URP du jeu par Duel Arena > Rendu > Préparer le réglage du rendu.
 /// </summary>
 public sealed class DecorOutlineFeature : ScriptableRendererFeature
 {

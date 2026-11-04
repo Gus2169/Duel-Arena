@@ -52,19 +52,21 @@ public class TacticalLaser : MonoBehaviour
     private float gazeWeight = 1f;
     private Health health;
     private FirstPersonView firstPersonView;
-    private Transform rightHand;
+    private PlayerAnimator playerAnimator;
     private int worldLayer;
     private LineRenderer beam;
     private MeshRenderer dot;
     private readonly RaycastHit[] hits = new RaycastHit[16];
     private static Mesh quad;
 
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
     /// <summary>Le point est-il montré cette image ? (tests)</summary>
     public bool DotShown => dot != null && dot.enabled;
     /// <summary>Le faisceau est-il montré cette image ? (tests)</summary>
     public bool BeamShown => beam != null && beam.enabled;
     /// <summary>Où est le point (tests).</summary>
     public Vector3 DotPosition => dot != null ? dot.transform.position : Vector3.zero;
+#endif
 
     private void Awake()
     {
@@ -73,10 +75,8 @@ public class TacticalLaser : MonoBehaviour
         taser = GetComponentInChildren<TaserController>(true);
         health = GetComponent<Health>();
         firstPersonView = GetComponent<FirstPersonView>();
+        playerAnimator = GetComponent<PlayerAnimator>();
         worldLayer = 0;   // Default : la caméra du joueur le dessine
-        Transform model = transform.Find("Model");
-        Animator animator = model != null ? model.GetComponent<Animator>() : null;
-        rightHand = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightHand) : null;
     }
 
     private void OnDestroy()
@@ -88,8 +88,7 @@ public class TacticalLaser : MonoBehaviour
     private void LateUpdate()
     {
         bool on = TryAim(out Vector3 origin, out Vector3 direction, out bool beamShown, out WeaponData data,
-                         out bool zeroed, out Vector3 sightOrigin, out Vector3 sightDirection,
-                         out Vector3 eye, out Vector3 look);
+                         out WeaponModel shownWeapon, out Vector3 eye, out Vector3 look);
         AttachmentCatalog catalog = data != null ? data.attachmentCatalog : null;
         if (!on || catalog == null || catalog.dotMaterial == null)
         {
@@ -98,22 +97,24 @@ public class TacticalLaser : MonoBehaviour
         }
 
         float range = catalog.beamRange;
-        if (zeroed)
+        bool steady = FollowsGaze(weapon.ShowsReloadGesture, weapon.RaiseTimeRemaining > 0f, locomotion.DisplaySprinting,
+                                  locomotion.DisplayVaulting, taser != null && taser.ShowsStrike);
+        gazeWeight = Mathf.MoveTowards(gazeWeight, steady ? 1f : 0f, Time.deltaTime / GazeBlendTime);
+
+        // L'arme tenue, le cas courant, seul le regard compte : la ligne de visée ne se cherche que si le faisceau suit
+        // l'arme, même en partie. Elle coûte deux requêtes de 150 m par image et par joueur à laser.
+        if (gazeWeight < 1f && TryFindSightLine(shownWeapon, direction, out Vector3 sightOrigin, out Vector3 sightDirection))
         {
             float zero = Cast(sightOrigin, sightDirection, range, data, out RaycastHit seen) ? seen.distance : range;
             direction = ZeroedDirection(origin, sightOrigin, sightDirection, Mathf.Max(MinimumZeroDistance, zero));
         }
 
-        bool steady = FollowsGaze(weapon.ShowsReloadGesture, weapon.RaiseTimeRemaining > 0f, locomotion.DisplaySprinting,
-                                  locomotion.DisplayVaulting, taser != null && taser.ShowsStrike);
-        gazeWeight = Mathf.MoveTowards(gazeWeight, steady ? 1f : 0f, Time.deltaTime / GazeBlendTime);
         bool gazeHit = false;
         Vector3 gazePoint = eye + look * range;
         if (gazeWeight > 0f)
         {
             gazeHit = Cast(eye, look, range, data, out RaycastHit seen);
             if (gazeHit) gazePoint = seen.point;
-            direction = TowardGaze(origin, direction, gazePoint, gazeWeight);
         }
 
         Vector3 end;
@@ -126,6 +127,7 @@ public class TacticalLaser : MonoBehaviour
         }
         else
         {
+            if (gazeWeight > 0f) direction = TowardGaze(origin, direction, gazePoint, gazeWeight);
             hit = Cast(origin, direction, range, data, out RaycastHit stop);
             end = hit ? stop.point - direction * 0.01f : origin + direction * range;   // posé devant la surface, pas dedans
         }
@@ -143,19 +145,19 @@ public class TacticalLaser : MonoBehaviour
     }
 
     /// <summary>Le laser est-il allumé, d'où part son faisceau, dans quel sens, et se voit-il ? Le long du
-    /// canon de l'arme tenue : celle des bras chez le joueur, ramenée là où il la voit ; celle du corps
-    /// chez les autres. Et la ligne de visée de cette arme, sur laquelle le régler (`zeroed`), et le regard
-    /// du joueur (`eye`, `look`) : sa caméra, ou ce qui en est publié.</summary>
+    /// canon de l'arme tenue (`shownWeapon`, null si le faisceau ne part d'aucune arme) : celle des bras
+    /// chez le joueur, ramenée là où il la voit ; celle du corps chez les autres. Et le regard du joueur
+    /// (`eye`, `look`) : sa caméra, ou ce qui en est publié.</summary>
     private bool TryAim(out Vector3 origin, out Vector3 direction, out bool beamShown, out WeaponData data,
-                        out bool zeroed, out Vector3 sightOrigin, out Vector3 sightDirection,
-                        out Vector3 eye, out Vector3 look)
+                        out WeaponModel shownWeapon, out Vector3 eye, out Vector3 look)
     {
-        origin = direction = sightOrigin = sightDirection = eye = look = Vector3.zero;
-        beamShown = zeroed = false;
+        origin = direction = eye = look = Vector3.zero;
+        beamShown = false;
         data = null;
+        shownWeapon = null;
         if (weapon == null || locomotion == null || locomotion.IsSpectator) return false;
         if (health != null && health.IsDead) return false;
-        if (KillCam.Covers) return false;   // ses tailles se calculent pour la caméra du joueur, que la kill cam recouvre
+        if (KillCam.Covers) return false;   // ni point ni faisceau dans les plans de la kill cam
         int slot = weapon.DisplayedSlot;
         data = weapon.DataOf(slot);
         if (data == null || !weapon.Attachments.Laser(slot) || !WeaponAttachments.Accepts(data, AttachmentCategory.Laser, 1)) return false;
@@ -176,16 +178,9 @@ public class TacticalLaser : MonoBehaviour
             look = camera.transform.forward;
             if (emitter != null && arms != null)
             {
-                Vector3 forward = view.transform.forward;
-                ArmsRayToWorld(emitter.position, forward, camera.transform, camera.fieldOfView, arms.fieldOfView,
+                ArmsRayToWorld(emitter.position, view.transform.forward, camera.transform, camera.fieldOfView, arms.fieldOfView,
                                out origin, out direction);
-                Transform sight = AttachmentMount.SightOf(view, out _);
-                if (sight != null)
-                {
-                    ArmsRayToWorld(sight.position, forward, camera.transform, camera.fieldOfView, arms.fieldOfView,
-                                   out sightOrigin, out sightDirection);
-                    zeroed = true;
-                }
+                shownWeapon = view;
                 beamShown = true;
             }
             else
@@ -197,23 +192,38 @@ public class TacticalLaser : MonoBehaviour
         }
         else
         {
-            WeaponModel held = HeldWeapons.Visible(rightHand);
+            WeaponModel held = playerAnimator != null ? playerAnimator.ShownModel : null;
             Transform emitter = Emitter(held);
             if (emitter == null) return false;
             origin = emitter.position;
             direction = held.transform.forward;
             eye = locomotion.DisplayEyePosition;
             look = locomotion.DisplayLookDirection;
-            Transform sight = AttachmentMount.SightOf(held, out _);
-            if (sight != null)
-            {
-                sightOrigin = sight.position;
-                sightDirection = direction;
-                zeroed = true;
-            }
+            shownWeapon = held;
             beamShown = true;
         }
         return direction.sqrMagnitude > 0.5f;
+    }
+
+    /// <summary>La ligne de visée de l'arme d'où part le faisceau, sur laquelle le régler pendant un geste : là où le
+    /// joueur la voit chez lui (ArmsRayToWorld), dans l'axe du canon `weaponDirection` chez les autres.</summary>
+    private bool TryFindSightLine(WeaponModel shownWeapon, Vector3 weaponDirection, out Vector3 sightOrigin, out Vector3 sightDirection)
+    {
+        sightOrigin = sightDirection = Vector3.zero;
+        Transform sight = AttachmentMount.SightOf(shownWeapon, out _);
+        if (sight == null) return false;
+        if (weapon.IsOwner && weapon.AimCamera != null)
+        {
+            Camera camera = weapon.AimCamera;
+            ArmsRayToWorld(sight.position, shownWeapon.transform.forward, camera.transform, camera.fieldOfView,
+                           firstPersonView.ArmsCamera.fieldOfView, out sightOrigin, out sightDirection);
+        }
+        else
+        {
+            sightOrigin = sight.position;
+            sightDirection = weaponDirection;
+        }
+        return true;
     }
 
     /// <summary>Le laser va-t-il là où regarde le joueur ? Oui l'arme tenue, à la hanche comme en visée ; un geste qui l'écarte

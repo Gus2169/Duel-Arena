@@ -92,6 +92,9 @@ public class ShootingCourse : NetworkBehaviour
     private int weaponAtStart;
     private bool mixedLoadout;
     private readonly HashSet<CourseTarget> touchedCivilians = new HashSet<CourseTarget>();
+    // L'arme du coureur, relue seulement s'il change : ServerStep la regarde à chaque image de la course.
+    [System.NonSerialized] private PlayerLocomotion weaponOwner;
+    [System.NonSerialized] private WeaponController runnerWeapon;
 
     public static ShootingCourse Instance
     {
@@ -108,7 +111,6 @@ public class ShootingCourse : NetworkBehaviour
     public CourseResult LastResult => result.Value;
     public Bounds StartZone => startZone;
     public IReadOnlyList<Section> Sections => sections;
-    public IReadOnlyList<CourseTarget> Targets => targets;
     /// <summary>Les hostiles du parcours, et ceux qui sont tombés (calculés à chaque image).</summary>
     public int HostilesTotal { get; private set; }
     public int HostilesDown { get; private set; }
@@ -176,7 +178,7 @@ public class ShootingCourse : NetworkBehaviour
         {
             case CourseEvent.Start: ServerStart(runner, now); break;
             case CourseEvent.Finish: ServerFinish(now); break;
-            case CourseEvent.Abort: ServerAbort(); break;
+            case CourseEvent.Abort: ServerAbort(now); break;
         }
         if (!running.Value) return;
 
@@ -196,8 +198,18 @@ public class ShootingCourse : NetworkBehaviour
                 civiliansHit.Value = (byte)Mathf.Min(255, touchedCivilians.Count);
         }
 
-        WeaponController weapon = runner.GetComponentInChildren<WeaponController>();
+        WeaponController weapon = WeaponOf(runner);
         if (weapon != null && weapon.DisplayedSlot != weaponAtStart) mixedLoadout = true;
+    }
+
+    private WeaponController WeaponOf(PlayerLocomotion runner)
+    {
+        if (runner != weaponOwner)
+        {
+            weaponOwner = runner;
+            runnerWeapon = runner.GetComponentInChildren<WeaponController>();
+        }
+        return runnerWeapon;
     }
 
     private void ServerStart(PlayerLocomotion runner, double now)
@@ -209,7 +221,7 @@ public class ShootingCourse : NetworkBehaviour
         hostileImpacts = 0;
         raisedSections = 0;
         lastSection = 0;
-        WeaponController weapon = runner.GetComponentInChildren<WeaponController>();
+        WeaponController weapon = WeaponOf(runner);
         weaponAtStart = weapon != null ? weapon.DisplayedSlot : 0;
         mixedLoadout = false;
         startedAt.Value = now;
@@ -240,14 +252,24 @@ public class ShootingCourse : NetworkBehaviour
             previousBest = previous,
         };
         running.Value = false;
+        ServerFreezeRails(now);
+#if UNITY_EDITOR
         Debug.Log($"[Fosse] Course {result.Value.run} : {raw:F2} s, {missed} hostile(s) manqué(s), {civiliansHit.Value} civil(s) touché(s), " +
                   $"précision {accuracy * 100f:F0} % ({hostileImpacts}/{pelletsFired}), temps final {final:F2} s{(record ? ", record" : "")}.");
+#endif
     }
 
-    private void ServerAbort()
+    private void ServerAbort(double now)
     {
         running.Value = false;
         result.Value = new CourseResult { run = result.Value.run + 1, aborted = 1, previousBest = float.NaN };
+        ServerFreezeRails(now);
+    }
+
+    private void ServerFreezeRails(double now)
+    {
+        foreach (CourseTarget t in targets)
+            if (t != null) t.ServerFreeze(now);
     }
 
     private void RaiseSection(int index, double now)

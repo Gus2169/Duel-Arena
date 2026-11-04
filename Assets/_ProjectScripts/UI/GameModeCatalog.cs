@@ -94,7 +94,9 @@ public readonly struct GameMode
 /// </summary>
 public static class GameModeCatalog
 {
-    public static readonly IReadOnlyList<GameMode> Modes = new[]
+    // Un tableau, parcouru par son indice : MatchRules.Sanitized passe par IsPlayable, et un foreach sur l'interface allouerait
+    // son énumérateur à chaque fois.
+    private static readonly GameMode[] All =
     {
         new GameMode(GameModeId.Classic, "Classique",
             "Un contre un, en manches : la première mort termine la manche.",
@@ -143,21 +145,23 @@ public static class GameModeCatalog
             GameModeAvailability.AfterRelease, "ico-terminal"),
     };
 
+    public static readonly IReadOnlyList<GameMode> Modes = All;
+
     public static GameMode Get(GameModeId id)
     {
-        foreach (GameMode mode in Modes)
+        for (int i = 0; i < All.Length; i++)
         {
-            if (mode.id == id) return mode;
+            if (All[i].id == id) return All[i];
         }
-        return Modes[0];
+        return All[0];
     }
 
     /// <summary>Le mode se joue-t-il ? (sa carte crée un salon, et il reste dans les réglages)</summary>
     public static bool IsPlayable(GameModeId id)
     {
-        foreach (GameMode mode in Modes)
+        for (int i = 0; i < All.Length; i++)
         {
-            if (mode.id == id) return mode.CanCreate;
+            if (All[i].id == id) return All[i].CanCreate;
         }
         return false;
     }

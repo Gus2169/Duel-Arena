@@ -62,6 +62,9 @@ public class GameHud : MonoBehaviour
     private VisualElement nextZoneMarkerIcon;
     private VisualElement nextZoneMarkerHalo;
     private Label nextZoneMarkerLabel;
+    private VisualElement zoneMarkerAnchor;
+    private VisualElement nextZoneMarkerAnchor;
+    private bool zoneMarkersUp;
     private VisualElement leftGauge;
     private VisualElement leftGaugeFill;
     private VisualElement rightGauge;
@@ -84,8 +87,15 @@ public class GameHud : MonoBehaviour
     private VisualElement fade;
     private VisualElement loadingBlock;
     private Label loadingTitle;
+    private VisualElement loadingSpinner;
     private string shownLoadingTitle;
     private int pipCount = -1;
+
+    // Le robot de cette machine et ses composants, cherchés quand il change, pas à chaque image.
+    private NetworkObject followed;
+    private PlayerMatchState localState;
+    private PlayerInputReader localInput;
+    private Health localHealth;
 
     // L'arrivée dans l'arène (2026-11-03) : le temps compté depuis que la partie est prête sur cette machine
     // (StepArrival), -1 tant qu'elle ne l'est pas. Le noir du chargement se lève à partir de là (ArrivalBlack).
@@ -122,6 +132,9 @@ public class GameHud : MonoBehaviour
         nextZoneMarkerIcon = root.Q<VisualElement>("nextZoneMarkerIcon");
         nextZoneMarkerHalo = root.Q<VisualElement>("nextZoneMarkerHalo");
         nextZoneMarkerLabel = root.Q<Label>("nextZoneMarkerLabel");
+        zoneMarkerAnchor = MarkerAnchor(zoneMarker);
+        nextZoneMarkerAnchor = MarkerAnchor(nextZoneMarker);
+        zoneMarkersUp = false;
         leftGauge = root.Q<VisualElement>("leftGauge");
         leftGaugeFill = root.Q<VisualElement>("leftGaugeFill");
         rightGauge = root.Q<VisualElement>("rightGauge");
@@ -129,7 +142,8 @@ public class GameHud : MonoBehaviour
         scoreGoal = root.Q<Label>("scoreGoal");
         leftGaugeShown = rightGaugeShown = default;
         shownScoreGoal = -1;
-        shownZoneStatus = null;
+        barWritten = false;
+        statusWritten = false;
         zoneMarkerShown = nextMarkerShown = default;
         roundTimer = root.Q<Label>("roundTimer");
         healthPanel = root.Q<VisualElement>("healthPanel");
@@ -145,7 +159,10 @@ public class GameHud : MonoBehaviour
         fade = root.Q<VisualElement>("fade");
         loadingBlock = root.Q<VisualElement>("loadingBlock");
         loadingTitle = root.Q<Label>("loadingTitle");
+        loadingSpinner = loadingBlock != null ? loadingBlock.Q<DuelArena.UI.Spinner>() : null;
         shownLoadingTitle = null;
+        trackedMode = null;
+        Follow(null);
         readyFor = -1f;
         wasInGame = false;
         pipCount = -1;
@@ -172,12 +189,32 @@ public class GameHud : MonoBehaviour
         }
     }
 
+    /// <summary>La caméra du robot de cette machine, ou null. Camera.main n'est pas toujours la sienne : sous la kill cam
+    /// et l'écran de fin, elle est éteinte (KillCam.CoveredCamera).</summary>
+    public static Camera LocalPlayerCamera
+    {
+        get
+        {
+            NetworkObject local = LocalPlayerObject;
+            return local != null && local.TryGetComponent(out FirstPersonView view) ? view.PlayerCamera : null;
+        }
+    }
+
+    private void Follow(NetworkObject local)
+    {
+        followed = local;
+        localState = local != null ? local.GetComponent<PlayerMatchState>() : null;
+        localInput = local != null ? local.GetComponent<PlayerInputReader>() : null;
+        localHealth = local != null ? local.GetComponent<Health>() : null;
+    }
+
     private void LateUpdate()
     {
         // Le match du joueur de cette machine : au Tournoi, celui de son couloir, ou la salle d'attente (le RoundManager
         // de la scène, qui tient aussi le tournoi).
         RoundManager rm = RoundManager.Local;
         NetworkObject local = LocalPlayerObject;
+        if (local != followed) Follow(local);
         // On s'en va (le retour au menu demandé, ou Netcode qui s'arrête : il le finit après cette image et emporte la
         // caméra du joueur avant qu'elle ne soit dessinée) : plus rien de la partie, le noir tout de suite.
         NetworkManager nm = NetworkManager.Singleton;
@@ -192,8 +229,11 @@ public class GameHud : MonoBehaviour
 
         // Hors d'un match du Tournoi (la salle d'attente, l'attente des joueurs), pas de barre de score : le tableau du
         // tournoi en tient lieu (TournamentBoard).
-        SetVisible(scoreBar, inGame && !covered && !rm.TournamentMode);
-        SetVisible(healthPanel, inGame && !covered);
+        bool barShown = inGame && !covered && !rm.TournamentMode;
+        SetVisible(scoreBar, barShown);
+        // En jeu, UpdateHealth seul la montre ou non : la montrer ici pour la cacher là referait son style à chaque image
+        // chez un spectateur ou un mort.
+        if (!inGame || covered) SetVisible(healthPanel, false);
         SetVisible(centerMessage, inGame && !killCam);
         UpdateKillCam(killCam);
         if (!inGame)
@@ -217,17 +257,16 @@ public class GameHud : MonoBehaviour
         float arrival = ArrivalBlack(readyFor, fadeHold, fadeInTime);
         ShowLoading(arrival >= 1f, LoadingTitle(false, gathering));
 
-        UpdateScoreBar(rm, local.OwnerClientId);
-        if (!covered) UpdateHealth(local);
-        TrackGunGame(rm);
-        TrackKillConfirmed(rm, local.OwnerClientId);
-        TrackZone(rm);
-        TrackTagTeam(rm);
+        UpdateScoreBar(rm, local.OwnerClientId, barShown);
+        if (!covered) UpdateHealth();
+        TrackMode(rm, local.OwnerClientId);
         TrackTournament(RoundManager.Instance, rm, local.OwnerClientId);
         UpdateCenterMessage(rm, local);
-        UpdateZone(rm, local.OwnerClientId, local.transform.position, covered);
-        UpdateTagTeam(rm, local, covered);
-        UpdateTournamentLine(rm, covered);
+        // La ligne sous la barre de score : à la Zone, au Tag Team ou dans un match du Tournoi.
+        bool statusShown = UpdateZone(rm, local.OwnerClientId, local.transform.position, covered);
+        statusShown |= UpdateTagTeam(rm, covered);
+        statusShown |= UpdateTournamentLine(rm, covered);
+        SetVisible(zoneStatus, statusShown);
         // Le noir des fins de manche, et celui de l'arrivée.
         float black = Mathf.Max(FadeAlpha(rm), arrival);
         SetFade(black);
@@ -237,13 +276,29 @@ public class GameHud : MonoBehaviour
         bool choosing = LoadoutPanel.IsShown;
         bool cursorFree = menu || choosing;
         bool loading = arrival > 0.5f;
-        if (local.TryGetComponent(out PlayerInputReader input))
+        if (localInput != null)
         {
-            input.SetMode(menu || choosing || loading ? PlayerInputReader.Mode.None : PlayerInputReader.Mode.Gameplay);
+            localInput.SetMode(menu || choosing || loading ? PlayerInputReader.Mode.None : PlayerInputReader.Mode.Gameplay);
         }
         UnityEngine.Cursor.lockState = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
         UnityEngine.Cursor.visible = cursorFree;
         HidesCrosshair = cursorFree || black > 0.5f || killCam;
+    }
+
+    // Le mode de l'image d'avant (null : pas encore vu).
+    private GameModeId? trackedMode;
+
+    /// <summary>Les annonces du mode joué. Celles des autres ne tournent qu'une fois, quand le mode change : elles se
+    /// remettent à zéro.</summary>
+    private void TrackMode(RoundManager rm, ulong me)
+    {
+        GameModeId mode = rm.Mode;
+        bool changed = mode != trackedMode;
+        trackedMode = mode;
+        if (changed || mode == GameModeId.GunGame) TrackGunGame(rm);
+        if (changed || mode == GameModeId.KillConfirmed) TrackKillConfirmed(rm, me);
+        if (changed || mode == GameModeId.Zone) TrackZone(rm);
+        if (changed || mode == GameModeId.TagTeam) TrackTagTeam(rm);
     }
 
     /// <summary>La légende de la kill cam, de l'impact à la fin de l'épave (KillCam.CaptionShown).</summary>
@@ -274,17 +329,54 @@ public class GameHud : MonoBehaviour
         }
     }
 
-    private void UpdateScoreBar(RoundManager rm, ulong me)
+    /// <summary>Un côté de la barre de score. `score` : ses manches, ses éliminations ou ses points ; sa marche au Gun Game ;
+    /// les points de son équipe au Tag Team.</summary>
+    public struct ScoreSide : System.IEquatable<ScoreSide>
+    {
+        public bool shown;
+        public ulong id;
+        public int score;
+        public string name;
+        public Color paint;
+
+        public bool Equals(ScoreSide o) => shown == o.shown && id == o.id && score == o.score && name == o.name && paint == o.paint;
+    }
+
+    /// <summary>Ce que montre la barre de score : elle n'est refaite que quand cela change, le chrono à part. La peinture et
+    /// le pseudo en font partie : ils arrivent après l'apparition du robot.</summary>
+    public struct ScoreBarKey : System.IEquatable<ScoreBarKey>
+    {
+        public bool tagTeam;
+        public bool spectating;
+        public bool gunGame;
+        public bool points;
+        public bool compact;
+        public GunGameLadder ladder;
+        public int target;
+        public ScoreSide left;
+        public ScoreSide right;
+
+        public bool Equals(ScoreBarKey o) => tagTeam == o.tagTeam && spectating == o.spectating && gunGame == o.gunGame && points == o.points
+                                             && compact == o.compact && ladder == o.ladder && target == o.target
+                                             && left.Equals(o.left) && right.Equals(o.right);
+    }
+
+    private ScoreBarKey shownBar;
+    private bool barWritten;
+
+    private void UpdateScoreBar(RoundManager rm, ulong me, bool shown)
     {
         // Les deux côtés de la barre : moi et mon adversaire ; vu de la tribune, les deux duellistes
         // (2026-10-13), chacun à sa couleur, ses manches en cercles neutres. Au Tag Team, les deux équipes.
+        // La liste sert aussi aux annonces et au message du centre, barre cachée comprise.
         rm.GetMatchDuelists(duelists);
+        if (!shown) return;
         if (rm.TagTeamMode)
         {
             UpdateTagTeamScoreBar(rm);
             return;
         }
-        bool spectating = LocalIsSpectator;
+        bool spectating = localState != null && localState.IsSpectator;
         PlayerMatchState left = null, right = null;
         if (spectating)
         {
@@ -304,47 +396,37 @@ public class GameHud : MonoBehaviour
         // Au Death match et à l'Élimination confirmée, une marque par élimination à faire, plus serrées que les manches.
         // À la Zone, les points de chacun, sans marques.
         bool gunGame = rm.Mode == GameModeId.GunGame;
-        bool zone = rm.CountsPoints;
-        bool compact = gunGame || rm.CountsKills;
-        GunGameLadder ladder = rm.Ladder;
-        int pips = gunGame ? GunGame.StepCount(ladder) : zone ? 0 : rm.RoundsToWin;
-        if (pipCount != pips || pipsAreSteps != gunGame || pipsCompact != compact) BuildPips(pips, gunGame, compact);
-
         ulong leftId = left != null ? left.OwnerClientId : me;
-        bool leftShown = left != null || !spectating;
-        SetVisible(leftName, leftShown);
-        SetVisible(leftPips, leftShown);
-        leftName.text = PlayerMatchState.NameOf(leftId);
-        leftName.style.color = PaintOf(leftId);
-        string leftClass = spectating ? "score-pip--neutral" : "score-pip--won";
-        if (gunGame) FillSteps(leftPips, left != null ? left.GunGameStep : 0, leftClass);
-        else FillPips(leftPips, rm.WinsOf(leftId), leftClass);
-        ShowStepWeapon(leftWeapon, gunGame && leftShown, ladder, left != null ? left.GunGameStep : 0, ref shownLeftWeapon);
-        ShowPoints(leftPoints, zone && leftShown, rm.WinsOf(leftId), ref shownLeftPoints);
-        ShowGauge(leftGauge, leftGaugeFill, zone && leftShown, rm.WinsOf(leftId), rm.RoundsToWin, PaintOf(leftId), ref leftGaugeShown);
-
-        PlayerMatchState opponent = right;
-        bool hasOpponent = opponent != null;
-        SetVisible(rightName, hasOpponent);
-        SetVisible(rightPips, hasOpponent);
-        if (hasOpponent)
+        var bar = new ScoreBarKey
         {
-            rightName.text = opponent.DisplayName;
-            rightName.style.color = PaintOf(opponent.OwnerClientId);
-            string rightClass = spectating ? "score-pip--neutral" : "score-pip--lost";
-            if (gunGame) FillSteps(rightPips, opponent.GunGameStep, rightClass);
-            else FillPips(rightPips, rm.WinsOf(opponent.OwnerClientId), rightClass);
-        }
-        ShowStepWeapon(rightWeapon, gunGame && hasOpponent, ladder, hasOpponent ? opponent.GunGameStep : 0, ref shownRightWeapon);
-        ShowPoints(rightPoints, zone && hasOpponent, hasOpponent ? rm.WinsOf(opponent.OwnerClientId) : 0, ref shownRightPoints);
-        ShowGauge(rightGauge, rightGaugeFill, zone && hasOpponent, hasOpponent ? rm.WinsOf(opponent.OwnerClientId) : 0, rm.RoundsToWin,
-                  hasOpponent ? PaintOf(opponent.OwnerClientId) : Color.white, ref rightGaugeShown);
-        SetVisible(scoreGoal, zone);
-        if (zone && rm.RoundsToWin != shownScoreGoal)
+            spectating = spectating,
+            gunGame = gunGame,
+            points = rm.CountsPoints,
+            compact = gunGame || rm.CountsKills,
+            ladder = rm.Ladder,
+            target = rm.RoundsToWin,
+            left = new ScoreSide
+            {
+                shown = left != null || !spectating,
+                id = leftId,
+                score = !gunGame ? rm.WinsOf(leftId) : left != null ? left.GunGameStep : 0,
+                name = PlayerMatchState.NameOf(leftId),
+                paint = PaintOf(leftId),
+            },
+        };
+        if (right != null)
         {
-            shownScoreGoal = rm.RoundsToWin;
-            scoreGoal.text = "OBJECTIF " + ZoneMode.Points(rm.RoundsToWin);
+            ulong rightId = right.OwnerClientId;
+            bar.right = new ScoreSide
+            {
+                shown = true,
+                id = rightId,
+                score = gunGame ? right.GunGameStep : rm.WinsOf(rightId),
+                name = right.DisplayName,
+                paint = PaintOf(rightId),
+            };
         }
+        if (!barWritten || !bar.Equals(shownBar)) WriteScoreBar(bar);
 
         // Le chrono de la manche : le temps écoulé, pas un compte à rebours (GDD § 5). Hors manche,
         // « VS » sépare les cercles des deux joueurs, qui se lisaient sinon comme une seule rangée.
@@ -352,14 +434,50 @@ public class GameHud : MonoBehaviour
         // À la Zone, le temps qui reste au match, puis la prolongation.
         bool active = rm.CurrentPhase == RoundManager.Phase.Active;
         bool overtime = active && rm.ZoneOvertime;
-        SetVisible(roundTimer, hasOpponent || active);
+        SetVisible(roundTimer, bar.right.shown || active);
         roundTimer.EnableInClassList("round-timer--long", overtime);
-        int seconds = !active ? -1 : zone ? Mathf.CeilToInt(rm.ZoneMatchTimeLeft) : Mathf.Max(0, Mathf.FloorToInt(rm.PhaseElapsed));
+        int seconds = !active ? -1 : bar.points ? Mathf.CeilToInt(rm.ZoneMatchTimeLeft) : Mathf.Max(0, Mathf.FloorToInt(rm.PhaseElapsed));
         if (seconds != shownTimerSeconds)
         {
             shownTimerSeconds = seconds;
             roundTimer.text = overtime ? "PROLONGATION" : active ? FormatTime(seconds) : "VS";
         }
+    }
+
+    private void WriteScoreBar(in ScoreBarKey bar)
+    {
+        barWritten = true;
+        shownBar = bar;
+        int pips = bar.gunGame ? GunGame.StepCount(bar.ladder) : bar.points ? 0 : bar.target;
+        if (pipCount != pips || pipsAreSteps != bar.gunGame || pipsCompact != bar.compact) BuildPips(pips, bar.gunGame, bar.compact);
+        ShowSide(bar, bar.left, leftName, leftPips, bar.spectating ? "score-pip--neutral" : "score-pip--won",
+                 leftWeapon, ref shownLeftWeapon, leftPoints, ref shownLeftPoints, leftGauge, leftGaugeFill, ref leftGaugeShown);
+        ShowSide(bar, bar.right, rightName, rightPips, bar.spectating ? "score-pip--neutral" : "score-pip--lost",
+                 rightWeapon, ref shownRightWeapon, rightPoints, ref shownRightPoints, rightGauge, rightGaugeFill, ref rightGaugeShown);
+        SetVisible(scoreGoal, bar.points);
+        if (bar.points && bar.target != shownScoreGoal)
+        {
+            shownScoreGoal = bar.target;
+            scoreGoal.text = "OBJECTIF " + ZoneMode.Points(bar.target);
+        }
+    }
+
+    private static void ShowSide(in ScoreBarKey bar, in ScoreSide side, Label name, VisualElement pips, string filledClass,
+                                 Label weapon, ref int shownWeapon, Label points, ref int shownPoints,
+                                 VisualElement gauge, VisualElement fill, ref GaugeShown shownGauge)
+    {
+        SetVisible(name, side.shown);
+        SetVisible(pips, side.shown);
+        if (side.shown)
+        {
+            name.text = side.name;
+            name.style.color = side.paint;
+            if (bar.gunGame) FillSteps(pips, side.score, filledClass);
+            else FillPips(pips, side.score, filledClass);
+        }
+        ShowStepWeapon(weapon, bar.gunGame && side.shown, bar.ladder, side.score, ref shownWeapon);
+        ShowPoints(points, bar.points && side.shown, side.score, ref shownPoints);
+        ShowGauge(gauge, fill, bar.points && side.shown, side.score, bar.target, side.paint, ref shownGauge);
     }
 
     private int shownTimerSeconds = int.MinValue;
@@ -584,46 +702,91 @@ public class GameHud : MonoBehaviour
         }
     }
 
-    private string shownZoneStatus;
+    /// <summary>Ce que dit la ligne sous la barre de score, que se partagent la Zone, le Tag Team et un match du Tournoi :
+    /// son texte n'est fabriqué que quand cela change, pas à chaque image pour être comparé ensuite. Les pseudos en font
+    /// partie : ils peuvent arriver après coup.</summary>
+    public struct StatusKey : System.IEquatable<StatusKey>
+    {
+        public byte source;     // ZoneLine, TeamLine ou LaneLine
+        public int a, b, c, d;
+        public string name, next;
+
+        public bool Equals(StatusKey o) => source == o.source && a == o.a && b == o.b && c == o.c && d == o.d && name == o.name && next == o.next;
+    }
+
+    private const byte ZoneLine = 1, TeamLine = 2, LaneLine = 3;
+
+    private StatusKey shownStatus;
+    private bool statusWritten;
     private Color shownZoneColor;
+
+    private bool StatusChanged(in StatusKey key)
+    {
+        if (statusWritten && key.Equals(shownStatus)) return false;
+        statusWritten = true;
+        shownStatus = key;
+        return true;
+    }
+
+    /// <summary>L'état de la zone, sous la barre de score : « ZONE DISPUTÉE », « ZONE LIBRE », « TU TIENS LA ZONE »,
+    /// « GUSTAVO TIENT LA ZONE », et dans combien de secondes elle bouge. `holder` : qui la tient, si ce n'est pas soi.
+    /// Fonction pure, testée.</summary>
+    public static string ZoneStatusLine(bool contested, bool free, bool mine, string holder, int seconds)
+    {
+        string state = contested ? "ZONE DISPUTÉE" : free ? "ZONE LIBRE" : mine ? "TU TIENS LA ZONE" : holder.ToUpperInvariant() + " TIENT LA ZONE";
+        return $"{state} · ELLE BOUGE DANS {seconds} S";
+    }
 
     /// <summary>L'état de la zone sous la barre de score (« Gustavo tient la zone · elle bouge dans 7 s »), à la couleur
     /// de qui la tient, et ses repères à l'écran : la zone du moment (sauf pour qui est dedans : l'état le lui dit) et,
-    /// les dernières secondes, la suivante, avec leur distance, au bord de l'écran quand elles sont hors champ.</summary>
-    private void UpdateZone(RoundManager rm, ulong me, Vector3 feet, bool endScreen)
+    /// les dernières secondes, la suivante, avec leur distance, au bord de l'écran quand elles sont hors champ. Vrai si la
+    /// ligne de l'état se montre.</summary>
+    private bool UpdateZone(RoundManager rm, ulong me, Vector3 feet, bool endScreen)
     {
+        if (rm.Mode != GameModeId.Zone)
+        {
+            // Rien à placer hors de la Zone : un dernier passage éteint ses repères.
+            if (zoneMarkersUp)
+            {
+                zoneMarkersUp = false;
+                SetVisible(zoneMarker, false);
+                SetVisible(nextZoneMarker, false);
+            }
+            return false;
+        }
+        zoneMarkersUp = true;
         ZoneLayout layout = ZoneLayout.Instance;
         int shown = rm.ShownZone;
         bool show = !endScreen && layout != null && shown >= 0;
         bool inside = show && layout.Contains(shown, feet);
         bool active = show && rm.CurrentPhase == RoundManager.Phase.Active;
         Color color = ZoneHudColor(rm);
-        // Au Tag Team, la même ligne dit son équipe et son rôle (UpdateTagTeam).
-        if (!rm.TagTeamMode) SetVisible(zoneStatus, active);
         if (active)
         {
             ulong holder = rm.ZoneHolder;
-            string status = rm.ZoneContested ? "ZONE DISPUTÉE"
-                          : holder == RoundManager.NoWinner ? "ZONE LIBRE"
-                          : holder == me && !LocalIsSpectator ? "TU TIENS LA ZONE"
-                          : PlayerMatchState.NameOf(holder).ToUpperInvariant() + " TIENT LA ZONE";
-            status += $" · ELLE BOUGE DANS {Mathf.CeilToInt(rm.ZoneTimeLeft)} S";
-            if (status != shownZoneStatus)
+            bool contested = rm.ZoneContested;
+            bool free = holder == RoundManager.NoWinner;
+            bool mine = holder == me && (localState == null || !localState.IsSpectator);
+            var key = new StatusKey
             {
-                shownZoneStatus = status;
-                shownTeamStatus = shownTournamentLine = null;
-                zoneStatus.text = status;
-            }
-            if (color != shownZoneColor)
+                source = ZoneLine,
+                a = contested ? 0 : free ? 1 : mine ? 2 : 3,
+                b = Mathf.CeilToInt(rm.ZoneTimeLeft),
+                name = contested || free || mine ? null : PlayerMatchState.NameOf(holder),
+            };
+            bool changed = StatusChanged(key);
+            if (changed) zoneStatus.text = ZoneStatusLine(contested, free, mine, key.name, key.b);
+            if (changed || color != shownZoneColor)
             {
                 shownZoneColor = color;
                 zoneStatus.style.color = color;
             }
         }
-        PlaceMarker(zoneMarker, zoneMarkerIcon, zoneMarkerHalo, zoneMarkerLabel, show && !inside, show ? layout.Center(shown) : Vector3.zero, "ZONE", color, ref zoneMarkerShown);
+        PlaceMarker(zoneMarker, zoneMarkerAnchor, zoneMarkerIcon, zoneMarkerHalo, zoneMarkerLabel, show && !inside, show ? layout.Center(shown) : Vector3.zero, "ZONE", color, ref zoneMarkerShown);
         int next = rm.AnnouncedZone;
-        PlaceMarker(nextZoneMarker, nextZoneMarkerIcon, nextZoneMarkerHalo, nextZoneMarkerLabel, show && next >= 0, next >= 0 ? layout.Center(next) : Vector3.zero, "SUIVANTE",
+        PlaceMarker(nextZoneMarker, nextZoneMarkerAnchor, nextZoneMarkerIcon, nextZoneMarkerHalo, nextZoneMarkerLabel, show && next >= 0, next >= 0 ? layout.Center(next) : Vector3.zero, "SUIVANTE",
                     new Color(0.82f, 0.9f, 1f), ref nextMarkerShown);
+        return active;
     }
 
     /// <summary>La couleur de la zone au HUD : celle de qui la tient, blanche sinon.</summary>
@@ -633,9 +796,32 @@ public class GameHud : MonoBehaviour
         return PaintOf(rm.ZoneHolder);
     }
 
-    // Ce qu'affiche un repère : sa distance, sa couleur et son opacité (rien n'est réécrit sans changement).
+    /// <summary>Un repère se déplace à chaque image : par left et top, ce serait une mise en page par image. Il suit donc un
+    /// parent, de la taille du sien, qui ne fait que glisser (un transform seul) ; le repère garde son centrage (translate
+    /// en USS), et le même parent pour sa largeur. Fonction testée.</summary>
+    public static VisualElement MarkerAnchor(VisualElement marker)
+    {
+        if (marker == null) return null;
+        const string name = "zoneMarkerAnchor";
+        if (marker.parent.name == name) return marker.parent;
+        var anchor = new VisualElement { name = name, pickingMode = PickingMode.Ignore, usageHints = UsageHints.DynamicTransform };
+        anchor.style.position = Position.Absolute;
+        anchor.style.left = 0f;
+        anchor.style.top = 0f;
+        anchor.style.width = Length.Percent(100f);
+        anchor.style.height = Length.Percent(100f);
+        VisualElement parent = marker.parent;
+        parent.Insert(parent.IndexOf(marker), anchor);
+        anchor.Add(marker);
+        marker.style.left = 0f;
+        marker.style.top = 0f;
+        return anchor;
+    }
+
+    // Ce qu'affiche un repère : sa place, sa distance, sa couleur et son opacité (rien n'est réécrit sans changement).
     private struct MarkerShown
     {
+        public Vector2 at;
         public int distance;
         public Color color;
         public float opacity;
@@ -656,9 +842,9 @@ public class GameHud : MonoBehaviour
 
     /// <summary>Pose un repère à l'écran au-dessus du centre d'une zone : un losange lumineux, son titre et sa distance (à
     /// plat) au joueur, estompé près du réticule. Il se voit à travers tout : c'est du HUD.</summary>
-    private void PlaceMarker(VisualElement marker, VisualElement icon, VisualElement halo, Label label, bool visible, Vector3 center, string title, Color color, ref MarkerShown shown)
+    private void PlaceMarker(VisualElement marker, VisualElement anchor, VisualElement icon, VisualElement halo, Label label, bool visible, Vector3 center, string title, Color color, ref MarkerShown shown)
     {
-        Camera camera = Camera.main;
+        Camera camera = visible ? Camera.main : null;
         VisualElement root = document != null ? document.rootVisualElement : null;
         float width = root != null ? root.layout.width : float.NaN;
         float height = root != null ? root.layout.height : float.NaN;
@@ -667,8 +853,11 @@ public class GameHud : MonoBehaviour
         if (!ok) return;
         var panel = new Vector2(width, height);
         Vector2 at = MarkerPosition(camera.WorldToViewportPoint(center + Vector3.up * MarkerHeight), panel, MarkerMargin);
-        marker.style.left = at.x;
-        marker.style.top = at.y;
+        if (!shown.written || at != shown.at)
+        {
+            shown.at = at;
+            anchor.style.translate = new Translate(at.x, at.y);
+        }
         Vector3 offset = camera.transform.position - center;
         int distance = Mathf.RoundToInt(new Vector2(offset.x, offset.z).magnitude);
         if (!shown.written || distance != shown.distance)
@@ -751,10 +940,11 @@ public class GameHud : MonoBehaviour
     /// dont la part perdue reste rouge un instant avant de se vider, pour voir ce que le coup a coûté.
     /// Rouge à 30 PV et moins. Cachée une fois mort.
     /// </summary>
-    private void UpdateHealth(NetworkObject local)
+    private void UpdateHealth()
     {
         // Un spectateur n'a pas de vie à perdre : rien à montrer (2026-10-13).
-        if (!local.TryGetComponent(out Health health) || LocalIsSpectator)
+        Health health = localHealth;
+        if (health == null || (localState != null && localState.IsSpectator))
         {
             SetVisible(healthPanel, false);
             return;
@@ -823,12 +1013,16 @@ public class GameHud : MonoBehaviour
     /// l'autre ; le nom de leur combattant, à sa couleur, et leurs points, sans marques.</summary>
     private void UpdateTagTeamScoreBar(RoundManager rm)
     {
-        PlayerMatchState mine = LocalPlayerObject != null ? LocalPlayerObject.GetComponent<PlayerMatchState>() : null;
-        PlayerTeam leftTeam = mine != null && mine.Team != PlayerTeam.None ? mine.Team : PlayerTeam.A;
-        PlayerTeam rightTeam = TagTeam.Other(leftTeam);
-        if (pipCount != 0 || pipsAreSteps || pipsCompact) BuildPips(0, false, false);
-        ShowTeamSide(leftName, leftPips, leftPoints, leftWeapon, leftTeam, rm.TeamPoints(leftTeam), ref shownLeftPoints, ref shownLeftWeapon);
-        ShowTeamSide(rightName, rightPips, rightPoints, rightWeapon, rightTeam, rm.TeamPoints(rightTeam), ref shownRightPoints, ref shownRightWeapon);
+        PlayerTeam leftTeam = localState != null && localState.Team != PlayerTeam.None ? localState.Team : PlayerTeam.A;
+        var bar = new ScoreBarKey { tagTeam = true, left = TeamSide(rm, leftTeam), right = TeamSide(rm, TagTeam.Other(leftTeam)) };
+        if (!barWritten || !bar.Equals(shownBar))
+        {
+            barWritten = true;
+            shownBar = bar;
+            if (pipCount != 0 || pipsAreSteps || pipsCompact) BuildPips(0, false, false);
+            ShowTeamSide(leftName, leftPips, leftPoints, leftWeapon, bar.left, ref shownLeftPoints, ref shownLeftWeapon);
+            ShowTeamSide(rightName, rightPips, rightPoints, rightWeapon, bar.right, ref shownRightPoints, ref shownRightWeapon);
+        }
 
         bool active = rm.CurrentPhase == RoundManager.Phase.Active;
         SetVisible(roundTimer, true);
@@ -840,35 +1034,53 @@ public class GameHud : MonoBehaviour
         }
     }
 
-    private static void ShowTeamSide(Label name, VisualElement pips, Label points, Label weapon, PlayerTeam team, int teamPoints,
-                                     ref int shownPoints, ref int shownWeapon)
+    private static ScoreSide TeamSide(RoundManager rm, PlayerTeam team)
     {
         PlayerMatchState fighter = FighterOf(team);
-        SetVisible(name, true);
-        SetVisible(pips, false);
-        name.text = fighter != null ? fighter.DisplayName : TagTeam.Name(team);
-        name.style.color = fighter != null ? PaintOf(fighter.OwnerClientId) : Color.white;
-        ShowStepWeapon(weapon, false, GunGameLadder.Full, 0, ref shownWeapon);
-        ShowPoints(points, true, teamPoints, ref shownPoints);
+        return new ScoreSide
+        {
+            shown = true,
+            id = fighter != null ? fighter.OwnerClientId : RoundManager.NoWinner,
+            score = rm.TeamPoints(team),
+            name = fighter != null ? fighter.DisplayName : TagTeam.Name(team),
+            paint = fighter != null ? PaintOf(fighter.OwnerClientId) : Color.white,
+        };
     }
 
-    private string shownTeamStatus;
-
-    /// <summary>Au Tag Team, sous la barre : son équipe et son rôle (TeamStatus). Le texte n'est refait qu'au changement.</summary>
-    private void UpdateTagTeam(RoundManager rm, NetworkObject local, bool endScreen)
+    private static void ShowTeamSide(Label name, VisualElement pips, Label points, Label weapon, in ScoreSide side,
+                                     ref int shownPoints, ref int shownWeapon)
     {
-        if (!rm.TagTeamMode) return;
+        SetVisible(name, true);
+        SetVisible(pips, false);
+        name.text = side.name;
+        name.style.color = side.paint;
+        ShowStepWeapon(weapon, false, GunGameLadder.Full, 0, ref shownWeapon);
+        ShowPoints(points, true, side.score, ref shownPoints);
+    }
+
+    /// <summary>Au Tag Team, sous la barre : son équipe et son rôle (TeamStatus). Le texte n'est refait qu'au changement.
+    /// Vrai si la ligne se montre.</summary>
+    private bool UpdateTagTeam(RoundManager rm, bool endScreen)
+    {
+        if (!rm.TagTeamMode) return false;
         RoundManager.Phase phase = rm.CurrentPhase;
         bool show = !endScreen && (phase == RoundManager.Phase.Active || phase == RoundManager.Phase.Starting || phase == RoundManager.Phase.Preparation);
-        SetVisible(zoneStatus, show);
-        if (!show || !local.TryGetComponent(out PlayerMatchState me)) return;
+        PlayerMatchState me = localState;
+        if (!show || me == null) return show;
         PlayerMatchState fighter = FighterOf(me.Team);
-        string status = TeamStatus(me.Team, me.IsDuelist, me.QueuePosition, fighter != null ? fighter.DisplayName : null, NextTeammate(me.Team));
-        if (status == shownTeamStatus) return;
-        shownTeamStatus = status;
-        shownZoneStatus = shownTournamentLine = null;
-        zoneStatus.text = status;
+        var key = new StatusKey
+        {
+            source = TeamLine,
+            a = (int)me.Team,
+            b = me.IsDuelist ? 1 : 0,
+            c = me.QueuePosition,
+            name = fighter != null ? fighter.DisplayName : null,
+            next = NextTeammate(me.Team),
+        };
+        if (!StatusChanged(key)) return true;
+        zoneStatus.text = TeamStatus(me.Team, me.IsDuelist, key.c, key.name, key.next);
         zoneStatus.style.color = new Color(0.94f, 0.95f, 0.96f);
+        return true;
     }
 
     /// <summary>
@@ -980,22 +1192,26 @@ public class GameHud : MonoBehaviour
     private readonly System.Collections.Generic.List<Tournament.Match> boardMatches = new System.Collections.Generic.List<Tournament.Match>();
     private readonly System.Collections.Generic.List<ulong> boardPlayers = new System.Collections.Generic.List<ulong>();
     private readonly System.Collections.Generic.HashSet<ulong> boardLeft = new System.Collections.Generic.HashSet<ulong>();
-    private string shownTournamentLine;
 
     /// <summary>Pendant un match du Tournoi, sous la barre de score : où il en est (« TOUR 2 SUR 3 · BO3 », « FINALE · BO5 »).
-    /// Le texte n'est refait qu'au changement.</summary>
-    private void UpdateTournamentLine(RoundManager rm, bool endScreen)
+    /// Le texte n'est refait qu'au changement. Vrai si la ligne se montre.</summary>
+    private bool UpdateTournamentLine(RoundManager rm, bool endScreen)
     {
-        if (!rm.IsLane) return;
-        bool show = !endScreen;
-        SetVisible(zoneStatus, show);
-        if (!show) return;
-        string line = TournamentBoard.LaneLine(rm.Lane, RoundManager.Instance);
-        if (line == shownTournamentLine) return;
-        shownTournamentLine = line;
-        shownZoneStatus = shownTeamStatus = null;
-        zoneStatus.text = line;
+        if (!rm.IsLane || endScreen) return false;
+        RoundManager main = RoundManager.Instance;
+        RoundManager.LaneInfo lane = rm.Lane;
+        var key = new StatusKey
+        {
+            source = LaneLine,
+            a = lane.match,
+            b = lane.roundsToWin * 2 + (lane.final ? 1 : 0),
+            c = main != null ? main.TournamentProgress.tourCount : 0,
+            d = main != null ? main.TournamentMatchCount : 0,
+        };
+        if (!StatusChanged(key)) return true;
+        zoneStatus.text = TournamentBoard.LaneLine(lane, main);
         zoneStatus.style.color = new Color(0.94f, 0.95f, 0.96f);
+        return true;
     }
 
     // ------------------------------------------------------------------
@@ -1034,7 +1250,8 @@ public class GameHud : MonoBehaviour
         foreach (PlayerMatchState state in duelists) wins = wins * 8 + rm.WinsOf(state.OwnerClientId);
         bool gunGame = rm.Mode == GameModeId.GunGame;
         // Le joueur mort d'un mode à réapparitions : le décompte jusqu'à son retour.
-        int respawnIn = local.TryGetComponent(out PlayerMatchState me) && me.RespawnAt > 0d
+        PlayerMatchState me = localState;
+        int respawnIn = me != null && me.RespawnAt > 0d
             ? Mathf.Max(1, Mathf.CeilToInt(rm.SecondsUntil(me.RespawnAt))) : 0;
         bool announcing = (phase == RoundManager.Phase.Active || phase == RoundManager.Phase.Tournament) && Time.time < announceUntil;
         // À l'Élimination confirmée, le mort dont le module attend encore son vainqueur peut aller le reprendre.
@@ -1047,7 +1264,7 @@ public class GameHud : MonoBehaviour
             round = rm.RoundNumber,
             winner = rm.LastRoundWinner,
             wins = wins,
-            spectator = LocalIsSpectator,
+            spectator = me != null && me.IsSpectator,
             endScreen = MatchEndScreen.IsShown,
             forfeit = rm.WonByForfeit,
             announce = announcing ? announceId : 0,
@@ -1067,7 +1284,7 @@ public class GameHud : MonoBehaviour
             case RoundManager.Phase.WaitingForPlayers:
                 small = rm.TagTeamMode ? "En attente des joueurs : il en faut quatre, deux par équipe."
                       : rm.TournamentMode ? "En attente des joueurs : il en faut trois au moins."
-                      : LocalIsSpectator ? "En attente des duellistes..." : "En attente d'un adversaire...";
+                      : key.spectator ? "En attente des duellistes..." : "En attente d'un adversaire...";
                 string invite = InviteLine();
                 if (invite != null) small += "\n" + invite;
                 break;
@@ -1237,8 +1454,21 @@ public class GameHud : MonoBehaviour
     {
         NetworkManager nm = NetworkManager.Singleton;
         if (nm == null || !nm.IsHost || !nm.TryGetComponent(out UnityTransport transport)) return null;
-        return $"{transport.ConnectionData.Address}:{transport.ConnectionData.Port}";
+        string ip = transport.ConnectionData.Address;
+        ushort port = transport.ConnectionData.Port;
+        if (hostAddress == null || ip != hostAddressIp || port != hostAddressPort)
+        {
+            hostAddressIp = ip;
+            hostAddressPort = port;
+            hostAddress = $"{ip}:{port}";
+        }
+        return hostAddress;
     }
+
+    // Gardée tant qu'elle ne change pas : le salon la relit à chaque image, pour sa clé.
+    private static string hostAddress;
+    private static string hostAddressIp;
+    private static ushort hostAddressPort;
 
     // ------------------------------------------------------------------
     // Fondu au noir
@@ -1331,6 +1561,8 @@ public class GameHud : MonoBehaviour
     private void ShowLoading(bool shown, string title)
     {
         SetVisible(loadingBlock, shown);
+        // Le sien aussi : il ne regarde que son propre affichage, et tournerait tout le match sous son bloc caché.
+        SetVisible(loadingSpinner, shown);
         if (!shown || loadingTitle == null || title == shownLoadingTitle) return;
         shownLoadingTitle = title;
         loadingTitle.text = title;

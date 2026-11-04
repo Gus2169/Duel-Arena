@@ -59,6 +59,21 @@ public class ShootingRangeTests
         Assert.AreEqual("buste", ShootingRangeHud.ZoneLabel(HitboxZoneType.Torso));
     }
 
+    /// <summary>Le HUD du stand ne dessine pas un mannequin loin hors de l'écran ; tout près du bord, son bilan et ses chiffres
+    /// débordent encore dans l'image.</summary>
+    [Test]
+    public void UnMannequin_NeSeDessineQuePresDeLEcran()
+    {
+        Assert.IsTrue(ShootingRangeHud.NearScreen(new Vector3(960f, 540f, 10f), 1920, 1080), "À l'écran.");
+        Assert.IsTrue(ShootingRangeHud.NearScreen(new Vector3(-150f, 540f, 10f), 1920, 1080), "Juste à gauche : son bilan y déborde.");
+        Assert.IsTrue(ShootingRangeHud.NearScreen(new Vector3(2070f, 1230f, 10f), 1920, 1080), "Juste en haut à droite.");
+        Assert.IsFalse(ShootingRangeHud.NearScreen(new Vector3(-250f, 540f, 10f), 1920, 1080), "Loin à gauche.");
+        Assert.IsFalse(ShootingRangeHud.NearScreen(new Vector3(2200f, 540f, 10f), 1920, 1080), "Loin à droite.");
+        Assert.IsFalse(ShootingRangeHud.NearScreen(new Vector3(960f, -250f, 10f), 1920, 1080), "Loin en bas.");
+        Assert.IsFalse(ShootingRangeHud.NearScreen(new Vector3(960f, 1400f, 10f), 1920, 1080), "Loin en haut.");
+        Assert.IsFalse(ShootingRangeHud.NearScreen(new Vector3(960f, 540f, 0.05f), 1920, 1080), "Derrière la caméra.");
+    }
+
     /// <summary>Le mannequin est touché comme un robot : sa vie, la géométrie de sa surface touchable et
     /// la hauteur de sa tête sont celles du préfab joueur ; son corps n'arrête pas les balles.</summary>
     [Test]

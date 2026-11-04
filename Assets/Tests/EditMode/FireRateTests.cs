@@ -23,6 +23,36 @@ public class FireRateTests
         return accepted;
     }
 
+    /// <summary>Un refus dit, jusque dans le journal d'une build, qu'un joueur n'a pas eu ce qu'il demandait ; mais un client
+    /// modifié en demande autant qu'il veut, et chaque ligne se paie sur le fil de l'hôte. Une ligne par période, qui
+    /// compte ceux qu'elle couvre.</summary>
+    [Test]
+    public void UneInondationDeRefus_NEcritQuUneLigne_QuiLesCompte()
+    {
+        const float start = 1e6f; // loin de l'horloge du jeu : ce test ne dépend pas de ce qui a été refusé avant lui
+        WeaponController.ServerNoteRefusal("purge", start);
+        var lines = new System.Collections.Generic.List<string>();
+        void Note(string message, string stack, UnityEngine.LogType type)
+        {
+            if (message.StartsWith("[Serveur] Refus")) lines.Add(message);
+        }
+        UnityEngine.Application.logMessageReceived += Note;
+        try
+        {
+            for (int k = 0; k < 1000; k++) WeaponController.ServerNoteRefusal("essai", start + 1f);
+            Assert.AreEqual(0, lines.Count, "Mille demandes dans la même période : pas une ligne chacune.");
+
+            WeaponController.ServerNoteRefusal("le dernier", start + 2.5f);
+        }
+        finally
+        {
+            UnityEngine.Application.logMessageReceived -= Note;
+        }
+        Assert.AreEqual(1, lines.Count, "La période passée, une ligne.");
+        StringAssert.Contains("×1001", lines[0], "Elle compte tous ceux qu'elle couvre.");
+        StringAssert.Contains("le dernier", lines[0], "Elle dit ce qui a été refusé.");
+    }
+
     [Test]
     public void TirsLegitimes_AvecDeLaGigue_AucunNEstRefuse()
     {

@@ -16,10 +16,9 @@ using UnityEngine;
 /// secondes pour narguer son adversaire, puis fondu au noir) → préparation suivante. Le match fini,
 /// même temps pour le gagnant, puis l'écran de fin, puis un nouveau match.
 ///
-/// La détection de mort se fait par SONDAGE de `Health.IsDead` plutôt que par abonnement à
-/// `Health.OnDeath`. À deux joueurs, le coût est nul, et ça évite toute la classe de bugs de cycle
-/// de vie des abonnements (joueur qui se déconnecte en pleine manche, objet détruit avant le
-/// désabonnement, double abonnement au respawn).
+/// La détection de mort se fait par SONDAGE de `Health.IsDead`, sans abonnement. À deux joueurs, le
+/// coût est nul, et ça évite toute la classe de bugs de cycle de vie des abonnements (joueur qui se
+/// déconnecte en pleine manche, objet détruit avant le désabonnement, double abonnement au respawn).
 ///
 /// LES RÔLES (2026-10-13, GDD § 4) : une partie accueille plusieurs joueurs (la capacité est un réglage
 /// de l'hôte), mais deux seulement se battent. Les autres sont spectateurs, sur la tribune, dans une
@@ -130,9 +129,6 @@ public class RoundManager : NetworkBehaviour
 
     [Tooltip("Ce RoundManager est un couloir du Tournoi (coché sur le préfab MatchTournoi, jamais dans la scène) : il arbitre un seul match, entre deux joueurs, dans sa copie de l'arène.")]
     [SerializeField] private bool lanePrefab;
-
-    [Tooltip("Durée max d'une manche, en secondes. 0 = AUCUNE limite, conformément au GDD (§ 5, tranché le 2026-10-02) : une manche se termine par une mort. Ne sert qu'à un test ponctuel ; si des manches passives apparaissent en playtest, la piste retenue est la révélation sonore, pas le retour d'un chrono.")]
-    [SerializeField] private float roundTimeLimit = 0f;
 
     // ------------------------------------------------------------------
     // État réseauté
@@ -264,7 +260,8 @@ public class RoundManager : NetworkBehaviour
     private ulong lastTagIn;
 
     /// <summary>Les réglages de la partie (capacité, organisation des duels, interventions des
-    /// spectateurs), fixés par l'hôte avant de la lancer (SessionFlow.ActiveRules) et publiés à tous.</summary>
+    /// spectateurs), fixés par l'hôte avant de la lancer (SessionFlow.ActiveRules) et publiés à tous. Toujours
+    /// nettoyés avant d'être écrits (MatchRules.Sanitized) : ce qui les relit à chaque image les prend tels quels.</summary>
     private readonly NetworkVariable<MatchRules> rules = new NetworkVariable<MatchRules>(
         MatchRules.Default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
@@ -336,23 +333,9 @@ public class RoundManager : NetworkBehaviour
 
     private static RoundManager cached;
 
-    public static RoundManager Instance
-    {
-        get
-        {
-            if (cached == null)
-            {
-                // Le RoundManager de la scène, jamais un couloir du Tournoi.
-                foreach (RoundManager rm in FindObjectsByType<RoundManager>(FindObjectsInactive.Exclude))
-                {
-                    if (rm.lanePrefab) continue;
-                    cached = rm;
-                    break;
-                }
-            }
-            return cached;
-        }
-    }
+    /// <summary>Le RoundManager de la scène, jamais un couloir du Tournoi ; rien sans lui (le menu, le stand). Il s'inscrit
+    /// lui-même (Awake) : au stand, le chercher parcourrait tous les objets chargés à chaque lecture.</summary>
+    public static RoundManager Instance => cached;
 
     /// <summary>Le RoundManager qui arbitre ce joueur : au Tournoi, le couloir de son match en cours ; sinon celui de la
     /// partie (dans la salle d'attente du Tournoi, il est en phase Tournament). Null sans RoundManager.</summary>
@@ -388,7 +371,7 @@ public class RoundManager : NetworkBehaviour
     public static IReadOnlyList<RoundManager> Lanes => lanes;
 
     /// <summary>Le Tournoi se joue-t-il ? (le RoundManager de la scène ; un couloir joue un match du classique)</summary>
-    public bool TournamentMode => !lanePrefab && rules.Value.Sanitized().IsTournament;
+    public bool TournamentMode => !lanePrefab && rules.Value.IsTournament;
 
     /// <summary>L'avancée du Tournoi, ses matchs et ses joueurs (dans l'ordre du tirage), sur toutes les machines.</summary>
     public Tournament.State TournamentProgress => tournament.Value;
@@ -457,13 +440,13 @@ public class RoundManager : NetworkBehaviour
     public int RoundsToWin => rules.Value.WinTarget;
 
     /// <summary>Le Death match du classique se joue-t-il ?</summary>
-    public bool DeathMatch => rules.Value.Sanitized().IsDeathMatch;
+    public bool DeathMatch => rules.Value.IsDeathMatch;
 
     /// <summary>Le match se gagne-t-il aux éliminations (le Death match, l'Élimination confirmée) ?</summary>
-    public bool CountsKills => rules.Value.Sanitized().CountsKills;
+    public bool CountsKills => rules.Value.CountsKills;
 
     /// <summary>Le match se gagne-t-il aux points (la Zone) ? Le score compte alors des points.</summary>
-    public bool CountsPoints => rules.Value.Sanitized().CountsPoints;
+    public bool CountsPoints => rules.Value.CountsPoints;
 
     /// <summary>Les morts reviennent-ils dans ce match ? (voir HasRespawns)</summary>
     public bool Respawns => HasRespawns(rules.Value);
@@ -490,7 +473,7 @@ public class RoundManager : NetworkBehaviour
     public MatchRules Rules => rules.Value;
 
     /// <summary>Le mode de la partie (le classique, le Golden Gun...).</summary>
-    public GameModeId Mode => rules.Value.Sanitized().mode;
+    public GameModeId Mode => rules.Value.mode;
 
     /// <summary>Les manches de ce mode commencent-elles par la préparation (le choix de l'arme) ? Non quand le
     /// mode impose l'arme : le décompte vient tout de suite (le Golden Gun, GDD § 11, G4). Fonction pure.</summary>
@@ -505,7 +488,7 @@ public class RoundManager : NetworkBehaviour
     }
 
     /// <summary>Le choix de l'arme de ce match : libre, pile ou face, ou arsenal commun.</summary>
-    public WeaponChoice WeaponChoiceNow => rules.Value.Sanitized().EffectiveWeaponChoice;
+    public WeaponChoice WeaponChoiceNow => rules.Value.EffectiveWeaponChoice;
 
     /// <summary>L'arsenal commun : l'arme des deux (sa place), ou -1.</summary>
     public int CommonArsenalSlot => WeaponChoiceNow == WeaponChoice.CommonArsenal && commonArsenal.Value.slot != CommonArsenal.NoSlot
@@ -548,7 +531,7 @@ public class RoundManager : NetworkBehaviour
     }
 
     /// <summary>Le Tag Team se joue-t-il ?</summary>
-    public bool TagTeamMode => rules.Value.Sanitized().IsTagTeam;
+    public bool TagTeamMode => rules.Value.IsTagTeam;
 
     /// <summary>Les points d'une équipe du Tag Team.</summary>
     public int TeamPoints(PlayerTeam team) => teamScore.Value.Of(team);
@@ -602,7 +585,7 @@ public class RoundManager : NetworkBehaviour
     public static bool KillScores(ulong killerId, ulong victimId) => killerId != Health.NoKiller && killerId != victimId;
 
     /// <summary>L'échelle du Gun Game de la partie.</summary>
-    public GunGameLadder Ladder => rules.Value.Sanitized().ladder;
+    public GunGameLadder Ladder => rules.Value.ladder;
 
     /// <summary>Les modules mémoire à ramasser (l'Élimination confirmée), sur toutes les machines.</summary>
     public int ModuleCount => modules.Count;
@@ -862,6 +845,11 @@ public class RoundManager : NetworkBehaviour
     // Boucle serveur
     // ------------------------------------------------------------------
 
+    private void Awake()
+    {
+        if (!lanePrefab) cached = this;
+    }
+
     public override void OnNetworkSpawn()
     {
         if (lanePrefab)
@@ -870,8 +858,8 @@ public class RoundManager : NetworkBehaviour
             if (IsServer) ServerStartLane();
             return;
         }
-        cached = this;
         KillCam.Ensure(gameObject.scene);
+        ShotImpacts.Prepare(gameObject.scene);
         if (!IsServer) return;
         rules.Value = SessionFlow.ActiveRules.Sanitized();
         // Lancée d'un salon en ligne : tous ses joueurs se connectent à la fois, dans un ordre que rien ne
@@ -894,10 +882,27 @@ public class RoundManager : NetworkBehaviour
         }
     }
 
+    /// <summary>Faut-il ramasser les miettes en entrant dans `next` ? Oui sous le noir d'un replacement ou au salon : la
+    /// collecte tombe là où personne ne joue, plutôt qu'en pleine manche sur le fil de l'hôte. Fonction pure, testée.</summary>
+    public static bool CollectsGarbageEntering(Phase previous, Phase next)
+        => next == Phase.Preparation || next == Phase.Salon || (next == Phase.Starting && previous == Phase.RoundOver);
+
+    private Phase phaseSeenForGarbage;
+
+    private void CollectGarbageUnderTheBlack()
+    {
+        Phase now = phase.Value;
+        if (now == phaseSeenForGarbage) return;
+        if (CollectsGarbageEntering(phaseSeenForGarbage, now)) System.GC.Collect();
+        phaseSeenForGarbage = now;
+    }
+
     private void Update()
     {
         // Chaque machine montre les modules publiés (catégorie C).
         if (IsSpawned) moduleViews.Sync(modules, transform);
+        // Pas pour un couloir du Tournoi : d'autres matchs se jouent sur l'hôte pendant son noir.
+        if (IsSpawned && !lanePrefab) CollectGarbageUnderTheBlack();
         if (!IsServer) return;
         if (lanePrefab)
         {
@@ -933,7 +938,7 @@ public class RoundManager : NetworkBehaviour
 
             case Phase.Starting:
                 if (!HasEnoughPlayers()) { EnterWaiting(); break; }
-                if (PhaseHasEnded) SetPhase(Phase.Active, roundTimeLimit);
+                if (PhaseHasEnded) SetPhase(Phase.Active, 0f);
                 break;
 
             case Phase.Active:
@@ -1002,7 +1007,11 @@ public class RoundManager : NetworkBehaviour
     // Les couloirs d'une partie précédente ne survivent pas à l'entrée en Play Mode (le rechargement de domaine est
     // désactivé dans l'Editor).
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    private static void ResetLanes() => lanes.Clear();
+    private static void ResetLanes()
+    {
+        lanes.Clear();
+        cached = null;
+    }
 
     // ------------------------------------------------------------------
     // Qui se bat, qui attend (2026-10-13)
@@ -1183,6 +1192,11 @@ public class RoundManager : NetworkBehaviour
     private static bool DebugTagTeamUnevenForSession => false;
 #endif
 
+    /// <summary>Le récit d'une partie (qui élimine qui, quelle arme est tirée), utile au banc de test : dans l'Editor
+    /// seulement. En build, l'appel disparaît à la compilation, chaîne comprise.</summary>
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    private static void BenchLog(string text) => Debug.Log(text);
+
     /// <summary>Publie le rôle et la place dans la file de chaque joueur ; prépare ceux qui changent de
     /// rôle (un perdant qui monte sur la tribune, un spectateur qui descend dans l'arène).</summary>
     private void ServerApplyRoles()
@@ -1199,14 +1213,14 @@ public class RoundManager : NetworkBehaviour
 
     private void ServerOnRoleChanged(PlayerMatchState state, PlayerRole role)
     {
-        Debug.Log($"[Round] {state.DisplayName} devient {(role == PlayerRole.Duelist ? "duelliste" : "spectateur")}.");
+        BenchLog($"[Round] {state.DisplayName} devient {(role == PlayerRole.Duelist ? "duelliste" : "spectateur")}.");
         // Un perdant mort au dernier coup monte sur la tribune en état de marche ; un spectateur qui
         // descend lâche ce qu'il tenait et entre l'arme pleine. Un joueur qui vient d'apparaître est
         // rangé pendant son apparition même (PlayerMatchState) : ses composants qui ne sont pas encore
         // apparus partent déjà de cet état, on ne leur écrit rien.
         if (state.TryGetComponent(out Health health) && health.IsSpawned) health.ResetHealth();
-        state.ServerSetReady(false);
-        if (state.TryGetComponent(out SpectatorController spectator) && spectator.IsSpawned) spectator.ServerOnRoleChanged(role);
+        state.ServerClearReady();
+        if (state.TryGetComponent(out SpectatorController spectator) && spectator.IsSpawned) spectator.ServerOnRoleChanged();
         WeaponController weapon = state.GetComponentInChildren<WeaponController>();
         if (weapon != null && weapon.IsSpawned) weapon.ServerRefillMagazine();
         // Sur la tribune tout de suite ; dans l'arène, il sera placé au début de la manche.
@@ -1269,15 +1283,6 @@ public class RoundManager : NetworkBehaviour
             if (roundScorers.Count == 0) Debug.Log("[Round] Les deux joueurs sont tombés : manche nulle.");
 
             EndRound(winner);
-            return;
-        }
-
-        if (roundTimeLimit > 0f && PhaseHasEnded)
-        {
-            // Manche nulle : personne ne marque. N'arrive que si une limite a été réglée pour un
-            // test : le GDD n'en veut pas (voir le tooltip de roundTimeLimit).
-            Debug.Log("[Round] Temps écoulé, manche nulle.");
-            EndRound(NoWinner);
         }
     }
 
@@ -1345,7 +1350,7 @@ public class RoundManager : NetworkBehaviour
         if (DeathMatch)
         {
             AddWin(killerId);
-            Debug.Log($"[Round] Death match : {killer.DisplayName} élimine {victim.DisplayName} ({WinsOf(killerId)} sur {RoundsToWin}).");
+            BenchLog($"[Round] Death match : {killer.DisplayName} élimine {victim.DisplayName} ({WinsOf(killerId)} sur {RoundsToWin}).");
             if (!TryGetMatchWinner(out _)) return;
             killer.ServerRecordRoundWin(PhaseElapsed);
             EndRound(killerId);
@@ -1358,18 +1363,18 @@ public class RoundManager : NetworkBehaviour
         GunGame.KillOutcome outcome = GunGame.AfterKill(ladder, killer.GunGameStep, victim.GunGameStep, byGlove);
         if (outcome.killerWins)
         {
-            Debug.Log($"[Round] Gun Game : {killer.DisplayName} finit l'échelle au gant.");
+            BenchLog($"[Round] Gun Game : {killer.DisplayName} finit l'échelle au gant.");
             AddWin(killerId);
             killer.ServerRecordRoundWin(PhaseElapsed);
             EndRound(killerId);
             return;
         }
         if (outcome.victimStep != victim.GunGameStep)
-            Debug.Log($"[Round] Gun Game : {victim.DisplayName} redescend à la marche {outcome.victimStep + 1}.");
+            BenchLog($"[Round] Gun Game : {victim.DisplayName} redescend à la marche {outcome.victimStep + 1}.");
         victim.ServerSetGunGameStep(outcome.victimStep);
         if (outcome.killerStep == killer.GunGameStep) return;
         killer.ServerSetGunGameStep(outcome.killerStep);
-        Debug.Log($"[Round] Gun Game : {killer.DisplayName} passe à la marche {outcome.killerStep + 1} ({GunGame.WeaponNameAt(ladder, outcome.killerStep)}).");
+        BenchLog($"[Round] Gun Game : {killer.DisplayName} passe à la marche {outcome.killerStep + 1} ({GunGame.WeaponNameAt(ladder, outcome.killerStep)}).");
         // L'arme suivante, tout de suite, au vainqueur vivant ; mort aussi, il la reçoit à son retour.
         if (killer.TryGetComponent(out Health killerHealth) && killerHealth.IsDead) return;
         WeaponController weapon = killer.GetComponentInChildren<WeaponController>();
@@ -1396,7 +1401,7 @@ public class RoundManager : NetworkBehaviour
             killerId = killerId,
         };
         modules.Add(module);
-        Debug.Log($"[Round] Élimination confirmée : {PlayerMatchState.NameOf(killerId)} élimine {victim.DisplayName}, son module tombe en {module.position.ToString("F1")}.");
+        BenchLog($"[Round] Élimination confirmée : {PlayerMatchState.NameOf(killerId)} élimine {victim.DisplayName}, son module tombe en {module.position.ToString("F1")}.");
     }
 
     /// <summary>Serveur : qui prend les modules à cette image (KillConfirmed.Resolve). Le vainqueur qui ramasse le
@@ -1421,10 +1426,10 @@ public class RoundManager : NetworkBehaviour
             ModuleTakenClientRpc(module.position, takerId, confirmed, WinsOf(takerId));
             if (!confirmed)
             {
-                Debug.Log($"[Round] Élimination confirmée : {PlayerMatchState.NameOf(takerId)} reprend son module.");
+                BenchLog($"[Round] Élimination confirmée : {PlayerMatchState.NameOf(takerId)} reprend son module.");
                 continue;
             }
-            Debug.Log($"[Round] Élimination confirmée : {PlayerMatchState.NameOf(takerId)} confirme ({WinsOf(takerId)} sur {RoundsToWin}).");
+            BenchLog($"[Round] Élimination confirmée : {PlayerMatchState.NameOf(takerId)} confirme ({WinsOf(takerId)} sur {RoundsToWin}).");
             if (!TryGetMatchWinner(out _)) continue;
             if (killer.TryGetComponent(out PlayerMatchState state)) state.ServerRecordRoundWin(PhaseElapsed);
             EndRound(takerId);
@@ -1533,7 +1538,7 @@ public class RoundManager : NetworkBehaviour
             state.ServerRecordRoundWin(PhaseElapsed);
             if (state.TryGetComponent(out Health health) && health.IsDead) health.ResetHealth();
         }
-        Debug.Log($"[Round] Zone : le chrono est fini, {PlayerMatchState.NameOf(winner.OwnerClientId)} mène avec {ZoneMode.Points(zonePoints[leader])} points.");
+        BenchLog($"[Round] Zone : le chrono est fini, {PlayerMatchState.NameOf(winner.OwnerClientId)} mène avec {ZoneMode.Points(zonePoints[leader])} points.");
         ServerEndMatch(winner.OwnerClientId, false, 0f);
         return true;
     }
@@ -1548,7 +1553,7 @@ public class RoundManager : NetworkBehaviour
         if (!TryGetMatchWinner(out ulong winner) || winner != clientId) return false;
         PlayerMatchState state = PlayerMatchState.Of(clientId);
         if (state != null) state.ServerRecordRoundWin(PhaseElapsed);
-        Debug.Log($"[Round] Zone : {PlayerMatchState.NameOf(clientId)} atteint {ZoneMode.Points(WinsOf(clientId))} points.");
+        BenchLog($"[Round] Zone : {PlayerMatchState.NameOf(clientId)} atteint {ZoneMode.Points(WinsOf(clientId))} points.");
         EndRound(clientId);
         return true;
     }
@@ -1629,7 +1634,7 @@ public class RoundManager : NetworkBehaviour
             return;
         }
 
-        if (winner != NoWinner) Debug.Log($"[Round] {PlayerMatchState.NameOf(winner)} gagne la manche {roundNumber.Value}.");
+        if (winner != NoWinner) BenchLog($"[Round] {PlayerMatchState.NameOf(winner)} gagne la manche {roundNumber.Value}.");
         SetPhase(Phase.RoundOver, roundOverDuration + killCamTime);
         if (shown) ServerPublishKillCam();
     }
@@ -1716,7 +1721,7 @@ public class RoundManager : NetworkBehaviour
         info.startsAt = Now;
         killCam.Value = info;
         lastKillAt = 0d;
-        Debug.Log($"[Round] Kill cam du coup de {PlayerMatchState.NameOf(info.killer)} ({KillCam.DurationOf(info):F1} s).");
+        BenchLog($"[Round] Kill cam du coup de {PlayerMatchState.NameOf(info.killer)} ({KillCam.DurationOf(info):F1} s).");
     }
 
     private void StartMatch()
@@ -1882,7 +1887,7 @@ public class RoundManager : NetworkBehaviour
 
             if (state != null)
             {
-                state.ServerSetReady(false);
+                state.ServerClearReady();
                 state.ServerSetRespawnAt(0d);
             }
 
@@ -1902,7 +1907,7 @@ public class RoundManager : NetworkBehaviour
                     weapon.ServerRefillMagazine();
                     weapon.ServerReturnToArsenal();
                 }
-                state.ServerSetReady(false);
+                state.ServerClearReady();
                 state.ServerSetRespawnAt(0d);
             });
         }
@@ -1936,7 +1941,7 @@ public class RoundManager : NetworkBehaviour
             PlayerMatchState state = player.GetComponent<PlayerMatchState>();
             if (state != null)
             {
-                state.ServerSetReady(false);
+                state.ServerClearReady();
                 state.ServerSetRespawnAt(0d);
             }
         }
@@ -2024,7 +2029,7 @@ public class RoundManager : NetworkBehaviour
             PlayerMatchState state = player.GetComponent<PlayerMatchState>();
             if (state != null)
             {
-                state.ServerSetReady(false);
+                state.ServerClearReady();
                 state.ServerSetRespawnAt(0d);
             }
         }
@@ -2124,6 +2129,8 @@ public class RoundManager : NetworkBehaviour
         double now = Now;
         // Un match qui finit entre au tableau de la soirée (pas le match d'un couloir du Tournoi : le tournoi compte).
         bool matchEnds = next == Phase.MatchOver && phase.Value != Phase.MatchOver && !lanePrefab;
+        // Toute fin de match passe ici, avant l'écran de fin qui les lit : chaque couloir, et l'écran du champion.
+        if (next == Phase.MatchOver) PlayerMatchState.ServerPublishAllStats();
         if (killCam.Value.Scheduled) killCam.Value = default;
         phase.Value = next;
         phaseStartedAt.Value = now;
@@ -2298,7 +2305,7 @@ public class RoundManager : NetworkBehaviour
         {
             if (state.TryGetComponent(out PlayerLocomotion locomotion)) locomotion.ServerRespawnAwayFromOpponents();
             TagInClientRpc(state.OwnerClientId);
-            Debug.Log($"[Round] Tag Team : {state.DisplayName} entre dans l'arène ({TagTeam.Name(state.Team)}).");
+            BenchLog($"[Round] Tag Team : {state.DisplayName} entre dans l'arène ({TagTeam.Name(state.Team)}).");
         }
     }
 
@@ -2363,7 +2370,7 @@ public class RoundManager : NetworkBehaviour
         else score.b += points;
         teamScore.Value = score;
         TagKillClientRpc(killerId, victim.OwnerClientId, (byte)points, health.ServerKillCause);
-        Debug.Log($"[Round] Tag Team : {killer.DisplayName} élimine {victim.DisplayName}, +{points} ({TagTeam.Name(killer.Team)} : {score.Of(killer.Team)} sur {TagTeam.TargetPoints}).");
+        BenchLog($"[Round] Tag Team : {killer.DisplayName} élimine {victim.DisplayName}, +{points} ({TagTeam.Name(killer.Team)} : {score.Of(killer.Team)} sur {TagTeam.TargetPoints}).");
         if (score.Of(killer.Team) >= TagTeam.TargetPoints) ServerEndTagTeamMatch(killer.Team, killerId, false);
     }
 
@@ -2544,7 +2551,7 @@ public class RoundManager : NetworkBehaviour
                 if (AllPlayersReady() || PhaseHasEnded) SetPhase(Phase.Starting, startingDuration);
                 break;
             case Phase.Starting:
-                if (PhaseHasEnded) SetPhase(Phase.Active, roundTimeLimit);
+                if (PhaseHasEnded) SetPhase(Phase.Active, 0f);
                 break;
             case Phase.Active:
                 TickActiveRound();
@@ -2631,6 +2638,9 @@ public class RoundManager : NetworkBehaviour
     /// la poule (TO8), montrés à tous dans la salle d'attente, où chacun est replacé, soigné, son arme pleine.</summary>
     private void ServerStartTournament()
     {
+        // Chacun part dans la salle d'attente à cette image, avant l'Update du site.
+        TournamentSite site = TournamentSite.Instance;
+        if (site != null) site.SetLive(true);
         ServerDespawnLanes();
         entrants.Clear();
         entrants.AddRange(presentIds);
@@ -2733,7 +2743,6 @@ public class RoundManager : NetworkBehaviour
         lane.preparationDuration = preparationDuration;
         lane.startingDuration = startingDuration;
         lane.roundOverDuration = roundOverDuration;
-        lane.roundTimeLimit = roundTimeLimit;
         lane.respawnDelay = respawnDelay;
         Tournament.Match m = schedule[matchIndex];
         m.status = Tournament.Status.Playing;
@@ -2782,7 +2791,7 @@ public class RoundManager : NetworkBehaviour
         PlayerMatchState state = PlayerMatchState.Of(clientId);
         if (state == null) return;
         if (state.TryGetComponent(out Health health) && health.IsSpawned) health.ResetHealth();
-        state.ServerSetReady(false);
+        state.ServerClearReady();
         state.ServerSetRespawnAt(0d);
         WeaponController weapon = state.GetComponentInChildren<WeaponController>();
         if (weapon != null && weapon.IsSpawned) weapon.ServerRefillMagazine();
@@ -2868,10 +2877,9 @@ public class RoundManager : NetworkBehaviour
         int slot = CommonArsenal.DrawSlot(loadout, s.slot == CommonArsenal.NoSlot ? -1 : s.slot, draw);
         if (slot < 0 || slot >= loadout.Count) return;
         s.slot = (byte)slot;
-        s.drawnRound = (byte)Mathf.Clamp(roundNumber.Value, 0, 255);
         s.attachments = CommonArsenal.DrawAttachments(loadout[slot], slot, draw);
         commonArsenal.Value = s;
-        Debug.Log($"[Round] Arsenal commun : {loadout[slot].weaponName} pour les deux, manches {roundNumber.Value} et {roundNumber.Value + 1}.");
+        BenchLog($"[Round] Arsenal commun : {loadout[slot].weaponName} pour les deux, manches {roundNumber.Value} et {roundNumber.Value + 1}.");
     }
 
     /// <summary>Serveur : les accessoires de l'arme de l'arsenal commun, les mêmes pour ce joueur que pour l'autre (les
@@ -2912,7 +2920,7 @@ public class RoundManager : NetworkBehaviour
         s.tossedAt = tossed ? Now : 0d;
         s.familyDeadline = CoinFlip.FamilyDeadline(Now, tossed);
         coinFlip.Value = s;
-        Debug.Log($"[Round] Pile ou face : {PlayerMatchState.NameOf(s.chooser)} choisit la famille{(tossed ? " (la pièce)" : " (il a perdu la manche)")}.");
+        BenchLog($"[Round] Pile ou face : {PlayerMatchState.NameOf(s.chooser)} choisit la famille{(tossed ? " (la pièce)" : " (il a perdu la manche)")}.");
         return tossed;
     }
 
@@ -2946,7 +2954,7 @@ public class RoundManager : NetworkBehaviour
             List<int> slots = Arsenal.SlotsOf(weapon.Loadout, (WeaponFamily)family);
             if (slots.Count > 0) weapon.ServerForceWeapon(slots[0]);
         }
-        Debug.Log($"[Round] Pile ou face : {CoinFlip.FamilyLabel(family)} pour la manche {roundNumber.Value}.");
+        BenchLog($"[Round] Pile ou face : {CoinFlip.FamilyLabel(family)} pour la manche {roundNumber.Value}.");
     }
 
     /// <summary>Serveur : sans choix au bout des 10 s, une famille tirée au sort (sans le gant, ni celle d'avant).</summary>

@@ -78,9 +78,10 @@ public class PlayerHitbox : MonoBehaviour
         }
 
         head = CreateZone<SphereCollider>(HitboxZoneType.Head, "Head", hitboxLayer);
-        torso = CreateZone<CapsuleCollider>(HitboxZoneType.Torso, "Torso", hitboxLayer);
-        legs = CreateZone<CapsuleCollider>(HitboxZoneType.Legs, "Legs", hitboxLayer);
-        secondLeg = CreateZone<CapsuleCollider>(HitboxZoneType.Legs, "Legs2", hitboxLayer);
+        head.center = Vector3.zero;
+        torso = CreateCapsule(HitboxZoneType.Torso, "Torso", hitboxLayer);
+        legs = CreateCapsule(HitboxZoneType.Legs, "Legs", hitboxLayer);
+        secondLeg = CreateCapsule(HitboxZoneType.Legs, "Legs2", hitboxLayer);
         secondLeg.enabled = false;
 
         colliders.Clear();
@@ -106,6 +107,16 @@ public class PlayerHitbox : MonoBehaviour
         return collider;
     }
 
+    /// <summary>Une capsule suit l'axe Y de son transform, que PlaceCapsule oriente de A vers B : posé une fois, ça
+    /// ne change plus.</summary>
+    private CapsuleCollider CreateCapsule(HitboxZoneType zone, string zoneName, int layer)
+    {
+        CapsuleCollider capsule = CreateZone<CapsuleCollider>(zone, zoneName, layer);
+        capsule.direction = 1;
+        capsule.center = Vector3.zero;
+        return capsule;
+    }
+
     /// <summary>Surface touchable d'une posture établie, sans transition en cours.</summary>
     public void Apply(PlayerLocomotion.Stance stance, Vector3 eye, float lateralLeanOffset)
     {
@@ -127,8 +138,8 @@ public class PlayerHitbox : MonoBehaviour
         // (posture établie, lean immobile), et réécrire les colliders les fait recalculer par la
         // physique. Le rewind passe aussi par ici, avec sa pose passée puis la pose courante : chaque
         // changement est bien appliqué.
-        if (hasShownPose && from == shownFrom && to == shownTo && t == shownT && lateralLeanOffset == shownLean
-            && eyeFrom == shownEyeFrom && eyeTo == shownEyeTo)
+        bool sameStance = hasShownPose && from == shownFrom && to == shownTo && t == shownT;
+        if (sameStance && lateralLeanOffset == shownLean && eyeFrom == shownEyeFrom && eyeTo == shownEyeTo)
             return;
         hasShownPose = true;
         shownFrom = from;
@@ -143,11 +154,12 @@ public class PlayerHitbox : MonoBehaviour
                                   out ZoneShape legsShape, out ZoneShape secondLegShape);
 
         head.transform.localPosition = headShape.a;
-        head.transform.localRotation = Quaternion.identity;
-        head.center = Vector3.zero;
-        head.radius = headShape.radius;
+        if (!Mathf.Approximately(head.radius, headShape.radius)) head.radius = headShape.radius;
 
         PlaceCapsule(torso, torsoShape);
+
+        // Les jambes ne suivent que la posture : pendant un lean, elles ne bougent pas.
+        if (sameStance) return;
         PlaceCapsule(legs, legsShape);
 
         // La seconde jambe n'existe que dans les postures qui en déclarent une (rayon > 0).
@@ -157,21 +169,21 @@ public class PlayerHitbox : MonoBehaviour
     }
 
     /// <summary>Une capsule de Unity ne s'oriente que selon un axe local : on oriente donc son
-    /// transform de A vers B, et la capsule suit son axe Y.</summary>
+    /// transform de A vers B, et la capsule suit son axe Y. Ses dimensions ne s'écrivent que si elles
+    /// changent, à l'arrondi près (tourner une capsule ne la raccourcit pas) : pendant un lean, seul son
+    /// transform bouge.</summary>
     private static void PlaceCapsule(CapsuleCollider capsule, ZoneShape shape)
     {
         Vector3 axis = shape.b - shape.a;
         float length = axis.magnitude;
 
-        capsule.transform.localPosition = (shape.a + shape.b) * 0.5f;
-        capsule.transform.localRotation = length > 1e-5f
+        capsule.transform.SetLocalPositionAndRotation((shape.a + shape.b) * 0.5f, length > 1e-5f
             ? Quaternion.FromToRotation(Vector3.up, axis / length)
-            : Quaternion.identity;
+            : Quaternion.identity);
 
-        capsule.direction = 1;
-        capsule.center = Vector3.zero;
-        capsule.radius = shape.radius;
-        capsule.height = length + 2f * shape.radius;
+        float height = length + 2f * shape.radius;
+        if (!Mathf.Approximately(capsule.radius, shape.radius)) capsule.radius = shape.radius;
+        if (!Mathf.Approximately(capsule.height, height)) capsule.height = height;
     }
 
     /// <summary>Active ou coupe toutes les zones pour les requêtes. Sert au tireur, qui retire sa

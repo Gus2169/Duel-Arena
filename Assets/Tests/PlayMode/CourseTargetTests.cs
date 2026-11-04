@@ -92,4 +92,36 @@ public class CourseTargetTests
         Assert.AreEqual(HitboxZoneType.Torso, ShootAt(front + Vector3.up * 1.25f, expected + Vector3.up * 1.25f), "Sa surface touchable l'a suivie.");
         Assert.IsNull(ShootAt(start + target.transform.forward * 6f + Vector3.up * 1.25f, start + Vector3.up * 1.25f), "Plus rien à son départ.");
     }
+
+    /// <summary>La course finie, une cible restée debout s'arrête sur son rail (ServerFreeze) : debout et touchable, elle ne
+    /// bouge plus, et ne fait plus resynchroniser la physique à chaque image (ShootingCourse.Update).</summary>
+    [UnityTest]
+    public IEnumerator UneCibleSurRail_SArreteQuandLaCourseEstFinie()
+    {
+        GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
+        Vector3 start = new Vector3(-40f, 0f, -40f), end = new Vector3(-34f, 0f, -40f);
+        target = Object.Instantiate(prefab, start, Quaternion.Euler(0f, 180f, 0f));
+        var course = target.GetComponent<CourseTarget>();
+        typeof(CourseTarget).GetField("moves", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(course, true);
+        typeof(CourseTarget).GetField("railEnd", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(course, end);
+        yield return null;
+
+        float speed = (float)typeof(CourseTarget).GetField("railSpeed", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(course);
+        double now = 50.0;
+        var frozen = new CourseTargetMotion { state = CourseTargetState.Up, raisedAt = now - 1.5, downAt = now - 0.5 };
+        Assert.IsTrue(course.ApplyPose(frozen, now), "Garde : elle se pose sur son rail.");
+        Vector3 expected = CourseTarget.RailPosition(start, end, speed, 1.0);
+        Assert.Greater(Vector3.Distance(expected, start), 1f, "Garde : elle avait avancé sur son rail.");
+        Assert.AreEqual(0f, Vector3.Distance(expected, target.transform.position), 1e-4f, "Là où la fin de la course l'a laissée.");
+
+        Assert.IsFalse(course.ApplyPose(frozen, now + 0.7), "Plus rien ne bouge : la physique n'a rien à resynchroniser.");
+        Assert.IsFalse(course.ApplyPose(frozen, now + 30.0), "Même longtemps après.");
+        Assert.AreEqual(0f, Vector3.Distance(expected, target.transform.position), 1e-4f, "Elle n'a pas bougé.");
+
+        Vector3 front = expected + target.transform.forward * 6f;
+        Assert.AreEqual(HitboxZoneType.Torso, ShootAt(front + Vector3.up * 1.25f, expected + Vector3.up * 1.25f), "Debout, elle se touche toujours.");
+
+        var running = new CourseTargetMotion { state = CourseTargetState.Up, raisedAt = now - 1.5 };
+        Assert.IsTrue(course.ApplyPose(running, now + 0.7), "Pendant une course, elle va et vient.");
+    }
 }

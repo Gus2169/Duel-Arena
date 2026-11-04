@@ -187,6 +187,9 @@ public class MagazineSwap : MonoBehaviour
         /// <summary>Les pièces d'armement que le geste fait reculer en ce moment (vide au repos).</summary>
         public IReadOnlyList<Transform> ArmingMoved => arming;
 
+        /// <summary>L'arme est intacte et rien n'est en cours : d'ici le prochain rechargement, Step ne changerait rien.</summary>
+        public bool AtRest => hidden.Count == 0 && inHand == null && arming.Count == 0 && !dropped && float.IsNaN(Progress);
+
         /// <summary>
         /// Une image, après l'Animator et ce qui retouche les mains (la prise, la vue subjective). `shown` : le modèle
         /// d'arme montré (null : aucun) ; `gesture` : le geste de l'arme en main (null : le geste commun) ;
@@ -195,7 +198,9 @@ public class MagazineSwap : MonoBehaviour
         /// </summary>
         public void Step(WeaponModel shown, ReloadGesture gesture, bool reloading, Vector3 palmShift, Drop settings, float dt)
         {
-            Track(shown, dt);
+            // La vitesse de l'arme ne sert qu'à la chute du chargeur, assez d'images après le début du rechargement.
+            if (reloading) Track(shown, dt);
+            else tracked = false;
             if (shown != model)
             {
                 // Un autre modèle (l'arme changée, les armes reconstruites) : l'ancien est rendu intact.
@@ -415,6 +420,10 @@ public class MagazineSwap : MonoBehaviour
     private Transform bodyRightHand;
     private View body, armsView;
     private BreakActionView bodyOpening, armsOpening;   // une arme qui s'ouvre (BreakActionGesture)
+    [System.NonSerialized] private WeaponData gestureOf;   // l'arme dont `gesture` est le geste
+    [System.NonSerialized] private ReloadGesture gesture;
+    private float bodyGesture = float.NaN, armsGesture = float.NaN;   // la valeur de GesteRecharge posée sur chaque Animator
+    private bool armsLive;   // les bras tournaient à l'image d'avant
 
     /// <summary>Les gestes de ce joueur (tests).</summary>
     public IReadOnlyList<ReloadGesture> Gestures => gestures;
@@ -428,13 +437,8 @@ public class MagazineSwap : MonoBehaviour
         return null;
     }
 
-    /// <summary>Le chargeur du corps, puis celui des bras de la vue subjective (null hors du propriétaire) ; tests.</summary>
-    public View Body => body;
+    /// <summary>Le chargeur des bras de la vue subjective (null hors du propriétaire).</summary>
     public View Arms => armsView;
-
-    /// <summary>Ce qu'une arme qui s'ouvre montre sur le corps, puis sur les bras (tests).</summary>
-    public BreakActionView BodyOpening => bodyOpening;
-    public BreakActionView ArmsOpening => armsOpening;
 
     private void Awake()
     {
@@ -450,14 +454,31 @@ public class MagazineSwap : MonoBehaviour
         bodyOpening = new BreakActionView(bodyAnimator, false);
     }
 
-    private ReloadGesture CurrentGesture => weapon != null && (locomotion == null || !locomotion.IsSpectator) ? GestureFor(weapon.Data) : null;
+    private ReloadGesture CurrentGesture
+    {
+        get
+        {
+            if (weapon == null || (locomotion != null && locomotion.IsSpectator)) return null;
+            WeaponData data = weapon.Data;
+            if (data != gestureOf)
+            {
+                gestureOf = data;
+                gesture = GestureFor(data);
+            }
+            return gesture;
+        }
+    }
 
-    // Avant l'Animator : le geste de l'arme en main, sur le corps et sur les bras.
+    // Avant l'Animator : le geste de l'arme en main, sur le corps et sur les bras, à son changement.
     private void Update()
     {
-        ReloadGesture gesture = CurrentGesture;
-        float value = gesture != null ? gesture.animatorValue : 0f;
-        if (body.HasGestureParameter) bodyAnimator.SetFloat(GestureId, value);
+        ReloadGesture current = CurrentGesture;
+        float value = current != null ? current.animatorValue : 0f;
+        if (value != bodyGesture && body.HasGestureParameter)
+        {
+            bodyGesture = value;
+            bodyAnimator.SetFloat(GestureId, value);
+        }
         Animator view = firstPerson != null ? firstPerson.ViewAnimator : null;
         if (view != (armsView != null ? armsView.Animator : null))
         {
@@ -465,28 +486,42 @@ public class MagazineSwap : MonoBehaviour
             armsOpening?.Restore();
             armsView = view != null ? new View(view, true) : null;
             armsOpening = view != null ? new BreakActionView(view, true) : null;
+            armsLive = false;
         }
-        if (armsView != null && armsView.HasGestureParameter) view.SetFloat(GestureId, value);
+        if (armsView != null && armsView.HasGestureParameter)
+        {
+            // Rallumé (de spectateur à duelliste), un Animator revient aux valeurs par défaut de ses paramètres.
+            bool live = view.isActiveAndEnabled;
+            if (live && (!armsLive || value != armsGesture))
+            {
+                armsGesture = value;
+                view.SetFloat(GestureId, value);
+            }
+            armsLive = live;
+        }
     }
 
     // Après l'Animator, la prise des mains et le placement des bras de la vue subjective.
     private void LateUpdate()
     {
         if (weapon == null) return;
-        ReloadGesture gesture = CurrentGesture;
+        ReloadGesture current = CurrentGesture;
         bool reloading = weapon.ShowsReloadGesture && (locomotion == null || locomotion.IsAlive);
+        var opening = current as BreakActionGesture;
+        // Hors d'un geste, l'arme intacte, il n'y a rien à suivre. Une arme qui s'ouvre, si : sa main droite et son chien.
+        if ((!reloading || current == null) && opening == null && body.AtRest && bodyOpening.AtRest
+            && (armsView == null || (armsView.AtRest && armsOpening.AtRest))) return;
         float dt = Time.deltaTime;
-        var opening = gesture as BreakActionGesture;
         bool empty = weapon.DisplayedAmmo <= 0;   // le coup parti, le rechargement pas encore commencé
-        WeaponModel bodyShown = HeldWeapons.Visible(bodyRightHand);
-        body.Step(bodyShown, gesture, reloading, Vector3.zero, drop, dt);
+        WeaponModel bodyShown = playerAnimator != null ? playerAnimator.ShownModel : HeldWeapons.Visible(bodyRightHand);
+        body.Step(bodyShown, current, reloading, Vector3.zero, drop, dt);
         bodyOpening.Step(bodyShown, opening, body.Progress, empty, Vector3.zero, drop, dt);
         if (armsView == null) return;
-        Vector3 shift = gesture != null && playerAnimator != null
-            ? playerAnimator.HandGrip.PalmPoint(chassis != null ? chassis.Value : ChassisId.CT01) - gesture.designPalm
+        Vector3 shift = current != null && playerAnimator != null
+            ? playerAnimator.HandGrip.PalmPoint(chassis != null ? chassis.Value : ChassisId.CT01) - current.designPalm
             : Vector3.zero;
         WeaponModel armsShown = firstPerson != null ? firstPerson.ViewWeapon : null;
-        armsView.Step(armsShown, gesture, reloading, shift, drop, dt);
+        armsView.Step(armsShown, current, reloading, shift, drop, dt);
         armsOpening?.Step(armsShown, opening, armsView.Progress, empty, shift, drop, dt);
     }
 
@@ -496,6 +531,7 @@ public class MagazineSwap : MonoBehaviour
         armsView?.Restore();
         bodyOpening?.Restore();
         armsOpening?.Restore();
+        bodyGesture = float.NaN;
     }
 
 #if UNITY_EDITOR

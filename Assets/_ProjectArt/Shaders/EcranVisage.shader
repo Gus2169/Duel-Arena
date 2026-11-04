@@ -30,6 +30,21 @@ Shader "DuelArena/EcranVisage"
     {
         Tags { "RenderPipeline" = "UniversalPipeline" "RenderType" = "Opaque" "Queue" = "Geometry" }
 
+        HLSLINCLUDE
+        #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+        CBUFFER_START(UnityPerMaterial)
+            half4 _CouleurEteinte;
+            float _Reflet;
+            float _Mort;
+            float _MortDepuis;
+            half4 _CouleurAlerte;
+            half4 _CouleurTexte;
+            half4 _CouleurFond;
+            float _Pixels;
+        CBUFFER_END
+        ENDHLSL
+
         Pass
         {
             Name "EcranVisage"
@@ -38,21 +53,9 @@ Shader "DuelArena/EcranVisage"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
             TEXTURE2D(_Image);
             SAMPLER(sampler_Image);
-
-            CBUFFER_START(UnityPerMaterial)
-                half4 _CouleurEteinte;
-                float _Reflet;
-                float _Mort;
-                float _MortDepuis;
-                half4 _CouleurAlerte;
-                half4 _CouleurTexte;
-                half4 _CouleurFond;
-                float _Pixels;
-            CBUFFER_END
 
             struct Attributes
             {
@@ -136,8 +139,63 @@ Shader "DuelArena/EcranVisage"
             ENDHLSL
         }
 
-        UsePass "Universal Render Pipeline/Lit/ShadowCaster"
-        UsePass "Universal Render Pipeline/Lit/DepthOnly"
-        UsePass "Universal Render Pipeline/Lit/DepthNormals"
+        // L'ombre et la profondeur : des passes à lui, sur son UnityPerMaterial. Empruntées à Lit (UsePass), elles gardaient
+        // celui de Lit, et le SRP Batcher ne prend qu'une disposition pour toutes les passes. L'ombre garde les deux faces que
+        // lui donnait Lit (son Cull [_Cull] vaut 0 ici, sans cette propriété) ; la profondeur, celles de la passe qu'elle
+        // prépare : sous le depth priming, les couleurs ne passent qu'à profondeur égale.
+        Pass
+        {
+            Name "ShadowCaster"
+            Tags { "LightMode" = "ShadowCaster" }
+            ZWrite On
+            ZTest LEqual
+            ColorMask 0
+            Cull Off
+
+            HLSLPROGRAM
+            #pragma target 2.0
+            #pragma vertex ShadowPassVertex
+            #pragma fragment ShadowPassFragment
+            #pragma multi_compile_instancing
+            #pragma multi_compile_vertex _ _CASTING_PUNCTUAL_LIGHT_SHADOW
+            #include "Packages/com.unity.render-pipelines.universal/Shaders/ShadowCasterPass.hlsl"
+            ENDHLSL
+        }
+
+        Pass
+        {
+            Name "DepthOnly"
+            Tags { "LightMode" = "DepthOnly" }
+            ZWrite On
+            ColorMask R
+            Cull Back
+
+            HLSLPROGRAM
+            #pragma target 2.0
+            #pragma vertex DepthOnlyVertex
+            #pragma fragment DepthOnlyFragment
+            #pragma multi_compile_instancing
+            #include "Packages/com.unity.render-pipelines.universal/Shaders/DepthOnlyPass.hlsl"
+            ENDHLSL
+        }
+
+        // pour la texture des normales de la caméra (SSAO)
+        Pass
+        {
+            Name "DepthNormals"
+            Tags { "LightMode" = "DepthNormals" }
+            ZWrite On
+            Cull Back
+
+            HLSLPROGRAM
+            #pragma target 2.0
+            #pragma vertex DepthNormalsVertex
+            #pragma fragment DepthNormalsFragment
+            #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RenderingLayers.hlsl"
+            #pragma multi_compile_instancing
+            #include "Packages/com.unity.render-pipelines.universal/Shaders/DepthNormalsPass.hlsl"
+            ENDHLSL
+        }
     }
 }

@@ -63,9 +63,7 @@ public class BreakActionViewTests
         HeldWeapons.WearTaserGlove(arms, false);
         foreach (Animator a in new[] { body, arms })
         {
-            Transform hand = a.GetBoneTransform(HumanBodyBones.RightHand);
-            HeldWeapons.Build(hand, all, WeaponLooks.Default, WeaponAttachments.None);
-            HeldWeapons.Show(hand, all, weapon);
+            HeldWeapons.Show(a.GetBoneTransform(HumanBodyBones.RightHand), all, weapon, WeaponLooks.Default, WeaponAttachments.None);
         }
         Assert.IsTrue(BodyModel != null && BodyModel.Designation == "BIG-D", "Garde : le corps tient le Big D.");
         Assert.IsTrue(ArmsModel != null && ArmsModel.Designation == "BIG-D", "Garde : les bras tiennent le Big D.");
@@ -120,6 +118,21 @@ public class BreakActionViewTests
     private static IEnumerator Wait(float seconds)
     {
         for (float t = 0f; t < seconds; t += Time.deltaTime) yield return null;
+    }
+
+    /// <summary>Une arme qui s'ouvre en main, sa vue a toujours de quoi faire (la tenue de la main droite) ; à la suivante,
+    /// elle rend tout et se tait : MagazineSwap saute alors son tour.</summary>
+    [UnityTest]
+    public IEnumerator LeBigDEnMain_SaVueTourne_EtSeTaitALArmeSuivante()
+    {
+        Setup();
+        Assert.IsTrue(new BreakActionView(body, false).AtRest, "Sans arme qui s'ouvre, une vue est au repos.");
+        Drive(false);
+        yield return Wait(0.2f);
+        Assert.IsFalse(bodyOpening.AtRest, "Le Big D en main, sa vue doit tourner.");
+
+        bodyOpening.Step(BodyModel, null, float.NaN, false, Vector3.zero, drop, Time.deltaTime);
+        Assert.IsTrue(bodyOpening.AtRest, "L'arme suivante en main, la vue du Big D doit se taire.");
     }
 
     private Transform Part(WeaponModel model, string path) => model.transform.Find(path);

@@ -20,6 +20,10 @@ using UnityEngine.UIElements;
 /// accessoire de profil —, tant qu'on ne les fait pas tourner à la souris. Lâchés en plein geste, ils
 /// continuent un instant sur leur lancée et s'arrêtent en douceur (une légère inertie, StepSpin).
 ///
+/// L'arme immobile ne se redessine pas : la caméra ne tourne que le temps d'un changement (la main sur elle, sa
+/// lancée, un accessoire ou une finition, Redraw, la taille du cadre) et la texture garde sa dernière image. Le
+/// robot, lui, joue son attente : sa caméra tourne tant qu'il est montré.
+///
 /// Posé À L'ORIGINE DU MONDE, rotation identité : les bornes d'un sujet exprimées dans le repère de
 /// son pivot sont alors directement des positions du monde.
 /// </summary>
@@ -56,10 +60,15 @@ public class PreviewStage : MonoBehaviour
     private static readonly Vector3 WeaponViewDirection = new Vector3(1f, 0.16f, -0.16f);
     private const float CharacterStartYaw = -25f;
 
+    /// <summary>Le temps qu'on tient la caméra de l'arme allumée après son dernier changement, en images : deux au
+    /// moins sont dessinées, quel que soit le moment de l'image où il tombe.</summary>
+    public const int RedrawFrames = 3;
+
     private Transform activePivot;
     private bool dragging;
     private float pendingDragPixels;   // le glissement reçu depuis la dernière image
     private float spinSpeed;           // °/s : la vitesse du geste, puis celle de la lancée
+    private int redrawFrames;          // les images où la caméra de l'arme reste allumée (StepRedraw)
 
     private RenderTexture texture;
     private Image output;
@@ -101,7 +110,13 @@ public class PreviewStage : MonoBehaviour
         // Angle négatif pour un glissement vers la droite : la face tournée vers la caméra suit la souris,
         // quel que soit le côté d'où on regarde le plateau.
         if (degrees != 0f) activePivot.Rotate(Vector3.up, degrees, Space.World);
+        redrawFrames = StepRedraw(redrawFrames, dragging || degrees != 0f || spinSpeed != 0f);
+        UpdateCameraEnabled();
     }
+
+    /// <summary>Une image de la caméra de l'arme : rend les images où elle reste allumée. `moving` : l'arme bouge
+    /// encore, elle repart pour RedrawFrames images. Fonction pure, testée.</summary>
+    public static int StepRedraw(int framesLeft, bool moving) => moving ? RedrawFrames : Mathf.Max(0, framesLeft - 1);
 
     /// <summary>
     /// Une image de la rotation à la souris, avec sa lancée : rend l'angle (°) dont tourner le sujet. Tenu,
@@ -162,6 +177,14 @@ public class PreviewStage : MonoBehaviour
         if (!resetRotation) weaponPivot.localRotation = rotation;
     }
 
+    /// <summary>L'arme montrée a changé sans rien demander au plateau (un accessoire, une finition) : la caméra la
+    /// redessine.</summary>
+    public void Redraw()
+    {
+        redrawFrames = RedrawFrames;
+        UpdateCameraEnabled();
+    }
+
     public void Hide()
     {
         activePivot = null;
@@ -183,6 +206,7 @@ public class PreviewStage : MonoBehaviour
         dragging = false;
         pendingDragPixels = 0f;
         spinSpeed = 0f;
+        redrawFrames = RedrawFrames;
         pivot.gameObject.SetActive(true);
         if (other != null) other.gameObject.SetActive(false);
         BindOutput(viewport);
@@ -194,7 +218,8 @@ public class PreviewStage : MonoBehaviour
     private void UpdateCameraEnabled()
     {
         if (previewCamera == null) return;
-        previewCamera.enabled = activePivot != null && texture != null && previewCamera.targetTexture == texture;
+        previewCamera.enabled = activePivot != null && texture != null && previewCamera.targetTexture == texture
+                                && (activePivot != weaponPivot || redrawFrames > 0);
     }
 
     // ------------------------------------------------------------------
@@ -259,7 +284,7 @@ public class PreviewStage : MonoBehaviour
         previewCamera.aspect = (float)width / height;
         output.image = texture;
         ApplyFraming();
-        UpdateCameraEnabled();
+        Redraw();
     }
 
     private void ReleaseTexture()

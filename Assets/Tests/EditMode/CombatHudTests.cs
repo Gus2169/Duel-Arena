@@ -56,6 +56,50 @@ public class CombatHudTests
         Assert.IsTrue(HitMarker.Replaces(HitKind.Kill, HitMarker.Duration(HitKind.Kill), HitKind.Body), "… jusqu'au bout seulement.");
     }
 
+    /// <summary>Le réticule ne se redessine que si ce qu'il montre change : immobile ou éteint en visée, il ne coûte rien à
+    /// UI Toolkit. Mais une croix qui s'ouvre, une barre qui avance, un marqueur qui s'anime ou s'efface doivent se voir.</summary>
+    [Test]
+    public void LeReticule_NeSeRedessineQueSiCeQuIlMontreChange()
+    {
+        var rest = new CombatReticle.Look
+        {
+            center = new Vector2(960f, 540f), crosshair = true, gap = 6f, lineLength = 8f, thickness = 2f, centerDot = true, dotSize = 2f,
+            barProgress = -1f, barOffset = 28f, barColor = Color.white, markerKind = -1, color = Color.white,
+        };
+        Assert.IsFalse(CombatReticle.NeedsRepaint(rest, rest), "Immobile, rien à redessiner.");
+
+        CombatReticle.Look look = rest;
+        look.center.x += 0.001f;
+        Assert.IsFalse(CombatReticle.NeedsRepaint(rest, look), "La projection tremble d'un rien : ça ne se voit pas.");
+        look.center.x += 0.5f;
+        Assert.IsTrue(CombatReticle.NeedsRepaint(rest, look), "Le point visé a bougé.");
+
+        look = rest;
+        look.gap += 1f;
+        Assert.IsTrue(CombatReticle.NeedsRepaint(rest, look), "La croix s'ouvre.");
+
+        look = rest;
+        look.crosshair = false;
+        Assert.IsTrue(CombatReticle.NeedsRepaint(rest, look), "La croix s'efface en visée.");
+
+        look = rest;
+        look.barProgress = 0.4f;
+        Assert.IsTrue(CombatReticle.NeedsRepaint(rest, look), "La barre apparaît.");
+        CombatReticle.Look further = look;
+        further.barProgress = 0.5f;
+        Assert.IsTrue(CombatReticle.NeedsRepaint(look, further), "Elle avance.");
+        further = look;
+        further.barColor = Color.red;
+        Assert.IsTrue(CombatReticle.NeedsRepaint(look, further), "La charge pleine change de couleur.");
+
+        look = rest;
+        look.markerKind = (int)HitKind.Head;
+        look.markerAge = 0.1f;
+        Assert.IsTrue(CombatReticle.NeedsRepaint(rest, look), "Le marqueur de touche apparaît.");
+        Assert.IsTrue(CombatReticle.NeedsRepaint(look, look), "Il s'anime tant qu'il se voit, même au même âge lu deux fois.");
+        Assert.IsTrue(CombatReticle.NeedsRepaint(look, rest), "Il s'efface : un dernier dessin.");
+    }
+
     [Test]
     public void LesParasites_SuiventLaForceDuCoup_EtSEteignentVite()
     {

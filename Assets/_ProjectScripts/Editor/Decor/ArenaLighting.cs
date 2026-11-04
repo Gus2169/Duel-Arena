@@ -153,21 +153,6 @@ public static class ArenaLighting
         sconceObject.GetComponent<MeshRenderer>().sharedMaterials = new[] { materials["Decor_Charpente"], materials["Decor_LampeTiede"] };
         AddRailStrip(root.transform, hall, materials["Decor_LedTribune"], bank);
 
-        // Le haut de la salle : ce que le sol éclairé renverrait vers le plafond et la charpente (en attendant une
-        // lumière cuite), sur le seul calque de la salle.
-        int fills = 0;
-        foreach (Vector2 offset in new[] { Vector2.zero, new Vector2(-18f, -16f), new Vector2(18f, -16f), new Vector2(-18f, 16f), new Vector2(18f, 16f), new Vector2(0f, -30f), new Vector2(0f, 30f) })
-        {
-            Light fill = NewLight(root.transform, "Reflet du sol", LightType.Point);
-            fill.transform.position = new Vector3(hall.center.x + offset.x, 9.5f, hall.center.y + offset.y);
-            fill.range = 22f;
-            fill.intensity = 2.5f;
-            fill.color = Froid;
-            fill.shadows = LightShadows.None;
-            SetLayers(fill, ArenaDecorBuilder.HallLayerMask);
-            fills++;
-        }
-
         // L'ambiance : sombre et bleutée, sans ciel ; une brume légère ; les reflets d'une sonde cuite.
         RenderSettings.ambientMode = AmbientMode.Trilight;
         RenderSettings.ambientSkyColor = new Color(0.085f, 0.095f, 0.115f);
@@ -213,7 +198,7 @@ public static class ArenaLighting
         int probes = BuildLightProbes(root.transform, hall);
         Lightmapping.lightingSettings = LightingSettingsAsset(scene);
         Lightmapping.BakeReflectionProbe(probe, ReflectionPath(scene));
-        report.AppendLine($"Lumière : {suns} soleil éteint, la rampe générale, {spots} projecteurs et {beams} faisceaux, {lamps} lampes de tribune et son liseré, {washers} lampes rasantes, {fills} reflets du sol, {probes} sondes de lumière ; brume, sonde de reflets, post-traitement. Lumière indirecte : Duel Arena > Arène > Cuire la lumière.");
+        report.AppendLine($"Lumière : {suns} soleil éteint, la rampe générale, {spots} projecteurs et {beams} faisceaux, {lamps} lampes de tribune et son liseré, {washers} lampes rasantes, {probes} sondes de lumière ; brume, sonde de reflets, post-traitement. Lumière indirecte : Duel Arena > Arène > Cuire la lumière.");
     }
 
     /// <summary>Les sondes de lumière : de quoi éclairer les robots (qui bougent) par la lumière cuite du décor. Une

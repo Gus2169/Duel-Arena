@@ -1,6 +1,6 @@
 /// <summary>Les rubriques des accessoires (2026-10-16 : armurerie, WeaponAttachments, AttachmentMount,
 /// WeaponAttachment ; la crosse et le canon depuis le 2026-10-29). Les choix se codent par rubrique dans
-/// WeaponAttachments, pas par cette valeur ; elle sert d'index aux appels GameSettings.GetAttachment/SetAttachment.
+/// WeaponAttachments, pas par cette valeur.
 /// 🚨 Ajouter les nouvelles à la fin.</summary>
 public enum AttachmentCategory
 {

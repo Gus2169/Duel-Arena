@@ -96,7 +96,6 @@ public class Tribune : NetworkBehaviour
     public PowerUpCatalog Catalog => catalog;
     public SpectatorSounds Sounds => sounds;
     public float FloorTop => floorTop;
-    public int HitsToBreak => hitsToBreak;
     public IReadOnlyList<RockSource> RockSources => rockSources;
 
     /// <summary>Coups reçus par chaque bloc (0 à hitsToBreak - 1), ou Depleted. Écrite par le serveur.</summary>

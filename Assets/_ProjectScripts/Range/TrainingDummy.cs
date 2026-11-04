@@ -70,6 +70,7 @@ public class TrainingDummy : NetworkBehaviour
     private Collider[] bodyColliders;
     private bool shownDown;
     private float shownSince;
+    private float shownAngle;
     private bool hittable = true;
 
     public Health Health => health;
@@ -147,11 +148,16 @@ public class TrainingDummy : NetworkBehaviour
         }
 
         float angle = FallAngle(shownDown, Time.time - shownSince);
-        // Basculé autour d'un point derrière les talons : son dos se pose sur le sol.
-        Quaternion tilt = Quaternion.AngleAxis(-angle, Vector3.right);
-        Vector3 pivot = new Vector3(0f, 0f, -fallPivotBack);
-        appearance.localRotation = tilt;
-        appearance.localPosition = pivot + tilt * -pivot;
+        // Debout ou à terre, l'angle ne bouge plus : réécrire la pose se propagerait à tous ses os, pour rien.
+        if (angle != shownAngle)
+        {
+            shownAngle = angle;
+            // Basculé autour d'un point derrière les talons : son dos se pose sur le sol.
+            Quaternion tilt = Quaternion.AngleAxis(-angle, Vector3.right);
+            Vector3 pivot = new Vector3(0f, 0f, -fallPivotBack);
+            appearance.localRotation = tilt;
+            appearance.localPosition = pivot + tilt * -pivot;
+        }
 
         if (!shownDown && !hittable && angle <= 0f) SetHittable(true);
     }
@@ -224,6 +230,17 @@ public class TrainingDummy : NetworkBehaviour
         idlePlayable.SetTime(Mathf.Repeat(transform.position.x * 0.37f + transform.position.z * 0.11f, idleClip.length));
         output.SetSourcePlayable(idlePlayable);
         idleGraph.Play();
+
+        // Les images du menu l'évaluent à la main, hors du jeu (MenuArtworkCapture) : rien ne l'a encore dessiné.
+        if (!Application.isPlaying) return;
+
+        // Hors du champ, il ne s'anime plus : la salle d'attente du Tournoi, à 2 km, est dans toutes les parties, et le stand
+        // compte des dizaines de cibles cachées. Sa pose d'attente d'abord : le robot en croix se verrait sinon à la première
+        // image où il entre dans le champ. Rien ne lit ses os : sa surface touchable se calcule, et sa chute tourne son
+        // apparence, dont ses bornes suivent le bassin.
+        idleGraph.Evaluate(0f);
+        foreach (SkinnedMeshRenderer skin in copy.GetComponentsInChildren<SkinnedMeshRenderer>(true)) skin.updateWhenOffscreen = false;
+        animator.cullingMode = AnimatorCullingMode.CullCompletely;
     }
 
     /// <summary>

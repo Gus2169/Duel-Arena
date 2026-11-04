@@ -37,6 +37,11 @@ public class ShootingCourseHud : MonoBehaviour
     private int resultRun = -1;
     private string[] resultLines = new string[0];
 
+    // Le joueur local et ce qu'en lit la consigne, relus seulement quand il change.
+    [System.NonSerialized] private NetworkObject localObject;
+    [System.NonSerialized] private WeaponController localWeapon;
+    [System.NonSerialized] private PlayerInputReader localInput;
+
     private void Awake()
     {
         pixel = Texture2D.whiteTexture;
@@ -67,6 +72,8 @@ public class ShootingCourseHud : MonoBehaviour
 
     private void OnGUI()
     {
+        // Rien ici ne lit d'entrée : les autres évènements ne feraient que refaire les mêmes calculs.
+        if (Event.current.type != EventType.Repaint) return;
         ShootingCourse course = ShootingCourse.Instance;
         if (course == null || ShootingRangePanel.IsOpen || PauseMenu.IsOpen) return;
         BuildStyles();
@@ -104,8 +111,17 @@ public class ShootingCourseHud : MonoBehaviour
             return;
         }
 
-        PlayerLocomotion player = LocalPlayer();
-        if (player != null && course.StartZone.Contains(player.transform.position)) DrawHint(player);
+        FindLocalPlayer();
+        if (localObject != null && course.StartZone.Contains(localObject.transform.position)) DrawHint();
+    }
+
+    private void FindLocalPlayer()
+    {
+        NetworkObject own = LocalObject();
+        if (own == localObject) return;
+        localObject = own;
+        localWeapon = own != null ? own.GetComponentInChildren<WeaponController>() : null;
+        localInput = own != null ? own.GetComponent<PlayerInputReader>() : null;
     }
 
     private void DrawResult(CourseResult r)
@@ -133,18 +149,16 @@ public class ShootingCourseHud : MonoBehaviour
         Shadowed(new Rect(panel.x, y, panel.width, 24f), resultLines[resultLines.Length - 1], lineStyle, last);
     }
 
-    private void DrawHint(PlayerLocomotion player)
+    private void DrawHint()
     {
-        WeaponController weapon = player.GetComponentInChildren<WeaponController>();
-        PlayerInputReader input = player.GetComponent<PlayerInputReader>();
-        int slot = weapon != null ? weapon.LocalSlot : 0;
+        int slot = localWeapon != null ? localWeapon.LocalSlot : 0;
         float best = CourseRecords.Best(slot);
         int key = slot * 100000 + (float.IsNaN(best) ? 99999 : Mathf.RoundToInt(best * 100f) % 99999);
         if (key != hintKey)
         {
             hintKey = key;
             string record = float.IsNaN(best) ? "pas encore de record" : $"record : {Seconds(best)}";
-            hintText = $"Arme en main : {WeaponName(slot)} ({record})   ·   Franchir : {(input != null ? input.KeyFor("Jump") : "Espace")}   ·   Taser : {(input != null ? input.KeyFor("Melee") : "V")}";
+            hintText = $"Arme en main : {WeaponName(slot)} ({record})   ·   Franchir : {(localInput != null ? localInput.KeyFor("Jump") : "Espace")}   ·   Taser : {(localInput != null ? localInput.KeyFor("Melee") : "V")}";
         }
         float cx = Screen.width * 0.5f;
         Shadowed(new Rect(cx - 400f, 60f, 800f, 26f), "LA FOSSE · franchis la ligne de départ pour lancer le chrono", titleStyle, new Color(1f, 0.85f, 0.35f));
@@ -185,19 +199,28 @@ public class ShootingCourseHud : MonoBehaviour
         return minutes > 0 ? $"{minutes}:{rest.ToString("00.00", French)}" : rest.ToString("0.00", French);
     }
 
-    private static PlayerLocomotion LocalPlayer()
+    private static NetworkObject LocalObject()
     {
         NetworkManager nm = NetworkManager.Singleton;
-        NetworkObject own = nm != null && nm.LocalClient != null ? nm.LocalClient.PlayerObject : null;
-        return own != null ? own.GetComponent<PlayerLocomotion>() : null;
+        return nm != null && nm.LocalClient != null ? nm.LocalClient.PlayerObject : null;
     }
 
-    /// <summary>Le nom d'une arme de la panoplie (« panoplie mixte » pour une course où l'on en a changé).</summary>
+    private static WeaponController LocalWeapon()
+    {
+        NetworkObject own = LocalObject();
+        return own != null ? own.GetComponentInChildren<WeaponController>() : null;
+    }
+
+    /// <summary>Les noms des armes viennent de la panoplie du joueur local : avant son apparition, WeaponName ne sait dire que
+    /// « arme 1 ».</summary>
+    public static bool WeaponNamesKnown => LocalWeapon() != null;
+
+    /// <summary>Le nom d'une arme de la panoplie (« panoplie mixte » pour une course où l'on en a changé). Lu quand un texte se
+    /// refait, jamais à chaque image.</summary>
     public static string WeaponName(int weaponKey)
     {
         if (weaponKey < 0) return "panoplie mixte";
-        PlayerLocomotion player = LocalPlayer();
-        WeaponController weapon = player != null ? player.GetComponentInChildren<WeaponController>() : null;
+        WeaponController weapon = LocalWeapon();
         IReadOnlyList<WeaponData> loadout = weapon != null ? weapon.Loadout : null;
         if (loadout != null && weaponKey < loadout.Count && loadout[weaponKey] != null)
             return loadout[weaponKey].weaponName.ToLower(French);

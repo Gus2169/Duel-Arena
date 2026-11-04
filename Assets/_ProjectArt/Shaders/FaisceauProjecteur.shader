@@ -39,7 +39,7 @@ Shader "DuelArena/FaisceauProjecteur"
                 float _Proche;
             CBUFFER_END
 
-            // Le replay du coup mortel assombrit le décor (KillReplay, global) : les faisceaux s'éteignent d'autant.
+            // La kill cam assombrit le décor (KillCam, global) : les faisceaux s'éteignent d'autant.
             float _ReplayDim;
 
             struct Attributes

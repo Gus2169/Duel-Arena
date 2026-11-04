@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -35,8 +34,6 @@ public static class RenderStyle
     /// <summary>Les robots en cel-shading (DuelArena/RobotCelShading) : en cel-shading et en mêlés.</summary>
     public static bool CelRobots => Current != RenderStyleMode.LowPolyPropre;
 
-    public static event Action Changed;
-
     // Le rechargement de domaine est désactivé à l'entrée en Play Mode : on oublie les robots d'avant, et en quittant
     // le Play Mode, l'Editor retrouve le rendu du jeu d'aujourd'hui (sinon la vue Scène et les captures du menu
     // garderaient celui de la partie).
@@ -63,7 +60,6 @@ public static class RenderStyle
             if (robots[i] == null) robots.RemoveAt(i);
             else ApplyRobot(robots[i]);
         }
-        Changed?.Invoke();
     }
 
     /// <summary>Suit un robot (la racine « Model » d'un joueur, ou une copie) : il prend tout de suite le rendu en

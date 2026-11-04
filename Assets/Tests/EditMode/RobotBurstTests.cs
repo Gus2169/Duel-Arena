@@ -45,6 +45,18 @@ public class RobotBurstTests
         Assert.AreEqual(Severity.Light, RobotCorpse.SeverityOf(float.NaN), "Un coup sans force connue : léger.");
     }
 
+    /// <summary>Au Tournoi, un joueur en plein match ne paie pas les effets des autres arènes ; la salle d'attente, elle, voit
+    /// tout (le direct filme chaque arène), et hors du Tournoi on est toujours dans la même. Vu échouer, la salle d'attente
+    /// privée des épaves du direct.</summary>
+    [Test]
+    public void AuTournoi_ChacunNeVoitQueSonMatch_SaufLaSalleDAttente()
+    {
+        Assert.IsTrue(PlayerDeath.ShowsEffects(inLane: true, sameLane: true), "Dans son couloir, tout se voit.");
+        Assert.IsFalse(PlayerDeath.ShowsEffects(inLane: true, sameLane: false), "Un autre couloir, à 2 km : rien.");
+        Assert.IsTrue(PlayerDeath.ShowsEffects(inLane: false, sameLane: false), "La salle d'attente regarde les écrans.");
+        Assert.IsTrue(PlayerDeath.ShowsEffects(inLane: false, sameLane: true), "Hors du Tournoi, tous dans la même arène.");
+    }
+
     /// <summary>
     /// Ce qui s'arrache : léger, la tête, le membre touché, le bras du côté touché au buste, la cuisse au bassin ; lourd, la
     /// tête, un membre en deux morceaux, le robot coupé à la taille ; brutal, la tête, les bras, les jambes et le buste.

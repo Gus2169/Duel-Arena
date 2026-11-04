@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -14,7 +15,7 @@ using UnityEngine.Rendering.Universal;
 ///
 /// Vus échouer : une paire retirée (un matériau sans double), une paire qui ramène au mauvais matériau, le contour
 /// éteint dans le renderer, les lueurs d'un mannequin éteintes pour URP Lit seulement (en cel-shading, ses yeux
-/// restaient allumés).
+/// restaient allumés), un marquage remis en file 2450.
 /// </summary>
 public class RenderStyleTests
 {
@@ -52,6 +53,66 @@ public class RenderStyleTests
         }
         Assert.Greater(mapped, 15, "Les matériaux des trois châssis ont été vus.");
         Assert.Greater(visors, 0, "La visière du CT-01 a été vue.");
+    }
+
+    /// <summary>Les robots dans le rendu par défaut et la visière passent au SRP Batcher : leurs passes de profondeur et
+    /// d'ombre sont les leurs, sur leur UnityPerMaterial. Empruntées à Lit (UsePass), elles gardaient celui de Lit, et un
+    /// shader à deux dispositions sort du SRP Batcher sans rien dire. L'inspecteur du shader lit la même fonction.</summary>
+    [Test]
+    public void LesShadersDuRobot_PassentAuSrpBatcher_AvecLeursPassesDeProfondeur()
+    {
+        MethodInfo code = typeof(ShaderUtil).GetMethod("GetSRPBatcherCompatibilityCode", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+        Assert.IsNotNull(code, "Garde : la fonction de l'inspecteur du shader a changé de nom.");
+        foreach (string name in new[] { CelShader, "DuelArena/EcranVisage" })
+        {
+            Shader shader = Shader.Find(name);
+            Assert.IsNotNull(shader, name);
+            // Unity rend certaines étiquettes en majuscules (SHADOWCASTER).
+            var modes = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            for (int pass = 0; pass < shader.passCount; pass++)
+                modes.Add(shader.FindPassTagValue(pass, new ShaderTagId("LightMode")).name);
+            foreach (string mode in new[] { "UniversalForward", "ShadowCaster", "DepthOnly", "DepthNormals" })
+                Assert.IsTrue(modes.Contains(mode), $"{name} : il lui manque sa passe {mode}.");
+            Assert.AreEqual(0, (int)code.Invoke(null, new object[] { shader, 0 }), $"{name} sort du SRP Batcher.");
+        }
+    }
+
+    // Ce qu'URP dessine de lui-même à l'écran. Une passe sans LightMode est une SRPDefaultUnlit.
+    private static readonly string[] ForwardModes = { "", "SRPDefaultUnlit", "UniversalForward", "UniversalForwardOnly" };
+
+    /// <summary>
+    /// Sous le depth priming d'URP (PC_Renderer, m_DepthPrimingMode), la passe opaque ne dessine qu'à profondeur égale à la
+    /// prépasse : un matériau de la file opaque sans passe de profondeur, ou qui l'a coupée, disparaît de l'écran sans un
+    /// message. C'est arrivé aux marquages au sol, qui coupent ces passes, et qui sont exprès en file 2501. DepthNormalsOnly
+    /// vaut DepthNormals : la prépasse d'URP prend les deux, et ses shaders Unlit n'ont que la première.
+    /// </summary>
+    [Test]
+    public void UnMateriauOpaque_GardeSesPassesDeProfondeur_SinonIlDisparaitDeLEcran()
+    {
+        int opaque = 0;
+        var missing = new List<string>();
+        foreach (string path in AssetDatabase.FindAssets("t:Material", new[] { "Assets" }).Select(AssetDatabase.GUIDToAssetPath).Distinct())
+        {
+            // Un modèle importé porte ses matériaux en sous-assets.
+            foreach (Material material in AssetDatabase.LoadAllAssetsAtPath(path).OfType<Material>())
+            {
+                Shader shader = material.shader;
+                if (material.renderQueue > (int)RenderQueue.GeometryLast) continue;
+                // Unity rend certaines étiquettes en majuscules (SRPDEFAULTUNLIT).
+                var modes = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+                for (int pass = 0; pass < shader.passCount; pass++)
+                    modes.Add(shader.FindPassTagValue(pass, new ShaderTagId("LightMode")).name ?? "");
+                if (!ForwardModes.Any(modes.Contains)) continue;
+
+                opaque++;
+                bool Writes(string mode) => modes.Contains(mode) && material.GetShaderPassEnabled(mode);
+                string who = $"{path} ({material.name}, {shader.name}, file {material.renderQueue})";
+                if (!Writes("DepthOnly")) missing.Add($"{who} : pas de passe DepthOnly");
+                if (!Writes("DepthNormals") && !Writes("DepthNormalsOnly")) missing.Add($"{who} : pas de passe DepthNormals");
+            }
+        }
+        Assert.Greater(opaque, 1000, "Garde : les matériaux des armes, des robots et du décor ont bien été lus.");
+        Assert.IsEmpty(missing, string.Join("\n", missing));
     }
 
     [Test]
@@ -222,7 +283,7 @@ public class RenderStyleTests
             int Silhouette(float distance, bool outline)
             {
                 holder.transform.SetPositionAndRotation(new Vector3(0f, 0f, distance), Quaternion.Euler(0f, 180f, 0f));
-                foreach (Material m in owned) m.SetShaderPassEnabled("SRPDefaultUnlit", outline);
+                foreach (Material m in owned) m.SetShaderPassEnabled(DecorOutlineFeature.LightMode, outline);
                 var request = new RenderPipeline.StandardRequest { destination = target };
                 if (RenderPipeline.SupportsRenderRequest(camera, request)) RenderPipeline.SubmitRenderRequest(camera, request);
                 else
@@ -280,5 +341,38 @@ public class RenderStyleTests
             }
         }
         return result;
+    }
+
+    /// <summary>Le post-traitement de la caméra du joueur (2026-11-04) passe sur la dernière caméra qui dessine dans la pile : les
+    /// bras le reçoivent ainsi comme le monde. Sur les deux caméras, il s'appliquerait deux fois ; sur aucune, l'image changerait
+    /// d'un coup à la kill cam.</summary>
+    [Test]
+    public void LePostTraitement_PasseUneFois_SurLaDerniereCameraDeLaPile()
+    {
+        Camera prefabCamera = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath).GetComponentInChildren<Camera>(true);
+        Assert.IsNotNull(prefabCamera, "Le préfab n'a pas de caméra.");
+        Assert.IsTrue(prefabCamera.GetUniversalAdditionalCameraData().renderPostProcessing,
+            "Sans bras (la mort, la lunette d'origine), c'est la caméra du joueur qui le porte.");
+
+        var playerGo = new GameObject("CameraJoueur", typeof(Camera));
+        var armsGo = new GameObject("CameraBras", typeof(Camera));
+        try
+        {
+            UniversalAdditionalCameraData player = playerGo.GetComponent<Camera>().GetUniversalAdditionalCameraData();
+            UniversalAdditionalCameraData arms = armsGo.GetComponent<Camera>().GetUniversalAdditionalCameraData();
+
+            FirstPersonView.AssignPostProcessing(playerGo.GetComponent<Camera>(), armsGo.GetComponent<Camera>(), true);
+            Assert.IsTrue(arms.renderPostProcessing, "Les bras montrés : leur caméra le porte, pour toute la pile.");
+            Assert.IsFalse(player.renderPostProcessing, "Sur les deux, il passerait deux fois.");
+
+            FirstPersonView.AssignPostProcessing(playerGo.GetComponent<Camera>(), armsGo.GetComponent<Camera>(), false);
+            Assert.IsFalse(arms.renderPostProcessing);
+            Assert.IsTrue(player.renderPostProcessing, "Les bras cachés : il revient à la caméra du joueur.");
+        }
+        finally
+        {
+            Object.DestroyImmediate(armsGo);
+            Object.DestroyImmediate(playerGo);
+        }
     }
 }

@@ -241,46 +241,6 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
                     ""interactions"": """",
                     ""initialStateCheck"": false,
                     ""priority"": 0
-                },
-                {
-                    ""name"": ""Weapon1"",
-                    ""type"": ""Button"",
-                    ""id"": ""95ac448b-27d8-4a2b-9dc1-f3cb6695f0a4"",
-                    ""expectedControlType"": """",
-                    ""processors"": """",
-                    ""interactions"": """",
-                    ""initialStateCheck"": false,
-                    ""priority"": 0
-                },
-                {
-                    ""name"": ""Weapon2"",
-                    ""type"": ""Button"",
-                    ""id"": ""d6244597-956d-4aab-8773-a5b6cd11da76"",
-                    ""expectedControlType"": """",
-                    ""processors"": """",
-                    ""interactions"": """",
-                    ""initialStateCheck"": false,
-                    ""priority"": 0
-                },
-                {
-                    ""name"": ""Weapon3"",
-                    ""type"": ""Button"",
-                    ""id"": ""b60cb57f-eebe-4b33-8516-1e37b7942279"",
-                    ""expectedControlType"": """",
-                    ""processors"": """",
-                    ""interactions"": """",
-                    ""initialStateCheck"": false,
-                    ""priority"": 0
-                },
-                {
-                    ""name"": ""Weapon4"",
-                    ""type"": ""Button"",
-                    ""id"": ""7e3d349f-370c-4ec9-b594-de9b98ca5fa8"",
-                    ""expectedControlType"": """",
-                    ""processors"": """",
-                    ""interactions"": """",
-                    ""initialStateCheck"": false,
-                    ""priority"": 0
                 }
             ],
             ""bindings"": [
@@ -503,50 +463,6 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
                     ""action"": ""SwapItem"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
-                },
-                {
-                    ""name"": """",
-                    ""id"": ""32ea9705-909a-49a6-92dc-22258913530f"",
-                    ""path"": ""<Keyboard>/1"",
-                    ""interactions"": """",
-                    ""processors"": """",
-                    ""groups"": """",
-                    ""action"": ""Weapon1"",
-                    ""isComposite"": false,
-                    ""isPartOfComposite"": false
-                },
-                {
-                    ""name"": """",
-                    ""id"": ""c7197425-a692-4278-9ec3-9d28deaa560d"",
-                    ""path"": ""<Keyboard>/2"",
-                    ""interactions"": """",
-                    ""processors"": """",
-                    ""groups"": """",
-                    ""action"": ""Weapon2"",
-                    ""isComposite"": false,
-                    ""isPartOfComposite"": false
-                },
-                {
-                    ""name"": """",
-                    ""id"": ""8544983d-c121-4296-868c-b95534bd91e6"",
-                    ""path"": ""<Keyboard>/3"",
-                    ""interactions"": """",
-                    ""processors"": """",
-                    ""groups"": """",
-                    ""action"": ""Weapon3"",
-                    ""isComposite"": false,
-                    ""isPartOfComposite"": false
-                },
-                {
-                    ""name"": """",
-                    ""id"": ""f446ccb1-27ee-488d-b3f1-bf863905ff58"",
-                    ""path"": ""<Keyboard>/4"",
-                    ""interactions"": """",
-                    ""processors"": """",
-                    ""groups"": """",
-                    ""action"": ""Weapon4"",
-                    ""isComposite"": false,
-                    ""isPartOfComposite"": false
                 }
             ]
         }
@@ -570,10 +486,6 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
         m_Gameplay_Melee = m_Gameplay.FindAction("Melee", throwIfNotFound: true);
         m_Gameplay_Interact = m_Gameplay.FindAction("Interact", throwIfNotFound: true);
         m_Gameplay_SwapItem = m_Gameplay.FindAction("SwapItem", throwIfNotFound: true);
-        m_Gameplay_Weapon1 = m_Gameplay.FindAction("Weapon1", throwIfNotFound: true);
-        m_Gameplay_Weapon2 = m_Gameplay.FindAction("Weapon2", throwIfNotFound: true);
-        m_Gameplay_Weapon3 = m_Gameplay.FindAction("Weapon3", throwIfNotFound: true);
-        m_Gameplay_Weapon4 = m_Gameplay.FindAction("Weapon4", throwIfNotFound: true);
     }
 
     ~@PlayerControls()
@@ -669,10 +581,6 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
     private readonly InputAction m_Gameplay_Melee;
     private readonly InputAction m_Gameplay_Interact;
     private readonly InputAction m_Gameplay_SwapItem;
-    private readonly InputAction m_Gameplay_Weapon1;
-    private readonly InputAction m_Gameplay_Weapon2;
-    private readonly InputAction m_Gameplay_Weapon3;
-    private readonly InputAction m_Gameplay_Weapon4;
     /// <summary>
     /// Provides access to input actions defined in input action map "Gameplay".
     /// </summary>
@@ -745,22 +653,6 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
         /// </summary>
         public InputAction @SwapItem => m_Wrapper.m_Gameplay_SwapItem;
         /// <summary>
-        /// Provides access to the underlying input action "Gameplay/Weapon1".
-        /// </summary>
-        public InputAction @Weapon1 => m_Wrapper.m_Gameplay_Weapon1;
-        /// <summary>
-        /// Provides access to the underlying input action "Gameplay/Weapon2".
-        /// </summary>
-        public InputAction @Weapon2 => m_Wrapper.m_Gameplay_Weapon2;
-        /// <summary>
-        /// Provides access to the underlying input action "Gameplay/Weapon3".
-        /// </summary>
-        public InputAction @Weapon3 => m_Wrapper.m_Gameplay_Weapon3;
-        /// <summary>
-        /// Provides access to the underlying input action "Gameplay/Weapon4".
-        /// </summary>
-        public InputAction @Weapon4 => m_Wrapper.m_Gameplay_Weapon4;
-        /// <summary>
         /// Provides access to the underlying input action map instance.
         /// </summary>
         public InputActionMap Get() { return m_Wrapper.m_Gameplay; }
@@ -831,18 +723,6 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
             @SwapItem.started += instance.OnSwapItem;
             @SwapItem.performed += instance.OnSwapItem;
             @SwapItem.canceled += instance.OnSwapItem;
-            @Weapon1.started += instance.OnWeapon1;
-            @Weapon1.performed += instance.OnWeapon1;
-            @Weapon1.canceled += instance.OnWeapon1;
-            @Weapon2.started += instance.OnWeapon2;
-            @Weapon2.performed += instance.OnWeapon2;
-            @Weapon2.canceled += instance.OnWeapon2;
-            @Weapon3.started += instance.OnWeapon3;
-            @Weapon3.performed += instance.OnWeapon3;
-            @Weapon3.canceled += instance.OnWeapon3;
-            @Weapon4.started += instance.OnWeapon4;
-            @Weapon4.performed += instance.OnWeapon4;
-            @Weapon4.canceled += instance.OnWeapon4;
         }
 
         /// <summary>
@@ -899,18 +779,6 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
             @SwapItem.started -= instance.OnSwapItem;
             @SwapItem.performed -= instance.OnSwapItem;
             @SwapItem.canceled -= instance.OnSwapItem;
-            @Weapon1.started -= instance.OnWeapon1;
-            @Weapon1.performed -= instance.OnWeapon1;
-            @Weapon1.canceled -= instance.OnWeapon1;
-            @Weapon2.started -= instance.OnWeapon2;
-            @Weapon2.performed -= instance.OnWeapon2;
-            @Weapon2.canceled -= instance.OnWeapon2;
-            @Weapon3.started -= instance.OnWeapon3;
-            @Weapon3.performed -= instance.OnWeapon3;
-            @Weapon3.canceled -= instance.OnWeapon3;
-            @Weapon4.started -= instance.OnWeapon4;
-            @Weapon4.performed -= instance.OnWeapon4;
-            @Weapon4.canceled -= instance.OnWeapon4;
         }
 
         /// <summary>
@@ -1056,33 +924,5 @@ public partial class @PlayerControls: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnSwapItem(InputAction.CallbackContext context);
-        /// <summary>
-        /// Method invoked when associated input action "Weapon1" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
-        /// </summary>
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
-        void OnWeapon1(InputAction.CallbackContext context);
-        /// <summary>
-        /// Method invoked when associated input action "Weapon2" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
-        /// </summary>
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
-        void OnWeapon2(InputAction.CallbackContext context);
-        /// <summary>
-        /// Method invoked when associated input action "Weapon3" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
-        /// </summary>
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
-        void OnWeapon3(InputAction.CallbackContext context);
-        /// <summary>
-        /// Method invoked when associated input action "Weapon4" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
-        /// </summary>
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
-        void OnWeapon4(InputAction.CallbackContext context);
     }
 }

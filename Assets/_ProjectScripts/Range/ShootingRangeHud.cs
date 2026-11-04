@@ -23,8 +23,6 @@ public class ShootingRangeHud : MonoBehaviour
     {
         public TrainingDummy dummy;
         public HitboxZoneType zone;
-        public float damage;
-        public float distance;
         public float at;
         public int order;
         public string text;
@@ -39,11 +37,12 @@ public class ShootingRangeHud : MonoBehaviour
         public bool hadFullHealth = true;
         public float seriesStart;
         public int seriesHits;
-        public float seriesDamage;
         public string report;
         public float reportUntil;
         public float lastHealth = -1f;
         public float lastHitAt = -100f;
+        // Rien ne cache sa tête, vu de l'œil (LateUpdate).
+        public bool inSight;
         // Le texte « 100 PV · 12 m », refait seulement quand la vie ou la distance montrées changent.
         public string label;
         public int labelHealth = -1;
@@ -64,10 +63,9 @@ public class ShootingRangeHud : MonoBehaviour
     private readonly Dictionary<Health, TrainingDummy> byHealth = new Dictionary<Health, TrainingDummy>();
     private readonly List<Entry> entries = new List<Entry>();
     private readonly List<Rect> placed = new List<Rect>();
-    private static readonly System.Comparison<Entry> ByPriority =
-        (a, b) => a.rank != b.rank ? a.rank.CompareTo(b.rank) : a.distance.CompareTo(b.distance);
     private Texture2D pixel;
     private int hitOrder;
+    [System.NonSerialized] private float nextSightAt;
     [System.NonSerialized] private GUIStyle numberStyle;
     [System.NonSerialized] private GUIStyle labelStyle;
     [System.NonSerialized] private GUIStyle reportStyle;
@@ -105,7 +103,7 @@ public class ShootingRangeHud : MonoBehaviour
     {
         TrainingDummy dummy = DummyOf(target);
         if (dummy == null) return;
-        numbers.Add(new HitNumber { dummy = dummy, zone = zone, damage = damage, distance = distance, at = Time.time, order = hitOrder++,
+        numbers.Add(new HitNumber { dummy = dummy, zone = zone, at = Time.time, order = hitOrder++,
                                     text = $"{Mathf.RoundToInt(damage)} {ZoneLabel(zone)}" });
         DummyState state = StateOf(dummy);
         state.lastHitAt = Time.time;
@@ -114,10 +112,8 @@ public class ShootingRangeHud : MonoBehaviour
             state.hadFullHealth = false;
             state.seriesStart = Time.time;
             state.seriesHits = 0;
-            state.seriesDamage = 0f;
         }
         state.seriesHits++;
-        state.seriesDamage += damage;
     }
 
     private void Update()
@@ -158,6 +154,23 @@ public class ShootingRangeHud : MonoBehaviour
             if (Time.time - numbers[i].at > numberLifetime || numbers[i].dummy == null) numbers.RemoveAt(i);
     }
 
+    /// <summary>Ce qui cache chaque mannequin, vu de l'œil, dix fois par seconde : les murs ne bougent pas, et OnGUI, qui dessine
+    /// à chaque image, n'a pas à sonder. Rien ne s'affiche derrière une fenêtre : le premier passage après elle rattrape.</summary>
+    private void LateUpdate()
+    {
+        if (Time.time < nextSightAt || ShootingRangePanel.IsOpen || PauseMenu.IsOpen) return;
+        ShootingRange range = ShootingRange.Instance;
+        Camera cam = Camera.main;
+        if (range == null || cam == null) return;
+        nextSightAt = Time.time + SightPeriod;
+        Vector3 eye = cam.transform.position;
+        foreach (TrainingDummy dummy in range.Dummies)
+        {
+            if (dummy == null || dummy.Health == null || !dummy.Regenerates) continue;
+            StateOf(dummy).inSight = !Physics.Linecast(eye, dummy.HeadPoint, 1, QueryTriggerInteraction.Ignore);
+        }
+    }
+
     /// <summary>Le bilan d'un mannequin neutralisé : « Neutralisé en 0,71 s · 6 impacts » (un impact
     /// = une balle ou un plomb qui touche). Fonction pure, testée.</summary>
     public static string SeriesReport(float seconds, int hits)
@@ -185,6 +198,8 @@ public class ShootingRangeHud : MonoBehaviour
 
     private void OnGUI()
     {
+        // Rien ici ne lit d'entrée : les autres évènements ne feraient que refaire les mêmes calculs.
+        if (Event.current.type != EventType.Repaint) return;
         ShootingRange range = ShootingRange.Instance;
         Camera cam = Camera.main;
         if (range == null || cam == null) return;
@@ -214,15 +229,15 @@ public class ShootingRangeHud : MonoBehaviour
             // Les cibles de la Fosse n'ont ni barre ni étiquette (le parcours a son chrono) ; leurs
             // chiffres de dégâts restent.
             if (dummy == null || dummy.Health == null || !dummy.Regenerates) continue;
+            // Un mannequin caché par un mur n'a pas d'étiquette : depuis la Fosse, on voyait celles du
+            // stand à travers la cloison.
+            DummyState state = StateOf(dummy);
+            if (!state.inSight) continue;
             if (!OnScreen(cam, dummy.LabelPoint, out Vector2 p)) continue;
             if (scoped && (p - screenCenter).sqrMagnitude > scopeRadius * scopeRadius) continue;
             // L'étiquette laisse au-dessus de la tête la place du marqueur de touche (HitMarker, jusqu'à 25 unités
             // au-dessus du point visé) : de loin, elle tombait sur ses branches du haut quand on visait la tête.
             if (OnScreen(cam, dummy.HeadPoint, out Vector2 head)) p.y = Mathf.Min(p.y, head.y - MarkerClearance * Screen.height / 1080f);
-            // Un mannequin caché par un mur n'a pas d'étiquette : depuis la Fosse, on voyait celles du
-            // stand à travers la cloison.
-            if (Physics.Linecast(eye, dummy.HeadPoint, 1, QueryTriggerInteraction.Ignore)) continue;
-            DummyState state = StateOf(dummy);
             float angle = Vector3.Angle(forward, dummy.HeadPoint - Vector3.up * 0.4f - eye);
             if (angle < aimedAngle) { aimedAngle = angle; aimed = entries.Count; }
             bool recent = Time.time - state.lastHitAt < 3f || (state.report != null && Time.time < state.reportUntil);
@@ -234,7 +249,7 @@ public class ShootingRangeHud : MonoBehaviour
             e.rank = 0;
             entries[aimed] = e;
         }
-        entries.Sort(ByPriority);
+        SortEntries();
 
         // Les barres : d'abord celles du second plan, du plus loin au plus proche, puis les prioritaires
         // par-dessus.
@@ -286,6 +301,28 @@ public class ShootingRangeHud : MonoBehaviour
         GUI.color = Color.white;
     }
 
+    /// <summary>Range les mannequins à l'écran par priorité, puis du plus proche au plus loin. Par insertion : ils sont une
+    /// vingtaine au plus, à chaque image, et List.Sort(Comparison) alloue son comparateur à chaque appel.</summary>
+    private void SortEntries()
+    {
+        for (int i = 1; i < entries.Count; i++)
+        {
+            Entry entry = entries[i];
+            int j = i - 1;
+            for (; j >= 0 && ComesBefore(entry, entries[j]); j--) entries[j + 1] = entries[j];
+            entries[j + 1] = entry;
+        }
+    }
+
+    private static bool ComesBefore(Entry a, Entry b) => a.rank != b.rank ? a.rank < b.rank : a.distance < b.distance;
+
+    /// <summary>Le temps (s) entre deux vérifications de ce qui cache les mannequins.</summary>
+    private const float SightPeriod = 0.1f;
+
+    /// <summary>Au-delà de tant de pixels hors de l'écran, plus rien d'un mannequin ne s'y voit : ni son bilan, large de 320
+    /// pixels autour de lui, ni ses chiffres, qui partent à sa droite.</summary>
+    private const float OffScreenMargin = 200f;
+
     /// <summary>Un mannequin est « visé » à moins de tant de degrés du réticule (son buste).</summary>
     private const float AimedAngle = 4f;
 
@@ -329,7 +366,15 @@ public class ShootingRangeHud : MonoBehaviour
     {
         Vector3 s = cam.WorldToScreenPoint(world);
         gui = new Vector2(s.x, Screen.height - s.y);
-        return s.z > 0.1f;
+        return NearScreen(s, Screen.width, Screen.height);
+    }
+
+    /// <summary>Ce point de l'écran (`x`, `y` en pixels, `z` devant la caméra) peut-il encore y montrer quelque chose ? Devant
+    /// la caméra, et à moins de OffScreenMargin de l'écran. Fonction pure, testée.</summary>
+    public static bool NearScreen(Vector3 screen, int width, int height)
+    {
+        return screen.z > 0.1f && screen.x > -OffScreenMargin && screen.x < width + OffScreenMargin
+            && screen.y > -OffScreenMargin && screen.y < height + OffScreenMargin;
     }
 
     private static void Shadowed(Rect r, string text, GUIStyle style, Color color)

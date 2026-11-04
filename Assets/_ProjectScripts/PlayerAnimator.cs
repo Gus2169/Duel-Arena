@@ -182,6 +182,9 @@ public class PlayerAnimator : MonoBehaviour
     private GaitState gait;
     private FootPlanter planter; // les pieds calés au sol pendant l'appui (2026-10-10)
     private LegsTurnState legsTurn; // le bas du corps qui garde son cap à l'arrêt (2026-10-10)
+    private float shownLegsLag = float.NaN; // l'écart des jambes au regard qu'on a posé sur le modèle
+    private SkinnedMeshRenderer[] skins;    // les pièces des châssis, sous le modèle
+    private PlayerDeath death;              // tant qu'elle montre l'épave, le modèle est masqué
 
     // Direction du buste : la mire du fusil, les os qui tournent (du bas au haut de la colonne), et
     // la correction lissée.
@@ -196,6 +199,8 @@ public class PlayerAnimator : MonoBehaviour
     private float pistolHold, pistolBlend;
     private bool pistolHoldShown;
     private Transform[] spineChain;
+    private Transform leanBone;     // la base de la colonne, où le lean tourne le buste
+    [System.NonSerialized] private Animator posedView;   // les bras qui tiennent déjà leur pose fixe (HoldViewPose)
     // Durée du rechargement en cours, relevée à son début : le geste y est étalé, même quand le
     // pompe glisse ses cartouches une à une.
     private float reloadAnimationDuration = 1f;
@@ -217,23 +222,25 @@ public class PlayerAnimator : MonoBehaviour
         firstPersonView = GetComponent<FirstPersonView>();
         weaponLooks = GetComponent<PlayerWeaponLooks>();
         weaponAttachments = GetComponent<PlayerWeaponAttachments>();
+        death = GetComponent<PlayerDeath>();
         previousPosition = transform.position;
         if (taser != null) strikeGestureDuration = taser.StrikeDuration;
 
         if (animator != null)
         {
-            // Avant que FirstPersonView ne copie le modèle : la copie hérite du composant, ce qui
-            // est sans effet (ses bras n'ont pas de jambes à caler).
+            // Sa copie, celle des bras, s'en défait (FirstPersonView.BuildView) : sa seule présence ferait calculer le
+            // déplacement de racine à leur Animator, et ils n'ont pas de jambes à caler.
             rootMotion = animator.GetComponent<AnimatorRootMotionProbe>();
             if (rootMotion == null) rootMotion = animator.gameObject.AddComponent<AnimatorRootMotionProbe>();
+            skins = animator.GetComponentsInChildren<SkinnedMeshRenderer>(true);
 
-            // Les armes de la panoplie, accrochées à la main, avant que la vue subjective ne copie le
-            // modèle (2026-10-11) : le modèle par défaut de chaque classe, sans accessoire, jusqu'à ce
-            // que le serveur publie ce que le joueur a choisi (HandleWeaponLooks, HandleWeaponAttachments).
+            // L'arme en main, avant que la vue subjective ne copie le modèle (2026-10-11) : sans finition ni
+            // accessoire, jusqu'à ce que le serveur publie ce que le joueur a choisi (HandleWeaponLooks,
+            // HandleWeaponAttachments).
             rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
-            if (weapon != null) HeldWeapons.Build(rightHand, weapon.AllWeapons, WeaponLooks.Default);
             ShowHeldWeapon();
             spineChain = SpineChain(animator);
+            leanBone = animator.GetBoneTransform(HumanBodyBones.Spine);
             hips = animator.GetBoneTransform(HumanBodyBones.Hips);
             planter = new FootPlanter(animator);
             grip = new WeaponGrip(animator);
@@ -243,6 +250,9 @@ public class PlayerAnimator : MonoBehaviour
     /// <summary>Les réglages de la prise des mains sur l'arme, que les bras de la vue subjective
     /// reprennent (FirstPersonView) : une seule source, celle du préfab.</summary>
     public WeaponGrip.Settings HandGrip => handGrip;
+
+    /// <summary>Le modèle que tient le corps à cette image (null à mains nues), que MagazineSwap et TacticalLaser suivent.</summary>
+    public WeaponModel ShownModel => shownModel;
 
     private void OnEnable()
     {
@@ -342,9 +352,19 @@ public class PlayerAnimator : MonoBehaviour
     private void MirrorToView()
     {
         Animator view = ViewAnimator;
-        if (view == null || !view.isActiveAndEnabled) return;
+        if (view == null || !view.isActiveAndEnabled)
+        {
+            // Rallumé (de spectateur à duelliste), un Animator revient aux valeurs par défaut de ses paramètres.
+            posedView = null;
+            return;
+        }
+        if (view != posedView)
+        {
+            posedView = view;
+            HoldViewPose(view);
+        }
         // Debout, le taser a toujours son geste, même quand le corps est allongé (où il n'en a pas).
-        MirrorWeaponGestures(animator, view, TaserLayerWeight(PlayerLocomotion.Stance.Standing));
+        MirrorMovingGestures(animator, view, TaserLayerWeight(PlayerLocomotion.Stance.Standing));
     }
 
     /// <summary>
@@ -360,15 +380,30 @@ public class PlayerAnimator : MonoBehaviour
         animator.CrossFadeInFixedTime(ReloadStateId, ArrivalBlend, UpperBodyLayer, clipTime / Mathf.Max(0.01f, speed));
     }
 
-    /// <summary>Recopie vers les bras de la vue subjective ce qu'ils reprennent du corps (voir
-    /// MirrorToView). Sans état, testée.</summary>
+    /// <summary>La pose fixe des bras de la vue subjective, puis ce qu'ils reprennent du corps (voir MirrorToView).
+    /// Sans état, testée.</summary>
     public static void MirrorWeaponGestures(Animator body, Animator view, float taserWeight)
+    {
+        HoldViewPose(view);
+        MirrorMovingGestures(body, view, taserWeight);
+    }
+
+    /// <summary>Recopie vers les bras de la vue subjective ce qui change d'une image à l'autre : les gestes de l'arme, et
+    /// la tenue. Sans état.</summary>
+    public static void MirrorMovingGestures(Animator body, Animator view, float taserWeight)
     {
         view.SetBool(ReloadingId, body.GetBool(ReloadingId));
         view.SetFloat(ReloadSpeedId, body.GetFloat(ReloadSpeedId));
         view.SetFloat(TaserSpeedId, body.GetFloat(TaserSpeedId));
         // La tenue (fusil ou pistolet) : les bras tiennent l'arme comme le corps.
         view.SetFloat(PistoletId, body.GetFloat(PistoletId));
+        if (view.layerCount > TaserLayer) view.SetLayerWeight(TaserLayer, taserWeight);
+    }
+
+    /// <summary>Ce que les bras de la vue subjective tiennent une fois pour toutes : à poser quand ils naissent, et quand
+    /// ils se rallument. Sans état, testée.</summary>
+    public static void HoldViewPose(Animator view)
+    {
         // Les poses d'attente ne défilent pas : leur respiration, lente, faisait dériver la mire de
         // ±45 pixels en visée (mesuré le 2026-10-10), le placement de l'arme la rattrapant en
         // retard. Les gestes (tir, rechargement, taser) ont leur propre vitesse et jouent.
@@ -386,7 +421,6 @@ public class PlayerAnimator : MonoBehaviour
         view.SetBool(AirborneId, false);
         view.SetBool(VaultingId, false);
         if (view.layerCount > UpperBodyLayer) view.SetLayerWeight(UpperBodyLayer, 1f);
-        if (view.layerCount > TaserLayer) view.SetLayerWeight(TaserLayer, taserWeight);
     }
 
     /// <summary>Un coup de taser part : même principe que le tir, par événement.</summary>
@@ -465,12 +499,9 @@ public class PlayerAnimator : MonoBehaviour
         {
             shownSpectator = spectating;
             HeldWeapons.WearTaserGlove(animator, !spectating);
-            ShowHeldWeapon();
         }
-        else if (weapon != null && !spectating && weapon.Data != shownWeapon)
-        {
-            ShowHeldWeapon();
-        }
+        WeaponData wanted = weapon != null && !spectating ? weapon.Data : null;
+        if (wanted != shownWeapon && !ModelHidden) ShowHeldWeapon();
         // Debout, l'arbre de déplacement à mains nues ; accroupi, les jambes armées sous un haut du
         // corps à mains nues (voir ApplyPostureTransition). Aussi un duelliste qui n'a que le gant, la
         // dernière marche du Gun Game (2026-11-02) : à mains nues, le gant au poing.
@@ -519,6 +550,7 @@ public class PlayerAnimator : MonoBehaviour
         // Debout ou accroupi, au sol, sans changement de posture en cours : là seulement les jambes
         // pivotent sur place et les pieds se calent.
         AnimatorStateInfo legs = animator.GetCurrentAnimatorStateInfo(0);
+        bool legsBlending = animator.IsInTransition(0);
         bool onFeet = !locomotion.DisplayAirborne && !locomotion.DisplayVaulting
                       && from != PlayerLocomotion.Stance.Prone && stance != PlayerLocomotion.Stance.Prone
                       && (legs.shortNameHash == DeboutStateId || legs.shortNameHash == AccroupiStateId);
@@ -527,20 +559,32 @@ public class PlayerAnimator : MonoBehaviour
         // au-delà de TurnThreshold. Appliqué au modèle avant le calage des pieds et la direction du
         // buste, qui travaillent sur la pose ainsi tournée.
         bool idle = smoothedMove.magnitude < 0.05f;
-        StepLegsTurn(ref legsTurn, transform.eulerAngles.y, idle, onFeet && from == stance, dt);
-        animator.transform.rotation = Quaternion.Euler(0f, legsTurn.legsYaw, 0f);
+        float playerYaw = transform.eulerAngles.y;
+        StepLegsTurn(ref legsTurn, playerYaw, idle, onFeet && from == stance, dt);
+        // Le modèle suit le joueur de lui-même : on ne l'écrit que quand son écart au regard change. Toute écriture repasse
+        // sur ses os et ce qui y pend, et il reste aligné presque tout le temps.
+        float legsLag = Mathf.DeltaAngle(playerYaw, legsTurn.legsYaw);
+        if (legsLag != shownLegsLag)
+        {
+            shownLegsLag = legsLag;
+            animator.transform.rotation = Quaternion.Euler(0f, legsTurn.legsYaw, 0f);
+        }
 
         // Les pieds posés sont retenus au sol, sur la pose que l'Animator vient d'écrire (avant toute
         // autre retouche des os). Y compris pendant un changement debout ↔ accroupi : le fondu entre
         // les deux attentes faisait glisser le pied droit de 35 cm, il fait maintenant un pas.
-        planter?.Apply(onFeet && LegsOnFeet(animator), dt, from != stance || animator.IsInTransition(0));
+        // Personne ne voit ces os sur un robot qu'aucune caméra ne dessine (un mort masqué, un spectateur hors du champ) :
+        // ses pieds et ses mains n'y sont pas posés, et se reposent d'eux-mêmes à son retour. Ni la direction du buste ni
+        // le lean ne s'arrêtent : le laser, la flamme de bouche et l'épave lisent l'arme.
+        bool rendered = Rendered;
+        planter?.Apply(rendered && onFeet && LegsOnFeet(animator, legs.shortNameHash, legsBlending), dt, from != stance || legsBlending);
 
         // Les jambes : quel clip, et à quelle cadence pour que les pieds ne patinent pas.
         // Tout dans le repère du MODÈLE, qui peut être tourné par rapport au joueur le temps que les
         // jambes se réalignent : c'est celui où l'arbre de mélange place ses clips.
         Vector3 rootVelocity = rootMotion != null ? animator.transform.InverseTransformDirection(rootMotion.Velocity) / worldRate : Vector3.zero;
         Vector3 legsMove = animator.transform.InverseTransformDirection(transform.TransformDirection(new Vector3(smoothedMove.x, 0f, smoothedMove.y)));
-        DriveGait(animator, ref gait, new Vector2(legsMove.x, legsMove.z), reference, stance, new Vector2(rootVelocity.x, rootVelocity.z),
+        DriveGait(animator, legs, legsBlending, ref gait, new Vector2(legsMove.x, legsMove.z), reference, stance, new Vector2(rootVelocity.x, rootVelocity.z),
                   minPlaybackSpeed * PlaybackScale(stance), upperCadence, minLegCadence,
                   stance == PlayerLocomotion.Stance.Prone ? maxProneLegCadence : maxLegCadence, dt);
 
@@ -600,7 +644,7 @@ public class PlayerAnimator : MonoBehaviour
         ApplyProneModelOffset(from, stance, progress);
         ApplyAimDirection(stance, animator.layerCount > UpperBodyLayer ? animator.GetLayerWeight(UpperBodyLayer) : 0f, dt);
         ApplyVisualLean(from, stance, progress);
-        ApplyHandGrip(dt);
+        ApplyHandGrip(dt, rendered);
         MirrorToView();
 
 #if UNITY_EDITOR
@@ -766,7 +810,9 @@ public class PlayerAnimator : MonoBehaviour
     {
         Transform model = animator.transform;
         Vector3 p = model.localPosition;
-        p.z = Mathf.Lerp(ModelOffset(from), ModelOffset(to), progress);
+        float offset = Mathf.Lerp(ModelOffset(from), ModelOffset(to), progress);
+        if (p.z == offset) return;
+        p.z = offset;
         model.localPosition = p;
     }
 
@@ -794,7 +840,7 @@ public class PlayerAnimator : MonoBehaviour
         float lean = locomotion.DisplayLeanOffset;
         if (Mathf.Abs(lean) < 0.001f) return;
 
-        Transform spine = animator.GetBoneTransform(HumanBodyBones.Spine);
+        Transform spine = leanBone;
         if (spine == null) return;
 
         // Rotation exprimée dans l'espace du JOUEUR : on la convertit dans le repère monde, puis
@@ -813,13 +859,40 @@ public class PlayerAnimator : MonoBehaviour
     /// pendant le rechargement, le franchissement et la mort ; elle suit le haut du corps quand il s'efface
     /// (passage au sol) et le geste du taser quand il monte.
     /// </summary>
-    private void ApplyHandGrip(float dt)
+    private void ApplyHandGrip(float dt, bool rendered)
     {
         if (grip == null) return;
         bool holding = locomotion.IsAlive && !locomotion.DisplayVaulting && (weapon == null || !weapon.ShowsReloadGesture);
+        if (!rendered)
+        {
+            grip.StepHold(shownModel, holding, handGrip, dt);
+            return;
+        }
         float upper = animator.layerCount > UpperBodyLayer ? animator.GetLayerWeight(UpperBodyLayer) : 0f;
         float strike = animator.layerCount > TaserLayer ? animator.GetLayerWeight(TaserLayer) : 0f;
         grip.Apply(shownModel, shownWeapon != null ? shownWeapon.attachmentCatalog : null, holding, upper * (1f - strike), handGrip, dt);
+    }
+
+    /// <summary>Le temps (s) qu'un robot dessiné compte encore pour tel : une caméra du direct du Tournoi ne rend qu'à son
+    /// tour, une image sur plusieurs.</summary>
+    private const float RenderedMemory = 0.15f;
+
+    private float lastRenderedAt = float.NegativeInfinity;
+
+    /// <summary>Une caméra a-t-elle dessiné ce robot à l'image d'avant, ou il y a un instant, son ombre comprise ? (Faux sous
+    /// forceRenderingOff, et jusqu'à son premier rendu.)</summary>
+    private bool Rendered
+    {
+        get
+        {
+            foreach (SkinnedMeshRenderer skin in skins)
+            {
+                if (!skin.isVisible) continue;
+                lastRenderedAt = Time.unscaledTime;
+                return true;
+            }
+            return Time.unscaledTime - lastRenderedAt < RenderedMemory;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -873,10 +946,13 @@ public class PlayerAnimator : MonoBehaviour
     /// compris ? Là seulement les pieds se calent (FootPlanter) : ni en l'air, ni en franchissement,
     /// ni pendant un passage par le sol, où le corps entier joue un clip. Public pour les tests.</summary>
     public static bool LegsOnFeet(Animator animator)
+        => LegsOnFeet(animator, animator.GetCurrentAnimatorStateInfo(0).shortNameHash, animator.IsInTransition(0));
+
+    // La même chose sur l'état de la couche déjà relevé.
+    private static bool LegsOnFeet(Animator animator, int current, bool inTransition)
     {
-        int current = animator.GetCurrentAnimatorStateInfo(0).shortNameHash;
         if (current != DeboutStateId && current != AccroupiStateId) return false;
-        if (!animator.IsInTransition(0)) return true;
+        if (!inTransition) return true;
         int next = animator.GetNextAnimatorStateInfo(0).shortNameHash;
         return next == DeboutStateId || next == AccroupiStateId;
     }
@@ -958,7 +1034,6 @@ public class PlayerAnimator : MonoBehaviour
         /// Un profil par clip dominant (profiles) : le pas chassé du sneak avance par à-coups, la
         /// marche régulièrement, et leurs tranches ne se mélangent pas.</summary>
         public Vector2[] phaseEfficiency;
-        public int phaseBin;
         public Dictionary<AnimationClip, Vector2[]> profiles;
         public AnimationClip profileClip;
 
@@ -1029,40 +1104,72 @@ public class PlayerAnimator : MonoBehaviour
     private static readonly List<AnimatorClipInfo> clipInfos = new List<AnimatorClipInfo>();
     private static readonly bool[] mixSeen = new bool[MaxMixClips];
 
+    /// <summary>Ce qu'annonce un clip, qui ne change pas : sa vitesse et sa durée (chacune se relit dans le moteur).</summary>
+    private struct ClipFacts
+    {
+        public float speed, length;
+    }
+
+    private static readonly Dictionary<AnimationClip, ClipFacts> clipFacts = new Dictionary<AnimationClip, ClipFacts>();
+
+    // Sans rechargement de domaine à l'entrée en Play Mode, un clip réimporté entre deux parties garderait ses anciens chiffres.
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ForgetClipFacts() => clipFacts.Clear();
+
+    // Le mélange de la dernière évaluation, relu une fois par clip (AnimatorClipInfo.clip va chercher le clip dans le moteur
+    // à chaque accès).
+    private static AnimationClip[] mixRead = new AnimationClip[MaxMixClips];
+    private static float[] mixReadWeights = new float[MaxMixClips];
+    private static int mixReadCount;
+
+    private static ClipFacts FactsOf(AnimationClip clip)
+    {
+        if (clipFacts.TryGetValue(clip, out ClipFacts facts)) return facts;
+        facts = new ClipFacts { speed = clip.averageSpeed.magnitude, length = clip.length };
+        clipFacts.Add(clip, facts);
+        return facts;
+    }
+
     /// <summary>
-    /// Vitesse qu'annoncent les clips de déplacement que joue la couche des jambes, à cadence 1
-    /// (m/s) ; 0 si aucun n'avance. Un arbre synchronise ses clips sur une durée commune : chacun y
+    /// Relit le mélange que joue la couche des jambes (mixRead). `clipSpeed` : la vitesse qu'annoncent ses clips de
+    /// déplacement, à cadence 1 (m/s) ; 0 si aucun n'avance. Un arbre synchronise ses clips sur une durée commune : chacun y
     /// pèse donc selon sa foulée (sa vitesse × sa durée), et le mélange avance de la somme des
     /// foulées sur la somme des durées. L'attente, sur place, n'y entre pas. Ce n'est qu'une
     /// estimation (Unity mêle les déplacements dans le repère du buste de chaque clip) : DriveGait
-    /// MESURE l'écart, et ne s'en sert que comme échelle.
+    /// MESURE l'écart, et ne s'en sert que comme échelle. `dominant` : le clip qui avance et pèse le plus, ou null.
     /// </summary>
-    private static float MixClipSpeed(List<AnimatorClipInfo> infos)
+    private static void ReadMix(List<AnimatorClipInfo> infos, out float clipSpeed, out AnimationClip dominant)
     {
-        float distance = 0f, duration = 0f;
+        if (mixRead.Length < infos.Count)
+        {
+            mixRead = new AnimationClip[infos.Count];
+            mixReadWeights = new float[infos.Count];
+        }
+        float distance = 0f, duration = 0f, best = 0f;
+        dominant = null;
+        mixReadCount = 0;
         foreach (AnimatorClipInfo info in infos)
         {
-            if (info.clip == null || info.weight <= 0f) continue;
-            float speed = info.clip.averageSpeed.magnitude;
-            if (speed < MovingClipSpeed) continue;
-            distance += info.weight * speed * info.clip.length;
-            duration += info.weight * info.clip.length;
+            AnimationClip clip = info.clip;
+            if (clip == null) continue;
+            float weight = info.weight;
+            mixRead[mixReadCount] = clip;
+            mixReadWeights[mixReadCount] = weight;
+            mixReadCount++;
+            ClipFacts facts = FactsOf(clip);
+            if (facts.speed < MovingClipSpeed) continue;
+            if (weight > 0f)
+            {
+                distance += weight * facts.speed * facts.length;
+                duration += weight * facts.length;
+            }
+            if (weight > best)
+            {
+                best = weight;
+                dominant = clip;
+            }
         }
-        return duration > 1e-4f ? distance / duration : 0f;
-    }
-
-    /// <summary>Le clip qui avance et pèse le plus dans le mélange, ou null.</summary>
-    private static AnimationClip DominantMovingClip(List<AnimatorClipInfo> infos)
-    {
-        AnimationClip dominant = null;
-        float best = 0f;
-        foreach (AnimatorClipInfo info in infos)
-        {
-            if (info.clip == null || info.weight <= best || info.clip.averageSpeed.magnitude < MovingClipSpeed) continue;
-            best = info.weight;
-            dominant = info.clip;
-        }
-        return dominant;
+        clipSpeed = duration > 1e-4f ? distance / duration : 0f;
     }
 
     /// <summary>Passe au profil du clip dominant. Un clip jamais mesuré part de la vitesse qu'il
@@ -1080,12 +1187,11 @@ public class PlayerAnimator : MonoBehaviour
         }
         state.phaseEfficiency = profile;
         state.profileClip = clip;
-        state.phaseBin = -1;
     }
 
     /// <summary>De combien les poids des clips joués ont changé depuis l'évaluation précédente
     /// (somme des écarts, un clip apparu ou disparu compte pour son poids), et retient ceux-ci.</summary>
-    private static float MixChange(ref GaitState state, List<AnimatorClipInfo> infos)
+    private static float MixChange(ref GaitState state)
     {
         if (state.mixClips == null)
         {
@@ -1093,33 +1199,29 @@ public class PlayerAnimator : MonoBehaviour
             state.mixWeights = new float[MaxMixClips];
         }
         float change = 0f;
-        int count = 0;
+        int count = Mathf.Min(mixReadCount, MaxMixClips);
         bool[] seen = mixSeen;
         System.Array.Clear(seen, 0, MaxMixClips);
-        foreach (AnimatorClipInfo info in infos)
+        for (int i = 0; i < count; i++)
         {
-            if (info.clip == null || count >= MaxMixClips) continue;
             float previous = 0f;
             for (int j = 0; j < state.mixCount; j++)
             {
-                if (seen[j] || !ReferenceEquals(state.mixClips[j], info.clip)) continue;
+                if (seen[j] || !ReferenceEquals(state.mixClips[j], mixRead[i])) continue;
                 previous = state.mixWeights[j];
                 seen[j] = true;
                 break;
             }
-            change += Mathf.Abs(info.weight - previous);
-            count++;
+            change += Mathf.Abs(mixReadWeights[i] - previous);
         }
         for (int j = 0; j < state.mixCount; j++)
             if (!seen[j]) change += state.mixWeights[j];
 
-        state.mixCount = 0;
-        foreach (AnimatorClipInfo info in infos)
+        state.mixCount = count;
+        for (int i = 0; i < count; i++)
         {
-            if (info.clip == null || state.mixCount >= MaxMixClips) continue;
-            state.mixClips[state.mixCount] = info.clip;
-            state.mixWeights[state.mixCount] = info.weight;
-            state.mixCount++;
+            state.mixClips[i] = mixRead[i];
+            state.mixWeights[i] = mixReadWeights[i];
         }
         return change;
     }
@@ -1179,6 +1281,13 @@ public class PlayerAnimator : MonoBehaviour
     public static void DriveGait(Animator animator, ref GaitState state, Vector2 move, float referenceSpeed,
                                  PlayerLocomotion.Stance stance, Vector2 measuredRootVelocity,
                                  float idleCadence, float fallbackCadence, float minCadence, float maxCadence, float dt)
+        => DriveGait(animator, animator.GetCurrentAnimatorStateInfo(0), animator.IsInTransition(0), ref state, move, referenceSpeed,
+                     stance, measuredRootVelocity, idleCadence, fallbackCadence, minCadence, maxCadence, dt);
+
+    // La même chose sur l'état de la couche des jambes déjà relevé.
+    private static void DriveGait(Animator animator, AnimatorStateInfo info, bool inTransition, ref GaitState state, Vector2 move,
+                                  float referenceSpeed, PlayerLocomotion.Stance stance, Vector2 measuredRootVelocity,
+                                  float idleCadence, float fallbackCadence, float minCadence, float maxCadence, float dt)
     {
         float magnitude = move.magnitude;
         if (magnitude > 0.05f) state.direction = move / magnitude;
@@ -1195,20 +1304,22 @@ public class PlayerAnimator : MonoBehaviour
             state.measureTime = Mathf.Min(state.measureTime, 0.1f);
         }
 
-        AnimatorStateInfo info = animator.GetCurrentAnimatorStateInfo(0);
         bool locomotionState = info.shortNameHash == DeboutStateId || info.shortNameHash == AccroupiStateId
                                || info.shortNameHash == ProneStateId;
-        // Le mélange de l'évaluation qu'on mesure ; à l'arrêt (attente seule), on garde le dernier.
+        // Le mélange de l'évaluation qu'on mesure ; à l'arrêt (attente seule), on garde le dernier, sans le relire.
         // On ne la mesure qu'après deux évaluations où il n'a presque pas bougé.
-        animator.GetCurrentAnimatorClipInfo(0, clipInfos);
-        float clipSpeed = MixClipSpeed(clipInfos);
-        if (clipSpeed > 0f) state.clipSpeed = clipSpeed;
-        AnimationClip dominant = DominantMovingClip(clipInfos);
-        if (dominant != null && dominant != state.profileClip) UseProfile(ref state, dominant);
-        bool stable = state.marche >= 0.99f && MixChange(ref state, clipInfos) <= MaxMixChangeRate * dt;
+        bool stable = false;
+        if (!locomotionState || magnitude > 0.01f || state.marche != 0f)
+        {
+            animator.GetCurrentAnimatorClipInfo(0, clipInfos);
+            ReadMix(clipInfos, out float clipSpeed, out AnimationClip dominant);
+            if (clipSpeed > 0f) state.clipSpeed = clipSpeed;
+            if (dominant != null && dominant != state.profileClip) UseProfile(ref state, dominant);
+            stable = state.marche >= 0.99f && MixChange(ref state) <= MaxMixChangeRate * dt;
+        }
         state.steadyFrames = stable ? state.steadyFrames + 1 : 0;
         if (state.steadyFrames >= 2 && state.cadence > 0.05f && state.clipSpeed > 0f
-            && locomotionState && !animator.IsInTransition(0))
+            && locomotionState && !inTransition)
         {
             Vector2 efficiency = measuredRootVelocity / state.cadence / state.clipSpeed;
             if (state.naturalSpeed < MinNaturalSpeed)
@@ -1233,7 +1344,6 @@ public class PlayerAnimator : MonoBehaviour
             // à la cadence jouée.
             float window = Mathf.Max(MinMeasureWindow, info.length);
             int bin = Mathf.Min(PhaseBins - 1, (int)(Mathf.Repeat(info.normalizedTime, 1f) * PhaseBins));
-            state.phaseBin = bin;
             float binWeight = Mathf.Min(1f, PhaseLearningPerPass * PhaseBins * dt / window);
             state.phaseEfficiency[bin] += (efficiency - state.phaseEfficiency[bin]) * binWeight;
 
@@ -1459,33 +1569,38 @@ public class PlayerAnimator : MonoBehaviour
     /// <summary>Les modèles et finitions choisis par le joueur (PlayerWeaponLooks, 2026-10-15) : en main
     /// du corps, avec ses ombres (une ombre seule chez le propriétaire, posée par PlayerLocomotion à
     /// l'apparition, avant que l'apparence ne soit publiée).</summary>
-    private void HandleWeaponLooks(WeaponLooks looks) => BuildHeldWeapons(looks, PublishedAttachments);
+    private void HandleWeaponLooks(WeaponLooks looks) => ShowHeldWeapon(looks, PublishedAttachments);
 
     /// <summary>Les accessoires choisis par le joueur (PlayerWeaponAttachments, 2026-10-16), montés sur
     /// les armes du corps.</summary>
-    private void HandleWeaponAttachments(WeaponAttachments attachments) => BuildHeldWeapons(PublishedLooks, attachments);
+    private void HandleWeaponAttachments(WeaponAttachments attachments) => ShowHeldWeapon(PublishedLooks, attachments);
 
     private WeaponLooks PublishedLooks => weaponLooks != null && weaponLooks.Published ? weaponLooks.Looks : WeaponLooks.Default;
     private WeaponAttachments PublishedAttachments
         => weaponAttachments != null && weaponAttachments.Published ? weaponAttachments.Attachments : WeaponAttachments.None;
 
-    private void BuildHeldWeapons(WeaponLooks looks, WeaponAttachments attachments)
-    {
-        if (weapon == null || rightHand == null) return;
-        Renderer body = animator != null ? animator.GetComponentInChildren<SkinnedMeshRenderer>(true) : null;
-        HeldWeapons.Build(rightHand, weapon.AllWeapons, looks, attachments, body);
-        ShowHeldWeapon();
-    }
+    /// <summary>Le modèle est masqué le temps de sa mort, son épave à sa place (PlayerDeath).</summary>
+    private bool ModelHidden => death != null && death.Corpse != null;
+
+    /// <summary>L'arme à montrer : celle qu'on veut (`wanted`), sauf sur un robot masqué, qui garde celle qu'il tenait
+    /// (`shown`) : PlayerDeath ne rallume que ce qu'il a éteint, et une arme sortie d'ici là flotterait à sa place. Celle qui
+    /// lui revient sort à son retour. Fonction pure, testée.</summary>
+    public static WeaponData WeaponToShow(WeaponData wanted, WeaponData shown, bool modelHidden) => modelHidden ? shown : wanted;
+
+    private void ShowHeldWeapon() => ShowHeldWeapon(PublishedLooks, PublishedAttachments);
 
     /// <summary>Montre en main le modèle de l'arme en main, et suit sa mire (2026-10-11). Un spectateur
-    /// n'en montre aucune (2026-10-13).</summary>
-    private void ShowHeldWeapon()
+    /// n'en montre aucune (2026-10-13). Ses ombres sont celles du corps (une ombre seule chez le propriétaire, posée par
+    /// PlayerLocomotion à l'apparition).</summary>
+    private void ShowHeldWeapon(WeaponLooks looks, WeaponAttachments attachments)
     {
         bool spectating = locomotion != null && locomotion.IsSpectator;
-        shownWeapon = weapon != null && !spectating ? weapon.Data : null;
-        WeaponModel model = weapon != null ? HeldWeapons.Show(rightHand, weapon.AllWeapons, shownWeapon) : null;
+        shownWeapon = WeaponToShow(weapon != null && !spectating ? weapon.Data : null, shownWeapon, ModelHidden);
+        WeaponModel model = weapon != null
+            ? HeldWeapons.Show(rightHand, weapon.AllWeapons, shownWeapon, looks, attachments, skins != null && skins.Length > 0 ? skins[0] : null)
+            : null;
         shownModel = model;
-        sight = FindSight(animator);
+        sight = model != null ? AttachmentMount.SightOf(model, out _) : null;
         // Un pistolet se tient à deux mains, bras tendus, et non crosse à l'épaule : le haut du corps
         // joue alors les poses de pistolet de Mixamo (2026-10-11). Le premier affichage ne fond pas.
         pistolHold = model != null && model.PistolHold ? 1f : 0f;

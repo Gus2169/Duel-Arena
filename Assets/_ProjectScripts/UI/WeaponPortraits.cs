@@ -4,8 +4,8 @@ using UnityEngine;
 /// <summary>
 /// Le portrait de chaque arme (2026-10-27, demandé par l'utilisateur) : de profil, sans accessoire, dans sa
 /// finition d'origine, à côté de son nom sur les boutons qui la choisissent (la préparation d'une manche, la
-/// fenêtre du stand). Rendus par les vignettes du menu (MenuThumbnails.PrepareWeaponPortraits), sous les
-/// lumières de son plateau, puis gardés jusqu'à la fermeture du jeu : l'arène et le stand n'ont pas ce
+/// fenêtre du stand). Rendus par les vignettes du menu (MenuThumbnails), sous les lumières de son plateau, tous
+/// avant qu'une partie ne le quitte, puis gardés jusqu'à la fermeture du jeu : l'arène et le stand n'ont pas ce
 /// plateau, et toute partie commence au menu.
 /// </summary>
 public static class WeaponPortraits

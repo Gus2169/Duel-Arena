@@ -76,37 +76,54 @@ namespace DuelArena.UI
     [UxmlElement]
     public partial class CombatReticle : VisualElement
     {
-        /// <summary>Le point visé, dans l'élément (unités du panneau).</summary>
-        public Vector2 center;
+        /// <summary>Ce que le réticule montre.</summary>
+        public struct Look
+        {
+            /// <summary>Le point visé, dans l'élément (unités du panneau).</summary>
+            public Vector2 center;
 
-        /// <summary>La croix de la hanche, et l'écart de ses branches au point visé (unités du panneau).</summary>
-        public bool crosshair;
-        public float gap = 6f;
-        public float lineLength = 8f;
-        public float thickness = 2f;
-        public bool centerDot = true;
-        public float dotSize = 2f;
+            /// <summary>La croix de la hanche, et l'écart de ses branches au point visé (unités du panneau).</summary>
+            public bool crosshair;
+            public float gap;
+            public float lineLength;
+            public float thickness;
+            public bool centerDot;
+            public float dotSize;
 
-        /// <summary>Le point d'un spectateur, sans arme : pour viser ses lancers et ses coups.</summary>
-        public bool spectatorDot;
+            /// <summary>Le point d'un spectateur, sans arme : pour viser ses lancers et ses coups.</summary>
+            public bool spectatorDot;
 
-        /// <summary>La barre sous le point visé (0 à 1), négative sans barre, et sa distance au point visé.</summary>
-        public float barProgress = -1f;
-        public float barOffset = 28f;
-        public Color barColor = Color.white;
+            /// <summary>La barre sous le point visé (0 à 1), négative sans barre, et sa distance au point visé.</summary>
+            public float barProgress;
+            public float barOffset;
+            public Color barColor;
 
-        /// <summary>Le marqueur de touche montré (WeaponController.HitKind), négatif sans marqueur, et son âge (s).</summary>
-        public int markerKind = -1;
-        public float markerAge;
+            /// <summary>Le marqueur de touche montré (WeaponController.HitKind), négatif sans marqueur, et son âge (s).</summary>
+            public int markerKind;
+            public float markerAge;
 
-        public Color color = Color.white;
+            public Color color;
+        }
+
+        /// <summary>Ce que CrosshairUI lui donne à montrer, à faire voir par RepaintIfChanged.</summary>
+        public Look look = new Look
+        {
+            gap = 6f, lineLength = 8f, thickness = 2f, centerDot = true, dotSize = 2f,
+            barProgress = -1f, barOffset = 28f, barColor = Color.white, markerKind = -1, color = Color.white,
+        };
+
         public Color outline = new Color(0f, 0f, 0f, 0.45f);
         public Color killColor = new Color(1f, 0.3f, 0.22f);
 
         private const float BarWidth = 64f;
         private const float BarHeight = 4f;
 
+        /// <summary>L'écart (unités du panneau) qui ne se voit pas. Le point visé vient d'une projection : il tremble d'un rien
+        /// d'une image à l'autre.</summary>
+        private const float Tolerance = 0.01f;
+
         private readonly UiMesh mesh = new UiMesh();
+        private Look painted;   // son markerKind, à 0, diffère de « sans marqueur » : le premier appel redessine
 
         public CombatReticle()
         {
@@ -115,25 +132,51 @@ namespace DuelArena.UI
             generateVisualContent += Draw;
         }
 
+        /// <summary>Redessine le réticule si ce qu'il montre a changé : immobile, ou sans rien à montrer (en visée), il ne coûte
+        /// rien à UI Toolkit.</summary>
+        public void RepaintIfChanged()
+        {
+            if (!NeedsRepaint(painted, look)) return;
+            painted = look;
+            MarkDirtyRepaint();
+        }
+
+        /// <summary>Faut-il redessiner pour passer de `shown` à `wanted` ? Tant que le marqueur de touche se voit, toujours : il
+        /// s'anime. Un dernier dessin l'efface. Comparé au dernier dessin, pas à l'image d'avant : un écart trop petit pour se
+        /// voir finit par compter s'il s'accumule. Fonction pure, testée.</summary>
+        public static bool NeedsRepaint(in Look shown, in Look wanted)
+        {
+            if (wanted.markerKind >= 0 || wanted.markerKind != shown.markerKind) return true;
+            return Differs(shown.center.x, wanted.center.x) || Differs(shown.center.y, wanted.center.y)
+                   || shown.crosshair != wanted.crosshair || shown.centerDot != wanted.centerDot || shown.spectatorDot != wanted.spectatorDot
+                   || Differs(shown.gap, wanted.gap) || Differs(shown.lineLength, wanted.lineLength)
+                   || Differs(shown.thickness, wanted.thickness) || Differs(shown.dotSize, wanted.dotSize)
+                   || Differs(shown.barProgress, wanted.barProgress) || Differs(shown.barOffset, wanted.barOffset)
+                   || shown.barColor != wanted.barColor || shown.color != wanted.color;
+        }
+
+        private static bool Differs(float a, float b) => Mathf.Abs(a - b) > Tolerance;
+
         private void Draw(MeshGenerationContext ctx)
         {
             float w = layout.width, h = layout.height;
             if (float.IsNaN(w) || float.IsNaN(h) || w < 1f || h < 1f) return;
             mesh.Clear();
-            Vector2 c = center;
-            Color32 line = color;
+            Vector2 c = look.center;
+            float gap = look.gap, lineLength = look.lineLength, dotSize = look.dotSize;
+            Color32 line = look.color;
             Color32 shadow = outline;
 
-            if (spectatorDot)
+            if (look.spectatorDot)
             {
                 float d = Mathf.Max(3f, dotSize * 1.5f) * 0.5f;
                 mesh.Rect(c.x - d - 1f, c.y - d - 1f, c.x + d + 1f, c.y + d + 1f, new Color(0f, 0f, 0f, 0.5f));
                 mesh.Rect(c.x - d, c.y - d, c.x + d, c.y + d, line);
             }
 
-            if (crosshair)
+            if (look.crosshair)
             {
-                float t = thickness * 0.5f;
+                float t = look.thickness * 0.5f;
                 // Le liseré d'abord, puis les branches : haut, bas, gauche, droite.
                 for (int pass = 0; pass < 2; pass++)
                 {
@@ -143,7 +186,7 @@ namespace DuelArena.UI
                     mesh.Rect(c.x - t - o, c.y + gap - o, c.x + t + o, c.y + gap + lineLength + o, tint);
                     mesh.Rect(c.x - gap - lineLength - o, c.y - t - o, c.x - gap + o, c.y + t + o, tint);
                     mesh.Rect(c.x + gap - o, c.y - t - o, c.x + gap + lineLength + o, c.y + t + o, tint);
-                    if (centerDot)
+                    if (look.centerDot)
                     {
                         float d = dotSize * 0.5f;
                         mesh.Rect(c.x - d - o, c.y - d - o, c.x + d + o, c.y + d + o, tint);
@@ -151,29 +194,30 @@ namespace DuelArena.UI
                 }
             }
 
-            if (barProgress >= 0f)
+            if (look.barProgress >= 0f)
             {
                 // Sous le point visé, là où est le regard pendant un duel ; un fond sombre qui déborde, pour
                 // qu'elle se lise aussi sur un mur clair.
-                float left = c.x - BarWidth * 0.5f, top = c.y + barOffset;
+                float left = c.x - BarWidth * 0.5f, top = c.y + look.barOffset;
                 mesh.Rect(left - 1f, top - 1f, left + BarWidth + 1f, top + BarHeight + 1f, new Color(0f, 0f, 0f, 0.6f));
-                float fill = BarWidth * Mathf.Clamp01(barProgress);
-                if (fill > 0f) mesh.Rect(left, top, left + fill, top + BarHeight, barColor);
+                float fill = BarWidth * Mathf.Clamp01(look.barProgress);
+                if (fill > 0f) mesh.Rect(left, top, left + fill, top + BarHeight, look.barColor);
             }
 
-            if (markerKind >= 0) DrawMarker((HitKind)markerKind, c);
+            if (look.markerKind >= 0) DrawMarker((HitKind)look.markerKind, c);
             mesh.Commit(ctx);
         }
 
         /// <summary>Le marqueur de touche : quatre branches en X, leur liseré sombre dessous.</summary>
         private void DrawMarker(HitKind kind, Vector2 c)
         {
+            float markerAge = look.markerAge;
             float alpha = HitMarker.Alpha(kind, markerAge);
             if (alpha <= 0f) return;
             float pop = HitMarker.Pop(markerAge);
             float inner = HitMarker.Inner * pop, reach = HitMarker.Reach(kind) * pop;
             float width = HitMarker.Thickness(kind);
-            Color tint = kind == HitKind.Kill ? killColor : color;
+            Color tint = kind == HitKind.Kill ? killColor : look.color;
             Color32 dark = new Color(outline.r, outline.g, outline.b, outline.a * alpha);
             Color32 bright = new Color(tint.r, tint.g, tint.b, tint.a * alpha);
             for (int pass = 0; pass < 2; pass++)

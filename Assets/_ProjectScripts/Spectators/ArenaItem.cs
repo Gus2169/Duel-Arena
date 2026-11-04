@@ -116,13 +116,12 @@ public class ArenaItem : NetworkBehaviour
     private static void ResetStatics() => spawned.Clear();
 
     /// <summary>Les objets présents, posés, en vol ou brisés.</summary>
-    public static IReadOnlyList<ArenaItem> Spawned => spawned;
+    public static SpawnedView<ArenaItem> Spawned => new SpawnedView<ArenaItem>(spawned);
 
     public ArenaItemKind Kind => info.Value.kind;
     public int Variant => info.Value.variant;
     public bool IsResting => motion.Value.phase == Phase.Resting;
     public Phase CurrentPhase => motion.Value.phase;
-    public ulong Thrower => info.Value.thrower;
 
     /// <summary>Où l'objet est posé (le centre de sa sphère), tel que le serveur l'a publié.</summary>
     public Vector3 RestPosition => motion.Value.position;
@@ -212,6 +211,7 @@ public class ArenaItem : NetworkBehaviour
         if (segments.Count > 0 && segments[segments.Count - 1].segment == current.segment) segments[segments.Count - 1] = current;
         else segments.Add(current);
         if (segments.Count > 16) segments.RemoveAt(0);
+        enabled = true;   // un caillou posé s'était éteint (ShowAt) : un nouveau tronçon se montre
     }
 
     // ------------------------------------------------------------------
@@ -435,7 +435,7 @@ public class ArenaItem : NetworkBehaviour
             // Un caillou lancé se brise au premier choc : il est encore sur son premier tronçon, parti du
             // point du lancer. Le robot touché voit d'où (HitIndicatorHud).
             if (hit.duelist != null && hit.duelist.TryGetComponent(out SpectatorController duelist))
-                duelist.ServerRockHitDuelist(velocity, hit.point, current.position);
+                duelist.ServerRockHitDuelist(velocity, current.position);
             else if (hit.spectator != null)
                 hit.spectator.ServerRockHitSpectator(velocity, current.position);
             ServerShatter(hit.point, time);
@@ -526,6 +526,9 @@ public class ArenaItem : NetworkBehaviour
         {
             visualRoot.localPosition = Vector3.zero;
             visualRoot.localRotation = Quaternion.Euler(0f, (Variant * 37f + segments[0].segment * 11f) % 360f, 0f);
+            // Posé, il ne bouge plus : rien à refaire à chaque image, or rien ne borne le nombre de ceux qui restent sur la
+            // tribune. Il reste à ramasser : Netcode et ServerIsPickable ne regardent pas `enabled`. Le matériel, lui, flotte.
+            if (resting && index == segments.Count - 1) enabled = false;
         }
     }
 
@@ -656,5 +659,15 @@ public class ArenaItem : NetworkBehaviour
     }
 
     public float TestGravity => gravity;
+
+    /// <summary>Montre l'objet à l'instant `time`, d'après la simulation de test, comme chaque machine montre ce que publie le
+    /// serveur.</summary>
+    public void TestShow(double time)
+    {
+        info.Value = testInfo;
+        segments.Clear();
+        segments.AddRange(testSegments);
+        ShowAt(time);
+    }
 #endif
 }

@@ -150,6 +150,57 @@ public class TaserArcTests
         Assert.Greater(bolts, 0, "Garde anti-vacuité : aucun éclair n'est parti.");
     }
 
+    /// <summary>Le gant d'un autre robot prépare ses lignes à son apparition, éteintes : le premier coup ne crée plus rien.
+    /// Vu échouer, ses lignes attendues à l'appui.</summary>
+    [UnityTest]
+    public IEnumerator LeGant_PrepareSesLignes_AvantLePremierCoup()
+    {
+        Shooter();
+        yield return null;
+        yield return null;
+        ArcLines lines = ArcsOf(animator).TestArcs;
+        Assert.IsNotNull(lines, "Les lignes attendent le premier coup.");
+        Assert.AreEqual(0, lines.ShownCount, "Elles dorment jusqu'au coup.");
+    }
+
+    /// <summary>
+    /// Chez le joueur, le corps ne dessine rien : il ne crée rien, et ce sont les lignes de ses bras qu'il prépare, sur le layer
+    /// des bras, alors que leur copie du gant dort jusqu'au coup. Le coup les reprend. Vu échouer, le corps qui se prépare
+    /// lui-même, les bras laissés à leur premier coup.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator ChezLeJoueur_LeCorpsPrepareLesLignesDeSesBras()
+    {
+        TaserController taser = Shooter();
+        var cameraGo = new GameObject("Main Camera");
+        cameraGo.transform.SetParent(shooter.transform, false);
+        cameraGo.transform.localPosition = new Vector3(0f, 1.65f, 0f);
+        cameraGo.AddComponent<Camera>().enabled = false;
+        int layer = LayerMask.NameToLayer(FirstPersonView.LayerName);
+        FirstPersonView.BuildView(animator.gameObject, cameraGo.transform, layer, out Animator arms, out _);
+        HeldWeapons.WearTaserGlove(arms, false);
+        FirstPersonView view = shooter.AddComponent<FirstPersonView>();
+        typeof(FirstPersonView).GetField("viewAnimator", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                               .SetValue(view, arms);
+        Assert.AreSame(arms, view.ViewAnimator, "Garde : le joueur a sa vue subjective.");
+        yield return null;
+        yield return null;
+
+        TaserSparkFX viewArcs = ArcsOf(arms);
+        Assert.IsFalse(viewArcs.gameObject.activeInHierarchy, "Garde : le gant des bras dort.");
+        ArcLines lines = viewArcs.TestArcs;
+        Assert.IsNotNull(lines, "Les lignes des bras attendent le premier coup.");
+        Assert.AreEqual(layer, lines.Line(0).gameObject.layer, "Sur le layer des bras.");
+        Assert.AreEqual(0, lines.ShownCount);
+        Assert.IsNull(ArcsOf(animator).TestArcs, "Le corps du joueur ne dessine rien : il n'a pas de lignes à lui.");
+
+        taser.TestSeeStrike();
+        HeldWeapons.WearTaserGlove(arms, true);
+        yield return WaitSinceStrike(taser, taser.ContactDelay + 0.05f);
+        Assert.AreSame(lines, viewArcs.TestArcs, "Le coup reprend les lignes préparées.");
+        Assert.Greater(Shown(lines, 0, viewArcs.TestBoltLines), 0, "Les bras dessinent la décharge.");
+    }
+
     /// <summary>La copie du gant de la vue subjective n'apparaît qu'une fois le geste commencé
     /// (FirstPersonView la montre quand la couche du taser prend du poids) : abonnée au coup, elle le
     /// ratait (l'ancienne dette n° 59).</summary>

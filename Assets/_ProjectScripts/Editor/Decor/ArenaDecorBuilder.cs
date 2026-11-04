@@ -270,7 +270,7 @@ public static class ArenaDecorBuilder
         public Vector2[] inner;   // la face intérieure des murs de la salle
         public Vector2[] outer;   // leur face extérieure
         public Vector2 center;
-        public float floorTop, walkwayWidth, outerWallHeight;
+        public float floorTop, walkwayWidth;
 
         public static HallGeometry Of(Tribune tribune)
         {
@@ -284,7 +284,6 @@ public static class ArenaDecorBuilder
                 rail = rail,
                 walkwayWidth = width,
                 floorTop = so.FindProperty("floorTop").floatValue,
-                outerWallHeight = so.FindProperty("outerWallHeight").floatValue,
                 inner = DecorMeshes.Offset(rail, width),
                 outer = DecorMeshes.Offset(rail, width + HallWallThickness),
             };
@@ -397,7 +396,6 @@ public static class ArenaDecorBuilder
             var foot = new Vector3(here.x, CeilingHeight - 0.45f, here.y);
             Vector3 toHub = (hub - foot);
             toHub.y = 0f;
-            float length = toHub.magnitude;
             Vector3 end = hub - toHub.normalized * ringRadius;
             DecorMeshes.IBeam(beams, foot, end, 0.9f, 0.4f);
             ring.Add(end);

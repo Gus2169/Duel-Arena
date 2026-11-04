@@ -16,8 +16,8 @@ public enum CourseTargetState : byte
     Down = 2,
 }
 
-/// <summary>L'état publié d'une cible : où elle en est, quand elle s'est levée, quand elle est tombée
-/// (instants serveur). Chaque machine en déduit sa pose (CourseTarget.ApplyPose).</summary>
+/// <summary>L'état publié d'une cible : où elle en est, quand elle s'est levée, quand elle est tombée, ou, debout sur son
+/// rail, quand la course a fini (instants serveur). Chaque machine en déduit sa pose (CourseTarget.ApplyPose).</summary>
 public struct CourseTargetMotion : INetworkSerializeByMemcpy
 {
     public CourseTargetState state;
@@ -65,10 +65,8 @@ public class CourseTarget : NetworkBehaviour
     private bool hasShownState;
     private CourseTargetState shownState;
 
-    public CourseTargetRole Role => role;
     public bool IsHostile => role == CourseTargetRole.Hostile;
     public int Section => section;
-    public TrainingDummy Dummy => dummy;
     public Health Health => dummy != null ? dummy.Health : null;
     public CourseTargetMotion Motion => motion.Value;
     public CourseTargetState State => motion.Value.state;
@@ -107,6 +105,16 @@ public class CourseTarget : NetworkBehaviour
         return true;
     }
 
+    /// <summary>Serveur : la course est finie. Une cible restée debout sur son rail s'y arrête : elle irait et viendrait sinon
+    /// jusqu'au départ suivant, et chaque image resynchroniserait la physique pour elle (ShootingCourse.Update).</summary>
+    public void ServerFreeze(double now)
+    {
+        if (!IsServer || !moves || motion.Value.state != CourseTargetState.Up) return;
+        CourseTargetMotion m = motion.Value;
+        m.downAt = now;
+        motion.Value = m;
+    }
+
     /// <summary>
     /// Pose la cible selon son état à l'instant `now` : bascule autour de ses pieds, place sur le rail,
     /// visibilité, surface touchable et corps. Rend vrai si le transform a bougé (la physique doit alors
@@ -119,7 +127,7 @@ public class CourseTarget : NetworkBehaviour
         Vector3 position = basePosition;
         if (moves && m.state != CourseTargetState.Hidden)
         {
-            double until = m.state == CourseTargetState.Down ? m.downAt : now;
+            double until = m.downAt > 0.0 ? m.downAt : now;
             position = RailPosition(basePosition, railEnd, railSpeed, until - m.raisedAt);
         }
         Quaternion rotation = baseRotation * Quaternion.Euler(-angle, 0f, 0f);

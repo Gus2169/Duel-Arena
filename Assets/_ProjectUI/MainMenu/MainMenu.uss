@@ -730,14 +730,6 @@
     -unity-background-image-tint-color: var(--yellow);
 }
 
-.side-btn__thumb {
-    width: 112px;
-    height: 56px;
-    margin-right: 16px;
-    flex-shrink: 0;
-    -unity-background-scale-mode: scale-to-fit;
-}
-
 .side-btn__text {
     flex-grow: 1;
     flex-shrink: 1;
@@ -767,17 +759,6 @@
     color: var(--yellow);
 }
 
-.side-btn__key {
-    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/RobotoMono-Bold.ttf");
-    font-size: 12px;
-    color: var(--text-dim);
-    padding: 3px 7px;
-    margin: 0 0 0 8px;
-    border-width: 1px;
-    border-color: rgba(150, 170, 190, 0.4);
-    border-radius: 3px;
-}
-
 .side-btn__lock {
     width: 16px;
     height: 16px;
@@ -804,11 +785,6 @@
 
 .side-btn--active > .side-btn__text > .side-btn__subtitle {
     color: rgba(18, 22, 28, 0.75);
-}
-
-.side-btn--active > .side-btn__key {
-    color: var(--on-yellow);
-    border-color: rgba(18, 22, 28, 0.5);
 }
 
 /* L'arsenal de l'armurerie (2026-10-26) : les douze armes, trois sous le nom de chaque famille. */
@@ -1515,90 +1491,4 @@
 
 .modal-back {
     align-self: center;
-}
-
-/* ---------- La carte de l'arène (ArenaMapView) ---------- */
-
-.arena-map {
-    overflow: hidden;
-}
-
-.arena-map__image {
-    position: absolute;
-    -unity-background-scale-mode: stretch-to-fill;
-    -unity-background-image-tint-color: rgb(128, 142, 166);
-}
-
-.arena-map__overlay {
-    position: absolute;
-    left: 0;
-    top: 0;
-    right: 0;
-    bottom: 0;
-}
-
-.map-marker {
-    position: absolute;
-    width: 26px;
-    height: 26px;
-    margin-left: -13px;
-    margin-top: -13px;
-    align-items: center;
-    justify-content: center;
-}
-
-.map-marker__shape {
-    position: absolute;
-    width: 18px;
-    height: 18px;
-    rotate: 45deg;
-    border-width: 2px;
-    border-color: rgb(18, 22, 28);
-}
-
-.map-marker--spawn > .map-marker__shape {
-    background-color: rgb(244, 190, 28);
-}
-
-.map-marker--rock {
-    width: 14px;
-    height: 14px;
-    margin-left: -7px;
-    margin-top: -7px;
-}
-
-.map-marker--rock > .map-marker__shape {
-    width: 9px;
-    height: 9px;
-    border-width: 1px;
-    background-color: rgb(242, 128, 51);
-}
-
-.map-marker__label {
-    -unity-font-definition: url("project://database/Assets/_ProjectUI/Fonts/Roboto-Black.ttf");
-    font-size: 12px;
-    color: rgb(18, 22, 28);
-    margin: 0;
-    padding: 0;
-    -unity-text-align: middle-center;
-}
-
-.map-legend__swatch--spawn {
-    width: 10px;
-    height: 10px;
-    rotate: 45deg;
-    background-color: rgb(244, 190, 28);
-}
-
-.map-legend__swatch--walkway {
-    width: 18px;
-    height: 3px;
-    background-color: rgb(92, 214, 242);
-}
-
-.map-legend__swatch--rock {
-    width: 8px;
-    height: 8px;
-    rotate: 45deg;
-    background-color: rgb(242, 128, 51);
 }

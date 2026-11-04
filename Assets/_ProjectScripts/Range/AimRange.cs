@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Globalization;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -80,7 +81,9 @@ public class AimRange : MonoBehaviour
     [System.NonSerialized] private Texture2D texture;
     [System.NonSerialized] private Color32[] pixels;
     [System.NonSerialized] private Color32[] basePixels;
+    // Ce qui attend d'aller à la texture : toute la cible (effacer), ou la place des impacts de cette image.
     [System.NonSerialized] private bool dirty;
+    [System.NonSerialized] private readonly List<RectInt> touched = new();
     [System.NonSerialized] private MaterialPropertyBlock block;
 
     [System.NonSerialized] private float carrierPosition;
@@ -101,9 +104,8 @@ public class AimRange : MonoBehaviour
     [System.NonSerialized] private int promptKey = int.MinValue;
     [System.NonSerialized] private string promptText = "";
 
-    /// <summary>La distance demandée (m) et celle où se trouve le chariot.</summary>
+    /// <summary>La distance demandée (m).</summary>
     public int TargetDistance => distance;
-    public float CarrierDistance => carrierPosition;
     public bool CarrierMoving => Mathf.Abs(carrierPosition - distance) > 0.001f;
     public int ImpactCount => impactCount;
     public float MeanScore => impactCount > 0 ? scoreSum / (float)impactCount : 0f;
@@ -121,6 +123,8 @@ public class AimRange : MonoBehaviour
     private void OnEnable()
     {
         Instance = this;
+        // Son HUD n'emploie aucun GUILayout : Unity n'a pas à lui envoyer sa passe de mise en page à chaque image.
+        useGUILayout = false;
         block ??= new MaterialPropertyBlock();
         BuildTexture();
         carrierPosition = distance;
@@ -170,10 +174,21 @@ public class AimRange : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (!dirty || texture == null) return;
-        dirty = false;
-        texture.SetPixels32(pixels);
-        texture.Apply(true);
+        if (texture == null) return;
+        if (dirty)
+        {
+            dirty = false;
+            touched.Clear();
+            texture.SetPixels32(pixels);
+            texture.Apply(true);
+        }
+        else if (touched.Count > 0)
+        {
+            foreach (RectInt region in touched) CopyToTexture(region);
+            touched.Clear();
+            // Ses mips sont déjà justes : Apply(true) les referait toutes sur le fil principal, à chaque tir.
+            texture.Apply(false, false);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -359,7 +374,7 @@ public class AimRange : MonoBehaviour
         if (pixels == null) BuildTexture();
         if (volleyFrame != Time.frameCount)
         {
-            foreach (Vector2 old in volley) PaintImpact(pixels, TextureSize, old, false);
+            foreach (Vector2 old in volley) Paint(old, false);
             volley.Clear();
             volleyScore = 0;
             volleyFrame = Time.frameCount;
@@ -369,9 +384,15 @@ public class AimRange : MonoBehaviour
         volleyScore += score;
         impactCount++;
         scoreSum += score;
-        PaintImpact(pixels, TextureSize, local, true);
-        dirty = true;
+        Paint(local, true);
         if (!Application.isPlaying) LateUpdate();
+    }
+
+    /// <summary>Peint un impact, et retient sa place : LateUpdate n'enverra qu'elle à la texture.</summary>
+    private void Paint(Vector2 local, bool newest)
+    {
+        PaintImpact(pixels, TextureSize, local, newest);
+        touched.Add(ImpactBounds(TextureSize, local));
     }
 
     /// <summary>Efface les impacts : la cible revient comme neuve, les comptes à zéro.</summary>
@@ -425,6 +446,7 @@ public class AimRange : MonoBehaviour
         texture.SetPixels32(pixels);
         texture.Apply(true);
         dirty = false;
+        touched.Clear();
     }
 
     /// <summary>La texture de la cible sur la face du disque et sur l'écran holographique : leur premier matériau seulement
@@ -487,6 +509,18 @@ public class AimRange : MonoBehaviour
         }
     }
 
+    /// <summary>Les pixels que peint un impact à `local` (m, depuis le centre de la cible), sur une cible de côté `size`.</summary>
+    public static RectInt ImpactBounds(int size, Vector2 local)
+    {
+        float pixelsPerMeter = size / BoardDiameter;
+        float radius = ImpactRadius * pixelsPerMeter;
+        float cx = (local.x + BoardRadius) * pixelsPerMeter;
+        float cy = (local.y + BoardRadius) * pixelsPerMeter;
+        int x0 = Mathf.Max(0, Mathf.FloorToInt(cx - radius - 1f)), x1 = Mathf.Min(size - 1, Mathf.CeilToInt(cx + radius + 1f));
+        int y0 = Mathf.Max(0, Mathf.FloorToInt(cy - radius - 1f)), y1 = Mathf.Min(size - 1, Mathf.CeilToInt(cy + radius + 1f));
+        return new RectInt(x0, y0, Mathf.Max(0, x1 - x0 + 1), Mathf.Max(0, y1 - y0 + 1));
+    }
+
     /// <summary>Peint un impact à `local` (m, depuis le centre de la cible) : un point rouge de 7 cm au cœur sombre, ou blanc
     /// pour ceux du dernier tir. Lissé au pixel.</summary>
     public static void PaintImpact(Color32[] target, int size, Vector2 local, bool newest)
@@ -495,11 +529,10 @@ public class AimRange : MonoBehaviour
         float radius = ImpactRadius * pixelsPerMeter, coreRadius = radius * 0.42f;
         float cx = (local.x + BoardRadius) * pixelsPerMeter;
         float cy = (local.y + BoardRadius) * pixelsPerMeter;
-        int x0 = Mathf.Max(0, Mathf.FloorToInt(cx - radius - 1f)), x1 = Mathf.Min(size - 1, Mathf.CeilToInt(cx + radius + 1f));
-        int y0 = Mathf.Max(0, Mathf.FloorToInt(cy - radius - 1f)), y1 = Mathf.Min(size - 1, Mathf.CeilToInt(cy + radius + 1f));
+        RectInt bounds = ImpactBounds(size, local);
         Color32 core = newest ? NewestCore : ImpactCore;
-        for (int y = y0; y <= y1; y++)
-        for (int x = x0; x <= x1; x++)
+        for (int y = bounds.y; y < bounds.y + bounds.height; y++)
+        for (int x = bounds.x; x < bounds.x + bounds.width; x++)
         {
             float dx = x + 0.5f - cx, dy = y + 0.5f - cy;
             float d = Mathf.Sqrt(dx * dx + dy * dy);
@@ -510,6 +543,44 @@ public class AimRange : MonoBehaviour
             c = Color.Lerp(c, core, Mathf.Clamp01(coreRadius + 0.5f - d));
             target[i] = c;
         }
+    }
+
+    /// <summary>Recopie `region` dans la texture, et ne refait que ce rectangle à chaque niveau de mip : un tir ne touche
+    /// qu'une poignée de pixels. La moyenne 2 × 2 est celle d'Apply(true), sur les octets tels quels, à un arrondi près ; de
+    /// loin, les impacts se voient comme si toute la cible avait été refaite. GetPixelData rend la mémoire même de la texture
+    /// (sans copie), qu'Apply envoie ensuite.</summary>
+    private void CopyToTexture(RectInt region)
+    {
+        NativeArray<Color32> level = texture.GetPixelData<Color32>(0);
+        int width = TextureSize;
+        int xMin = region.x, yMin = region.y, xMax = region.x + region.width, yMax = region.y + region.height;
+        for (int y = yMin; y < yMax; y++)
+            NativeArray<Color32>.Copy(pixels, y * width + xMin, level, y * width + xMin, xMax - xMin);
+
+        int mips = texture.mipmapCount;
+        for (int mip = 1; mip < mips; mip++)
+        {
+            NativeArray<Color32> next = texture.GetPixelData<Color32>(mip);
+            int nextWidth = Mathf.Max(1, width >> 1);
+            xMin = Mathf.Min(xMin >> 1, nextWidth - 1);
+            yMin = Mathf.Min(yMin >> 1, nextWidth - 1);
+            xMax = Mathf.Min((xMax + 1) >> 1, nextWidth);
+            yMax = Mathf.Min((yMax + 1) >> 1, nextWidth);
+            for (int y = yMin; y < yMax; y++)
+            for (int x = xMin; x < xMax; x++)
+                next[y * nextWidth + x] = Average(level, width, x * 2, y * 2);
+            level = next;
+            width = nextWidth;
+        }
+    }
+
+    /// <summary>La moyenne du carré de 2 × 2 pixels qui part de (`x`, `y`), arrondie.</summary>
+    private static Color32 Average(NativeArray<Color32> level, int width, int x, int y)
+    {
+        int i = y * width + x;
+        Color32 a = level[i], b = level[i + 1], c = level[i + width], d = level[i + width + 1];
+        return new Color32((byte)((a.r + b.r + c.r + d.r + 2) >> 2), (byte)((a.g + b.g + c.g + d.g + 2) >> 2),
+                           (byte)((a.b + b.b + c.b + d.b + 2) >> 2), (byte)((a.a + b.a + c.a + d.a + 2) >> 2));
     }
 
     // ------------------------------------------------------------------
@@ -525,6 +596,8 @@ public class AimRange : MonoBehaviour
 
     private void OnGUI()
     {
+        // Rien ici ne lit d'entrée : les autres évènements ne feraient que refaire les mêmes calculs.
+        if (Event.current.type != EventType.Repaint) return;
         if (!Application.isPlaying || ShootingRangePanel.IsOpen || PauseMenu.IsOpen) return;
         Camera cam = Camera.main;
         if (cam == null || !room.Contains(cam.transform.position)) return;

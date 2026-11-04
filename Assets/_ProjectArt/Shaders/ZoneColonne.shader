@@ -36,7 +36,7 @@ Shader "DuelArena/ZoneColonne"
                 half4 _BaseColor;
             CBUFFER_END
 
-            // Le replay du coup mortel assombrit le décor (KillReplay, global) : la colonne s'éteint d'autant.
+            // La kill cam assombrit le décor (KillCam, global) : la colonne s'éteint d'autant.
             float _ReplayDim;
 
             struct Attributes

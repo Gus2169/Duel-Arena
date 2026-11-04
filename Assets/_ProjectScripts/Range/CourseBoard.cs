@@ -26,7 +26,7 @@ public class CourseBoard : MonoBehaviour
     private TextMesh title;
     private MaterialPropertyBlock block;
     private bool dirty = true;
-    private string lastNames;
+    [System.NonSerialized] private bool namesKnown;
 
     private void Awake() => title = GetComponent<TextMesh>();
 
@@ -61,12 +61,10 @@ public class CourseBoard : MonoBehaviour
             ApplyFontTexture();
             return;
         }
-        // Les noms des armes ne sont connus qu'une fois le joueur apparu : une seule vérification par
-        // seconde, et le texte n'est refait qu'au changement.
-        if (!dirty && Time.frameCount % 60 != 0) return;
-        string names = ShootingCourseHud.WeaponName(0) + ShootingCourseHud.WeaponName(Slots - 1);
-        if (!dirty && names == lastNames) return;
-        lastNames = names;
+        // Les noms des armes ne sont connus qu'une fois le joueur apparu : une seule vérification par seconde jusque-là.
+        // Ensuite, le tableau ne se refait que quand un record tombe.
+        if (!dirty && (namesKnown || Time.frameCount % 60 != 0 || !ShootingCourseHud.WeaponNamesKnown)) return;
+        namesKnown = ShootingCourseHud.WeaponNamesKnown;
         dirty = false;
 
         if (left == null || right == null)

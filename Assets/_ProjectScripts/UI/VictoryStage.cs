@@ -50,6 +50,7 @@ public class VictoryStage : MonoBehaviour
     private AnimationMixerPlayable mixer;
     private readonly List<AnimationClipPlayable> clipPlayables = new List<AnimationClipPlayable>();
     private readonly List<float> clipLengths = new List<float>();
+    private CelebrationPlan plan;
     private int seed;
     private float time;
     private HumanPoseHandler poseHandler;
@@ -59,6 +60,9 @@ public class VictoryStage : MonoBehaviour
     // Les vrais robots, masqués le temps du rendu de la caméra du plateau.
     private readonly List<Renderer> liveRenderers = new List<Renderer>();
     private readonly List<Renderer> hiddenNow = new List<Renderer>();
+
+    // La caméra du joueur, éteinte sous celle du plateau.
+    private readonly KillCam.CoveredCamera playerView = new KillCam.CoveredCamera();
 
     /// <summary>Le plateau (sa caméra), créé au premier usage dans la scène courante.</summary>
     public static VictoryStage Create()
@@ -71,7 +75,7 @@ public class VictoryStage : MonoBehaviour
 
     private void Build()
     {
-        var cameraObject = new GameObject("CameraVictoire");
+        var cameraObject = new GameObject("CameraVictoire") { tag = "MainCamera" };
         cameraObject.transform.SetParent(transform, false);
         stageCamera = cameraObject.AddComponent<Camera>();
         // Le décor et le robot du plateau ; ni les bras de la vue subjective, ni les surfaces
@@ -82,11 +86,12 @@ public class VictoryStage : MonoBehaviour
         stageCamera.fieldOfView = FieldOfView;
         stageCamera.nearClipPlane = 0.1f;
         stageCamera.farClipPlane = 1000f;
-        // Par-dessus la caméra du joueur, qui reste en place (son AudioListener aussi).
+        // Celle du joueur s'éteint sous elle (KillCam.CoveredCamera) ; celle de la kill cam passe au-dessus.
         stageCamera.depth = 50f;
         stageCamera.enabled = false;
         UniversalAdditionalCameraData data = stageCamera.GetUniversalAdditionalCameraData();
         data.renderShadows = true;
+        data.renderPostProcessing = true;   // comme la caméra du joueur et la kill cam
         data.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
     }
 
@@ -118,10 +123,10 @@ public class VictoryStage : MonoBehaviour
     /// <summary>
     /// Montre le robot du gagnant sur `victorySpot` : modèle du préfab joueur, dans son châssis, peint de
     /// `paint`, sans arme, qui enchaîne les célébrations `clips` au hasard de `celebrationSeed`. Sans clip,
-    /// une pose de victoire provisoire (le poing levé).
+    /// une pose de victoire provisoire (le poing levé). `playerCamera`, la caméra du joueur, s'éteint dessous.
     /// </summary>
     public void Show(Transform victorySpot, GameObject playerPrefab, ChassisId chassis, Color32 paint, IReadOnlyList<AnimationClip> clips,
-                     int celebrationSeed)
+                     int celebrationSeed, Camera playerCamera)
     {
         Clear();
         Transform assetModel = playerPrefab != null ? playerPrefab.transform.Find("Model") : null;
@@ -151,6 +156,8 @@ public class VictoryStage : MonoBehaviour
 
         CollectLiveRobots();
         stageCamera.enabled = true;
+        playerView.Follow(playerCamera);
+        playerView.Hold();
         Evaluate();
         Frame();
     }
@@ -171,9 +178,11 @@ public class VictoryStage : MonoBehaviour
 
     private void Clear()
     {
+        playerView.Release();
         RestoreLiveRobots();
         liveRenderers.Clear();
         if (graph.IsValid()) graph.Destroy();
+        plan = null;
         clipPlayables.Clear();
         clipLengths.Clear();
         poseHandler?.Dispose();
@@ -194,6 +203,7 @@ public class VictoryStage : MonoBehaviour
     private void LateUpdate()
     {
         if (model == null) return;
+        playerView.Hold();
         if (proceduralPose) ApplyVictoryPose();
         Frame();
     }
@@ -245,6 +255,7 @@ public class VictoryStage : MonoBehaviour
             clipPlayables.Add(playable);
             clipLengths.Add(usable[i].length);
         }
+        plan = new CelebrationPlan(seed, clipLengths, CrossFade);
         return true;
     }
 
@@ -252,7 +263,7 @@ public class VictoryStage : MonoBehaviour
     private void Evaluate()
     {
         if (!graph.IsValid() || clipPlayables.Count == 0) return;
-        CelebrationFrame frame = CelebrationAt(seed, time, clipLengths, CrossFade);
+        CelebrationFrame frame = plan.At(time);
         for (int i = 0; i < clipPlayables.Count; i++) mixer.SetInputWeight(i, 0f);
         mixer.SetInputWeight(frame.clip, 1f - frame.nextWeight);
         clipPlayables[frame.clip].SetTime(frame.time);
@@ -283,41 +294,79 @@ public class VictoryStage : MonoBehaviour
     /// machines (aucun Random d'Unity). Fonction pure, testée.
     /// </summary>
     public static CelebrationFrame CelebrationAt(int seed, float t, IReadOnlyList<float> lengths, float fade)
+        => new CelebrationPlan(seed, lengths, fade).At(t);
+
+    /// <summary>
+    /// L'enchaînement des célébrations d'une graine, tiré au fur et à mesure et retenu : l'écran de fin le lit à chaque image,
+    /// et rejouerait sinon tout le tirage depuis son ouverture. Lire un instant ne change rien au tirage : les mêmes images
+    /// que CelebrationAt, dans n'importe quel ordre.
+    /// </summary>
+    public sealed class CelebrationPlan
     {
-        int count = lengths != null ? lengths.Count : 0;
-        if (count == 0) return default;
-        t = Mathf.Max(0f, t);
-        if (count == 1)
+        private const int MaxClips = 10000;
+
+        private struct Entry
         {
-            float only = Mathf.Max(lengths[0], 0.1f);
-            return new CelebrationFrame { clip = 0, time = t % only };
+            public int clip;
+            public int next;
+            public float start;
+            public float nextStart;
+            public float end;
         }
 
-        var random = new System.Random(seed);
-        int current = random.Next(count);
-        float start = 0f;
-        for (int guard = 0; guard < 10000; guard++)
+        private readonly IReadOnlyList<float> lengths;
+        private readonly float fade;
+        private readonly int count;
+        private readonly System.Random random;
+        private readonly List<Entry> entries = new List<Entry>();
+
+        public CelebrationPlan(int seed, IReadOnlyList<float> lengths, float fade)
         {
-            float length = Mathf.Max(lengths[current], fade * 2f + 0.1f);
-            float end = start + length;
-            float nextStart = end - fade;
-            int next = (current + 1 + random.Next(count - 1)) % count;
-            if (t < nextStart) return new CelebrationFrame { clip = current, time = t - start, nextClip = next };
-            if (t < end)
-            {
-                return new CelebrationFrame
-                {
-                    clip = current,
-                    time = t - start,
-                    nextClip = next,
-                    nextTime = t - nextStart,
-                    nextWeight = Mathf.Clamp01((t - nextStart) / Mathf.Max(fade, 1e-3f)),
-                };
-            }
-            current = next;
-            start = nextStart;
+            this.lengths = lengths;
+            this.fade = fade;
+            count = lengths != null ? lengths.Count : 0;
+            random = new System.Random(seed);
         }
-        return new CelebrationFrame { clip = current };
+
+        public CelebrationFrame At(float t)
+        {
+            if (count == 0) return default;
+            t = Mathf.Max(0f, t);
+            if (count == 1)
+            {
+                float only = Mathf.Max(lengths[0], 0.1f);
+                return new CelebrationFrame { clip = 0, time = t % only };
+            }
+
+            for (int i = 0; i < MaxClips; i++)
+            {
+                if (i == entries.Count) DrawNext();
+                Entry entry = entries[i];
+                if (t < entry.nextStart) return new CelebrationFrame { clip = entry.clip, time = t - entry.start, nextClip = entry.next };
+                if (t < entry.end)
+                {
+                    return new CelebrationFrame
+                    {
+                        clip = entry.clip,
+                        time = t - entry.start,
+                        nextClip = entry.next,
+                        nextTime = t - entry.nextStart,
+                        nextWeight = Mathf.Clamp01((t - entry.nextStart) / Mathf.Max(fade, 1e-3f)),
+                    };
+                }
+            }
+            return new CelebrationFrame { clip = entries[entries.Count - 1].next };
+        }
+
+        private void DrawNext()
+        {
+            bool first = entries.Count == 0;
+            Entry previous = first ? default : entries[entries.Count - 1];
+            int clip = first ? random.Next(count) : previous.next;
+            float start = first ? 0f : previous.nextStart;
+            float end = start + Mathf.Max(lengths[clip], fade * 2f + 0.1f);
+            entries.Add(new Entry { clip = clip, next = (clip + 1 + random.Next(count - 1)) % count, start = start, nextStart = end - fade, end = end });
+        }
     }
 
     // ------------------------------------------------------------------
@@ -436,12 +485,19 @@ public class VictoryStage : MonoBehaviour
     // Les vrais robots, masqués pour cette caméra seulement
     // ------------------------------------------------------------------
 
+    // Ce que cette caméra dessinerait, pas plus : les armes rangées et les bras de la vue subjective, qu'elle ne voit pas,
+    // feraient basculer des centaines de pièces par robot, deux fois par image.
     private void CollectLiveRobots()
     {
         liveRenderers.Clear();
+        int drawn = stageCamera.cullingMask;
         foreach (PlayerLocomotion player in PlayerLocomotion.SpawnedPlayers)
         {
-            if (player != null) liveRenderers.AddRange(player.GetComponentsInChildren<Renderer>(true));
+            if (player == null) continue;
+            foreach (Renderer r in player.GetComponentsInChildren<Renderer>())
+            {
+                if ((drawn & (1 << r.gameObject.layer)) != 0) liveRenderers.Add(r);
+            }
         }
     }
 
@@ -473,28 +529,6 @@ public class VictoryStage : MonoBehaviour
 
 #if UNITY_EDITOR || UNITY_INCLUDE_TESTS
     public Camera TestCamera => stageCamera;
-    public Animator TestModelAnimator => modelAnimator;
-
-    /// <summary>Surface de test : rend le plateau à l'instant `seconds` dans une image `width` × `height`.</summary>
-    public Texture2D RenderForTest(int width, int height, float seconds)
-    {
-        SetTime(seconds);
-        var rt = RenderTexture.GetTemporary(width, height, 24);
-        stageCamera.targetTexture = rt;
-        stageCamera.aspect = (float)width / height;
-        Frame();
-        stageCamera.Render();
-        RenderTexture previousActive = RenderTexture.active;
-        RenderTexture.active = rt;
-        var image = new Texture2D(width, height, TextureFormat.RGB24, false);
-        image.ReadPixels(new Rect(0, 0, width, height), 0, 0);
-        image.Apply();
-        RenderTexture.active = previousActive;
-        stageCamera.targetTexture = null;
-        stageCamera.ResetAspect();
-        RenderTexture.ReleaseTemporary(rt);
-        return image;
-    }
 #endif
 
     private static Transform Twin(Transform assetRoot, Transform target, Transform instanceRoot)

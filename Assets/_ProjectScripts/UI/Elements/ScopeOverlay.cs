@@ -20,11 +20,18 @@ namespace DuelArena.UI
         public float diameter = 0.92f;
         public Color reticleColor = new Color(0f, 0f, 0f, 0.9f);
 
+        /// <summary>L'écart (unités du panneau) qui ne se voit pas : le point visé vient d'une projection, il tremble d'un
+        /// rien d'une image à l'autre.</summary>
+        private const float Tolerance = 0.01f;
+
         private const int Steps = 96;
         // Le bord du disque s'assombrit de 86 % du rayon jusqu'au bord (le masque d'avant, adouci en cloche).
         private static readonly float[] ShadeRings = { 0.86f, 0.9f, 0.93f, 0.96f, 0.98f, 1f };
 
         private readonly UiMesh mesh = new UiMesh();
+        private Vector2 paintedCenter;
+        private float paintedDiameter = -1f;   // le premier appel redessine
+        private Color paintedColor;
 
         public ScopeOverlay()
         {
@@ -32,6 +39,23 @@ namespace DuelArena.UI
             AddToClassList("da-scope");
             generateVisualContent += Draw;
         }
+
+        /// <summary>Redessine si ce qu'il montre a changé : ses six anneaux de 96 pas ne se refont pas à chaque image pour
+        /// une image fixe, au moment où le joueur vise.</summary>
+        public void RepaintIfChanged()
+        {
+            if (!NeedsRepaint(paintedCenter, paintedDiameter, paintedColor, center, diameter, reticleColor)) return;
+            paintedCenter = center;
+            paintedDiameter = diameter;
+            paintedColor = reticleColor;
+            MarkDirtyRepaint();
+        }
+
+        /// <summary>Faut-il redessiner pour passer de ce qui est peint à ce qui est voulu ? Comparé au dernier dessin, pas à
+        /// l'image d'avant : un écart trop petit pour se voir finit par compter s'il s'accumule. Fonction pure, testée.</summary>
+        public static bool NeedsRepaint(Vector2 paintedCenter, float paintedDiameter, Color paintedColor, Vector2 center, float diameter, Color color)
+            => Mathf.Abs(paintedCenter.x - center.x) > Tolerance || Mathf.Abs(paintedCenter.y - center.y) > Tolerance
+               || !Mathf.Approximately(paintedDiameter, diameter) || paintedColor != color;
 
         /// <summary>L'ombre du bord à `fraction` du rayon : rien jusqu'à 86 %, 85 % au bord, puis le noir.</summary>
         public static float EdgeShade(float fraction)

@@ -20,10 +20,16 @@ using UnityEngine.Rendering;
 /// Les effets ne sont pas ici (AttachmentCatalog, WeaponController) : un accessoire qui n'a pas de
 /// modèle pour cette arme (le chargeur du RV-30, un barillet) agit quand même.
 ///
-/// Catégorie C pure. Sans état, testé.
+/// Catégorie C pure. Testé.
 /// </summary>
 public static class AttachmentMount
 {
+    // Ce qui est monté sur chaque copie d'arme, par rubrique (AttachmentCategory) : la prise des mains et le laser le relisent à
+    // chaque image, et le chercher parcourt les enfants de l'arme par leur nom. Une copie faite par Instantiate (les bras de la
+    // vue subjective) n'y est pas encore : elle se cherche à sa première lecture. Seul Apply monte et retire : il oublie tout, ce
+    // qui en sort aussi les copies détruites.
+    private static readonly Dictionary<Transform, WeaponAttachment[]> knownMounts = new Dictionary<Transform, WeaponAttachment[]>();
+
     /// <summary>Le groupe des points d'accroche dans le préfab d'un modèle d'arme.</summary>
     public const string SocketGroupName = "Accessoires";
 
@@ -157,6 +163,7 @@ public static class AttachmentMount
             foreach (WeaponAttachment owner in mountedAll)
                 SetShown(owner.transform.Find(part), !HiddenByAnother(mountedAll, part, owner));
         }
+        knownMounts.Clear();
     }
 
     // Ce qui va au canon d'abord : il peut déplacer les points d'accroche des autres (Socket).
@@ -183,7 +190,17 @@ public static class AttachmentMount
     }
 
     /// <summary>L'accessoire monté dans une rubrique, ou null.</summary>
-    public static WeaponAttachment Mounted(Transform weapon, AttachmentCategory category) => MountedOn(Socket(weapon, category));
+    public static WeaponAttachment Mounted(Transform weapon, AttachmentCategory category)
+    {
+        if (weapon == null) return null;
+        if (!knownMounts.TryGetValue(weapon, out WeaponAttachment[] mounts))
+        {
+            mounts = new WeaponAttachment[MountOrder.Length];
+            foreach (AttachmentCategory each in MountOrder) mounts[(int)each] = MountedOn(Socket(weapon, each));
+            knownMounts.Add(weapon, mounts);
+        }
+        return mounts[(int)category];
+    }
 
     /// <summary>
     /// La mire à aligner sur l'œil en visée et sa distance à l'œil : celles du viseur monté s'il y en a

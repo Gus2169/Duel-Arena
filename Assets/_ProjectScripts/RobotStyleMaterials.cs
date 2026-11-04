@@ -25,8 +25,6 @@ public sealed class RobotStyleMaterials : ScriptableObject
     [NonSerialized] private Dictionary<Material, Material> toCel;
     [NonSerialized] private Dictionary<Material, Material> toGame;
 
-    public IReadOnlyList<Pair> Pairs => pairs;
-
     public void SetPairs(Pair[] value)
     {
         pairs = value ?? Array.Empty<Pair>();

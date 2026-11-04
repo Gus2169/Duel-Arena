@@ -31,7 +31,6 @@ public class LoadoutPanel : MonoBehaviour
     private Label coinLabel;
     private VisualElement familyRow;
     private readonly List<Button> familyButtons = new List<Button>();
-    private string shownCoin;
     private Label timerLabel;
     private Label roundLabel;
     private Label statusLabel;
@@ -41,8 +40,33 @@ public class LoadoutPanel : MonoBehaviour
     private readonly List<int> cardSlots = new List<int>(); // la place de la panoplie de chaque carte
     private WeaponController builtFor;
 
+    // Le robot de cette machine : son arme et sa fiche, cherchées quand il change. L'arme vient après la caméra dans le
+    // préfab, une recherche traverserait toute la vue subjective à chaque image.
+    private NetworkObject followed;
     private WeaponController weapon;
     private PlayerMatchState state;
+
+    // Ce que disent les textes : ils ne sont refaits que quand cela change.
+    private int shownCoinKey;
+    private string shownCoinChooser;
+    private int shownSeconds;
+    private int shownRoundKey;
+    private StatusKey shownStatus;
+    private bool statusWritten;
+
+    /// <summary>Ce dont dépend la ligne d'état : soi, et l'adversaire, ou au Tag Team combien sont prêts.</summary>
+    private struct StatusKey : System.IEquatable<StatusKey>
+    {
+        public bool ready;
+        public bool teams;
+        public int players;
+        public int readyPlayers;
+        public string opponent;
+        public bool opponentReady;
+
+        public bool Equals(StatusKey o) => ready == o.ready && teams == o.teams && players == o.players && readyPlayers == o.readyPlayers
+                                           && opponent == o.opponent && opponentReady == o.opponentReady;
+    }
 
     private void OnEnable()
     {
@@ -53,7 +77,6 @@ public class LoadoutPanel : MonoBehaviour
         coinLabel = root.Q<Label>("loadoutCoin");
         familyRow = root.Q<VisualElement>("loadoutFamilies");
         BuildFamilyButtons();
-        shownCoin = null;
         timerLabel = root.Q<Label>("loadoutTimer");
         roundLabel = root.Q<Label>("loadoutRound");
         statusLabel = root.Q<Label>("loadoutStatus");
@@ -61,6 +84,11 @@ public class LoadoutPanel : MonoBehaviour
         cardRow = root.Q<VisualElement>("loadoutCards");
         validateButton.clicked += Validate;
         builtFor = null;
+        followed = null;
+        // Les éléments viennent d'être retrouvés : leurs textes sont à refaire.
+        shownCoinKey = shownSeconds = shownRoundKey = int.MinValue;
+        shownCoinChooser = null;
+        statusWritten = false;
     }
 
     private void OnDisable()
@@ -77,8 +105,12 @@ public class LoadoutPanel : MonoBehaviour
         bool show = rm != null && rm.IsSpawned && local != null && rm.CurrentPhase == RoundManager.Phase.Preparation;
         if (show)
         {
-            weapon = local.GetComponentInChildren<WeaponController>();
-            state = local.GetComponent<PlayerMatchState>();
+            if (local != followed)
+            {
+                followed = local;
+                weapon = local.GetComponentInChildren<WeaponController>(true);
+                state = local.GetComponent<PlayerMatchState>();
+            }
             // Les spectateurs ne choisissent pas d'arme : la préparation ne concerne que les duellistes, et au Tag Team
             // tous les membres des équipes, qui entreront tour à tour.
             show = weapon != null && state != null && state.IsMatchPlayer;
@@ -100,8 +132,15 @@ public class LoadoutPanel : MonoBehaviour
         coinLabel.EnableInClassList("hidden", !coinFlip);
         if (coinFlip)
         {
-            string line = CoinLine(coin, me, sinceToss, pending, PlayerMatchState.NameOf);
-            if (line != shownCoin) coinLabel.text = shownCoin = line;
+            int side = spinning ? 1 + CoinSide(sinceToss) : 0;
+            int coinKey = ((side * 2 + (sinceToss >= 0f ? 1 : 0)) * 2 + (pending ? 1 : 0)) * 256 + coin.family;
+            string chooser = PlayerMatchState.NameOf(coin.chooser);
+            if (coinKey != shownCoinKey || chooser != shownCoinChooser)
+            {
+                shownCoinKey = coinKey;
+                shownCoinChooser = chooser;
+                coinLabel.text = CoinLine(coin, me, sinceToss, pending, PlayerMatchState.NameOf);
+            }
         }
         bool choosing = coinFlip && pending && coin.chooser == me && !spinning;
         familyRow.EnableInClassList("hidden", !choosing);
@@ -120,19 +159,34 @@ public class LoadoutPanel : MonoBehaviour
         }
 
         // Pendant que la pièce tourne, le choix de la famille attend ses 10 s.
-        timerLabel.text = $"{Mathf.CeilToInt(pending ? Mathf.Min(CoinFlip.FamilyChoiceSeconds, rm.CoinFlipTimeLeft) : rm.PhaseTimeRemaining)} s";
-        roundLabel.text = rm.Rules.Sanitized().IsTagTeam
-            ? $"{TagTeam.Name(state.Team).ToUpperInvariant()}  ·  LE DÉCOMPTE PART QUAND TOUT LE MONDE A VALIDÉ"
-            : rm.IsLane
-            ? $"{(rm.Lane.final ? "FINALE" : "TOURNOI")}  ·  MANCHE {rm.RoundNumber}  ·  LE DÉCOMPTE PART QUAND LES DEUX JOUEURS ONT VALIDÉ"
-            : $"MANCHE {rm.RoundNumber}  ·  LE DÉCOMPTE PART QUAND LES DEUX JOUEURS ONT VALIDÉ";
+        int seconds = Mathf.CeilToInt(pending ? Mathf.Min(CoinFlip.FamilyChoiceSeconds, rm.CoinFlipTimeLeft) : rm.PhaseTimeRemaining);
+        if (seconds != shownSeconds)
+        {
+            shownSeconds = seconds;
+            timerLabel.text = $"{seconds} s";
+        }
+        bool teams = rm.TagTeamMode;
+        bool lane = rm.IsLane;
+        bool final = lane && rm.Lane.final;
+        int roundKey = teams ? -1 - (int)state.Team : (rm.RoundNumber * 2 + (lane ? 1 : 0)) * 2 + (final ? 1 : 0);
+        if (roundKey != shownRoundKey)
+        {
+            shownRoundKey = roundKey;
+            roundLabel.text = RoundLine(teams, state.Team, lane, final, rm.RoundNumber);
+        }
 
         bool ready = state.ReadyOrRequested;
         // On valide une arme de la famille : pas avant qu'elle soit choisie.
         validateButton.SetEnabled(!ready && !pending);
         validateButton.text = ready ? "Validé" : "Valider (Entrée)";
-        statusLabel.text = ready ? $"Prêt.  {OpponentStatus(rm, local.OwnerClientId)}" : OpponentStatus(rm, local.OwnerClientId);
-        statusLabel.EnableInClassList("loadout-status--ready", ready);
+        StatusKey status = ReadStatus(rm, local.OwnerClientId, ready);
+        if (!statusWritten || !status.Equals(shownStatus))
+        {
+            statusWritten = true;
+            shownStatus = status;
+            statusLabel.text = StatusLine(status.ready, status.teams, status.players, status.readyPlayers, status.opponent, status.opponentReady);
+            statusLabel.EnableInClassList("loadout-status--ready", ready);
+        }
 
         Keyboard keyboard = Keyboard.current;
         if (!ready && !pending && !PauseMenu.IsOpen && keyboard != null
@@ -144,29 +198,49 @@ public class LoadoutPanel : MonoBehaviour
 
     private static readonly System.Collections.Generic.List<PlayerMatchState> matchPlayers = new System.Collections.Generic.List<PlayerMatchState>();
 
-    private static string OpponentStatus(RoundManager rm, ulong me)
+    private static StatusKey ReadStatus(RoundManager rm, ulong me, bool ready)
     {
+        var status = new StatusKey { ready = ready };
         // Au Tag Team, tous les membres des équipes choisissent : combien sont prêts.
-        if (rm != null && rm.Rules.Sanitized().IsTagTeam)
+        if (rm.TagTeamMode)
         {
-            int players = 0, ready = 0;
+            status.teams = true;
             foreach (PlayerMatchState other in PlayerMatchState.Spawned)
             {
                 if (other == null || !other.IsMatchPlayer) continue;
-                players++;
-                if (other.Ready) ready++;
+                status.players++;
+                if (other.Ready) status.readyPlayers++;
             }
-            return $"{ready} sur {players} prêts.";
+            return status;
         }
         // L'adversaire du match (au Tournoi, celui de son couloir : tout le monde y est duelliste).
-        if (rm != null) rm.GetMatchDuelists(matchPlayers);
-        else matchPlayers.Clear();
+        rm.GetMatchDuelists(matchPlayers);
         foreach (PlayerMatchState other in matchPlayers)
         {
             if (other == null || other.OwnerClientId == me) continue;
-            return other.Ready ? $"{other.DisplayName} est prêt." : $"{other.DisplayName} choisit son arme...";
+            status.opponent = other.DisplayName;
+            status.opponentReady = other.Ready;
+            break;
         }
-        return "";
+        return status;
+    }
+
+    /// <summary>La ligne d'état : « Prêt. » s'il a validé, puis l'adversaire (`opponent`, null sans lui) ou, au Tag Team
+    /// (`teams`), combien sont prêts. Fonction pure, testée.</summary>
+    public static string StatusLine(bool ready, bool teams, int players, int readyPlayers, string opponent, bool opponentReady)
+    {
+        string others = teams ? $"{readyPlayers} sur {players} prêts."
+                      : opponent == null ? ""
+                      : opponentReady ? $"{opponent} est prêt." : $"{opponent} choisit son arme...";
+        return ready ? $"Prêt.  {others}" : others;
+    }
+
+    /// <summary>La ligne de la manche, au-dessus des armes. Fonction pure, testée.</summary>
+    public static string RoundLine(bool teams, PlayerTeam team, bool lane, bool final, int round)
+    {
+        if (teams) return $"{TagTeam.Name(team).ToUpperInvariant()}  ·  LE DÉCOMPTE PART QUAND TOUT LE MONDE A VALIDÉ";
+        if (lane) return $"{(final ? "FINALE" : "TOURNOI")}  ·  MANCHE {round}  ·  LE DÉCOMPTE PART QUAND LES DEUX JOUEURS ONT VALIDÉ";
+        return $"MANCHE {round}  ·  LE DÉCOMPTE PART QUAND LES DEUX JOUEURS ONT VALIDÉ";
     }
 
     private void Validate()
@@ -230,7 +304,7 @@ public class LoadoutPanel : MonoBehaviour
     public static string CoinLine(CoinFlip.State coin, ulong me, float sinceToss, bool pending, System.Func<ulong, string> nameOf)
     {
         bool tossed = sinceToss >= 0f;
-        if (tossed && sinceToss < CoinFlip.TossSeconds) return (int)(sinceToss / 0.15f) % 2 == 0 ? "PILE…" : "FACE…";
+        if (tossed && sinceToss < CoinFlip.TossSeconds) return CoinSide(sinceToss) == 0 ? "PILE…" : "FACE…";
         if (pending)
         {
             if (coin.chooser == me)
@@ -241,6 +315,9 @@ public class LoadoutPanel : MonoBehaviour
         if (coin.family == CoinFlip.GloveFamily) return "Le gant seul : une manche à mains nues.";
         return $"{CoinFlip.FamilyLabel(coin.family)} pour les deux : choisis ton arme dedans.";
     }
+
+    /// <summary>La face que montre la pièce `sinceToss` secondes après son lancer : 0 pile, 1 face.</summary>
+    private static int CoinSide(float sinceToss) => (int)(sinceToss / 0.15f) % 2;
 
     private static Label NewLabel(string text, string className)
     {

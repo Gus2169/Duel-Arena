@@ -288,7 +288,6 @@ public class ArmoryController : MonoBehaviour
                 chassis = chassis,
                 time = 0.4f,
                 yaw = -22f,
-                framing = MenuThumbnails.Framing.FullBody,
                 width = 220,
                 height = 300,
             };

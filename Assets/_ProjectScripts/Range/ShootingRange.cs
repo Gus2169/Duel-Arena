@@ -35,18 +35,19 @@ public class ShootingRange : NetworkBehaviour
     }
 
     /// <summary>Les mannequins du stand.</summary>
-    public IReadOnlyList<TrainingDummy> Dummies
+    public SpawnedView<TrainingDummy> Dummies
     {
         get
         {
             if (dummies.Count == 0) dummies.AddRange(FindObjectsByType<TrainingDummy>());
-            return dummies;
+            return new SpawnedView<TrainingDummy>(dummies);
         }
     }
 
     public override void OnNetworkSpawn()
     {
         cached = this;
+        ShotImpacts.Prepare(gameObject.scene);
         if (!IsServer) return;
 
         // Le joueur de l'hôte naît dans la scène du menu : on le place au poste de tir une fois le stand

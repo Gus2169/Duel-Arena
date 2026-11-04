@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Là où arrive un tir (2026-11-04, à la place des boules rouges, demandé par l'utilisateur) : sur le décor, une marque
@@ -32,15 +33,29 @@ public class ShotImpacts : MonoBehaviour
     /// <summary>La sonde qui retrouve la surface sous une marque.</summary>
     private const float Probe = 0.06f;
 
+    // Le maillage tient toute l'arène : ses marques sont en coordonnées du monde.
+    private static readonly Bounds Everywhere = new Bounds(Vector3.zero, Vector3.one * 100000f);
+
     private static ShotImpacts instance;
 
     private static ShotImpacts Instance
     {
         get
         {
-            if (instance == null) instance = new GameObject("Impacts des tirs").AddComponent<ShotImpacts>();
+            if (instance == null) Prepare(default);
             return instance;
         }
+    }
+
+    /// <summary>Crée tout de suite, dans `scene`, ce que montrent les tirs (sans scène valide, dans la scène active) :
+    /// le matériau, le maillage et les étincelles. À l'arrivée dans une scène de jeu, sous le noir du chargement : sinon
+    /// tout se crée au premier impact de la partie, en plein échange de tirs. Il meurt avec la scène.</summary>
+    public static void Prepare(Scene scene)
+    {
+        if (instance != null) return;
+        var go = new GameObject("Impacts des tirs");
+        if (scene.IsValid() && scene.isLoaded) SceneManager.MoveGameObjectToScene(go, scene);
+        instance = go.AddComponent<ShotImpacts>();
     }
 
     /// <summary>Montre sur cette machine un tir de `data` arrivé en `point`, sur une surface de normale `normal` : un robot
@@ -116,8 +131,10 @@ public class ShotImpacts : MonoBehaviour
     private bool dirty;
     private double seenPhaseStart = -1.0;
 
-    /// <summary>Les marques posées.</summary>
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+    /// <summary>Les marques posées (banc de test).</summary>
     public static int MarkCount => instance != null ? instance.count : 0;
+#endif
 
     private void Awake()
     {
@@ -137,6 +154,9 @@ public class ShotImpacts : MonoBehaviour
             mesh.uv = uvs;
             mesh.colors32 = colors;
             mesh.triangles = triangles;
+            // Vide, il se dessine déjà, sans rien montrer : ses deux passes se préparent sous le noir de l'arrivée, pas au
+            // premier impact.
+            mesh.bounds = Everywhere;
             gameObject.AddComponent<MeshFilter>().sharedMesh = mesh;
             var rendered = gameObject.AddComponent<MeshRenderer>();
             rendered.sharedMaterial = material;
@@ -203,7 +223,7 @@ public class ShotImpacts : MonoBehaviour
         mesh.vertices = vertices;
         mesh.uv = uvs;
         mesh.colors32 = colors;
-        mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 100000f);
+        mesh.bounds = Everywhere;
     }
 
     private void Clear()

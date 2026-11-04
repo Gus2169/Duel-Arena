@@ -155,6 +155,11 @@ public class SessionFlow : MonoBehaviour
         LaunchOrder.Clear();
         LaunchTeams.Clear();
         networkManager.NetworkConfig.ConnectionApproval = true;
+#if !UNITY_EDITOR
+        // Rien ne les lit dans une build : chaque message envoyé et reçu y passerait pour rien. L'Editor garde le profileur
+        // réseau. Netcode le lit à son démarrage. (Le champ n'existe qu'avec le paquet com.unity.multiplayer.tools.)
+        networkManager.NetworkConfig.NetworkMessageMetrics = false;
+#endif
         PrepareConnectionData(networkManager);
         networkManager.ConnectionApprovalCallback = ApproveConnection;
     }

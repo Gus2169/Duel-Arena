@@ -28,6 +28,57 @@ public class InputSanityTests
     }
 
     [Test]
+    public void LaDureeDUnInput_EstBornee()
+    {
+        Assert.AreEqual(1f / 144f, PlayerLocomotion.InputDuration(1f / 144f), "Une image ordinaire reste entière.");
+        Assert.AreEqual(0.1f, PlayerLocomotion.InputDuration(0.15f), "Une image trop longue se simule à la borne.");
+        Assert.AreEqual(0f, PlayerLocomotion.InputDuration(-1f));
+    }
+
+    [Test]
+    public void DesInputsSansDuree_NePassentPasSansBorne()
+    {
+        // Un client modifié qui n'annonce aucune durée : sans coût plancher, le budget ne s'usait pas, et toute sa
+        // file (512 inputs) se simulait à chaque image. La borne s'exprime par seconde de temps réel.
+        const int Images = 60;
+        float budget = 0f;
+        int simules = 0;
+        for (int i = 0; i < Images; i++)
+        {
+            budget = PlayerLocomotion.RefillInputBudget(budget, 1f / Images);
+            while (simules < 100000 && PlayerLocomotion.TrySpendInputBudget(ref budget, 0f)) simules++;
+        }
+        Assert.Greater(simules, 0, "Garde anti-vacuité : le budget se recharge.");
+        Assert.LessOrEqual(simules, 1150, "Le budget d'une seconde ne couvre pas plus de 1 100 inputs, à 1 ms chacun.");
+    }
+
+    [Test]
+    public void UnJoueurHonnete_PasseEnEntier_MemePresDeMilleImagesParSeconde()
+    {
+        // Le serveur tourne à 60 images/s, le joueur à 960 : ses inputs de 1 ms ne perdent rien au coût plancher.
+        const int Images = 60, InputsParImage = 16;
+        float budget = 0f;
+        int simules = 0;
+        for (int i = 0; i < Images; i++)
+        {
+            budget = PlayerLocomotion.RefillInputBudget(budget, 1f / Images);
+            for (int j = 0; j < InputsParImage; j++)
+                if (PlayerLocomotion.TrySpendInputBudget(ref budget, 0.001f)) simules++;
+        }
+        Assert.AreEqual(Images * InputsParImage, simules);
+    }
+
+    [Test]
+    public void LeLecteurDInputs_PasseAvantCeuxQuiLeLisent()
+    {
+        // PlayerLocomotion le lit dans son Update : sans ordre fixé, le déplacement et le lacet pouvaient partir avec
+        // une image de retard, alors que le tangage, lu en LateUpdate, était à jour.
+        var order = (DefaultExecutionOrder)System.Attribute.GetCustomAttribute(typeof(PlayerInputReader), typeof(DefaultExecutionOrder));
+        Assert.IsNotNull(order, "L'ordre d'exécution du lecteur d'inputs n'est pas fixé.");
+        Assert.Less(order.order, 0, "Il doit passer avant les scripts sans ordre.");
+    }
+
+    [Test]
     public void UneOrigineOuUneDirectionInvalide_EstDetectee()
     {
         Assert.IsTrue(WeaponController.IsFinite(new Vector3(1f, 2f, 3f)));

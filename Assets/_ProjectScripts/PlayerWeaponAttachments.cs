@@ -22,21 +22,9 @@ public class PlayerWeaponAttachments : NetworkBehaviour
 
     private WeaponController weapon;
     private bool published;
-#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
-    private WeaponAttachments? offline;   // hors session (les tests) : ce que le test a posé
-#endif
 
     /// <summary>Les accessoires publiés par le serveur (aucun tant qu'il n'a rien dit).</summary>
-    public WeaponAttachments Attachments
-    {
-        get
-        {
-#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
-            if (offline.HasValue && !IsSpawned) return offline.Value;
-#endif
-            return attachments.Value;
-        }
-    }
+    public WeaponAttachments Attachments => attachments.Value;
 
     /// <summary>Le serveur a publié les accessoires de ce joueur : ils sont sûrs.</summary>
     public bool Published => published;
@@ -76,14 +64,4 @@ public class PlayerWeaponAttachments : NetworkBehaviour
         attachments.Value = sanitized;
         if (weapon != null) weapon.ServerRefillMagazine();
     }
-
-#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
-    /// <summary>Hors session (tests) : les accessoires de ce joueur, sans serveur.</summary>
-    public void SetOfflineForTests(WeaponAttachments value)
-    {
-        offline = value;
-        published = true;
-        Changed?.Invoke(value);
-    }
-#endif
 }

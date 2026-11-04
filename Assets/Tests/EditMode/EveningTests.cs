@@ -32,11 +32,11 @@ public class EveningTests
             "Par victoires ; à victoires égales, le meilleur bilan.");
         Assert.AreEqual(3, rows[0].wins);
         Assert.AreEqual(5, rows[0].played);
-        Assert.AreEqual(2, rows[0].WinsIn(GameModeId.Classic), "Le forfait compte.");
-        Assert.AreEqual(1, rows[0].WinsIn(GameModeId.TagTeam), "Chaque membre de l'équipe gagnante.");
+        CollectionAssert.Contains(rows[0].winsByMode, new KeyValuePair<GameModeId, int>(GameModeId.Classic, 2), "Le forfait compte.");
+        CollectionAssert.Contains(rows[0].winsByMode, new KeyValuePair<GameModeId, int>(GameModeId.TagTeam, 1), "Chaque membre de l'équipe gagnante.");
         Assert.AreEqual(2, rows[1].wins);
         Assert.AreEqual(2, rows[1].played);
-        Assert.AreEqual(1, rows[1].WinsIn(GameModeId.Tournament), "Le champion gagne le tournoi, un match.");
+        CollectionAssert.Contains(rows[1].winsByMode, new KeyValuePair<GameModeId, int>(GameModeId.Tournament, 1), "Le champion gagne le tournoi, un match.");
         Assert.AreEqual(1, rows[2].wins);
         Assert.AreEqual(5, rows[2].played);
         Assert.AreEqual(0, rows[3].wins);

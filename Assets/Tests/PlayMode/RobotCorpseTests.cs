@@ -96,26 +96,57 @@ public class RobotCorpseTests
     /// Le coup qui tue fait voler l'épave en pièces (2026-11-03, avec la kill cam) : brutal (le pompe, le gant), la tête,
     /// les bras, les jambes et le buste s'en détachent, sans articulation, et s'éloignent ; l'huile, les étincelles et les
     /// éclats partent, sur le layer de l'épave ; une balle légère à la tête n'arrache que la tête ; le prototype, à la peau
-    /// continue, ne perd rien mais crache sa gerbe. Vu échouer, les articulations gardées.
+    /// continue, ne perd rien mais crache sa gerbe. Vu échouer, les articulations gardées. Les gerbes des pièces se montent
+    /// une pièce par image, pour ne pas toutes tomber dans l'image de l'impact : vu échouer, Stump et Trail appelés dans Detach.
     /// </summary>
+    /// <summary>L'épave ne copie du robot que l'arme qu'il tient, même s'il vient d'en changer : à chaque mort, sur chaque
+    /// machine, dans l'image de l'impact de la kill cam, tout l'arsenal partait dans la copie.</summary>
+    [UnityTest]
+    public IEnumerator LEpave_NEmporteQueLArmeEnMain()
+    {
+        yield return SpawnCorpse();
+        Animator animator = model.GetComponent<Animator>();
+        Transform hand = animator.GetBoneTransform(HumanBodyBones.RightHand);
+        WeaponController weapon = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(TestCharacter.PlayerPrefabPath).GetComponentInChildren<WeaponController>(true);
+        foreach (WeaponData data in weapon.Loadout) HeldWeapons.Show(hand, weapon.Loadout, data, WeaponLooks.Default, WeaponAttachments.None);
+
+        RobotCorpse other = SpawnOther(animator, Vector3.right * 5f);
+        int held = 0;
+        bool inHand = false;
+        foreach (Transform t in other.GetComponentsInChildren<Transform>(true))
+        {
+            for (int slot = 0; slot < weapon.Loadout.Count; slot++)
+            {
+                if (t.name != HeldWeapons.SlotName(slot)) continue;
+                held++;
+                inHand = slot == weapon.Loadout.Count - 1;
+            }
+        }
+        Assert.AreEqual(1, held, $"L'épave emporte {held} armes.");
+        Assert.IsTrue(inHand, "L'épave doit garder l'arme que le robot tenait.");
+    }
+
     [UnityTest]
     public IEnumerator LeCoupQuiTue_FaitVolerLEpaveEnPieces()
     {
         yield return SpawnCorpse();
         Vector3 chest = corpse.Center + Vector3.up * 0.45f;
         corpse.Burst(chest, Vector3.forward * 200f, new Color(1f, 0.42f, 0.07f));
-        Assert.IsTrue(corpse.HasBurst);
+        Assert.IsFalse(corpse.HasBurst, "Ses gerbes ne sont pas encore toutes nées : la kill cam les retient quand elles le sont.");
         Assert.AreEqual(RobotCorpse.BurstSeverity.Brutal, corpse.Severity);
         Assert.AreEqual(6, corpse.Detached.Count, "Brutal : la tête, les deux bras, les deux cuisses et le buste.");
         var rest = new Dictionary<Transform, Vector3>();
         foreach (Transform piece in corpse.Detached) rest[piece] = piece.localPosition;
+        Assert.AreEqual(3, corpse.GetComponentsInChildren<ParticleSystem>(true).Length, "Dans l'image de l'impact, sa seule gerbe : les pièces suivent.");
+        for (int i = 0; i < 8; i++) yield return null;
         ParticleSystem[] systems = corpse.GetComponentsInChildren<ParticleSystem>(true);
         Assert.GreaterOrEqual(systems.Length, 3 + 6 * 2, "La gerbe de l'impact, l'huile de chaque articulation rompue, la traînée de chaque pièce.");
+        Assert.IsTrue(corpse.HasBurst);
+        Assert.IsFalse(corpse.enabled, "Les pièces montées, l'épave se tait.");
         foreach (ParticleSystem system in systems)
             Assert.AreEqual(CorpseLayer.Index, system.gameObject.layer, $"{system.name} : sur le layer de l'épave.");
 
-        // Une articulation détruite disparaît à la fin de l'image.
-        yield return null;
+        // La rupture, elle, n'attend pas.
         foreach (Transform piece in corpse.Detached)
             Assert.IsNull(piece.GetComponent<CharacterJoint>(), $"{piece.name} : son articulation est rompue.");
         yield return new WaitForSeconds(0.6f);
@@ -170,6 +201,76 @@ public class RobotCorpseTests
         corpse.Burst(corpse.Center + Vector3.up * 0.45f, Vector3.forward * 200f, Color.clear);
         Assert.AreEqual(0, corpse.Detached.Count, "Le prototype ne perd rien : sa peau s'étirerait.");
         Assert.GreaterOrEqual(corpse.GetComponentsInChildren<ParticleSystem>(true).Length, 3, "Mais sa gerbe part.");
+    }
+
+    /// <summary>
+    /// Les gerbes d'une pièce, montées après l'impact, partent d'où il faut : celle du moignon sur le corps resté, à sa place
+    /// sur lui même s'il a bougé entre-temps ; la traînée sur la pièce, qui vole. Vu échouer, le moignon noté dans le monde.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator LesGerbesDesPieces_SuiventLeCorps_MemeMonteesApresLImpact()
+    {
+        yield return SpawnCorpse();
+        corpse.Burst(corpse.Center + Vector3.up * 0.45f, Vector3.forward * 200f, Color.clear);
+        Transform head = corpse.Detached[0];
+        Assert.IsTrue(head.name.EndsWith("Head"), "Garde : un coup brutal arrache la tête d'abord (" + head.name + ").");
+        Transform torso = corpse.Bodies[1].transform;
+        Assert.IsTrue(torso.name.EndsWith("Spine"), "Garde : le corps qui porte le cou (" + torso.name + ").");
+        Vector3 stump = torso.InverseTransformPoint(head.position);
+
+        // Ce qui porte le moignon bouge avant que sa gerbe ne se monte.
+        torso.position += Vector3.right * 2f;
+        Transform spurt = null;
+        for (int i = 0; i < 4 && spurt == null; i++)
+        {
+            yield return null;
+            foreach (Transform child in torso)
+            {
+                if (child.name != "Articulation rompue") continue;
+                spurt = child;   // la première née : celle de la tête
+                break;
+            }
+        }
+        Assert.IsNotNull(spurt, "L'articulation rompue n'a pas sa gerbe.");
+        Assert.AreEqual(CorpseLayer.Index, spurt.gameObject.layer);
+        Assert.Less(Vector3.Distance(spurt.localPosition, stump), 0.05f, "Elle sort du moignon, là où il est maintenant.");
+
+        for (int i = 0; i < 8; i++) yield return null;
+        foreach (Transform piece in corpse.Detached)
+        {
+            Transform trail = piece.Find("Trainee d'huile");
+            Assert.IsNotNull(trail, $"{piece.name} traîne son huile.");
+            Assert.Less(trail.localPosition.magnitude, 1e-3f, $"{piece.name} : à l'origine de la pièce.");
+        }
+    }
+
+    /// <summary>
+    /// Le ralenti de la kill cam gagne chaque gerbe et l'éclair, celles qui naissent après coup comprises (une gerbe de pièce
+    /// née en plein ralenti y reste), puis se rend. Vu échouer, la vitesse courante oubliée à la naissance d'une gerbe.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator AuRalenti_ChaqueGerbeSuit_MemeCellesQuiNaissentApres()
+    {
+        yield return SpawnCorpse();
+        corpse.Burst(corpse.Center + Vector3.up * 0.45f, Vector3.forward * 200f, Color.clear);
+        const float Slow = 0.13f;
+        RobotBurst.SetSpeed(corpse, Slow);
+        for (int i = 0; i < 8; i++) yield return null;
+
+        ParticleSystem[] systems = corpse.GetComponentsInChildren<ParticleSystem>(true);
+        Assert.GreaterOrEqual(systems.Length, 3 + 6 * 2, "Garde : les gerbes des pièces sont nées.");
+        foreach (ParticleSystem system in systems)
+            Assert.AreEqual(Slow, system.main.simulationSpeed, 1e-5f, $"{system.transform.parent.name} : {system.name}.");
+        BurstFlash flash = corpse.GetComponentInChildren<BurstFlash>(true);
+        Assert.IsNotNull(flash, "L'éclair de l'impact.");
+        Assert.AreEqual(Slow, flash.speed, 1e-5f);
+
+        // Une gerbe détruite d'elle-même (ses dix secondes) ne gêne pas ; la kill cam finie, tout repart à la normale.
+        Object.Destroy(systems[0].transform.parent.gameObject);
+        yield return null;
+        RobotBurst.SetSpeed(corpse.gameObject, 1f);
+        foreach (ParticleSystem system in corpse.GetComponentsInChildren<ParticleSystem>(true))
+            Assert.AreEqual(1f, system.main.simulationSpeed, 1e-5f, $"{system.name} : le ralenti se rend.");
     }
 
     /// <summary>Ce qu'on retient d'une chute : la pièce la plus rapide, la rotation la plus vive, de

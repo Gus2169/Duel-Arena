@@ -51,7 +51,6 @@ public class Health : NetworkBehaviour
     /// (ClientRpc dédiée avec NetworkObjectReference du tireur) si un kill-feed/hit marker en a
     /// besoin ; pas nécessaire pour cet incrément.</summary>
     public event Action<float, GameObject> OnDamaged;
-    public event Action OnDeath;
 
     private void Awake()
     {
@@ -73,7 +72,6 @@ public class Health : NetworkBehaviour
     {
         float delta = previous - current;
         if (delta > 0f) OnDamaged?.Invoke(delta, null);
-        if (current <= 0f && previous > 0f) OnDeath?.Invoke();
     }
 
     /// <summary>Serveur : le joueur qui a porté le coup mortel (son identifiant de client), ou NoKiller. Lu par la
@@ -101,14 +99,13 @@ public class Health : NetworkBehaviour
                     ? killer.OwnerClientId : NoKiller;
                 ServerKillCause = cause;
             }
-            // HandleNetworkCurrentChanged se charge d'OnDamaged/OnDeath sur TOUTES les instances,
+            // HandleNetworkCurrentChanged se charge d'OnDamaged sur TOUTES les instances,
             // y compris celle du serveur lui-même (son propre OnValueChanged se déclenche aussi).
         }
         else
         {
             localCurrent = Mathf.Max(0f, localCurrent - amount);
             OnDamaged?.Invoke(amount, source);
-            if (IsDead) OnDeath?.Invoke();
         }
     }
 

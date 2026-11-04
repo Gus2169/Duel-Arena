@@ -28,6 +28,24 @@ public class RobotCorpse : MonoBehaviour
     private readonly Dictionary<RagdollPart, Rigidbody> parts = new Dictionary<RagdollPart, Rigidbody>();
     private readonly List<Transform> detached = new List<Transform>();
     private bool burst;
+
+    /// <summary>Une pièce arrachée dont les gerbes restent à monter, son moignon noté dans le repère de ce qui le porte :
+    /// tout bouge d'ici là.</summary>
+    private struct TornPiece
+    {
+        public Transform stumpBody;
+        public Vector3 stump, outward;
+        public Transform piece;
+    }
+
+    private readonly Queue<TornPiece> tornPieces = new Queue<TornPiece>();
+
+    // Les gerbes de l'épave : la kill cam règle leur vitesse à chaque image (SetBurstSpeed).
+    private static readonly List<ParticleSystem> FoundSystems = new List<ParticleSystem>();
+    private readonly List<ParticleSystem> burstSystems = new List<ParticleSystem>();
+    private readonly List<BurstFlash> burstFlashes = new List<BurstFlash>();
+    private float burstSpeed = 1f;
+
     private Rigidbody pelvis;
     private Transform liveRoot;
     private float totalMass;
@@ -304,12 +322,10 @@ public class RobotCorpse : MonoBehaviour
     /// <summary>Les os des pièces arrachées.</summary>
     public IReadOnlyList<Transform> Detached => detached;
 
-    /// <summary>L'épave a-t-elle volé en pièces (Burst), et comment.</summary>
-    public bool HasBurst => burst;
+    /// <summary>L'épave a-t-elle volé en pièces (Burst), et comment. Vrai une fois ses gerbes toutes nées : la kill cam
+    /// les retient à cet instant pour les ralentir.</summary>
+    public bool HasBurst => burst && tornPieces.Count == 0;
     public BurstSeverity Severity { get; private set; }
-    public Vector3 BurstPoint { get; private set; }
-    public Vector3 BurstDirection { get; private set; }
-    public Color BurstPaint { get; private set; }
 
     /// <summary>
     /// Le coup qui a tué (`impulse`, N·s, reçu en `point`) fait voler l'épave en pièces : celles que dit PartsToDetach (la
@@ -323,6 +339,8 @@ public class RobotCorpse : MonoBehaviour
         if (burst || !float.IsFinite(point.x) || !float.IsFinite(point.y) || !float.IsFinite(point.z)) return;
         if (!float.IsFinite(impulse.x) || !float.IsFinite(impulse.y) || !float.IsFinite(impulse.z)) return;
         burst = true;
+        // Sous la kill cam, l'épave naît en plein ralenti : ses gerbes aussi.
+        burstSpeed = KillCam.RateOf(liveRoot != null ? liveRoot.GetComponentInParent<PlayerLocomotion>() : null);
         float magnitude = impulse.magnitude;
         BurstSeverity severity = SeverityOf(magnitude);
         Vector3 direction = magnitude > 1e-4f ? impulse / magnitude : -transform.forward;
@@ -331,16 +349,72 @@ public class RobotCorpse : MonoBehaviour
         bool hitOnRight = Vector3.Dot(point - center, transform.right) > 0f;
         int layer = gameObject.layer;
         Severity = severity;
-        BurstPoint = point;
-        BurstDirection = direction;
-        BurstPaint = paint;
         // Un châssis à peau continue (le prototype, le Y Bot) s'étirerait entre les pièces arrachées : il ne perd rien,
         // seule la gerbe part.
         if (RigidPieces())
         {
-            foreach (RagdollPart part in PartsToDetach(hit, hitOnRight, severity)) Detach(part, point, direction, severity, layer);
+            foreach (RagdollPart part in PartsToDetach(hit, hitOnRight, severity)) Detach(part, point, direction, severity);
         }
-        RobotBurst.Impact(transform, point, direction, severity, paint, layer);
+        Track(RobotBurst.Impact(transform, point, direction, severity, paint, layer));
+        enabled = tornPieces.Count > 0;
+    }
+
+    // Les gerbes des pièces arrachées se montent une pièce par image, puis tout se tait : un coup brutal en ferait 27 à 31
+    // systèmes de particules dans l'image de l'impact, déjà la plus chargée. La pièce, elle, part tout de suite (Detach) ; au
+    // ralenti de la kill cam, ces quelques images ne valent que quelques millisecondes de jeu.
+    private void LateUpdate()
+    {
+        if (tornPieces.Count == 0)
+        {
+            enabled = false;
+            return;
+        }
+        TornPiece torn = tornPieces.Dequeue();
+        int layer = gameObject.layer;
+        Track(RobotBurst.Stump(torn.stumpBody, torn.stumpBody.TransformPoint(torn.stump), torn.stumpBody.TransformDirection(torn.outward), Severity, layer));
+        Track(RobotBurst.Trail(torn.piece, torn.piece.position, layer));
+    }
+
+    // Retient les systèmes et l'éclair d'une gerbe. Née en plein ralenti, elle prend sa vitesse.
+    private void Track(GameObject effect)
+    {
+        effect.GetComponentsInChildren(true, FoundSystems);
+        foreach (ParticleSystem system in FoundSystems)
+        {
+            var main = system.main;
+            main.simulationSpeed = burstSpeed;
+            burstSystems.Add(system);
+        }
+        FoundSystems.Clear();
+        BurstFlash flash = effect.GetComponentInChildren<BurstFlash>(true);
+        if (flash == null) return;
+        flash.speed = burstSpeed;
+        burstFlashes.Add(flash);
+    }
+
+    /// <summary>Le ralenti de la kill cam : chaque gerbe de l'épave avance à `speed` fois le temps (et l'éclair aussi).</summary>
+    public void SetBurstSpeed(float speed)
+    {
+        speed = Mathf.Max(0f, speed);
+        if (speed == burstSpeed) return;
+        burstSpeed = speed;
+        // Une gerbe se détruit d'elle-même au bout de ses dix secondes.
+        for (int i = burstSystems.Count - 1; i >= 0; i--)
+        {
+            ParticleSystem system = burstSystems[i];
+            if (system == null)
+            {
+                burstSystems.RemoveAt(i);
+                continue;
+            }
+            var main = system.main;
+            main.simulationSpeed = speed;
+        }
+        for (int i = burstFlashes.Count - 1; i >= 0; i--)
+        {
+            if (burstFlashes[i] != null) burstFlashes[i].speed = speed;
+            else burstFlashes.RemoveAt(i);
+        }
     }
 
     // La pièce touchée : la plus proche du point, hors des bras. La surface touchable n'a pas de bras (ils comptent pour
@@ -382,7 +456,7 @@ public class RobotCorpse : MonoBehaviour
         return true;
     }
 
-    private void Detach(RagdollPart part, Vector3 point, Vector3 direction, BurstSeverity severity, int layer)
+    private void Detach(RagdollPart part, Vector3 point, Vector3 direction, BurstSeverity severity)
     {
         if (!parts.TryGetValue(part, out Rigidbody body) || body == null) return;
         var joint = body.GetComponent<CharacterJoint>();
@@ -401,8 +475,14 @@ public class RobotCorpse : MonoBehaviour
         body.angularVelocity += Random.insideUnitSphere * 10f;
 
         Vector3 outward = parent != null ? stump - parent.worldCenterOfMass : away;
-        RobotBurst.Stump(parent != null ? parent.transform : transform, stump, outward, severity, layer);
-        RobotBurst.Trail(body.transform, stump, layer);
+        Transform stumpBody = parent != null ? parent.transform : transform;
+        tornPieces.Enqueue(new TornPiece
+        {
+            stumpBody = stumpBody,
+            stump = stumpBody.InverseTransformPoint(stump),
+            outward = stumpBody.InverseTransformDirection(outward),
+            piece = body.transform,
+        });
     }
 
     // Le bruit des pièces qui heurtent le sol (2026-10-13) : à partir d'une vitesse de choc, pas plus

@@ -15,6 +15,10 @@ public class TournamentTests
         return players;
     }
 
+    /// <summary>Ceux qui se reposent pendant un tour : les joueurs qui n'y ont pas de match.</summary>
+    private static List<ulong> Resting(List<ulong> players, List<Tournament.Match> schedule, int tour)
+        => players.FindAll(id => !schedule.Exists(m => m.tour == tour && m.Involves(id)));
+
     [Test]
     public void LaPoule_FaitSeRencontrerChacunUneFois_ParTours_EtUnSeReposeANombreImpair()
     {
@@ -37,7 +41,6 @@ public class TournamentTests
             Assert.AreEqual(count % 2 == 0 ? count - 1 : count, tours);
             var rests = new Dictionary<ulong, int>();
             foreach (ulong id in players) rests[id] = 0;
-            var resting = new List<ulong>();
             int lastTour = -1;
             for (int tour = 0; tour < tours; tour++)
             {
@@ -50,7 +53,7 @@ public class TournamentTests
                     Assert.IsTrue(seen.Add(m.a) && seen.Add(m.b), $"À {count}, un joueur joue un seul match par tour.");
                 }
                 Assert.AreEqual(Tournament.MatchesPerTour(count), matches, $"À {count}, autant de matchs à chaque tour (tour {tour}).");
-                Tournament.Resting(players, schedule, tour, null, resting);
+                List<ulong> resting = Resting(players, schedule, tour);
                 Assert.AreEqual(count % 2, resting.Count, $"À {count}, un joueur se repose à chaque tour à nombre impair, aucun sinon.");
                 foreach (ulong id in resting) rests[id]++;
             }

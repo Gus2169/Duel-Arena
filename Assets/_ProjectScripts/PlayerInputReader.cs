@@ -12,12 +12,15 @@ using UnityEngine.InputSystem;
 /// ne connaît PAS la notion de propriétaire réseau : il lit le clavier/souris physique de la
 /// machine. C'est aux consommateurs (PlayerLocomotion, WeaponController) de se garder avec
 /// IsOwner — sans quoi chaque instance de joueur affichée localement réagirait à ces inputs.
+/// PlayerLocomotion l'éteint sur les robots des autres joueurs : il n'y lit rien, et n'y crée pas
+/// sa carte d'actions (EnsureControls).
 ///
 /// NOTE : JumpPressedThisFrame n'est PAS lu depuis Update() mais recopié dans le snapshot d'input
 /// envoyé au serveur — le vault, son seul consommateur, vit dans Move() pour rester déterministe.
 /// Il faut donc le consommer APRÈS la construction du snapshot, pas avant.
 /// </summary>
 [DisallowMultipleComponent]
+[DefaultExecutionOrder(-100)] // avant tous ses consommateurs : l'input de l'image part dans le snapshot de la même image
 public class PlayerInputReader : MonoBehaviour
 {
     private PlayerControls controls;
@@ -52,7 +55,8 @@ public class PlayerInputReader : MonoBehaviour
     /// (remappage compris), pour les invites du HUD : « F », « Clic gauche »...</summary>
     public string KeyFor(string actionName)
     {
-        InputAction action = controls?.asset.FindAction(actionName);
+        EnsureControls();
+        InputAction action = controls.asset.FindAction(actionName);
         string label = action != null ? action.GetBindingDisplayString() : "";
         return string.IsNullOrEmpty(label) ? actionName : KeyLabel(label);
     }
@@ -84,17 +88,18 @@ public class PlayerInputReader : MonoBehaviour
     /// le lise (dette n° 32) ; il ne sert plus qu'au snapshot de déplacement.</summary>
     public bool FireWasPressedThisFrame => controls != null && controls.Gameplay.Fire.WasPressedThisFrame();
 
-    private void Awake()
+    /// <summary>
+    /// La carte d'actions, créée au premier usage et non dans Awake : on n'y sait pas encore à qui est le robot, et
+    /// `new PlayerControls()` désérialise sa propre copie de l'asset à chaque joueur qui arrive, sur chaque machine.
+    /// Une carte allumée voit passer tous les évènements du clavier et de la souris : seul le propriétaire en a une.
+    /// </summary>
+    private void EnsureControls()
     {
+        if (controls != null) return;
         controls = new PlayerControls();
         // Remappages faits au menu Options : chaque `new PlayerControls()` déserialise sa PROPRE
         // copie de l'asset généré, sans eux cette instance resterait sur les touches par défaut.
         GameSettings.ApplyBindingOverrides(controls.asset);
-    }
-
-    private void OnEnable()
-    {
-        ApplyMode(mode);
 
         controls.Gameplay.Crouch.performed += _ => CrouchPressedThisFrame = true;
         controls.Gameplay.Prone.performed += _ => PronePressedThisFrame = true;
@@ -102,12 +107,18 @@ public class PlayerInputReader : MonoBehaviour
         controls.Gameplay.LeanLeft.performed += _ => LeanLeftPressedThisFrame = true;
         controls.Gameplay.LeanRight.performed += _ => LeanRightPressedThisFrame = true;
         controls.Gameplay.Fire.performed += _ => FirePressedThisFrame = true;
+        if (isActiveAndEnabled) ApplyMode(mode);
+    }
+
+    private void OnEnable()
+    {
+        ApplyMode(mode);
         GameSettings.BindingsChanged += ReloadBindingOverrides;
     }
 
     private void OnDisable()
     {
-        controls.Gameplay.Disable();
+        controls?.Gameplay.Disable();
         GameSettings.BindingsChanged -= ReloadBindingOverrides;
     }
 
@@ -317,6 +328,8 @@ public class PlayerInputReader : MonoBehaviour
 
     private void Update()
     {
+        EnsureControls();
+
 #if UNITY_EDITOR
         if (AutopilotSprintDrill)
         {

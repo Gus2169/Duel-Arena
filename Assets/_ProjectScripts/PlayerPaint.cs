@@ -137,10 +137,6 @@ public class PlayerPaint : NetworkBehaviour
         propertyBlock ??= new MaterialPropertyBlock();
         foreach (Renderer r in paintedRenderers) PaintRenderer(r, paint);
         foreach (Renderer r in extraRenderers) PaintRenderer(r, paint);
-
-#if UNITY_EDITOR
-        Debug.Log($"[Peinture] Joueur {OwnerClientId} : #{ColorUtility.ToHtmlStringRGB(paint)}");
-#endif
     }
 
     private void PaintRenderer(Renderer r, Color32 paint) => PaintPart(r, paint, propertyBlock, true);

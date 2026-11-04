@@ -165,8 +165,7 @@ public class WeaponGrip
                       float rightScale = 1f)
     {
         if (!valid || settings == null) return;
-        leftWeight = Mathf.MoveTowards(leftWeight, leftWanted && model != null ? 1f : 0f,
-                                       Mathf.Max(0f, dt) / Mathf.Max(0.01f, settings.blendTime));
+        StepHold(model, leftWanted, settings, dt);
         if (model == null) return;
         RestoreWeapon();
 
@@ -214,6 +213,15 @@ public class WeaponGrip
             TwoBoneIK.Solve(leftUpper, leftLower, wrist, target, pole, poleWeight);
             leftHand.rotation = handRotation;
         }
+    }
+
+    /// <summary>Une image sans rien poser (personne ne voit ce robot) : la main gauche va quand même vers l'arme ou s'en
+    /// écarte, pour être où il faut quand on le revoit. Apply en fait autant avant de poser les mains.</summary>
+    public void StepHold(WeaponModel model, bool leftWanted, Settings settings, float dt)
+    {
+        if (settings == null) return;
+        leftWeight = Mathf.MoveTowards(leftWeight, leftWanted && model != null ? 1f : 0f,
+                                       Mathf.Max(0f, dt) / Mathf.Max(0.01f, settings.blendTime));
     }
 
     /// <summary>

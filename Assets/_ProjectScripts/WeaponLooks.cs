@@ -136,7 +136,5 @@ public struct WeaponLooks : IEquatable<WeaponLooks>
     public bool Equals(WeaponLooks other) => packed == other.packed;
     public override bool Equals(object obj) => obj is WeaponLooks other && Equals(other);
     public override int GetHashCode() => packed.GetHashCode();
-    public static bool operator ==(WeaponLooks a, WeaponLooks b) => a.packed == b.packed;
-    public static bool operator !=(WeaponLooks a, WeaponLooks b) => a.packed != b.packed;
     public override string ToString() => packed.ToString("X12");
 }

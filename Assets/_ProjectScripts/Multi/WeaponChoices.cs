@@ -12,15 +12,14 @@ public static class CommonArsenal
     /// <summary>Aucune arme tirée.</summary>
     public const byte NoSlot = byte.MaxValue;
 
-    /// <summary>Ce que le serveur publie : l'arme tirée (sa place dans l'arsenal), ses accessoires (ceux de cette place
-    /// seulement comptent), et la manche du tirage.</summary>
+    /// <summary>Ce que le serveur publie : l'arme tirée (sa place dans l'arsenal) et ses accessoires (ceux de cette place
+    /// seulement comptent).</summary>
     public struct State : INetworkSerializeByMemcpy, IEquatable<State>
     {
         public byte slot;
-        public byte drawnRound;
         public WeaponAttachments attachments;
 
-        public bool Equals(State other) => slot == other.slot && drawnRound == other.drawnRound && attachments == other.attachments;
+        public bool Equals(State other) => slot == other.slot && attachments == other.attachments;
     }
 
     /// <summary>Une nouvelle arme se tire au début des manches 1, 3, 5… : chacune sert deux manches.</summary>

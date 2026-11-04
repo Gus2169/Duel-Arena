@@ -30,8 +30,6 @@ public class PowerUpCatalog : ScriptableObject
 
     [SerializeField] private Entry[] entries = System.Array.Empty<Entry>();
 
-    public int Count => entries == null ? 0 : entries.Length;
-
     /// <summary>L'entrée `variant`, ou null hors du catalogue.</summary>
     public Entry Get(int variant) => entries != null && variant >= 0 && variant < entries.Length ? entries[variant] : null;
 

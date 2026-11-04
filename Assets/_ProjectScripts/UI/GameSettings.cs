@@ -21,9 +21,11 @@ public static class GameSettings
     private const string ResolutionIndexKey = "DuelArena.ResolutionIndex";
     private const string ResolutionWidthKey = "DuelArena.ResolutionWidth";
     private const string ResolutionHeightKey = "DuelArena.ResolutionHeight";
-    private const string VSyncKey = "DuelArena.VSync";
+    // Repartis de zéro le 2026-11-04 (les clés d'avant n'ont pas de « 2 ») : ces deux réglages ne s'appliquaient pas au
+    // lancement, et une case cochée d'office aurait mis en VSync qui n'y avait jamais joué.
+    private const string VSyncKey = "DuelArena.VSync2";
     private const string RenderStyleKey = "DuelArena.RenderStyle";
-    private const string FrameRateKey = "DuelArena.FrameRateCap";
+    private const string FrameRateKey = "DuelArena.FrameRateCap2";
     private const string BindingsKey = "DuelArena.Bindings";
     private const string HostCapacityKey = "DuelArena.Host.Capacity";
     private const string HostOrganizationKey = "DuelArena.Host.Organization";
@@ -409,24 +411,38 @@ public static class GameSettings
 
     public static bool VSync
     {
-        get => PlayerPrefs.GetInt(VSyncKey, 1) == 1;
+        get => PlayerPrefs.GetInt(VSyncKey, 0) == 1;
         set { PlayerPrefs.SetInt(VSyncKey, value ? 1 : 0); PlayerPrefs.Save(); }
     }
+
+    /// <summary>Le plafond de qui n'a rien choisi : la souris reste vive sur l'écran le plus rapide, et l'hôte, qui simule
+    /// un input par image de chaque client, ne suit pas un client à 1 000 images/s.</summary>
+    public const int DefaultFrameRateCap = 240;
 
     /// <summary>Plafond d'images/seconde ; 0 ou moins = illimité.</summary>
     public static int FrameRateCap
     {
-        get => PlayerPrefs.GetInt(FrameRateKey, 0);
+        get => PlayerPrefs.GetInt(FrameRateKey, DefaultFrameRateCap);
         set { PlayerPrefs.SetInt(FrameRateKey, value); PlayerPrefs.Save(); }
     }
 
-    /// <summary>Applique résolution/plein écran/vsync/plafond sauvegardés. Appelé au lancement de
-    /// CHAQUE scène (menu et arène) : un lancement direct sur la scène de jeu en test doit aussi
-    /// repartir des réglages choisis, pas des valeurs par défaut du Player.</summary>
-    public static void ApplyGraphics()
+    /// <summary>Le VSync et le plafond enregistrés. Le menu pose ensuite son propre plafond (MainMenuController), et rend
+    /// celui-ci en partant.</summary>
+    public static void ApplyFramePacing()
     {
         QualitySettings.vSyncCount = VSync ? 1 : 0;
         Application.targetFrameRate = FrameRateCap > 0 ? FrameRateCap : -1;
+    }
+
+    // Avant la scène : le menu pose son plafond à son réveil. Unity retient la résolution et le plein écran d'un lancement
+    // à l'autre, pas le VSync ni le plafond, qui repartaient des valeurs du Player.
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void ApplyFramePacingAtLaunch() => ApplyFramePacing();
+
+    /// <summary>Applique résolution, plein écran, VSync et plafond enregistrés : le bouton Appliquer des Options.</summary>
+    public static void ApplyGraphics()
+    {
+        ApplyFramePacing();
 
         FullScreenMode mode = Fullscreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
         Vector2Int size = Resolution;
@@ -453,21 +469,4 @@ public static class GameSettings
         PlayerPrefs.Save();
         BindingsChanged?.Invoke();
     }
-
-    public static void ResetBindingOverrides(InputActionAsset asset)
-    {
-        asset.RemoveAllBindingOverrides();
-        PlayerPrefs.DeleteKey(BindingsKey);
-        PlayerPrefs.Save();
-        BindingsChanged?.Invoke();
-    }
-
-    /// <summary>Le choix d'une rubrique de l'armurerie (AttachmentCategory) pour une place de la
-    /// panoplie : 0 = aucun accessoire (la mire de l'arme, le chargeur d'origine), sinon son rang dans
-    /// la rubrique. Lu et écrit dans WeaponAttachments.</summary>
-    public static int GetAttachment(int weaponSlot, int category)
-        => WeaponAttachments.Variant(weaponSlot, (AttachmentCategory)category);
-
-    public static void SetAttachment(int weaponSlot, int category, int variant)
-        => WeaponAttachments = WeaponAttachments.WithVariant(weaponSlot, (AttachmentCategory)category, variant);
 }

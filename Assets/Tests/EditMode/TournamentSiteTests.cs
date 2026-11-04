@@ -155,6 +155,61 @@ public class TournamentSiteTests
         }
     }
 
+    /// <summary>Le site ne s'allume que pour le Tournoi. Le tournoi fini, il reste allumé tant qu'un robot n'a pas regagné
+    /// l'arène de la scène (l'hôte peut changer de mode au salon, les joueurs encore dans la salle d'attente : ils perdraient
+    /// leur sol) ; éteint, il ne se rallume pas pour un robot loin de tout.</summary>
+    [Test]
+    public void LeSite_SAllumePourLeTournoi_EtGardeSonSolTantQuUnRobotEstDehors()
+    {
+        Assert.IsTrue(TournamentSite.WantedLive(tournament: true, live: false, robotOutside: false), "Le mode passe au Tournoi : il s'allume.");
+        Assert.IsTrue(TournamentSite.WantedLive(tournament: true, live: true, robotOutside: true), "Pendant le tournoi.");
+        Assert.IsTrue(TournamentSite.WantedLive(tournament: false, live: true, robotOutside: true), "Un autre mode, un robot encore dans la salle : le sol reste.");
+        Assert.IsFalse(TournamentSite.WantedLive(tournament: false, live: true, robotOutside: false), "Tout le monde dans l'arène de la scène : il s'éteint.");
+        Assert.IsFalse(TournamentSite.WantedLive(tournament: false, live: false, robotOutside: true), "Éteint hors du Tournoi, il le reste.");
+    }
+
+    /// <summary>Sur la scène : éteint, le site ne laisse allumés que ses mannequins et leurs parents. Ni rendu, ni lumière, ni
+    /// collider d'une copie ou de la salle n'y échappe, et aucun objet réseau n'y passe.</summary>
+    [Test]
+    public void HorsDuTournoi_SeulsLesMannequinsRestentAllumes()
+    {
+        Scene scene = Open(out bool opened);
+        try
+        {
+            TournamentSite site = SiteOf(scene, out GameObject root);
+            List<GameObject> switched = TournamentSite.Switchable(root.transform);
+            var parts = new HashSet<GameObject>(switched);
+            for (int i = 1; i < site.ArenaCount; i++)
+                Assert.IsTrue(parts.Contains(root.transform.Find($"Arène {i + 1}").gameObject), $"L'arène {i + 1} s'éteint d'un bloc.");
+
+            TrainingDummy[] dummies = root.GetComponentsInChildren<TrainingDummy>(true);
+            Assert.GreaterOrEqual(dummies.Length, 4, "Garde : le site a ses mannequins.");
+            foreach (TrainingDummy dummy in dummies)
+            {
+                for (Transform t = dummy.transform; t != null; t = t.parent)
+                    Assert.IsFalse(parts.Contains(t.gameObject), $"{dummy.name} : {t.name} doit rester allumé.");
+            }
+            foreach (GameObject part in switched)
+                Assert.IsNull(part.GetComponentInChildren<Unity.Netcode.NetworkObject>(true), $"{part.name} porte un objet réseau.");
+
+            var heavy = new List<Component>(root.GetComponentsInChildren<Renderer>(true));
+            heavy.AddRange(root.GetComponentsInChildren<Light>(true));
+            heavy.AddRange(root.GetComponentsInChildren<Collider>(true));
+            Assert.Greater(heavy.Count, 500, "Garde : le poids du site a été trouvé.");
+            foreach (Component c in heavy)
+            {
+                if (c.GetComponentInParent<Unity.Netcode.NetworkObject>(true) != null) continue;
+                bool covered = false;
+                for (Transform t = c.transform; t != null && !covered; t = t.parent) covered = parts.Contains(t.gameObject);
+                Assert.IsTrue(covered, $"{c.name} ({c.GetType().Name}) resterait allumé hors du Tournoi.");
+            }
+        }
+        finally
+        {
+            if (opened) EditorSceneManager.CloseScene(scene, true);
+        }
+    }
+
     /// <summary>Ce que le jeu attend du site : le RoundManager de la scène a le préfab de ses couloirs (un RoundManager coché
     /// « couloir », avec son objet réseau, inscrit dans les préfabs réseau), et l'interface le tableau du tournoi. Vu
     /// échouer, le préfab retiré du RoundManager.</summary>

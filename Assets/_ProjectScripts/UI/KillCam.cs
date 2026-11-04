@@ -421,6 +421,33 @@ public class KillCam : MonoBehaviour
         return id == cam.current.killer || id == cam.current.victim ? cam.rate : 1f;
     }
 
+    /// <summary>
+    /// La caméra du joueur sous une caméra qui couvre tout l'écran (la kill cam, le plateau de l'écran de fin) : elle
+    /// s'éteint, sinon chaque image dessinerait l'arène deux fois, ombres comprises, pour tout recouvrir. Son composant
+    /// seul : son transform continue de bouger (la kill cam en part et y revient), son AudioListener reste l'oreille du
+    /// joueur, et les bras, en Overlay de sa pile, ne se dessinent plus. Camera.main est alors la caméra qui couvre (elles
+    /// portent l'étiquette MainCamera) : le laser, la zone et les arcs se règlent ainsi sur ce qui rend. Hold à chaque image,
+    /// car la kill cam et le plateau peuvent se passer la main : le Release de l'un précède le Hold de l'autre.
+    /// </summary>
+    public sealed class CoveredCamera
+    {
+        /// <summary>La caméra du joueur de cette machine, ou null (pas de robot, ou il a disparu).</summary>
+        public Camera Player { get; private set; }
+
+        public void Follow(Camera player) => Player = player;
+
+        public void Hold()
+        {
+            if (Player != null && Player.enabled) Player.enabled = false;
+        }
+
+        public void Release()
+        {
+            if (Player != null) Player.enabled = true;
+            Player = null;
+        }
+    }
+
     /// <summary>La kill cam de cette partie : créée par le RoundManager de la scène à son apparition, dans sa scène (elle
     /// disparaît avec elle).</summary>
     public static KillCam Ensure(Scene scene)
@@ -449,7 +476,6 @@ public class KillCam : MonoBehaviour
         public Transform root;
         public Transform head;
         public Transform chest;
-        public Transform hips;
         public Transform weapon;
         public Transform muzzle;
     }
@@ -489,6 +515,7 @@ public class KillCam : MonoBehaviour
     private WeaponVisualFeedback killerFeedback;
     private PlayerDeath victimDeath;
     private Camera killCamera;
+    private readonly CoveredCamera playerView = new CoveredCamera();
     private bool framed;
     private bool returning;
     private bool returnBlocked;
@@ -520,6 +547,9 @@ public class KillCam : MonoBehaviour
             return;
         }
         Instance = this;
+        // Sous le noir du chargement : à l'instant du coup, tout ralentit, ce n'est pas le moment de perdre une image.
+        BuildCamera();
+        BuildStreaks();
     }
 
     private void OnEnable()
@@ -631,6 +661,7 @@ public class KillCam : MonoBehaviour
         timeline = TimelineFor(info);
         killer = k;
         victim = v;
+        playerView.Follow(GameHud.LocalPlayerCamera);
         NetworkManager nm = NetworkManager.Singleton;
         localIsKiller = nm != null && nm.LocalClientId == info.killer;
         killerController = killerState.GetComponentInChildren<WeaponController>();
@@ -678,7 +709,6 @@ public class KillCam : MonoBehaviour
         flat = flat.sqrMagnitude > 1e-6f ? flat.normalized : Vector3.forward;
         side = BestSide(Room(impactPoint, RightOf(flat)), Room(impactPoint, -RightOf(flat)), SideRoom);
 
-        EnsureCamera();
         SlowPhysics();
         flashCue = false;
         flybyCue = false;
@@ -687,7 +717,9 @@ public class KillCam : MonoBehaviour
         framed = false;
         wreckFramed = false;
         returning = false;
+#if UNITY_EDITOR
         Debug.Log($"[KillCam] {caption} : {timeline.duration:F2} s, {(bulletCam ? "la balle suivie" : "de près")}.");
+#endif
         return true;
     }
 
@@ -701,7 +733,6 @@ public class KillCam : MonoBehaviour
         robot.head = animator.GetBoneTransform(HumanBodyBones.Head);
         robot.chest = animator.GetBoneTransform(HumanBodyBones.UpperChest);
         if (robot.chest == null) robot.chest = animator.GetBoneTransform(HumanBodyBones.Chest);
-        robot.hips = animator.GetBoneTransform(HumanBodyBones.Hips);
         WeaponModel held = HeldWeapons.Visible(animator.GetBoneTransform(HumanBodyBones.RightHand));
         if (held != null)
         {
@@ -745,11 +776,12 @@ public class KillCam : MonoBehaviour
         }
         PlayCues(t);
         RobotCorpse wreck = victimDeath != null ? victimDeath.Corpse : null;
-        if (wreck != null) RobotBurst.SetSpeed(wreck.gameObject, rate);
+        RobotBurst.SetSpeed(wreck, rate);
         UpdateStreaks(t);
         Frame(t, wreck);
         UpdateOwnBody();
         killCamera.enabled = true;
+        playerView.Hold();
     }
 
     private void Frame(float t, RobotCorpse wreck)
@@ -788,7 +820,7 @@ public class KillCam : MonoBehaviour
         }
 
         // Le tireur quitte ses yeux : la caméra part de la sienne, sans coupure. Les autres arrivent sur le plan.
-        Camera player = localIsKiller && t < TakeOffTime ? Camera.main : null;
+        Camera player = localIsKiller && t < TakeOffTime ? playerView.Player : null;
         if (player != null)
         {
             float w = Mathf.SmoothStep(0f, 1f, t / TakeOffTime);
@@ -839,7 +871,7 @@ public class KillCam : MonoBehaviour
         returnFrom = killCamera.transform.position;
         returnRotation = killCamera.transform.rotation;
         returnFieldOfView = killCamera.fieldOfView;
-        Camera player = Camera.main;
+        Camera player = playerView.Player;
         Vector3 to = player != null ? player.transform.position : returnFrom;
         Vector3 back = to - impactPoint;
         returnVia = localIsKiller && hasShot ? impactPoint + back.normalized * Mathf.Min(BulletCamStop, back.magnitude) : (returnFrom + to) * 0.5f;
@@ -848,7 +880,7 @@ public class KillCam : MonoBehaviour
 
     private void Return(float u)
     {
-        Camera player = Camera.main;
+        Camera player = playerView.Player;
         if (player == null || returnBlocked) return;
         Vector3 to = player.transform.position;
         Vector3 position = ReturnPosition(returnFrom, returnVia, to, u);
@@ -943,12 +975,19 @@ public class KillCam : MonoBehaviour
     // La balle (ou le rayon) au ralenti
     // ------------------------------------------------------------------
 
-    private void EnsureStreakMaterial()
+    // La balle (et les plombs d'une décharge), son sillage : créés d'avance, éteints.
+    private void BuildStreaks()
     {
-        if (streakMaterial != null) return;
         Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
         if (shader == null) shader = Shader.Find("Sprites/Default");
         streakMaterial = new Material(shader) { name = "Balle de la kill cam" };
+        for (int i = 0; i < MaxStreaks; i++) streaks.Add(NewLine("Balle de la kill cam", streakMaterial));
+        // Une lueur ajoutée (RobotBurst.WakeMaterial) : elle s'éteint vers le noir, sans transparence.
+        wake = NewLine("Sillage de la kill cam", RobotBurst.WakeMaterial);
+        wake.startColor = WakeColor;
+        wake.endColor = Color.black;
+        wake.startWidth = WakeWidth;
+        wake.endWidth = WakeWidth * 0.25f;
     }
 
     private LineRenderer NewLine(string name, Material material)
@@ -967,9 +1006,7 @@ public class KillCam : MonoBehaviour
 
     private void PrepareStreaks(Color color)
     {
-        EnsureStreakMaterial();
         streakMaterial.color = color;
-        while (streaks.Count < Mathf.Max(1, pelletEnds.Count)) streaks.Add(NewLine("Balle de la kill cam", streakMaterial));
         float width = beam ? BeamWidth : BulletWidth;
         foreach (LineRenderer line in streaks)
         {
@@ -978,15 +1015,6 @@ public class KillCam : MonoBehaviour
             line.startWidth = width;
             line.endWidth = beam ? width : width * 0.35f;
             line.enabled = false;
-        }
-        if (wake == null)
-        {
-            // Une lueur ajoutée (RobotBurst.WakeMaterial) : elle s'éteint vers le noir, sans transparence.
-            wake = NewLine("Sillage de la kill cam", RobotBurst.WakeMaterial);
-            wake.startColor = WakeColor;
-            wake.endColor = Color.black;
-            wake.startWidth = WakeWidth;
-            wake.endWidth = WakeWidth * 0.25f;
         }
         wake.enabled = false;
     }
@@ -1041,13 +1069,14 @@ public class KillCam : MonoBehaviour
         rate = 1f;
         dim = 0f;
         if (killCamera != null) killCamera.enabled = false;
+        playerView.Release();
         RestorePhysics();
         HideOwnBody();
         ownBodyShown = false;
         if (victimDeath != null)
         {
             if (!released) victimDeath.ReleaseLiveKill();
-            if (victimDeath.Corpse != null) RobotBurst.SetSpeed(victimDeath.Corpse.gameObject, 1f);
+            RobotBurst.SetSpeed(victimDeath.Corpse, 1f);
         }
         foreach (LineRenderer line in streaks)
         {
@@ -1067,10 +1096,9 @@ public class KillCam : MonoBehaviour
     // La caméra
     // ------------------------------------------------------------------
 
-    private void EnsureCamera()
+    private void BuildCamera()
     {
-        if (killCamera != null) return;
-        var go = new GameObject("Caméra de la kill cam");
+        var go = new GameObject("Caméra de la kill cam") { tag = "MainCamera" };
         go.transform.SetParent(transform, false);
         killCamera = go.AddComponent<Camera>();
         // Tout ce qu'on voit de la partie, robots et épaves compris ; ni les bras de la vue subjective, ni les surfaces
@@ -1079,7 +1107,7 @@ public class KillCam : MonoBehaviour
         killCamera.clearFlags = CameraClearFlags.Skybox;
         killCamera.nearClipPlane = 0.05f;
         killCamera.farClipPlane = 1000f;
-        // Par-dessus la caméra du joueur, qui reste en place (son AudioListener aussi), et celle de l'écran de fin.
+        // Par-dessus celle de l'écran de fin ; celle du joueur s'éteint sous elle (CoveredCamera).
         killCamera.depth = 60f;
         killCamera.enabled = false;
         UniversalAdditionalCameraData data = killCamera.GetUniversalAdditionalCameraData();
@@ -1097,7 +1125,7 @@ public class KillCam : MonoBehaviour
     // Le corps du joueur, qu'il ne voit d'ordinaire qu'en ombre : la caméra le filme de dehors, pas de l'intérieur de sa tête.
     private void UpdateOwnBody()
     {
-        Camera player = Camera.main;
+        Camera player = playerView.Player;
         bool outside = player == null || Vector3.Distance(killCamera.transform.position, player.transform.position) >= OwnBodyDistance;
         if (outside == ownBodyShown) return;
         ownBodyShown = outside;

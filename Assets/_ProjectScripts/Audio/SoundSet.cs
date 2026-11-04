@@ -18,15 +18,6 @@ public class SoundSet
 
     public float PickPitch() => Random.Range(pitchRange.x, pitchRange.y);
 
-    /// <summary>Joué sur une source existante (celle du robot, de l'arme).</summary>
-    public void PlayOn(AudioSource source, float volumeScale = 1f)
-    {
-        AudioClip clip = Pick();
-        if (source == null || clip == null) return;
-        source.pitch = PickPitch();
-        source.PlayOneShot(clip, volume * volumeScale);
-    }
-
     /// <summary>Joué à plat, sans position : ce que seul ce joueur entend (interface, retours).</summary>
     public void Play2D(float volumeScale = 1f) => OneShotAudio.Play2D(Pick(), volume * volumeScale, PickPitch());
 

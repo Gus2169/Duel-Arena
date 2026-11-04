@@ -267,6 +267,22 @@ Shader "DuelArena/Decor"
                 return lumiere * (exp2((base + marche) * pas) / l);
             }
 
+            // Le calque d'une lumière d'appoint : à tester AVANT de la calculer. Pour le calque 2 (la salle, la tribune), la
+            // rampe générale et la plupart des lampes ne comptent pas, et leur ombre coûtait pour rien.
+            uint DecorCalqueLumiere(uint i)
+            {
+            #if USE_CLUSTER_LIGHT_LOOP
+                int index = i;
+            #else
+                int index = GetPerObjectLightIndex(i);
+            #endif
+            #if USE_STRUCTURED_BUFFER_FOR_LIGHT_DATA
+                return _AdditionalLightsBuffer[index].layerMask;
+            #else
+                return asuint(_AdditionalLightsLayerMasks[index]);
+            #endif
+            }
+
             half3 DecorCel(InputData inputData, half3 albedo, half occlusion, half3 emission)
             {
                 SurfaceData surfaceData = (SurfaceData)0;
@@ -284,12 +300,14 @@ Shader "DuelArena/Decor"
                 // niveau d'un relief (des vagues sur le sol, « pas naturel » pour l'utilisateur), et le bruit de la
                 // lumière cuite des bords dentelés (2026-10-27). Les lumières sont lues sans l'occlusion, qui
                 // s'applique ensuite.
-                Light mainLight = GetMainLight(inputData.shadowCoord, inputData.positionWS, shadowMask);
                 half3 principale = 0;
             #ifdef _LIGHT_LAYERS
-                if (IsMatchingLightLayer(mainLight.layerMask, meshRenderingLayers))
+                if (IsMatchingLightLayer(_MainLightLayerMask, meshRenderingLayers))
             #endif
+                {
+                    Light mainLight = GetMainLight(inputData.shadowCoord, inputData.positionWS, shadowMask);
                     principale = DecorDiffuse(mainLight, n);
+                }
 
                 half3 appoint = 0;
 
@@ -299,19 +317,17 @@ Shader "DuelArena/Decor"
                 [loop] for (uint lightIndex = 0; lightIndex < min(URP_FP_DIRECTIONAL_LIGHTS_COUNT, MAX_VISIBLE_LIGHTS); lightIndex++)
                 {
                     CLUSTER_LIGHT_LOOP_SUBTRACTIVE_LIGHT_CHECK
-                    Light light = GetAdditionalLight(lightIndex, inputData.positionWS, shadowMask);
             #ifdef _LIGHT_LAYERS
-                    if (IsMatchingLightLayer(light.layerMask, meshRenderingLayers))
+                    if (IsMatchingLightLayer(DecorCalqueLumiere(lightIndex), meshRenderingLayers))
             #endif
-                        appoint += DecorDiffuse(light, n);
+                        appoint += DecorDiffuse(GetAdditionalLight(lightIndex, inputData.positionWS, shadowMask), n);
                 }
             #endif
                 LIGHT_LOOP_BEGIN(pixelLightCount)
-                    Light light = GetAdditionalLight(lightIndex, inputData.positionWS, shadowMask);
             #ifdef _LIGHT_LAYERS
-                    if (IsMatchingLightLayer(light.layerMask, meshRenderingLayers))
+                    if (IsMatchingLightLayer(DecorCalqueLumiere(lightIndex), meshRenderingLayers))
             #endif
-                        appoint += DecorDiffuse(light, n);
+                        appoint += DecorDiffuse(GetAdditionalLight(lightIndex, inputData.positionWS, shadowMask), n);
                 LIGHT_LOOP_END
             #endif
             #if defined(_ADDITIONAL_LIGHTS_VERTEX)
@@ -329,6 +345,9 @@ Shader "DuelArena/Decor"
             {
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+
+                // Avant toute branche : les dérivées n'y sont pas sûres. Dans l'espace où chaque usure pose ses motifs.
+                ArmePied = 0.7 * length(fwidth(_Espace > 0.5 ? input.positionOS : input.aligne));
 
                 ArmeSurface s = DecorSurface(input.positionWS, input.aligne, input.normaleAlignee, input.positionOS,
                                              input.normalOS, input.uvBord.xy, input.uvBord.z, DecorProche(input.positionWS));

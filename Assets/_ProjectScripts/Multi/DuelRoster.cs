@@ -274,8 +274,10 @@ public static class DuelRoster
             if (!Contains(present, queue[i])) queue.RemoveAt(i);
         }
 
-        foreach (ulong id in present)
+        // Par indice : le serveur passe ici à chaque image, et un foreach sur cette interface allouerait son énumérateur.
+        for (int i = 0; i < present.Count; i++)
         {
+            ulong id = present[i];
             if (duelists.Contains(id) || queue.Contains(id)) continue;
             // Une place libre revient d'abord à ceux qui attendent déjà (FillFromQueue) : un nouveau
             // venu n'entre directement que si personne n'attend.

@@ -7,7 +7,7 @@ using UnityEngine.Rendering;
 
 /// <summary>
 /// Les vignettes du menu (2026-10-17, pour les maquettes de l'utilisateur, toutes faites d'images) : le robot
-/// dans chaque couleur, dans une pose, en pied ou en buste ; chaque arme et chaque accessoire, de profil ; et
+/// dans chaque couleur, en pied, dans son attente ; chaque arme et chaque accessoire, de profil ; et
 /// ce qu'on voit en visée (2026-10-27) : l'arme vue de l'œil qui vise, le réticule de son viseur allumé.
 ///
 /// Rendues dans le menu, à partir des vrais préfabs (le robot du préfab joueur, les armes de la panoplie,
@@ -19,33 +19,22 @@ using UnityEngine.Rendering;
 /// puis gardées : une même vignette demandée deux fois ne se rend qu'une fois. Chaque rendu passe par une
 /// texture à anticrénelage, recopiée dans une texture simple, la seule gardée.
 ///
-/// Les portraits des armes (WeaponPortraits, 2026-10-27), eux, sont rendus tous d'un coup à l'ouverture du
-/// menu, et lui survivent : la préparation d'une manche et la fenêtre du stand les montrent.
+/// Les portraits des armes (WeaponPortraits, 2026-10-27), eux, lui survivent : la préparation d'une manche et la
+/// fenêtre du stand les montrent. L'écran titre n'en montre aucun : ils se rendent un par image, à partir de la
+/// deuxième image du menu, et le menu finit d'un coup ceux qui restent quand une partie part.
 /// </summary>
 public class MenuThumbnails : MonoBehaviour
 {
-    public enum Framing
-    {
-        /// <summary>Le robot en pied.</summary>
-        FullBody,
-        /// <summary>La tête et le buste : les portraits du salon.</summary>
-        Bust,
-    }
-
     /// <summary>Une vignette du robot.</summary>
     public struct RobotShot
     {
         public Color32 paint;
-        /// <summary>La pose (l'attente si vide), prise à `time` secondes.</summary>
-        public AnimationClip pose;
+        /// <summary>L'instant de son attente (idleClip), en secondes.</summary>
         public float time;
         /// <summary>Le robot tourné de tant de degrés (0 : de face).</summary>
         public float yaw;
-        public Framing framing;
         public int width;
         public int height;
-        /// <summary>Un robot sans couleur, sombre : le duelliste qu'on ne connaît pas encore.</summary>
-        public bool silhouette;
         /// <summary>Son châssis (RobotChassis ; le CT-01 par défaut).</summary>
         public ChassisId chassis;
     }
@@ -53,15 +42,13 @@ public class MenuThumbnails : MonoBehaviour
     [Tooltip("Le préfab joueur : son enfant « Model » est copié, jamais la racine (voir CharacterPreviewController).")]
     [SerializeField] private GameObject playerPrefab;
 
-    [Tooltip("La pose par défaut des vignettes du robot : l'attente à mains nues (Y Bot@Idle).")]
+    [Tooltip("La pose des vignettes du robot : l'attente à mains nues (Y Bot@Idle).")]
     [SerializeField] private AnimationClip idleClip;
 
     [Tooltip("Vignettes rendues par image, au plus.")]
     [SerializeField, Min(1)] private int rendersPerFrame = 2;
 
     private static readonly Vector3 StageOrigin = new Vector3(0f, -1000f, 0f);
-    private static readonly Color32 SilhouettePaint = new Color32(46, 52, 60, 255);
-    private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
     /// <summary>Le champ de la caméra des vignettes de profil (degrés, vertical).</summary>
     private const float ShotFieldOfView = 22f;
@@ -88,7 +75,9 @@ public class MenuThumbnails : MonoBehaviour
     private Transform stage;
     private RenderTexture work;
 
-    public GameObject PlayerPrefab => playerPrefab;
+    private bool portraitsPending;
+    private int portraitsFromFrame;
+    private int nextPortraitSlot;
 
     private void OnDestroy()
     {
@@ -111,10 +100,17 @@ public class MenuThumbnails : MonoBehaviour
         work = null;
     }
 
-    private void Start() => PrepareWeaponPortraits();
+    private void Start()
+    {
+        nextPortraitSlot = 0;
+        portraitsPending = true;
+        portraitsFromFrame = Time.frameCount + 1;
+    }
 
     private void Update()
     {
+        if (portraitsPending && Time.frameCount >= portraitsFromFrame && !PrepareNextPortrait()) FinishPortraits();
+
         for (int i = 0; i < rendersPerFrame && queue.Count > 0; i++)
         {
             Job job = queue.Dequeue();
@@ -134,11 +130,9 @@ public class MenuThumbnails : MonoBehaviour
     /// <summary>Le robot de `shot` ; `ready` reçoit la vignette (tout de suite si elle est déjà rendue).</summary>
     public void Robot(RobotShot shot, Action<Texture> ready)
     {
-        AnimationClip pose = shot.pose != null ? shot.pose : idleClip;
-        Color32 paint = shot.silhouette ? SilhouettePaint : shot.paint;
         // Le rendu (RenderStyle) est dans la clé : une vignette faite avant un changement de rendu ne sert plus.
-        string key = $"robot/{(int)RenderStyle.Current}/{(int)shot.chassis}/{paint.r},{paint.g},{paint.b}/{(pose != null ? pose.name : "-")}/{shot.time:0.00}/{shot.yaw:0}/{shot.framing}/{shot.width}x{shot.height}";
-        Request(key, () => RenderRobot(shot, pose, paint), ready);
+        string key = $"robot/{(int)RenderStyle.Current}/{(int)shot.chassis}/{shot.paint.r},{shot.paint.g},{shot.paint.b}/{shot.time:0.00}/{shot.yaw:0}/{shot.width}x{shot.height}";
+        Request(key, () => RenderRobot(shot), ready);
     }
 
     /// <summary>L'arme `data`, dans sa finition, avec les accessoires choisis pour la place `slot` (aucun
@@ -201,42 +195,61 @@ public class MenuThumbnails : MonoBehaviour
 
     /// <summary>
     /// Les portraits des armes de la panoplie (WeaponPortraits, 2026-10-27, demandés par l'utilisateur) :
-    /// chacune de profil, sans accessoire, dans sa finition d'origine. Rendus tout de suite, hors de la file : le
-    /// stand ouvert dans l'Editor quitte le menu dès sa première image (ShootingRangeBootstrap). Une arme déjà
-    /// portraiturée ne se rend plus : une fois par lancement du jeu.
+    /// chacune de profil, sans accessoire, dans sa finition d'origine. Rend tout de suite ceux qui manquent : une
+    /// partie part, et ce n'est plus qu'ici qu'ils ont les lumières du plateau (MainMenuController ; c'est aussi le
+    /// cas du stand ouvert dans l'Editor, qui quitte le menu dès sa première image). Une arme déjà portraiturée ne se
+    /// rend plus : une fois par lancement du jeu.
     /// </summary>
     public void PrepareWeaponPortraits()
     {
+        nextPortraitSlot = 0;
+        while (PrepareNextPortrait()) { }
+        FinishPortraits();
+    }
+
+    /// <summary>Rend le prochain portrait qui manque. Faux s'il n'en manque plus.</summary>
+    public bool PrepareNextPortrait()
+    {
         WeaponController arms = playerPrefab != null ? playerPrefab.GetComponentInChildren<WeaponController>(true) : null;
-        if (arms == null) return;
+        if (arms == null) return false;
+        IReadOnlyList<WeaponData> loadout = arms.Loadout;
+        while (nextPortraitSlot < loadout.Count)
+        {
+            int slot = nextPortraitSlot++;
+            WeaponData data = loadout[slot];
+            if (data == null || WeaponPortraits.Of(data) != null) continue;
+            RenderPortrait(data, slot);
+            return true;
+        }
+        return false;
+    }
+
+    private void FinishPortraits()
+    {
+        portraitsPending = false;
+        ReleaseWork();
+    }
+
+    private void RenderPortrait(WeaponData data, int slot)
+    {
+        RenderTexture rendered = null;
         try
         {
-            IReadOnlyList<WeaponData> loadout = arms.Loadout;
-            for (int slot = 0; slot < loadout.Count; slot++)
+            rendered = RenderWeapon(data, WeaponFinish.Origine, WeaponAttachments.None, slot, WeaponPortraits.Width, WeaponPortraits.Height, whole: true);
+            if (rendered != null) WeaponPortraits.Keep(data, ToTexture(rendered, $"Portrait {data.weaponName}"));
+        }
+        catch (Exception e) { Debug.LogWarning($"[Menu] Portrait de {data.weaponName} : {e}", this); }
+        finally
+        {
+            if (rendered != null)
             {
-                WeaponData data = loadout[slot];
-                if (data == null || WeaponPortraits.Of(data) != null) continue;
-                RenderTexture rendered = null;
-                try
-                {
-                    rendered = RenderWeapon(data, WeaponFinish.Origine, WeaponAttachments.None, slot, WeaponPortraits.Width, WeaponPortraits.Height, whole: true);
-                    if (rendered != null) WeaponPortraits.Keep(data, ToTexture(rendered, $"Portrait {data.weaponName}"));
-                }
-                catch (Exception e) { Debug.LogWarning($"[Menu] Portrait de {data.weaponName} : {e}", this); }
-                finally
-                {
-                    if (rendered != null)
-                    {
-                        // Graphics.Blit (Capture) l'a laissée active.
-                        if (RenderTexture.active == rendered) RenderTexture.active = null;
-                        rendered.Release();
-                        if (Application.isPlaying) Destroy(rendered);
-                        else DestroyImmediate(rendered);
-                    }
-                }
+                // Graphics.Blit (Capture) l'a laissée active.
+                if (RenderTexture.active == rendered) RenderTexture.active = null;
+                rendered.Release();
+                if (Application.isPlaying) Destroy(rendered);
+                else DestroyImmediate(rendered);
             }
         }
-        finally { ReleaseWork(); }
     }
 
     /// <summary>Une copie de `rendered` en mémoire : elle passe d'une scène à l'autre, et se dessine aussi bien
@@ -283,7 +296,7 @@ public class MenuThumbnails : MonoBehaviour
     // Les rendus
     // ------------------------------------------------------------------
 
-    private RenderTexture RenderRobot(RobotShot shot, AnimationClip pose, Color32 paint)
+    private RenderTexture RenderRobot(RobotShot shot)
     {
         Transform assetModel = playerPrefab != null ? playerPrefab.transform.Find("Model") : null;
         if (assetModel == null) return null;
@@ -295,35 +308,25 @@ public class MenuThumbnails : MonoBehaviour
         {
             copy.transform.localRotation = Quaternion.Euler(0f, shot.yaw, 0f);
             RobotChassis.Apply(copy.transform, shot.chassis);
-            RobotAppearance.Paint(playerPrefab, assetModel, copy, paint);
+            RobotAppearance.Paint(playerPrefab, assetModel, copy, shot.paint);
 
             Animator animator = copy.GetComponent<Animator>();
-            if (animator != null && pose != null)
+            if (animator != null && idleClip != null)
             {
                 animator.applyRootMotion = false;
                 animator.runtimeAnimatorController = null;
                 graph = PlayableGraph.Create("Vignette");
                 graph.SetTimeUpdateMode(DirectorUpdateMode.Manual);
                 var output = AnimationPlayableOutput.Create(graph, "Animation", animator);
-                var clip = AnimationClipPlayable.Create(graph, pose);
-                clip.SetTime(Mathf.Clamp(shot.time, 0f, pose.length));
+                var clip = AnimationClipPlayable.Create(graph, idleClip);
+                clip.SetTime(Mathf.Clamp(shot.time, 0f, idleClip.length));
                 output.SetSourcePlayable(clip);
                 graph.Evaluate(0f);
             }
 
             Bounds bounds = PreviewStage.ComputeWorldBounds(copy.transform);
-            Vector3 center = bounds.center;
-            float halfHeight = bounds.extents.y;
             float radius = new Vector2(bounds.extents.x, bounds.extents.z).magnitude;
-            if (shot.framing == Framing.Bust)
-            {
-                // De la tête au milieu du buste.
-                float top = bounds.max.y;
-                halfHeight = bounds.size.y * 0.21f;
-                center = new Vector3(center.x, top - halfHeight * 1.05f, center.z);
-                radius = Mathf.Min(radius, halfHeight * 1.3f);
-            }
-            return Shoot(center, halfHeight, radius, new Vector3(0f, 0.12f, 1f), shot.width, shot.height, 1.06f);
+            return Shoot(bounds.center, bounds.extents.y, radius, new Vector3(0f, 0.12f, 1f), shot.width, shot.height, 1.06f);
         }
         finally
         {

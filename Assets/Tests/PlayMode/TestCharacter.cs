@@ -41,13 +41,11 @@ public static class TestCharacter
         animator.applyRootMotion = false;
         animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
 
-        // Les armes en main, comme PlayerAnimator les met au lancement (2026-10-15 : le préfab ne
-        // porte plus que leur point de prise, « PriseArme ») : le modèle par défaut de chaque classe,
-        // la première visible.
+        // L'arme en main, comme PlayerAnimator la met au lancement (2026-10-15 : le préfab ne porte plus
+        // que son point de prise, « PriseArme ») : la première, sans finition ni accessoire.
         WeaponController weapon = prefab.GetComponentInChildren<WeaponController>(true);
         Transform hand = animator.GetBoneTransform(HumanBodyBones.RightHand);
-        HeldWeapons.Build(hand, weapon.Loadout, WeaponLooks.Default);
-        HeldWeapons.Show(hand, weapon.Loadout, weapon.DataOf(0));
+        HeldWeapons.Show(hand, weapon.Loadout, weapon.DataOf(0), WeaponLooks.Default, WeaponAttachments.None);
         return instance;
     }
 }

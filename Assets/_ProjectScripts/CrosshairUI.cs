@@ -204,14 +204,18 @@ public class CrosshairUI : MonoBehaviour
         // Le gant seul (la dernière marche du Gun Game, 2026-11-02) : le point du centre, comme un spectateur, et
         // « Gant » à la place des munitions.
         bool gloveOnly = !spectator && weapon != null && weapon.DisplayedUnarmed;
-        bool armed = !spectator && !gloveOnly && weapon != null && weapon.MagazineSize > 0;
+        // Le chargeur et la chaleur se comptent avec les accessoires : une fois par image, pour le réticule, les munitions et l'invite.
+        int magazineSize = !spectator && !gloveOnly && weapon != null ? weapon.MagazineSize : 0;
+        bool armed = magazineSize > 0;
+        bool hot = armed && weapon.DisplayedUsesHeat;
+        bool overheated = hot && weapon.DisplayedOverheated;
         bool scoped = !spectator && firstPersonView != null && firstPersonView.Scoped;
 
         UpdateReticle(center, height, spectator || gloveOnly, armed, scoped);
         UpdateScope(center, scoped);
         UpdateStatic();
-        UpdateAmmo(armed, gloveOnly);
-        UpdateHint(center, armed);
+        UpdateAmmo(armed, gloveOnly, magazineSize, hot, overheated);
+        UpdateHint(center, armed, hot, overheated);
     }
 
     private void UpdateReticle(Vector2 center, float height, bool spectator, bool armed, bool scoped)
@@ -224,35 +228,37 @@ public class CrosshairUI : MonoBehaviour
         bool sightOnAxis = firstPersonView != null && firstPersonView.SightOnAxis;
         bool hipCrosshair = firstPersonView == null || firstPersonView.HipCrosshair;
 
-        reticle.center = center;
-        reticle.crosshair = armed && !scoped && !sightOnAxis && !aiming && hipCrosshair;
-        reticle.spectatorDot = spectator;
-        reticle.gap = Mathf.Max(hipGap, ConeFraction(weapon != null ? weapon.HipSpreadDegrees : 0f, aimCamera.fieldOfView) * height);
-        reticle.lineLength = hipLineLength;
-        reticle.thickness = lineThickness;
-        reticle.centerDot = showCenterDot;
-        reticle.dotSize = centerDotSize;
-        reticle.color = crosshairColor;
-        reticle.barOffset = BarOffset;
+        ref CombatReticle.Look look = ref reticle.look;
+        look.center = center;
+        look.crosshair = armed && !scoped && !sightOnAxis && !aiming && hipCrosshair;
+        look.spectatorDot = spectator;
+        // Le cône se compte avec les accessoires, et seule la croix le montre.
+        if (look.crosshair) look.gap = Mathf.Max(hipGap, ConeFraction(weapon.HipSpreadDegrees, aimCamera.fieldOfView) * height);
+        look.lineLength = hipLineLength;
+        look.thickness = lineThickness;
+        look.centerDot = showCenterDot;
+        look.dotSize = centerDotSize;
+        look.color = crosshairColor;
+        look.barOffset = BarOffset;
 
         // La barre sous le réticule : le rechargement, ou la charge du tir (le FX-2, 2026-10-26), lunette comprise.
         // Pleine, la charge change de couleur : lâcher la gâchette tire un coup qui tue au buste.
         float charge = armed ? weapon.DisplayedCharge : 0f;
         if (armed && weapon.IsReloading)
         {
-            reticle.barProgress = weapon.ReloadProgress;
-            reticle.barColor = crosshairColor;
+            look.barProgress = weapon.ReloadProgress;
+            look.barColor = crosshairColor;
         }
         else if (charge > 0f)
         {
-            reticle.barProgress = charge;
-            reticle.barColor = charge >= 1f ? chargeFullColor : crosshairColor;
+            look.barProgress = charge;
+            look.barColor = charge >= 1f ? chargeFullColor : crosshairColor;
         }
-        else reticle.barProgress = -1f;
+        else look.barProgress = -1f;
 
-        reticle.markerKind = (matchState == null || !matchState.IsSpectator) && HitMarker.Alpha(markerKind, markerAge) > 0f ? (int)markerKind : -1;
-        reticle.markerAge = markerAge;
-        reticle.MarkDirtyRepaint();
+        look.markerKind = (matchState == null || !matchState.IsSpectator) && HitMarker.Alpha(markerKind, markerAge) > 0f ? (int)markerKind : -1;
+        look.markerAge = markerAge;
+        reticle.RepaintIfChanged();
     }
 
     private void UpdateScope(Vector2 center, bool scoped)
@@ -262,7 +268,7 @@ public class CrosshairUI : MonoBehaviour
         scope.center = center;
         scope.diameter = scopeDiameter;
         scope.reticleColor = scopeReticleColor;
-        scope.MarkDirtyRepaint();
+        scope.RepaintIfChanged();
     }
 
     private void UpdateStatic()
@@ -278,7 +284,7 @@ public class CrosshairUI : MonoBehaviour
 
     /// <summary>Les munitions, ou la chaleur d'une arme laser (GDD § 15, 2026-10-26) : sur un fond sombre, en bas à
     /// droite, comme la vie en bas à gauche ; au gant seul, son nom. Les textes ne sont refaits que quand ils changent.</summary>
-    private void UpdateAmmo(bool armed, bool gloveOnly)
+    private void UpdateAmmo(bool armed, bool gloveOnly, int magazineSize, bool hot, bool overheated)
     {
         SetVisible(ammoPanel, armed || gloveOnly);
         if (!armed && !gloveOnly) return;
@@ -296,12 +302,10 @@ public class CrosshairUI : MonoBehaviour
             return;
         }
 
-        bool hot = weapon.DisplayedUsesHeat;
         SetVisible(ammoRow, !hot);
         SetVisible(heatRow, hot);
         if (hot)
         {
-            bool overheated = weapon.DisplayedOverheated;
             int state = overheated ? 1 : 0;
             if (state != shownHeatState)
             {
@@ -318,26 +322,25 @@ public class CrosshairUI : MonoBehaviour
             return;
         }
 
-        int ammo = weapon.DisplayedAmmo, size = weapon.MagazineSize;
+        int ammo = weapon.DisplayedAmmo;
         if (ammo != shownAmmo)
         {
             shownAmmo = ammo;
             ammoValueLabel.text = ammo.ToString();
             ammoPanel.EnableInClassList("combat-ammo--empty", ammo == 0);
         }
-        if (size != shownSize)
+        if (magazineSize != shownSize)
         {
-            shownSize = size;
-            ammoSizeLabel.text = "/ " + size;
+            shownSize = magazineSize;
+            ammoSizeLabel.text = "/ " + magazineSize;
         }
     }
 
     /// <summary>Chargeur vide (ou arme laser surchauffée), sans rechargement en cours : la touche, sous le
     /// réticule. Une arme laser ne se vide d'elle-même que si rien n'interrompt sa vidange.</summary>
-    private void UpdateHint(Vector2 center, bool armed)
+    private void UpdateHint(Vector2 center, bool armed, bool hot, bool overheated)
     {
-        bool hot = armed && weapon.DisplayedUsesHeat;
-        bool empty = armed && (hot ? weapon.DisplayedOverheated : weapon.DisplayedAmmo == 0);
+        bool empty = armed && (hot ? overheated : weapon.DisplayedAmmo == 0);
         bool show = empty && !weapon.IsReloading && !(weapon.DisplayedCharge > 0f);
         SetVisible(emptyHint, show);
         // Le texte est refait à chaque apparition : l'arme (balles ou chaleur) et la touche ont pu changer.

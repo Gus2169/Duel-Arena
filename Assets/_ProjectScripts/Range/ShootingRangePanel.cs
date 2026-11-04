@@ -117,7 +117,14 @@ public class ShootingRangePanel : MonoBehaviour
 
     private void Update()
     {
-        if (!FindPlayer()) return;
+        if (FindPlayer()) HoldCommands();
+        // Fermée, la fenêtre n'a rien à mettre en page : Unity n'a pas à lui envoyer cette passe à chaque image. Posé après B,
+        // pour qu'ouverte à cette image elle s'y mette en page.
+        useGUILayout = IsOpen;
+    }
+
+    private void HoldCommands()
+    {
         // B ouvre et ferme la fenêtre ; Échap est lu par le menu de pause, qui la referme d'abord.
         Keyboard keyboard = Keyboard.current;
         if (keyboard != null && keyboard.bKey.wasPressedThisFrame && !PauseMenu.IsOpen) SetOpen(!IsOpen);
@@ -152,7 +159,9 @@ public class ShootingRangePanel : MonoBehaviour
 
     private void OnGUI()
     {
-        if (!IsOpen || weapon == null) return;
+        // Ouverte après notre Update (le bouton du menu de pause), elle attend l'image suivante : GUILayout ne marche pas
+        // sans sa passe de mise en page.
+        if (!IsOpen || weapon == null || !useGUILayout) return;
         BuildStyles();
         window.x = (Screen.width - window.width) * 0.5f;
         window.y = (Screen.height - window.height) * 0.5f;

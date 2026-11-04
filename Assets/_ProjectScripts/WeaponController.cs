@@ -323,7 +323,6 @@ public class WeaponController : NetworkBehaviour
     /// <summary>Balles dans le chargeur de l'arme en main, telles que cette machine doit les montrer.</summary>
     public int DisplayedAmmo => ShownMagazine.ammo;
     public int MagazineSize => MagazineSizeOf(DataSlot(DisplayedSlot));
-    public float ReloadDuration => ReloadDurationOf(DataSlot(DisplayedSlot));
     /// <summary>Le temps d'épaulement de l'arme en main, accessoires compris (la vue subjective).</summary>
     public float AimTime => AimTimeOf(DataSlot(DisplayedSlot));
 
@@ -435,18 +434,20 @@ public class WeaponController : NetworkBehaviour
 
     private bool CompleteIfDue(ref MagazineState m, int slot, double now)
     {
+        // Rien à finir, le cas de presque toutes les images : la taille du chargeur et la durée d'un rechargement se
+        // comptent avec les accessoires, inutile de les compter pour rien.
+        if (m.reloadEndsAt <= 0.0 || now < m.reloadEndsAt) return false;
         if (HeatRulesOf(slot).Active) return CompleteVentIfDue(ref m, now);
         WeaponData data = DataOf(slot);
         return CompleteReloadIfDue(ref m, now, MagazineSizeOf(slot), data != null && data.reloadPerRound, ReloadDurationOf(slot));
     }
 
     /// <summary>L'arme de la place `slot` peut-elle tirer d'après ce chargeur ? Sortie, balles (ou
-    /// chaleur d'une arme laser), pas de rechargement complet en cours. Le confort du joueur : le
-    /// serveur refait le compte (ConsumeShot).</summary>
-    private bool CanFire(in MagazineState m, int slot, double now)
+    /// chaleur d'une arme laser, `heat` : HeatRulesOf), pas de rechargement complet en cours. Le confort
+    /// du joueur : le serveur refait le compte (ConsumeShot).</summary>
+    private bool CanFire(in MagazineState m, int slot, double now, in HeatRules heat)
     {
         if (now < m.readyAt) return false;
-        HeatRules heat = HeatRulesOf(slot);
         if (heat.Active) return m.reloadEndsAt <= 0.0 && !IsOverheated(m, now, heat);
         WeaponData data = DataOf(slot);
         return m.ammo > 0 && (m.reloadEndsAt <= 0.0 || (data != null && data.reloadPerRound));
@@ -554,7 +555,7 @@ public class WeaponController : NetworkBehaviour
     public bool LocalChargeAllowed(bool fireHeld)
     {
         WeaponData data = LocalData;
-        if (!fireHeld || data == null || IsSpectatorRole) return false;
+        if (!fireHeld || data == null || !data.UsesCharge || IsSpectatorRole) return false;
         if (!RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead)) return false;
         if (locomotion != null && locomotion.TimeSinceSprint < data.sprintToFireTime) return false;
         return CanFireBy(localMagazine, DataSlot(localMagazine.equipped), MagazineClock);
@@ -566,7 +567,7 @@ public class WeaponController : NetworkBehaviour
     public bool ServerChargeAllowed(bool fireHeld)
     {
         WeaponData data = ServerData;
-        if (!fireHeld || data == null || IsSpectatorRole) return false;
+        if (!fireHeld || data == null || !data.UsesCharge || IsSpectatorRole) return false;
         if (!RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead)) return false;
         if (locomotion != null && locomotion.ServerTimeSinceSprint < data.sprintToFireTime - SprintOutTolerance) return false;
         MagazineState magazine = networkMagazine.Value;
@@ -578,7 +579,7 @@ public class WeaponController : NetworkBehaviour
     private bool CanFireBy(MagazineState magazine, int slot, double now)
     {
         CompleteIfDue(ref magazine, slot, now);
-        return CanFire(magazine, slot, now);
+        return CanFire(magazine, slot, now, HeatRulesOf(slot));
     }
 
     /// <summary>La charge (0 à 1) du tir de l'arme en main, à montrer : la jauge du HUD, l'éclat au canon,
@@ -835,7 +836,7 @@ public class WeaponController : NetworkBehaviour
 
     private void HandlePowerUpInput()
     {
-        PowerUpCandidate = FindPowerUp(transform.root.position, powerUpReach);
+        PowerUpCandidate = ArenaItem.Spawned.Count > 0 ? FindPowerUp(transform.root.position, powerUpReach) : null;
         bool wants = input.InteractPressedThisFrame;
 #if UNITY_EDITOR
         if (AutopilotPickUpPowerUps) wants = true;
@@ -868,8 +869,11 @@ public class WeaponController : NetworkBehaviour
     {
         ArenaItem best = null;
         float bestDistance = reach;
-        foreach (ArenaItem item in ArenaItem.Spawned)
+        // Par indice : chez le joueur, à chaque image, un foreach sur cette interface allouerait son énumérateur.
+        IReadOnlyList<ArenaItem> items = ArenaItem.Spawned;
+        for (int i = 0; i < items.Count; i++)
         {
+            ArenaItem item = items[i];
             if (item == null || item.Kind != ArenaItemKind.PowerUp || !item.IsResting) continue;
             Vector3 to = item.RestPosition - feet;
             if (Mathf.Abs(to.y) > 2f) continue;
@@ -930,7 +934,9 @@ public class WeaponController : NetworkBehaviour
                 item.ServerConsume();
                 if (locomotion != null) locomotion.ServerScheduleWeaponSlot(action.inputSequence + 1, (byte)slot);
                 PowerUpTakenClientRpc();
+#if UNITY_EDITOR
                 Debug.Log($"[Spectateurs] {PlayerMatchState.NameOf(OwnerClientId)} prend {item.DisplayName}.");
+#endif
             }
         }
         serverArmsActions.Enqueue(action);
@@ -1060,7 +1066,7 @@ public class WeaponController : NetworkBehaviour
         // jamais en sprint ni en franchissant un obstacle (2026-10-11), ni avant que l'arme soit
         // sortie. Confort local : on ne déclenche même pas le recul ni le son hors manche. Le vrai
         // verrou est côté serveur dans ServerFire — celui-ci n'est qu'une convention client.
-        bool armed = CanFire(localMagazine, slot, MagazineClock);
+        bool armed = CanFire(localMagazine, slot, MagazineClock, heat);
         bool vaulting = locomotion.IsVaulting;
 #if UNITY_EDITOR
         if (PlayerLocomotion.DebugVaultIgnoresRules) vaulting = false; // client tricheur simulé
@@ -1129,6 +1135,7 @@ public class WeaponController : NetworkBehaviour
         // le serveur, il retire les zones du tireur (2026-10-16 : le regard baissé au plus bas, la
         // balle se plantait dans ses propres jambes, à l'image et au son).
         var impacts = new ShotImpactSounds(data);
+        float flashScale = FlashScaleOf(firedSlot);
         PlayerHitbox ownHitbox = locomotion != null ? locomotion.Hitbox : null;
         bool ownQueryable = ownHitbox != null && ownHitbox.IsQueryable;
         if (ownQueryable) ownHitbox.SetQueryable(false);
@@ -1148,14 +1155,16 @@ public class WeaponController : NetworkBehaviour
                     hitSomething = true;
                     onBody = true;
                 }
+#if UNITY_EDITOR
                 Debug.DrawLine(origin, end, hitSomething ? Color.red : Color.gray, 0.5f);
+#endif
                 shownEnds.Add(end);
                 if (visualFeedback != null)
                 {
                     // Le rayon des armes laser se voit (plus épais chargé) ; une arme à balles n'a que sa
                     // flamme de bouche.
                     if (data.shotIsBeam)
-                        visualFeedback.SpawnTracer(origin, end, data.tracerColor, BeamWeight(data, charge) * FlashScaleOf(firedSlot));
+                        visualFeedback.SpawnTracer(origin, end, data.tracerColor, BeamWeight(data, charge) * flashScale);
                 }
                 if (hitSomething)
                 {
@@ -1168,7 +1177,7 @@ public class WeaponController : NetworkBehaviour
         {
             if (ownQueryable) ownHitbox.SetQueryable(true);
         }
-        if (visualFeedback != null && !data.shotIsBeam) SpawnOwnMuzzleFlash(FlashScaleOf(firedSlot));
+        if (visualFeedback != null && !data.shotIsBeam) SpawnOwnMuzzleFlash(flashScale);
         ShotShown?.Invoke(this, origin, shownEnds);
 
         if (NetworkObject != null)
@@ -1530,6 +1539,30 @@ public class WeaponController : NetworkBehaviour
         }
     }
 
+    /// <summary>Le temps minimal (s) entre deux lignes de refus du serveur.</summary>
+    private const float RefusalReportPeriod = 2f;
+    private static int unreportedRefusals;
+    private static float nextRefusalReportAt;
+
+    /// <summary>
+    /// Serveur : une demande d'un joueur refusée (`what` : un texte fixe). Un joueur honnête n'en a presque jamais, et le
+    /// journal d'un testeur doit pouvoir le dire, builds comprises. Mais un avertissement y garde sa trace de pile, chère sur le
+    /// fil de l'hôte, et un client modifié en demanderait sans borne : une ligne sans pile, au plus une par
+    /// RefusalReportPeriod en temps réel, qui compte les refus depuis la précédente. Le détail de chacun est dans l'Editor.
+    /// </summary>
+    public static void ServerNoteRefusal(string what) => ServerNoteRefusal(what, Time.realtimeSinceStartup);
+
+    /// <summary>La même chose à l'instant `now` (s, temps réel).</summary>
+    public static void ServerNoteRefusal(string what, float now)
+    {
+        unreportedRefusals++;
+        // Une échéance plus lointaine que la période vient d'une session d'avant : le rechargement de domaine est désactivé.
+        if (now < nextRefusalReportAt && nextRefusalReportAt - now <= RefusalReportPeriod) return;
+        nextRefusalReportAt = now + RefusalReportPeriod;
+        Debug.Log($"[Serveur] Refus ×{unreportedRefusals} (le dernier : {what}).");
+        unreportedRefusals = 0;
+    }
+
     /// <summary>
     /// Autorité serveur du tir, AVEC compensation de latence. Le serveur refait seul son raycast
     /// depuis l'origin/direction fournis, mais contre l'état des adversaires tel qu'il était au
@@ -1588,8 +1621,9 @@ public class WeaponController : NetworkBehaviour
         // repérer un désaccord (client modifié, ou changement d'arme refusé).
         if (action.slot != magazine.equipped)
         {
-            Debug.LogWarning($"[Serveur] Tir rejeté : le joueur annonce l'arme {action.slot + 1}, le serveur lui sait la {magazine.equipped + 1} en main.", this);
+            ServerNoteRefusal("tir d'une autre arme que celle en main");
 #if UNITY_EDITOR
+            Debug.LogWarning($"[Serveur] Tir rejeté : le joueur annonce l'arme {action.slot + 1}, le serveur lui sait la {magazine.equipped + 1} en main.", this);
             diagRejectedAmmo++;
             DiagReportIfDue();
 #endif
@@ -1631,7 +1665,10 @@ public class WeaponController : NetworkBehaviour
         float timeSinceSprint = ServerTimeSinceSprint(action);
         if (locomotion != null && timeSinceSprint < data.sprintToFireTime - SprintOutTolerance)
         {
+            ServerNoteRefusal("tir en sortie de sprint");
+#if UNITY_EDITOR
             Debug.LogWarning($"[Serveur] Tir rejeté : sortie de sprint ({timeSinceSprint * 1000f:F0} ms sur {data.sprintToFireTime * 1000f:F0}).", this);
+#endif
             return;
         }
 
@@ -1639,8 +1676,9 @@ public class WeaponController : NetworkBehaviour
         // compte est celui qui suit le dernier input reçu avant le tir, que la file a attendu.
         if (locomotion != null && locomotion.ServerInputFlags(action.inputSequence, out bool vaulting, out _) && vaulting)
         {
-            Debug.LogWarning("[Serveur] Tir rejeté : le joueur franchissait un obstacle.", this);
+            ServerNoteRefusal("tir en franchissant un obstacle");
 #if UNITY_EDITOR
+            Debug.LogWarning("[Serveur] Tir rejeté : le joueur franchissait un obstacle.", this);
             diagRejectedVault++;
             DiagReportIfDue();
 #endif
@@ -1703,8 +1741,9 @@ public class WeaponController : NetworkBehaviour
         // du rewind connaît déjà mais que cette validation n'utilise pas encore.
         if ((origin - transform.root.position).sqrMagnitude > maxOriginDistanceFromPlayer * maxOriginDistanceFromPlayer)
         {
-            Debug.LogWarning($"[Serveur] Tir rejeté : origine invalide (à {Vector3.Distance(origin, transform.root.position):F1} m du joueur, max {maxOriginDistanceFromPlayer} m). Soit un client modifié, soit la tolérance est trop serrée pour la latence testée.", this);
+            ServerNoteRefusal("tir d'une origine trop loin du joueur");
 #if UNITY_EDITOR
+            Debug.LogWarning($"[Serveur] Tir rejeté : origine invalide (à {Vector3.Distance(origin, transform.root.position):F1} m du joueur, max {maxOriginDistanceFromPlayer} m). Soit un client modifié, soit la tolérance est trop serrée pour la latence testée.", this);
             diagRejectedOrigin++;
             DiagReportIfDue();
 #endif
@@ -1747,37 +1786,39 @@ public class WeaponController : NetworkBehaviour
         DiagReportIfDue();
 #endif
 
-        var rewoundPlayers = new List<PlayerLocomotion>();
+        // Réutilisés d'un tir à l'autre, et vidés ici plutôt qu'à la fin : une exception ne les laisse pas pleins.
+        rewoundPlayers.Clear();
+        shotTargets.Clear();
+        shotKills.Clear();
+        int count = data.PelletCount;
+        if (shotEnds.Length < count)
+        {
+            shotEnds = new Vector3[count];
+            shotNormals = new Vector3[count];
+        }
 #if UNITY_EDITOR
         bool diagHitWithRewind = false;
         Vector3 diagPastCenter = Vector3.zero;
+        var diagZones = new System.Text.StringBuilder();
 #endif
         // Ce que le tir a fait, annoncé une fois le rewind fini.
-        Vector3[] ends = null;
-        Vector3[] normals = null;
         int hitMask = 0;
         int bodyMask = 0; // les plombs arrêtés par un robot (le son de l'impact, 2026-10-13)
         bool hitSomeone = false;
         bool headHit = false;
         bool killed = false;
-        var kills = new List<KilledTarget>();
         try
         {
             if (NetworkManager.ServerTime.Time - targetTime > 1e-4)
             {
-                foreach (PlayerLocomotion other in PlayerLocomotion.SpawnedPlayers)
-                {
-                    if (other == null || other == locomotion) continue;
-                    other.ServerBeginRewind(targetTime);
-                    rewoundPlayers.Add(other);
-                }
+                ServerRewindReachable(locomotion, OwnerClientId, targetTime, rewoundPlayers);
 
                 // Indispensable : Physics.autoSyncTransforms vaut false par défaut depuis Unity
                 // 2018, donc déplacer un transform ne met PAS à jour la scène physique utilisée par
                 // les requêtes. Sans cette synchronisation, le raycast ci-dessous verrait encore les
                 // hitbox à leur position actuelle et tout le rewind serait silencieusement sans
                 // effet — le pire des échecs, parce qu'il ne se voit pas.
-                Physics.SyncTransforms();
+                if (rewoundPlayers.Count > 0) Physics.SyncTransforms();
 
 #if UNITY_EDITOR
                 // Centre du hitbox à sa position PASSÉE, capturé pendant que le rewind est appliqué.
@@ -1788,28 +1829,27 @@ public class WeaponController : NetworkBehaviour
                 }
 #endif
             }
+            else
+            {
+                // Sans recul (l'hôte vise au présent), les zones ont quand même bougé depuis le dernier pas
+                // physique : sans ça, son tir jugeait un robot jusqu'à 20 cm derrière ce qu'il voyait.
+                Physics.SyncTransforms();
+            }
 
             // Chaque plomb (ou la balle) est résolu seul ; les dégâts s'additionnent par cible et
             // tombent en une fois.
-            int count = data.PelletCount;
             ServerShotFired?.Invoke(this, count);
-            ends = new Vector3[count];
-            normals = new Vector3[count];
-            var damage = new Dictionary<Health, float>();
-            var firstHitPoint = new Dictionary<Health, Vector3>();
-            var headTargets = new HashSet<Health>();
-            var zones = new System.Text.StringBuilder();
             bool headshotsOnly = RoundManager.HeadshotsOnlyFor(OwnerClientId);
             for (int i = 0; i < count; i++)
             {
                 Vector3 pellet = PelletDirection(shot, data.PelletOffset(i, aiming, hipScale));
-                bool hitSomething = ResolveShot(data, origin, pellet, out ends[i], out normals[i], out Collider bodyHit, out float distance);
+                bool hitSomething = ResolveShot(data, origin, pellet, out shotEnds[i], out shotNormals[i], out Collider bodyHit, out float distance);
                 if (hitSomething && i < 31) hitMask |= 1 << i;
                 if (bodyHit != null && i < 31) bodyMask |= 1 << i;
 #if UNITY_EDITOR
                 if (i == 0) diagHitWithRewind = bodyHit != null;
 #endif
-                if (hitSomething && bodyHit == null) ServerWorldImpact?.Invoke(ends[i], normals[i]);
+                if (hitSomething && bodyHit == null) ServerWorldImpact?.Invoke(shotEnds[i], shotNormals[i]);
                 if (bodyHit == null) continue;
                 Health target = bodyHit.GetComponentInParent<Health>();
                 if (target == null)
@@ -1821,53 +1861,51 @@ public class WeaponController : NetworkBehaviour
                     continue;
                 }
                 PlayerHitboxZone zone = bodyHit.GetComponent<PlayerHitboxZone>();
+                HitboxZoneType zoneType = zone != null ? zone.Zone : HitboxZoneType.Torso;
                 // Tête seulement (GDD § 11) : un impact ailleurs qu'à la tête ne blesse pas.
-                if (!Hurts(zone != null ? zone.Zone : HitboxZoneType.Torso, headshotsOnly))
-                {
-                    zones.Append(zone != null ? zone.Zone.ToString() : "?").Append("(sans effet) ");
-                    continue;
-                }
-                AddDamage(damage, data, bodyHit, distance, charge, falloff);
-                if (!firstHitPoint.ContainsKey(target)) firstHitPoint[target] = ends[i];
+                bool hurts = Hurts(zoneType, headshotsOnly);
+#if UNITY_EDITOR
+                diagZones.Append(zone != null ? zone.Zone.ToString() : "?").Append(hurts ? " " : "(sans effet) ");
+#endif
+                if (!hurts) continue;
+                float amount = data.DamageAt(zoneType, distance, charge, falloff);
+                if (!shotTargets.TryGetValue(target, out ShotTarget hit)) hit.firstHit = shotEnds[i];
+                hit.damage += amount;
                 if (zone != null && zone.Zone == HitboxZoneType.Head)
                 {
                     headHit = true;
-                    headTargets.Add(target);
+                    hit.head = true;
                 }
-                if (ServerHitRegistered != null)
-                {
-                    HitboxZoneType zoneType = zone != null ? zone.Zone : HitboxZoneType.Torso;
-                    ServerHitRegistered(target, zoneType, data.DamageAt(zoneType, distance, charge, falloff), distance);
-                }
-                zones.Append(zone != null ? zone.Zone.ToString() : "?").Append(' ');
+                shotTargets[target] = hit;
+                ServerHitRegistered?.Invoke(target, zoneType, amount, distance);
             }
 
             float dealt = 0f;
-            foreach (var pair in damage)
+            foreach (var pair in shotTargets)
             {
                 // Au Tournoi, on ne blesse que son adversaire (la salle d'attente n'a pas de surface touchable).
                 if (!RoundManager.MayHurt(OwnerClientId, pair.Key)) continue;
                 float before = pair.Key.Current;
                 // Un tir qui a touché la tête de sa cible est retenu comme tel s'il la tue (le Tag Team le compte plus).
-                pair.Key.ApplyDamage(pair.Value, transform.root.gameObject,
-                                     headTargets.Contains(pair.Key) ? Health.DamageCause.HeadShot : Health.DamageCause.Shot);
+                pair.Key.ApplyDamage(pair.Value.damage, transform.root.gameObject,
+                                     pair.Value.head ? Health.DamageCause.HeadShot : Health.DamageCause.Shot);
                 dealt += Mathf.Max(0f, before - pair.Key.Current);
 #if UNITY_EDITOR
                 diagHits++;
+                Debug.Log($"[Serveur] {data.weaponName} : {pair.Key.transform.root.name} touché ({diagZones.ToString().TrimEnd()}) pour {pair.Value.damage:F0} dégâts (vie restante : {pair.Key.Current}).");
 #endif
-                Debug.Log($"[Serveur] {data.weaponName} : {pair.Key.transform.root.name} touché ({zones.ToString().TrimEnd()}) pour {pair.Value:F0} dégâts (vie restante : {pair.Key.Current}).");
 
                 // Le coup qui tue : l'épave part dans le sens du tir, d'autant plus fort que le tir
                 // était lourd ; le pompe la projette (KillImpulse ; PlayerDeath, cosmétique).
                 if (before > 0f && pair.Key.IsDead) killed = true;
                 if (before > 0f && pair.Key.IsDead && pair.Key.TryGetComponent(out PlayerDeath death))
                 {
-                    Vector3 point = firstHitPoint.TryGetValue(pair.Key, out Vector3 p) ? p : pair.Key.transform.position + Vector3.up;
-                    kills.Add(new KilledTarget
+                    Vector3 point = pair.Value.firstHit;
+                    shotKills.Add(new KilledTarget
                     {
                         death = death,
                         point = point,
-                        impulse = KillImpulse(data, shot, pair.Value),
+                        impulse = KillImpulse(data, shot, pair.Value.damage),
                         closeness = Closeness(Vector3.Distance(origin, point), data.maxRange),
                     });
                 }
@@ -1881,12 +1919,12 @@ public class WeaponController : NetworkBehaviour
                 }
             }
 
+            hitSomeone = shotTargets.Count > 0;
+
             // Statistiques du match (GDD § 14), comptées ici, par le serveur, et seulement pendant la
             // manche : ni l'échauffement, ni les tirs sur l'épave de l'adversaire. Un tir de pompe
             // compte pour un tir, touché si un plomb a touché.
-            if (matchState != null && RoundManager.StatsRecordingFor(OwnerClientId)) matchState.ServerRecordShot(damage.Count > 0, headHit, dealt);
-
-            hitSomeone = damage.Count > 0;
+            if (matchState != null && RoundManager.StatsRecordingFor(OwnerClientId)) matchState.ServerRecordShot(hitSomeone, headHit, dealt);
         }
         finally
         {
@@ -1944,13 +1982,42 @@ public class WeaponController : NetworkBehaviour
 
         // Le rewind fini, le serveur juge si ce coup finit la manche : il le sait ici, avant tous les joueurs, et la mort part
         // avec ce qu'il faut pour que chaque machine la montre à l'arrivée de la balle (KillCam).
-        bool live = ServerAnnounceKills(kills);
+        bool live = ServerAnnounceKills();
 
         // Le retour de touche (GDD § 6) : décidé ici, entendu par le tireur seul ; sous la kill cam, à l'impact qu'elle
         // montre.
         if (hitSomeone && !live) ServerConfirmHit(ClassifyHit(headHit, killed));
 
-        BroadcastShotClientRpc(origin, ends, normals, hitMask, bodyMask, magazine.equipped, (byte)Mathf.RoundToInt(charge * 255f), live);
+        var shotResult = new ShotPacket { count = count, ends = shotEnds, normals = shotNormals };
+        BroadcastShotClientRpc(origin, shotResult, hitMask, bodyMask, magazine.equipped, (byte)Mathf.RoundToInt(charge * 255f), live);
+    }
+
+    /// <summary>
+    /// Serveur : replace à `targetTime` la surface de ceux qu'un coup de `shooter` peut toucher, et les ajoute à `rewound`,
+    /// à rendre à leur place en finally (ServerEndRewind), même si ce replacement échoue en route. Les autres n'ont rien à
+    /// y gagner : une surface éteinte (un spectateur, un mort, la salle d'attente du Tournoi) n'est vue d'aucune requête, et
+    /// un autre couloir du Tournoi est à 2 km.
+    /// </summary>
+    public static void ServerRewindReachable(PlayerLocomotion shooter, ulong shooterId, double targetTime, List<PlayerLocomotion> rewound)
+    {
+        IReadOnlyList<PlayerLocomotion> players = PlayerLocomotion.SpawnedPlayers;
+        for (int i = 0; i < players.Count; i++)
+        {
+            PlayerLocomotion other = players[i];
+            if (other == null || other == shooter || other.Hitbox == null || !other.Hitbox.IsQueryable) continue;
+            if (!RoundManager.MayHurt(shooterId, other.OwnerClientId)) continue;
+            rewound.Add(other);
+            other.ServerBeginRewind(targetTime);
+        }
+    }
+
+    /// <summary>Ce qu'un tir fait à une cible : ses dégâts, additionnés plomb par plomb pour tomber en une fois, son premier
+    /// point touché, et s'il a touché sa tête.</summary>
+    private struct ShotTarget
+    {
+        public float damage;
+        public Vector3 firstHit;
+        public bool head;
     }
 
     /// <summary>Un robot que ce tir a tué : ce que son épave recevra.</summary>
@@ -1962,13 +2029,21 @@ public class WeaponController : NetworkBehaviour
         public float closeness;
     }
 
+    // Ce que ServerFire remplit à chaque tir, gardé d'un tir à l'autre pour ne rien allouer. ServerFire n'est pas réentrante,
+    // et le tir diffusé est écrit aussitôt envoyé : rien ne les relit ensuite. Les tampons sont au moins aussi longs que le tir.
+    private readonly List<PlayerLocomotion> rewoundPlayers = new List<PlayerLocomotion>();
+    private readonly Dictionary<Health, ShotTarget> shotTargets = new Dictionary<Health, ShotTarget>();
+    private readonly List<KilledTarget> shotKills = new List<KilledTarget>();
+    [System.NonSerialized] private Vector3[] shotEnds = System.Array.Empty<Vector3>();
+    [System.NonSerialized] private Vector3[] shotNormals = System.Array.Empty<Vector3>();
+
     // Serveur : chaque mort de ce tir, jugée puis annoncée (l'annonce part avant le tir diffusé) ; vrai si l'une d'elles a sa
     // kill cam.
-    private bool ServerAnnounceKills(List<KilledTarget> kills)
+    private bool ServerAnnounceKills()
     {
         bool live = false;
         RoundManager rm = RoundManager.For(OwnerClientId);
-        foreach (KilledTarget kill in kills)
+        foreach (KilledTarget kill in shotKills)
         {
             bool shown = rm != null && rm.ServerJudgeKill(kill.death.OwnerClientId);
             kill.death.ServerNotifyKilled(kill.point, kill.impulse, kill.closeness, shown);
@@ -2032,7 +2107,7 @@ public class WeaponController : NetworkBehaviour
         WeaponData data = LocalData;
         bool wantsReload = input.ReloadPressedThisFrame;
         if (AutoReloadWanted(input.FireWasPressedThisFrame, input.FireHeld, data.isAutomatic,
-                             HeatRulesOf(DataSlot(localMagazine.equipped)).Active, localMagazine.ammo, localMagazine.reloadEndsAt > 0.0,
+                             data.UsesHeat, localMagazine.ammo, localMagazine.reloadEndsAt > 0.0,
                              data.reloadsAfterEachShot)
             && RoundManager.FiringAllowedFor(OwnerClientId, ownHealth == null || !ownHealth.IsDead))
             wantsReload = true;
@@ -2129,13 +2204,19 @@ public class WeaponController : NetworkBehaviour
         if (locomotion != null && data != null && timeSinceSprint < data.sprintToFireTime - SprintOutTolerance)
         {
             networkMagazine.Value = magazine;
+            ServerNoteRefusal("rechargement en sortie de sprint");
+#if UNITY_EDITOR
             Debug.LogWarning($"[Serveur] Rechargement refusé : sortie de sprint ({timeSinceSprint * 1000f:F0} ms sur {data.sprintToFireTime * 1000f:F0}).", this);
+#endif
             return;
         }
         if (locomotion != null && locomotion.ServerInputFlags(action.inputSequence, out bool vaulting, out _) && vaulting)
         {
             networkMagazine.Value = magazine;
+            ServerNoteRefusal("rechargement en franchissant un obstacle");
+#if UNITY_EDITOR
             Debug.LogWarning("[Serveur] Rechargement refusé : le joueur franchissait un obstacle.", this);
+#endif
             return;
         }
         if (data != null && action.serverTime + ReloadCompletionTolerance >= magazine.readyAt
@@ -2156,7 +2237,10 @@ public class WeaponController : NetworkBehaviour
         {
             // Compté quand même : c'est ce qui laisse le joueur se recaler sur l'arme qu'il a en main.
             networkMagazine.Value = magazine;
+            ServerNoteRefusal("changement d'arme hors de la préparation");
+#if UNITY_EDITOR
             Debug.LogWarning($"[Serveur] Changement d'arme refusé : l'arme se choisit avant la manche.", this);
+#endif
             return;
         }
         WeaponData next = DataOf(action.slot);
@@ -2171,7 +2255,10 @@ public class WeaponController : NetworkBehaviour
         }
         else
         {
+            ServerNoteRefusal("changement vers une place vide");
+#if UNITY_EDITOR
             Debug.LogWarning($"[Serveur] Changement d'arme refusé : place {action.slot + 1} vide.", this);
+#endif
         }
         networkMagazine.Value = magazine;
     }
@@ -2627,33 +2714,77 @@ public class WeaponController : NetworkBehaviour
         return worldHit || playerHit;
     }
 
-    /// <summary>Rediffuse à tout le monde (sauf au tireur, déjà servi localement dans Fire()) les
-    /// traçants, impacts et le son de tir, tels que DÉCIDÉS PAR LE SERVEUR dans ServerFire : un
-    /// point d'arrivée par plomb (ou par balle), un bit par plomb qui a touché quelque chose, un bit
-    /// par plomb arrêté par un robot (le son de l'impact n'est pas le même, 2026-10-13), et la charge
-    /// du tir (0 à 255 : le rayon d'un tir chargé se voit plus épais). `live` : ce coup a sa kill cam, le robot n'est pas
-    /// encore touché à l'écran (KillCam).</summary>
-    [ClientRpc]
-    private void BroadcastShotClientRpc(Vector3 origin, Vector3[] ends, Vector3[] normals, int hitMask, int bodyMask, byte slot, byte charge, bool live)
+    /// <summary>Ce que le serveur a décidé d'un tir : le point d'arrivée et la normale de chaque balle ou plomb (`count`, les
+    /// tableaux peuvent être plus longs). Reçu, il est relu dans des tampons partagés, comme InputPacket : chaque RPC est
+    /// traitée aussitôt reçue, rien n'est alloué.</summary>
+    public struct ShotPacket : INetworkSerializable
     {
-        if (IsOwner) return; // déjà joué/affiché localement par le tireur, dans Fire()
+        public int count;
+        public Vector3[] ends;
+        public Vector3[] normals;
 
+        private static Vector3[] receivedEnds = new Vector3[8];
+        private static Vector3[] receivedNormals = new Vector3[8];
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            byte n = (byte)count;
+            serializer.SerializeValue(ref n);
+            count = n;
+            if (serializer.IsReader)
+            {
+                if (receivedEnds.Length < count)
+                {
+                    receivedEnds = new Vector3[count];
+                    receivedNormals = new Vector3[count];
+                }
+                ends = receivedEnds;
+                normals = receivedNormals;
+            }
+            for (int i = 0; i < count; i++)
+            {
+                serializer.SerializeValue(ref ends[i]);
+                serializer.SerializeValue(ref normals[i]);
+            }
+        }
+    }
+
+    /// <summary>Rediffuse à tout le monde, sauf au tireur (déjà servi dans Fire() : le lui renvoyer ne ferait qu'alourdir
+    /// son lien descendant, en fiable ordonné), les traçants, impacts et le son de tir, tels que DÉCIDÉS PAR LE SERVEUR
+    /// dans ServerFire : ce que dit `shot`, un bit par plomb qui a touché quelque chose, un bit par plomb arrêté par un robot
+    /// (le son de l'impact n'est pas le même, 2026-10-13), et la charge du tir (0 à 255 : le rayon d'un tir chargé se voit
+    /// plus épais). `live` : ce coup a sa kill cam, le robot n'est pas encore touché à l'écran (KillCam).
+    ///
+    /// Une RPC universelle laisse par défaut n'importe quel client l'appeler : le serveur seul en a le droit ici, sinon un
+    /// client modifié montrerait aux autres des tirs qui n'existent pas. Elle suit la mort (KilledClientRpc) dans la même
+    /// file fiable : chacun reçoit la mort, puis le tir.</summary>
+    [Rpc(SendTo.NotOwner, InvokePermission = RpcInvokePermission.Server)]
+    private void BroadcastShotClientRpc(Vector3 origin, ShotPacket shot, int hitMask, int bodyMask, byte slot, byte charge, bool live)
+    {
         OnShotFired?.Invoke();
+
+        // Au Tournoi, ce qui se joue dans une autre arène ne se voit ni ne s'entend d'ici : seul le suivi du tir reste.
+        if (!PlayerDeath.ShowsEffectsOf(OwnerClientId))
+        {
+            shownEnds.Clear();
+            for (int i = 0; i < shot.count; i++) shownEnds.Add(shot.ends[i]);
+            ShotShown?.Invoke(this, origin, shownEnds);
+            return;
+        }
 
         WeaponData data = DataOf(slot) ?? Data;
         PlayFireSound(data);
-        if (visualFeedback != null && data != null && !data.shotIsBeam) SpawnBodyMuzzleFlash(FlashScaleOf(DataSlot(slot)));
-
-        if (ends == null) return;
+        float flashScale = FlashScaleOf(DataSlot(slot));
+        if (visualFeedback != null && data != null && !data.shotIsBeam) SpawnBodyMuzzleFlash(flashScale);
 
         var impacts = new ShotImpactSounds(data);
         shownEnds.Clear();
-        for (int i = 0; i < ends.Length; i++)
+        for (int i = 0; i < shot.count; i++)
         {
-            Vector3 end = ends[i];
-            bool hit = i < 31 && (hitMask & (1 << i)) != 0 && normals != null && i < normals.Length;
+            Vector3 end = shot.ends[i];
+            bool hit = i < 31 && (hitMask & (1 << i)) != 0;
             bool onBody = i < 31 && (bodyMask & (1 << i)) != 0;
-            Vector3 normal = hit ? normals[i] : Vector3.zero;
+            Vector3 normal = hit ? shot.normals[i] : Vector3.zero;
             // L'épave de cette machine (elle ne tombe pas pareil partout) arrête le tir à l'écran.
             if (data != null && RobotCorpse.TryHit(origin, end, CorpseImpulse(data), out Vector3 wreckPoint, out Vector3 wreckNormal))
             {
@@ -2667,7 +2798,7 @@ public class WeaponController : NetworkBehaviour
             {
                 if (data == null || data.shotIsBeam)
                     visualFeedback.SpawnTracer(origin, end, data != null ? data.tracerColor : Color.yellow,
-                                               BeamWeight(data, charge / 255f) * FlashScaleOf(DataSlot(slot)));
+                                               BeamWeight(data, charge / 255f) * flashScale);
             }
             if (hit && !(live && onBody))
             {
@@ -2677,7 +2808,7 @@ public class WeaponController : NetworkBehaviour
         }
         ShotShown?.Invoke(this, origin, shownEnds);
 
-        PlayFlyby(data, origin, ends, bodyMask);
+        PlayFlyby(data, origin, shot.ends, shot.count, bodyMask);
     }
 
     private Transform bodyRightHand;
@@ -2726,12 +2857,12 @@ public class WeaponController : NetworkBehaviour
 
     /// <summary>Une balle tirée par un autre qui passe près de ce joueur sans le toucher siffle, là où
     /// elle passe au plus près : on sait qu'on est visé, et de quel côté. Une seule par tir.</summary>
-    private static void PlayFlyby(WeaponData data, Vector3 origin, Vector3[] ends, int bodyMask)
+    private static void PlayFlyby(WeaponData data, Vector3 origin, Vector3[] ends, int count, int bodyMask)
     {
         if (data == null || data.flybySounds == null || data.flybySounds.IsEmpty) return;
         AudioListener ear = OneShotAudio.ActiveListener;
         if (ear == null) return;
-        if (TryPickFlyby(origin, ends, bodyMask, ear.transform.position, FlybyRadius, out Vector3 point))
+        if (TryPickFlyby(origin, ends, count, bodyMask, ear.transform.position, FlybyRadius, out Vector3 point))
             data.flybySounds.PlayAt(point, 1f, 12f);
     }
 
@@ -2742,12 +2873,17 @@ public class WeaponController : NetworkBehaviour
     /// l'entendrait siffler. Fonction pure, testée.
     /// </summary>
     public static bool TryPickFlyby(Vector3 origin, Vector3[] ends, int bodyMask, Vector3 ear, float radius, out Vector3 point)
+        => TryPickFlyby(origin, ends, ends != null ? ends.Length : 0, bodyMask, ear, radius, out point);
+
+    /// <summary>La même chose sur les `count` premiers points de `ends` : le tampon d'un tir reçu est plus long que lui, et
+    /// ce qui le suit vient d'un tir d'avant (ShotPacket).</summary>
+    public static bool TryPickFlyby(Vector3 origin, Vector3[] ends, int count, int bodyMask, Vector3 ear, float radius, out Vector3 point)
     {
         point = Vector3.zero;
         if (ends == null) return false;
         bool found = false;
         float bestDistance = float.MaxValue;
-        for (int i = 0; i < ends.Length; i++)
+        for (int i = 0; i < count; i++)
         {
             if (i < 31 && (bodyMask & (1 << i)) != 0) continue;
             if (!TryFlybyPoint(origin, ends[i], ear, radius, out Vector3 candidate)) continue;
@@ -2803,18 +2939,11 @@ public class WeaponController : NetworkBehaviour
     public void ServerConfirmHit(HitKind kind)
     {
         if (!IsServer || !IsSpawned) return;
-        HitConfirmedClientRpc(kind, new ClientRpcParams
-        {
-            Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
-        });
+        HitConfirmedClientRpc(kind);
     }
 
-    [ClientRpc]
-    private void HitConfirmedClientRpc(HitKind kind, ClientRpcParams clientRpcParams = default)
-    {
-        if (!IsOwner) return;
-        OnHitConfirmed?.Invoke(kind);
-    }
+    [Rpc(SendTo.Owner, InvokePermission = RpcInvokePermission.Server)]
+    private void HitConfirmedClientRpc(HitKind kind) => OnHitConfirmed?.Invoke(kind);
 
     /// <summary>Chez le tireur : le retour du coup qui tue, à l'impact que montre la kill cam (KillCam).</summary>
     public void ShowKillConfirmed() => OnHitConfirmed?.Invoke(HitKind.Kill);
@@ -2835,16 +2964,12 @@ public class WeaponController : NetworkBehaviour
     public void ServerNotifyHitTaken(Vector3 from)
     {
         if (!IsServer || !IsSpawned) return;
-        HitTakenClientRpc(from, new ClientRpcParams
-        {
-            Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
-        });
+        HitTakenClientRpc(from);
     }
 
-    [ClientRpc]
-    private void HitTakenClientRpc(Vector3 from, ClientRpcParams clientRpcParams = default)
+    [Rpc(SendTo.Owner, InvokePermission = RpcInvokePermission.Server)]
+    private void HitTakenClientRpc(Vector3 from)
     {
-        if (!IsOwner) return;
         hitTakenCount++;
         lastHitTakenFrom = from;
     }

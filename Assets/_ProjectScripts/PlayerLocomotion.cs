@@ -233,7 +233,6 @@ public class PlayerLocomotion : NetworkBehaviour
     [Tooltip("Marge au-dessus du sommet de l'obstacle au point haut de l'arc. L'arc est elargi si besoin pour l'atteindre : sans ca, un franchissement dont le depart ET l'arrivee sont au sol traverserait l'obstacle au lieu de passer dessus.")]
     [SerializeField] private float vaultObstacleClearance = 0.15f;
     [SerializeField] private AnimationCurve vaultHeightCurve = BuildDefaultVaultArc();
-    [SerializeField] private bool debugDrawVaultRays = true;
 
 #if UNITY_EDITOR
     // Compilé UNIQUEMENT dans l'Editor : ne peut pas se retrouver dans une build, même si la case
@@ -267,7 +266,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
     [Header("Réseau — spectateur")]
     [Tooltip("Délai volontaire (s) auquel un spectateur affiche un joueur distant, pour toujours avoir 2 poses connues entre lesquelles interpoler. Il s'AJOUTE aux 50 ms de marge que Netcode garde déjà sur son horloge serveur côté client : 0,05 s donne 100 ms de réserve derrière la pose la plus récente, trois poses à 30 par seconde. Si [DIAG-ANIM] compte des frames « affamées », c'est trop court.")]
-    [SerializeField] private float interpolationDelay = 0.05f;
+    [SerializeField] private float interpolationDelay = 0.02f;
 
     public Stance CurrentStance { get; private set; } = Stance.Standing;
 
@@ -437,7 +436,6 @@ public class PlayerLocomotion : NetworkBehaviour
             return !grounded;
         }
     }
-    public NoiseLevel CurrentNoise { get; private set; } = NoiseLevel.Silent;
     public bool IsAiming { get; private set; }
 
     /// <summary>Tangage du regard de l'input en cours (degrés, + = vers le bas). Affecté dans
@@ -724,7 +722,7 @@ public class PlayerLocomotion : NetworkBehaviour
     /// input voulait sprinter. Fonction pure, testée.</summary>
     public static void AdvanceInputClock(ref double clock, ref double lastSprint, float dt, bool sprint)
     {
-        clock += Mathf.Clamp(dt, 0f, MaxSingleInputDeltaTime);
+        clock += InputDuration(dt);
         if (sprint) lastSprint = clock;
     }
 
@@ -795,7 +793,7 @@ public class PlayerLocomotion : NetworkBehaviour
     // Deux variables seulement. La POSE d'affichage, datée sur l'horloge du serveur : position,
     // rotation, lean et drapeaux d'animation (au sol, en franchissement, en visée). La variable ne
     // change qu'à l'apparition et aux replacements ; le reste du temps, la pose part en non fiable à
-    // chaque tick (PoseClientRpc, 2026-10-13). Et la POSTURE avec sa transition. Elles remplacent sept
+    // chaque tick (PoseRpc, 2026-10-13). Et la POSTURE avec sa transition. Elles remplacent sept
     // variables, dont trois drapeaux qui n'existaient que pour l'animation d'un spectateur — lequel
     // n'appelle jamais Move() et n'a donc aucun autre moyen de savoir qu'un adversaire tombe, franchit
     // ou épaule.
@@ -892,7 +890,8 @@ public class PlayerLocomotion : NetworkBehaviour
 
         /// <summary>Time.time au moment de l'envoi au serveur. Sert à mesurer le RTT GRATUITEMENT,
         /// en chronométrant l'aller-retour prédiction/réconciliation qui existe déjà : aucune RPC
-        /// de ping dédiée. Diagnostic seulement depuis que le tir envoie l'instant qu'il voit.</summary>
+        /// de ping dédiée (du diagnostic, depuis que le tir envoie l'instant qu'il voit), et à
+        /// oublier les inputs restés trop longtemps sans réponse (MaxUnconfirmedAge).</summary>
         public float sentAt;
 
         /// <summary>Instant de simulation de cet input sur l'horloge du serveur : NetworkManager.
@@ -904,6 +903,11 @@ public class PlayerLocomotion : NetworkBehaviour
 
     // Côté propriétaire distant (cas 2) : inputs envoyés au serveur mais pas encore confirmés.
     private readonly List<PendingInput> unconfirmedInputs = new List<PendingInput>();
+
+    /// <summary>Âge (s) au-delà duquel un input non confirmé ne se rejoue plus : sans réponse depuis une seconde,
+    /// c'est une coupure, et rejouer tout ce qu'elle a laissé tenait dans une seule image. Une correction d'un
+    /// input oublié retombe sur le recalage sûr (ApplyPendingCorrection).</summary>
+    private const float MaxUnconfirmedAge = 1f;
 
     // ------------------------------------------------------------------
     // Les inputs en route vers le serveur : un flux NON FIABLE et redondant (2026-10-13)
@@ -1130,7 +1134,7 @@ public class PlayerLocomotion : NetworkBehaviour
     private int lastAckedInput = -1;
     private float inputSendTimer;
 
-    /// <summary>Chez le joueur : dernière correction appliquée. Elles voyagent en non fiable : une plus
+    /// <summary>Chez le joueur : dernière correction reçue. Elles voyagent en non fiable : une plus
     /// ancienne qui arrive après est périmée.</summary>
     private int lastCorrectionSequence = -1;
 
@@ -1166,10 +1170,6 @@ public class PlayerLocomotion : NetworkBehaviour
         lastSentInput = newest;
         NetStats.InputPacketsSent++;
         NetStats.InputsSent += count;
-#if UNITY_EDITOR
-        diagPacketsSent++;
-        diagInputsSent += count;
-#endif
     }
 
     // ------------------------------------------------------------------
@@ -1179,12 +1179,6 @@ public class PlayerLocomotion : NetworkBehaviour
     [Header("Réseau — compensation de latence")]
     [Tooltip("Durée (s) de l'historique de pose conservé par le SERVEUR pour chaque joueur, afin de pouvoir le replacer dans le passé au moment de valider un tir. Doit couvrir le rewind maximum autorisé côté arme, avec de la marge.")]
     [SerializeField] private float hitboxHistoryDuration = 1f;
-
-    /// <summary>RTT lissé du propriétaire distant, en secondes — DIAGNOSTIC seulement. Le rewind
-    /// s'en servait pour estimer l'âge de ce que le tireur voit ; depuis le 2026-10-06, le tireur
-    /// envoie directement l'instant qu'il affiche (ViewServerTime), ce qui est exact. L'estimation
-    /// oubliait d'ailleurs les 50 ms de marge que Netcode garde sur son horloge serveur.</summary>
-    private float smoothedRtt;
 
     /// <summary>Pose passée d'un joueur, telle que le serveur l'a simulée. Contient TOUT ce dont
     /// dépend la surface touchable — position, orientation, lean et posture. Historiser la seule
@@ -1212,9 +1206,10 @@ public class PlayerLocomotion : NetworkBehaviour
 
     /// <summary>Tous les joueurs actuellement spawnés. Maintenu à l'inscription/désinscription
     /// plutôt que recalculé par FindObjectsByType à chaque tir : le rewind parcourt cette liste
-    /// plusieurs fois par seconde et par tireur.</summary>
+    /// plusieurs fois par seconde et par tireur. Exposée en List, à lire seulement : son foreach
+    /// n'alloue rien, alors que celui d'une interface alloue un énumérateur à chaque image.</summary>
     private static readonly List<PlayerLocomotion> spawnedPlayers = new List<PlayerLocomotion>();
-    public static IReadOnlyList<PlayerLocomotion> SpawnedPlayers => spawnedPlayers;
+    public static List<PlayerLocomotion> SpawnedPlayers => spawnedPlayers;
 
     // Côté serveur (cas 3) : inputs reçus des clients, en attente de traitement.
     private readonly Queue<PendingInput> serverInputQueue = new Queue<PendingInput>();
@@ -1231,8 +1226,12 @@ public class PlayerLocomotion : NetworkBehaviour
     // Serveur : la correction à envoyer au propriétaire (voir ApplyBufferedServerInputs).
     private bool serverCorrectionPending;
     private int serverCorrectionSequence = -1;
-    private float serverCorrectionSentAt = float.NegativeInfinity;
+    private int lastCorrectionTick = -1;
     private ClientRpcParams ownerRpcParams;
+
+    // Chez le joueur : la correction la plus récente reçue, pas encore appliquée (ApplyPendingCorrection).
+    private CorrectionPacket pendingCorrection;
+    private bool correctionPending;
 
     private void Awake()
     {
@@ -1300,12 +1299,18 @@ public class PlayerLocomotion : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-        // Les corrections ne vont qu'au propriétaire : la cible est fixée une fois pour toutes.
+        // La remise à zéro du lean ne va qu'au propriétaire : la cible est fixée une fois pour toutes.
         ownerRpcParams = new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } } };
         lastCorrectionSequence = -1;
         lastAckedInput = -1;
         lastSentInput = -1;
+        correctionPending = false;
         outgoingInputs.Clear();
+
+        // Le clavier et la souris de cette machine ne pilotent que son propre robot : ceux des autres n'ont
+        // ni carte d'actions à tenir allumée, ni Update à lire (PlayerInputReader). Une seule fois, à
+        // l'apparition : la propriété d'un joueur ne change pas.
+        input.enabled = IsOwner;
 
         if (IsServer)
         {
@@ -1419,17 +1424,13 @@ public class PlayerLocomotion : NetworkBehaviour
     private float diagMaxError;
     private float diagNextReportAt;
 
-    // Le flux d'inputs (2026-10-13) : paquets envoyés et inputs qu'ils portaient (redondance comprise)
-    // chez le joueur ; inputs perdus pour de bon (tous leurs envois perdus) et paquets qui
-    // n'apportaient rien de neuf, sur le serveur.
-    private int diagPacketsSent;
-    private int diagInputsSent;
-    private static int diagServerInputsLost;
-    private static int diagServerPacketsUseless;
-    private int diagCorrectionsStale;
+    /// <summary>L'aller-retour lissé des inputs, pour le journal de l'Editor. Rien du jeu ne le lit : le tireur
+    /// envoie l'instant qu'il affiche (ViewServerTime), et la build compte le sien dans NetStats.</summary>
+    private float smoothedRtt;
 
-    private void DiagRecordCorrection(bool resynced, float positionError)
+    private void DiagRecordCorrection(bool resynced, float positionError, float measuredRtt)
     {
+        smoothedRtt = smoothedRtt <= 0f ? measuredRtt : Mathf.Lerp(smoothedRtt, measuredRtt, 0.1f);
         diagCorrections++;
         if (resynced) diagResyncs++;
         diagErrorSum += positionError;
@@ -1450,31 +1451,12 @@ public class PlayerLocomotion : NetworkBehaviour
         Debug.Log($"[DIAG-CLIENT] corrections={diagCorrections} resync={diagResyncs} ({resyncRate:F1}%) " +
                   $"erreur_moy={avgError * 100f:F1}cm erreur_max={diagMaxError * 100f:F1}cm " +
                   $"vaults={diagVaultsTotal} kicks={diagLandingKicksTotal} " +
-                  $"rtt={smoothedRtt * 1000f:F0}ms " +
-                  $"paquets_inputs={diagPacketsSent / 3f:F0}/s inputs_par_paquet={(diagPacketsSent > 0 ? (float)diagInputsSent / diagPacketsSent : 0f):F1} " +
-                  $"corrections_perimees={diagCorrectionsStale}");
+                  $"rtt={smoothedRtt * 1000f:F0}ms");
 
         diagCorrections = 0;
         diagResyncs = 0;
         diagErrorSum = 0f;
         diagMaxError = 0f;
-        diagPacketsSent = 0;
-        diagInputsSent = 0;
-        diagCorrectionsStale = 0;
-    }
-
-    private static float diagServerNextReportAt;
-
-    /// <summary>[DIAG-INPUTS], sur le serveur : ce que le flux non fiable a perdu pour de bon. Doit
-    /// rester à 0 hors pertes en rafale (plus de InputRedundantSends paquets d'affilée).</summary>
-    private void DiagServerReportIfDue()
-    {
-        if (!IsServer || IsOwner) return;
-        if (Time.time < diagServerNextReportAt && diagServerNextReportAt - Time.time <= 3f) return;
-        diagServerNextReportAt = Time.time + 3f;
-        Debug.Log($"[DIAG-INPUTS] inputs_perdus={diagServerInputsLost} paquets_sans_neuf={diagServerPacketsUseless} file={serverInputQueue.Count}");
-        diagServerInputsLost = 0;
-        diagServerPacketsUseless = 0;
     }
 #endif
 
@@ -1502,12 +1484,19 @@ public class PlayerLocomotion : NetworkBehaviour
         RemoveOlderThan(serverHitboxHistory, now - hitboxHistoryDuration);
     }
 
-    /// <summary>Retire de la tête d'un historique rangé par date les poses antérieures à `cutoff`.</summary>
-    private static void RemoveOlderThan(List<HitboxPose> history, double cutoff)
+    /// <summary>Poses périmées qu'il faut pour tailler l'historique : un retrait décale toute la liste, et à
+    /// chaque image il déplaçait des dizaines de Ko par joueur pour une seule pose.</summary>
+    public const int HistoryTrimBatch = 64;
+
+    /// <summary>Retire de la tête d'un historique rangé par date les poses antérieures à `cutoff`, par paquets
+    /// d'au moins HistoryTrimBatch : les autres attendent, plus vieilles que la fenêtre, sans gêner personne (le
+    /// rewind ne recule pas si loin). Fonction pure, testée.</summary>
+    public static void RemoveOlderThan(List<HitboxPose> history, double cutoff)
     {
-        int stale = 0;
+        if (history.Count < HistoryTrimBatch || history[HistoryTrimBatch - 1].time >= cutoff) return;
+        int stale = HistoryTrimBatch;
         while (stale < history.Count && history[stale].time < cutoff) stale++;
-        if (stale > 0) history.RemoveRange(0, stale);
+        history.RemoveRange(0, stale);
     }
 
     /// <summary>
@@ -1592,32 +1581,41 @@ public class PlayerLocomotion : NetworkBehaviour
             return true;
         }
 
-        for (int i = 0; i < history.Count - 1; i++)
+        // La première pose qui atteint l'instant visé, et celle d'avant : pile sur une pose, c'est bien la paire
+        // qui finit sur elle, et ses drapeaux sont ceux d'avant. Dichotomie plutôt qu'un balayage : le recul ne
+        // dépasse pas 0,3 s, l'historique couvre 1 s, et le plus gros de la liste ne servirait à rien.
+        int low = 1, high = history.Count;
+        while (low < high)
         {
-            HitboxPose a = history[i];
-            HitboxPose b = history[i + 1];
-            if (a.time > targetTime || targetTime > b.time) continue;
+            int middle = (low + high) >> 1;
+            if (history[middle].time < targetTime) low = middle + 1;
+            else high = middle;
+        }
 
-            double span = b.time - a.time;
-            float t = span > 0.0001 ? (float)((targetTime - a.time) / span) : 0f;
-
-            result = new HitboxPose
-            {
-                time = targetTime,
-                position = Vector3.Lerp(a.position, b.position, t),
-                yaw = Mathf.LerpAngle(a.yaw, b.yaw, t),
-                leanOffset = Mathf.Lerp(a.leanOffset, b.leanOffset, t),
-                // La posture ne s'interpole pas : elle porte l'instant exact de son changement, et
-                // la transition se recalcule à l'instant visé (ApplyHitboxAt). On prend donc celle
-                // qui était en vigueur à cet instant : la nouvelle si le changement le précède.
-                stance = b.stance.changedAt <= targetTime ? b.stance : a.stance,
-                // Comme les drapeaux de la pose qu'affiche le frappeur : ceux du début de l'intervalle.
-                guard = a.guard,
-            };
+        if (low == history.Count)
+        {
+            result = history[history.Count - 1];
             return true;
         }
 
-        result = history[history.Count - 1];
+        HitboxPose a = history[low - 1];
+        HitboxPose b = history[low];
+        double span = b.time - a.time;
+        float t = span > 0.0001 ? (float)((targetTime - a.time) / span) : 0f;
+
+        result = new HitboxPose
+        {
+            time = targetTime,
+            position = Vector3.Lerp(a.position, b.position, t),
+            yaw = Mathf.LerpAngle(a.yaw, b.yaw, t),
+            leanOffset = Mathf.Lerp(a.leanOffset, b.leanOffset, t),
+            // La posture ne s'interpole pas : elle porte l'instant exact de son changement, et
+            // la transition se recalcule à l'instant visé (ApplyHitboxAt). On prend donc celle
+            // qui était en vigueur à cet instant : la nouvelle si le changement le précède.
+            stance = b.stance.changedAt <= targetTime ? b.stance : a.stance,
+            // Comme les drapeaux de la pose qu'affiche le frappeur : ceux du début de l'intervalle.
+            guard = a.guard,
+        };
         return true;
     }
 
@@ -1868,7 +1866,6 @@ public class PlayerLocomotion : NetworkBehaviour
 
 #if UNITY_EDITOR
         DiagReportIfDue();
-        DiagServerReportIfDue();
 #endif
     }
 
@@ -1963,14 +1960,36 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private void HandleOwnerPrediction()
     {
-        MovementInputSnapshot snap = ReadLocalInput();
-        float dt = Time.deltaTime;
-
-        int sequence = nextInputSequence++;
+        // Avant de lire quoi que ce soit : l'image part de ce que le serveur vient de confirmer.
+        ApplyPendingCorrection();
 
         // LocalTime et non ServerTime : c'est l'instant, sur l'horloge du serveur, où celui-ci
         // TRAITERA cet input. Une transition de posture y progresse donc d'autant des deux côtés.
-        double simTime = NetworkManager.LocalTime.Time;
+        PredictInput(ReadLocalInput(), Time.deltaTime, NetworkManager.LocalTime.Time, Time.time);
+
+        // Au plus InputSendRate envois par seconde, quel que soit le nombre d'images : le temps
+        // restant est reporté, pour garder la cadence moyenne.
+        float interval = 1f / InputSendRate;
+        inputSendTimer += Time.unscaledDeltaTime;
+        if (inputSendTimer >= interval)
+        {
+            inputSendTimer = Mathf.Min(inputSendTimer - interval, interval);
+            SendPendingInputs();
+        }
+    }
+
+    /// <summary>
+    /// Simule l'input d'une image chez le propriétaire et le range pour le serveur. Une image plus longue que ce que le
+    /// serveur accepte d'un input se simule à cette borne : le même dt part dans Move(), dans le rejeu et sur le réseau,
+    /// et le joueur perd le reste de l'image. Sinon, à une image de 0,15 s, le serveur ne simulait que 0,1 s : 25 cm
+    /// d'écart à la course, donc un retour en arrière après chaque à-coup du joueur, alors que le réseau allait bien.
+    /// </summary>
+    /// <param name="frameTime">La durée de l'image.</param>
+    /// <param name="now">L'heure de l'image (Time.time), qui date cet input.</param>
+    private void PredictInput(MovementInputSnapshot snap, float frameTime, double simTime, float now)
+    {
+        float dt = InputDuration(frameTime);
+        int sequence = nextInputSequence++;
 
         bool wasGrounded = controller.isGrounded;
         Move(snap, dt, simTime);
@@ -1979,7 +1998,7 @@ public class PlayerLocomotion : NetworkBehaviour
 
         // L'input est enregistré APRÈS Move() : on a besoin de l'état prédit qui en résulte pour
         // pouvoir le comparer plus tard à ce que le serveur confirmera pour cette même séquence
-        // (voir PendingInput et ReceiveCorrectionClientRpc).
+        // (voir PendingInput et ApplyPendingCorrection).
         unconfirmedInputs.Add(new PendingInput
         {
             sequence = sequence,
@@ -1988,9 +2007,10 @@ public class PlayerLocomotion : NetworkBehaviour
             predictedPosition = transform.position,
             predictedYaw = transform.eulerAngles.y,
             predictedVaulting = IsVaulting,
-            sentAt = Time.time,
+            sentAt = now,
             simTime = simTime,
         });
+        DropOldUnconfirmedInputs(now);
 
         QueueInputForServer(sequence, snap, dt);
         double clockBefore = localInputClock;
@@ -2014,16 +2034,14 @@ public class PlayerLocomotion : NetworkBehaviour
             for (int i = 1; i < debugFloodMultiplier; i++) QueueInputForServer(nextInputSequence++, snap, dt);
         }
 #endif
+    }
 
-        // Au plus InputSendRate envois par seconde, quel que soit le nombre d'images : le temps
-        // restant est reporté, pour garder la cadence moyenne.
-        float interval = 1f / InputSendRate;
-        inputSendTimer += Time.unscaledDeltaTime;
-        if (inputSendTimer >= interval)
-        {
-            inputSendTimer = Mathf.Min(inputSendTimer - interval, interval);
-            SendPendingInputs();
-        }
+    /// <summary>Oublie les inputs non confirmés trop anciens (MaxUnconfirmedAge) : ils sont en tête, rangés par numéro.</summary>
+    private void DropOldUnconfirmedInputs(float now)
+    {
+        int stale = 0;
+        while (stale < unconfirmedInputs.Count && now - unconfirmedInputs[stale].sentAt > MaxUnconfirmedAge) stale++;
+        if (stale > 0) unconfirmedInputs.RemoveRange(0, stale);
     }
 
     /// <summary>
@@ -2041,9 +2059,6 @@ public class PlayerLocomotion : NetworkBehaviour
         for (int i = 0; i < packet.count; i++) anyNew |= serverReorder.Store(packet.firstSequence + i, packet.inputs[i]);
         NetStats.InputPacketsReceived++;
         if (!anyNew) NetStats.UselessPackets++;
-#if UNITY_EDITOR
-        if (!anyNew) diagServerPacketsUseless++;
-#endif
         ServerDrainReceivedInputs();
     }
 
@@ -2056,9 +2071,6 @@ public class PlayerLocomotion : NetworkBehaviour
         {
             bool taken = serverReorder.TryTake(now, InputReorderWait, out int sequence, out InputWire wire, out int lost);
             NetStats.InputsLost += lost;
-#if UNITY_EDITOR
-            diagServerInputsLost += lost;
-#endif
             if (!taken) return;
             ServerReceiveInput(sequence, wire);
         }
@@ -2099,7 +2111,7 @@ public class PlayerLocomotion : NetworkBehaviour
         // ApplyBufferedServerInputs). Les inputs excédentaires sont jetés : un client légitime
         // n'atteint jamais ces bornes (une seconde de jeu en attente, à n'importe quel nombre
         // d'images), et celui qui les dépasse se pénalise lui-même par un recalage plus brutal.
-        float dt = Mathf.Clamp(wire.deltaTime, 0f, MaxSingleInputDeltaTime);
+        float dt = InputDuration(wire.deltaTime);
         if (serverInputQueue.Count >= MaxQueuedInputs || serverQueuedInputTime + dt > MaxQueuedInputTime) return;
 
         serverQueuedInputTime += dt;
@@ -2130,7 +2142,11 @@ public class PlayerLocomotion : NetworkBehaviour
     // le serveur tourne à ~60 frames par seconde (l'ancienne borne de 0,5 s/frame autorisait
     // ainsi ~30 s de mouvement simulé par seconde réelle, soit un speedhack ×30). D'où le budget
     // ci-dessous, rechargé au rythme du temps réel.
-    private const float MaxSingleInputDeltaTime = 0.1f; // ~3 ticks à 30Hz : couvre un vrai freeze client sans laisser passer un dt aberrant.
+    private const float MaxSingleInputDeltaTime = 0.1f; // Couvre un vrai freeze client sans laisser passer un dt aberrant.
+
+    /// <summary>La durée simulée d'un input : la même chez le joueur qui prédit et sur le serveur qui tranche,
+    /// Move() devant recevoir le même dt des deux côtés. Fonction pure, testée.</summary>
+    public static float InputDuration(float deltaTime) => Mathf.Clamp(deltaTime, 0f, MaxSingleInputDeltaTime);
 
     // Budget de temps simulé (en secondes) accordé au client, rechargé de Time.deltaTime à chaque
     // Update() serveur. Le point clé : pour un client LÉGITIME, la somme des deltaTime envoyés par
@@ -2140,17 +2156,31 @@ public class PlayerLocomotion : NetworkBehaviour
     private const float InputTimeBudgetRefillFactor = 1.1f;  // 10% de marge pour la gigue réseau/frame.
     private const float MaxInputTimeBudget = 0.25f;          // réserve max : permet un vrai rattrapage après un à-coup réseau, sans plus.
 
+    /// <summary>Ce que coûte au moins un input sur le budget (s). Le budget ne compte que le temps : des inputs de durée
+    /// nulle ne l'usaient pas, et un client modifié faisait simuler toute sa file à chaque image. Sans effet sous
+    /// 1 000 images/s, où un input dure plus que ça.</summary>
+    private const float MinInputCost = 0.001f;
+
+    /// <summary>Le budget rechargé de `elapsed` secondes de temps réel. Fonction pure, testée.</summary>
+    public static float RefillInputBudget(float budget, float elapsed)
+        => Mathf.Min(budget + elapsed * InputTimeBudgetRefillFactor, MaxInputTimeBudget);
+
+    /// <summary>Le budget couvre-t-il un input de `dt` secondes ? Si oui, il le paie. Seul le coût a un plancher : la
+    /// durée que Move() simule ne change pas. Fonction pure, testée.</summary>
+    public static bool TrySpendInputBudget(ref float budget, float dt)
+    {
+        float cost = Mathf.Max(dt, MinInputCost);
+        if (cost > budget) return false;
+        budget -= cost;
+        return true;
+    }
+
     // Bornes de la file d'attente (voir ServerReceiveInput). Exprimées aussi en TEMPS de jeu depuis le
     // 2026-10-13 : 120 inputs ne faisaient que 0,24 s à 500 images/s, et un client honnête au
     // nombre d'images non plafonné perdait des inputs (donc se recalait) après un simple à-coup.
     private const int MaxQueuedInputs = 512;
     private const float MaxQueuedInputTime = 1f;
     private float serverQueuedInputTime;
-
-    /// <summary>Intervalle minimal (s) entre deux corrections envoyées au propriétaire : un hôte à
-    /// plusieurs centaines d'images par seconde ne les multiplie pas. Une correction retardée de
-    /// quelques millisecondes ne se voit pas : elle ne fait que confirmer.</summary>
-    private const float MinCorrectionInterval = 1f / 120f;
 
     /// <summary>
     /// Un input reçu d'un client est-il recevable ? Toutes ses valeurs finies et une durée positive.
@@ -2166,27 +2196,30 @@ public class PlayerLocomotion : NetworkBehaviour
 
     private float serverInputTimeBudget;
 
+    /// <summary>Le rythme auquel les inputs de ce client sont rejoués (voir InputPlayout).</summary>
+    private readonly InputPlayout serverPlayout = new InputPlayout();
+
     private void ApplyBufferedServerInputs()
     {
         ServerDrainReceivedInputs();
         int lastProcessedSequence = -1;
 
-        serverInputTimeBudget = Mathf.Min(
-            serverInputTimeBudget + Time.deltaTime * InputTimeBudgetRefillFactor,
-            MaxInputTimeBudget);
+        float elapsed = Time.deltaTime;
+        serverInputTimeBudget = RefillInputBudget(serverInputTimeBudget, elapsed);
+        serverPlayout.Begin(elapsed, serverQueuedInputTime);
 
         while (serverInputQueue.Count > 0)
         {
-            // Peek plutôt que Dequeue : si le budget ne couvre pas cet input EN ENTIER, on le
-            // laisse dans la queue pour le prochain Update() au lieu de le tronquer. Simuler un
-            // input avec un dt partiel casserait la réconciliation (le client, lui, a prédit avec
-            // le dt complet) — exactement le genre de divergence que Move() doit éviter.
+            // Peek plutôt que Dequeue : si le crédit de l'image ou le budget ne couvre pas cet input
+            // EN ENTIER, on le laisse dans la queue pour le prochain Update() au lieu de le tronquer.
+            // Simuler un input avec un dt partiel casserait la réconciliation (le client, lui, a prédit
+            // avec le dt complet) — exactement le genre de divergence que Move() doit éviter.
             PendingInput next = serverInputQueue.Peek();
-            float dt = Mathf.Clamp(next.deltaTime, 0f, MaxSingleInputDeltaTime);
-            if (dt > serverInputTimeBudget) break;
+            float dt = InputDuration(next.deltaTime);
+            if (!serverPlayout.CanPlay(dt) || !TrySpendInputBudget(ref serverInputTimeBudget, dt)) break;
+            serverPlayout.Spend(dt);
 
             serverInputQueue.Dequeue();
-            serverInputTimeBudget -= dt;
             serverQueuedInputTime = serverInputQueue.Count > 0 ? Mathf.Max(0f, serverQueuedInputTime - dt) : 0f;
 
             ServerCheckAutoStand(next.snapshot);
@@ -2210,55 +2243,126 @@ public class PlayerLocomotion : NetworkBehaviour
             lastProcessedSequence = next.sequence;
         }
 
-        // Le reste éventuel de la queue (flood ou vrai gros rattrapage) attend le prochain
-        // Update() serveur plutôt que d'être traité d'un coup — voir commentaire ci-dessus.
+        // Le reste de la queue attend le prochain Update() serveur plutôt que d'être traité d'un coup :
+        // c'est la réserve qui couvre les trous d'arrivée, ou un flood — voir commentaire ci-dessus.
+        serverPlayout.End(elapsed, serverQueuedInputTime);
+        NetStats.NoteInputHold(serverQueuedInputTime);
 
-        // La correction confirme le dernier input simulé, au plus toutes les MinCorrectionInterval : un
-        // hôte à plusieurs centaines d'images par seconde n'en envoie pas une par image. Elle porte
+        // La correction confirme le dernier input simulé, une fois par tick : c'est le plus gros flux
+        // descendant, presque toutes ne font que confirmer, et elle part ainsi dans le même paquet que
+        // les poses du tick. Elle porte
         // l'état ACTUEL : rien d'autre que Move() ne le change entre deux, hormis un replacement en
-        // début de manche, que le joueur doit justement recevoir.
+        // début de manche, que le joueur doit justement recevoir. Entre la disparition d'un robot et sa
+        // destruction, une image passe encore ici : une RPC universelle y lèverait une exception.
         if (lastProcessedSequence >= 0)
         {
             serverCorrectionSequence = lastProcessedSequence;
             serverCorrectionPending = true;
         }
-        if (serverCorrectionPending && Time.unscaledTime - serverCorrectionSentAt >= MinCorrectionInterval)
+        int tick = NetworkManager.ServerTime.Tick;
+        if (serverCorrectionPending && IsSpawned && tick != lastCorrectionTick)
         {
             serverCorrectionPending = false;
-            serverCorrectionSentAt = Time.unscaledTime;
-            ReceiveCorrectionClientRpc(serverCorrectionSequence, transform.position, verticalVelocity, transform.eulerAngles.y, currentVelocity,
-                                       IsVaulting, vaultTimer, vaultStart, vaultEnd, vaultPeakY, ownerRpcParams);
+            lastCorrectionTick = tick;
+            ReceiveCorrectionRpc(new CorrectionPacket
+            {
+                sequence = serverCorrectionSequence,
+                position = transform.position,
+                verticalVelocity = verticalVelocity,
+                yaw = transform.eulerAngles.y,
+                velocity = currentVelocity,
+                vaulting = IsVaulting,
+                vaultTimer = vaultTimer,
+                vaultStart = vaultStart,
+                vaultEnd = vaultEnd,
+                vaultPeakY = vaultPeakY,
+            });
         }
 
         // La pose et l'historique sont publiés par Update(), à chaque frame, inputs ou non.
     }
 
     /// <summary>
-    /// La correction du serveur : l'état qui suit l'input `confirmedSequence`. En NON FIABLE depuis le
-    /// 2026-10-13 : la suivante remplace celle qui se perd, et une correction qui arrive après une
-    /// plus récente est périmée (elle ferait rejouer des inputs déjà confirmés), donc ignorée.
+    /// Une correction du serveur : l'état qui suit l'input `sequence`, tout ce que Move() cumule (SimulationState).
+    /// L'état du franchissement ne voyage que pendant un franchissement : hors de lui, Move() ne le relit pas
+    /// (BeginVault réécrit tout), et il pesait près de la moitié du paquet.
     /// </summary>
-    [ClientRpc(Delivery = RpcDelivery.Unreliable)]
-    private void ReceiveCorrectionClientRpc(int confirmedSequence, Vector3 confirmedPosition, float confirmedVerticalVelocity, float confirmedYaw, Vector3 confirmedHorizontalVelocity, bool confirmedVaulting, float confirmedVaultTimer, Vector3 confirmedVaultStart, Vector3 confirmedVaultEnd, float confirmedVaultPeakY, ClientRpcParams clientRpcParams = default)
+    public struct CorrectionPacket : INetworkSerializable
     {
-        if (!IsOwner) return;
-        if (confirmedSequence <= lastCorrectionSequence)
+        public int sequence;
+        public Vector3 position;
+        public float verticalVelocity;
+        public float yaw;
+        public Vector3 velocity;
+        public bool vaulting;
+        public float vaultTimer;
+        public Vector3 vaultStart;
+        public Vector3 vaultEnd;
+        public float vaultPeakY;
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref sequence);
+            serializer.SerializeValue(ref position);
+            serializer.SerializeValue(ref verticalVelocity);
+            serializer.SerializeValue(ref yaw);
+            serializer.SerializeValue(ref velocity);
+            serializer.SerializeValue(ref vaulting);
+            if (!vaulting) return;
+            serializer.SerializeValue(ref vaultTimer);
+            serializer.SerializeValue(ref vaultStart);
+            serializer.SerializeValue(ref vaultEnd);
+            serializer.SerializeValue(ref vaultPeakY);
+        }
+    }
+
+    /// <summary>
+    /// La correction, en NON FIABLE depuis le 2026-10-13 : la suivante remplace celle qui se perd. Une RPC universelle
+    /// s'ouvre à tous par défaut, et passe par le serveur : sans la permission, un client modifié recalerait le robot
+    /// d'un autre, et lui ferait ignorer les vraies corrections en annonçant un grand numéro.
+    /// </summary>
+    [Rpc(SendTo.Owner, Delivery = RpcDelivery.Unreliable, InvokePermission = RpcInvokePermission.Server)]
+    private void ReceiveCorrectionRpc(CorrectionPacket correction)
+    {
+        if (IsOwner) StoreCorrection(correction);
+    }
+
+    /// <summary>
+    /// Une correction reçue confirme ses inputs tout de suite, et attend le début de la simulation de cette image, où
+    /// seule la plus récente compte (ApplyPendingCorrection) : les RPC sont reçues en début d'image, elle ne perd rien
+    /// à attendre. Une correction qui arrive après une plus récente est périmée (elle ferait rejouer des inputs déjà
+    /// confirmés), donc ignorée.
+    /// </summary>
+    private void StoreCorrection(CorrectionPacket correction)
+    {
+        if (correction.sequence <= lastCorrectionSequence)
         {
             NetStats.StaleCorrections++;
-#if UNITY_EDITOR
-            diagCorrectionsStale++;
-#endif
             return;
         }
-        lastCorrectionSequence = confirmedSequence;
-        lastAckedInput = Mathf.Max(lastAckedInput, confirmedSequence);
+        lastCorrectionSequence = correction.sequence;
+        lastAckedInput = Mathf.Max(lastAckedInput, correction.sequence);
+        pendingCorrection = correction;
+        correctionPending = true;
+    }
 
-        // Le serveur envoie une correction à CHAQUE frame où il a traité des inputs, c'est-à-dire
-        // en permanence. Sans le seuil ci-dessous, chaque correction déclenchait un recalage + le
-        // rejeu de TOUS les inputs non confirmés : à 100 ms de RTT, ça représentait ~10 Move()
-        // supplémentaires par frame, soit plusieurs centaines de sweeps physiques par seconde,
-        // uniquement pour aboutir au même résultat. Et le toggle controller.enabled ci-dessous
-        // remettait isGrounded à false à chaque fois, faisant clignoter la détection de sol.
+    /// <summary>
+    /// La dernière correction reçue, en tête de la simulation du propriétaire : au plus un rejeu par image. Rejouer à
+    /// la réception en faisait un par correction, jusqu'à deux par image à 60 images/s, et chacun coûte un balayage
+    /// du contrôleur par input en attente (54 à 76 à 180 images/s par les relais).
+    /// </summary>
+    private void ApplyPendingCorrection()
+    {
+        if (!correctionPending) return;
+        correctionPending = false;
+        CorrectionPacket correction = pendingCorrection;
+
+        // Le serveur envoie des corrections en permanence. Sans le seuil ci-dessous, chaque correction
+        // déclenchait un recalage + le rejeu de TOUS les inputs non confirmés : à 100 ms de RTT, ça
+        // représentait ~10 Move() supplémentaires par frame, soit plusieurs centaines de sweeps
+        // physiques par seconde, uniquement pour aboutir au même résultat. Et le toggle
+        // controller.enabled ci-dessous remettait isGrounded à false à chaque fois, faisant clignoter
+        // la détection de sol.
         //
         // On ne se recale donc QUE si la prédiction était réellement fausse. Pour le savoir, il
         // faut comparer ce que le serveur confirme avec ce que le client avait prédit POUR LA MÊME
@@ -2267,32 +2371,26 @@ public class PlayerLocomotion : NetworkBehaviour
         // Les inputs non confirmés sont rangés par numéro croissant : ceux que la correction confirme
         // sont en tête (une boucle plutôt qu'une lambda, qui allouait à chaque correction).
         int confirmedCount = 0;
-        while (confirmedCount < unconfirmedInputs.Count && unconfirmedInputs[confirmedCount].sequence <= confirmedSequence) confirmedCount++;
-        int predictionIndex = confirmedCount > 0 && unconfirmedInputs[confirmedCount - 1].sequence == confirmedSequence ? confirmedCount - 1 : -1;
+        while (confirmedCount < unconfirmedInputs.Count && unconfirmedInputs[confirmedCount].sequence <= correction.sequence) confirmedCount++;
+        int predictionIndex = confirmedCount > 0 && unconfirmedInputs[confirmedCount - 1].sequence == correction.sequence ? confirmedCount - 1 : -1;
         bool predictionWasCorrect = false;
 
         if (predictionIndex >= 0)
         {
             PendingInput predicted = unconfirmedInputs[predictionIndex];
-            float positionError = Vector3.Distance(predicted.predictedPosition, confirmedPosition);
-            float yawError = Mathf.Abs(Mathf.DeltaAngle(predicted.predictedYaw, confirmedYaw));
+            float positionError = Vector3.Distance(predicted.predictedPosition, correction.position);
+            float yawError = Mathf.Abs(Mathf.DeltaAngle(predicted.predictedYaw, correction.yaw));
             // Un désaccord sur le FAIT d'être en train de franchir n'est jamais tolérable, même
             // si les positions coïncident : les deux côtés ne simuleraient plus la même chose au
             // pas suivant.
             predictionWasCorrect = positionError <= positionReconciliationThreshold
                 && yawError <= yawReconciliationThreshold
-                && predicted.predictedVaulting == confirmedVaulting;
+                && predicted.predictedVaulting == correction.vaulting;
 
-            // RTT mesuré GRATUITEMENT : cet input est parti à `sentAt` et sa confirmation arrive
-            // maintenant. Aucune RPC de ping dédiée, aucune dépendance à la synchronisation
-            // d'horloge de Netcode — juste le chronométrage d'un aller-retour déjà présent dans
-            // l'architecture. Lissé pour qu'un pic isolé ne fasse pas sauter le rewind d'un coup.
-            //
-            // Inclut le temps d'attente de l'input dans la queue serveur, donc surestime un peu le
-            // RTT pur. C'est le bon biais ici : ce qu'on cherche à mesurer n'est pas la latence
-            // réseau théorique, mais l'âge réel de ce que le tireur voit à l'écran.
+            // L'aller-retour, mesuré sans rien envoyer de plus : cet input est parti à `sentAt` et sa
+            // confirmation arrive maintenant. Il compte l'attente de l'input sur le serveur (son tampon de
+            // lecture compris), donc surestime un peu le réseau seul. Le journal de diagnostic seul le lit.
             float measuredRtt = Time.time - predicted.sentAt;
-            smoothedRtt = smoothedRtt <= 0f ? measuredRtt : Mathf.Lerp(smoothedRtt, measuredRtt, 0.1f);
             NetStats.Corrections++;
             if (!predictionWasCorrect) NetStats.Resyncs++;
             if (positionError > NetStats.ErrorMax) NetStats.ErrorMax = positionError;
@@ -2300,12 +2398,12 @@ public class PlayerLocomotion : NetworkBehaviour
             NetStats.RttSamples++;
 
 #if UNITY_EDITOR
-            DiagRecordCorrection(!predictionWasCorrect, positionError);
+            DiagRecordCorrection(!predictionWasCorrect, positionError, measuredRtt);
 #endif
         }
-        // Si la séquence est introuvable (correction périmée, ou input jeté par le plafond de
-        // serverInputQueue), on ne peut rien conclure : on retombe sur le recalage systématique,
-        // qui reste le comportement SÛR. Mieux vaut un à-coup qu'une désynchronisation silencieuse.
+        // Si la séquence est introuvable (input oublié, ou jeté par le plafond de serverInputQueue),
+        // on ne peut rien conclure : on retombe sur le recalage systématique, qui reste le
+        // comportement SÛR. Mieux vaut un à-coup qu'une désynchronisation silencieuse.
 
         if (confirmedCount > 0) unconfirmedInputs.RemoveRange(0, confirmedCount);
 
@@ -2328,12 +2426,12 @@ public class PlayerLocomotion : NetworkBehaviour
         // boucle. Règle générale : toute valeur cumulative lue par Move() doit avoir son équivalent
         // confirmé, renvoyé par le serveur et appliqué ici avant le rejeu.
         controller.enabled = false;
-        transform.position = confirmedPosition;
-        transform.rotation = Quaternion.Euler(0f, confirmedYaw, 0f);
+        transform.position = correction.position;
+        transform.rotation = Quaternion.Euler(0f, correction.yaw, 0f);
         controller.enabled = true;
-        verticalVelocity = confirmedVerticalVelocity;
-        currentVelocity = confirmedHorizontalVelocity;
-        RestoreVaultState(confirmedVaulting, confirmedVaultTimer, confirmedVaultStart, confirmedVaultEnd, confirmedVaultPeakY);
+        verticalVelocity = correction.verticalVelocity;
+        currentVelocity = correction.velocity;
+        RestoreVaultState(correction.vaulting, correction.vaultTimer, correction.vaultStart, correction.vaultEnd, correction.vaultPeakY);
 
         isReplayingInputs = true;
         try
@@ -2367,7 +2465,7 @@ public class PlayerLocomotion : NetworkBehaviour
     // ------------------------------------------------------------------
 
     /// <summary>La variable de pose ne change qu'à l'apparition et aux replacements (fiable) ; elle
-    /// rejoint le flux des poses non fiables (PoseClientRpc).</summary>
+    /// rejoint le flux des poses non fiables (PoseRpc).</summary>
     private void HandleNetworkPoseChanged(DisplayPose previous, DisplayPose current) => ReceivePose(current);
 
     /// <summary>Écart (s) entre deux poses reçues au-delà duquel on n'interpole plus de l'une à
@@ -2410,15 +2508,16 @@ public class PlayerLocomotion : NetworkBehaviour
     }
 
     /// <summary>
-    /// Les poses d'affichage, en NON FIABLE, une par tick réseau (30 par seconde, environ 1 Ko/s par
+    /// Les poses d'affichage, en NON FIABLE, une par tick réseau (60 par seconde, environ 3 Ko/s par
     /// joueur), même quand le joueur est immobile : un spectateur a besoin de poses régulières, sinon il
     /// interpolerait un départ sur plusieurs secondes. Elles passaient par une variable réseau, donc en
     /// fiable : un paquet perdu figeait les autres joueurs jusqu'à son renvoi (mesuré le 2026-10-13 à
     /// 2 % de pertes : 19 à 68 images « affamées » toutes les 3 s chez le client). Une pose perdue n'est
-    /// plus qu'un trou que l'interpolation enjambe.
+    /// plus qu'un trou que l'interpolation enjambe. Elle ne va pas à son propriétaire, qui n'en ferait rien
+    /// (en duel, c'était la moitié du flux), et seul le serveur l'envoie (voir ReceiveCorrectionRpc).
     /// </summary>
-    [ClientRpc(Delivery = RpcDelivery.Unreliable)]
-    private void PoseClientRpc(DisplayPose pose) => ReceivePose(pose);
+    [Rpc(SendTo.NotOwner, Delivery = RpcDelivery.Unreliable, InvokePermission = RpcInvokePermission.Server)]
+    private void PoseRpc(DisplayPose pose) => ReceivePose(pose);
 
     /// <summary>La pose d'affichage de cette image, datée sur l'horloge du serveur.</summary>
     private DisplayPose ServerCurrentPose()
@@ -2450,7 +2549,7 @@ public class PlayerLocomotion : NetworkBehaviour
         int tick = NetworkManager.ServerTime.Tick;
         if (tick == lastPoseTick) return;
         lastPoseTick = tick;
-        PoseClientRpc(ServerCurrentPose());
+        PoseRpc(ServerCurrentPose());
     }
 
     /// <summary>Serveur : la pose par la variable réseau, FIABLE, à l'apparition et à chaque
@@ -2491,6 +2590,10 @@ public class PlayerLocomotion : NetworkBehaviour
     public int DiagReserveFrames { get; set; }
 #endif
 
+    /// <summary>Tangage reçu d'un client : borné à la verticale, et un NaN (client modifié) ramené à
+    /// l'horizontale, pour qu'il ne se propage pas jusqu'à l'animation des autres joueurs.</summary>
+    public static float SanitizeAimPitch(float pitch) => float.IsNaN(pitch) ? 0f : Mathf.Clamp(pitch, -90f, 90f);
+
     /// <summary>
     /// Pose interpolée à un instant donné de l'horloge du serveur. Fonction PURE et statique,
     /// testée sans réseau comme SampleHitboxHistory. Position et lean en ligne droite, rotation par
@@ -2498,36 +2601,37 @@ public class PlayerLocomotion : NetworkBehaviour
     /// Hors de l'historique, la pose la plus proche, sans extrapolation : deviner où va un
     /// adversaire serait pire que le montrer un instant immobile.
     /// </summary>
-    /// <summary>Tangage reçu d'un client : borné à la verticale, et un NaN (client modifié) ramené à
-    /// l'horizontale, pour qu'il ne se propage pas jusqu'à l'animation des autres joueurs.</summary>
-    public static float SanitizeAimPitch(float pitch) => float.IsNaN(pitch) ? 0f : Mathf.Clamp(pitch, -90f, 90f);
-
     public static DisplayPose SampleDisplayPose(IReadOnlyList<DisplayPose> snapshots, double time)
     {
         if (time <= snapshots[0].time) return snapshots[0];
 
-        for (int i = 0; i < snapshots.Count - 1; i++)
+        // La première pose qui atteint l'instant, et celle d'avant, comme SampleHitboxHistory : c'est lu à
+        // chaque image et pour chaque robot distant.
+        int low = 1, high = snapshots.Count;
+        while (low < high)
         {
-            DisplayPose a = snapshots[i];
-            DisplayPose b = snapshots[i + 1];
-            if (time > b.time) continue;
-
-            double span = b.time - a.time;
-            float t = span > 1e-6 ? (float)((time - a.time) / span) : 1f;
-            return new DisplayPose
-            {
-                time = time,
-                position = Vector3.Lerp(a.position, b.position, t),
-                yaw = Mathf.LerpAngle(a.yaw, b.yaw, t),
-                leanOffset = Mathf.Lerp(a.leanOffset, b.leanOffset, t),
-                aimPitch = Mathf.Lerp(a.aimPitch, b.aimPitch, t),
-                flags = a.flags,
-                teleportId = b.teleportId,
-                charge = (byte)Mathf.RoundToInt(Mathf.Lerp(a.charge, b.charge, t)),
-            };
+            int middle = (low + high) >> 1;
+            if (snapshots[middle].time < time) low = middle + 1;
+            else high = middle;
         }
 
-        return snapshots[snapshots.Count - 1];
+        if (low == snapshots.Count) return snapshots[snapshots.Count - 1];
+
+        DisplayPose a = snapshots[low - 1];
+        DisplayPose b = snapshots[low];
+        double span = b.time - a.time;
+        float t = span > 1e-6 ? (float)((time - a.time) / span) : 1f;
+        return new DisplayPose
+        {
+            time = time,
+            position = Vector3.Lerp(a.position, b.position, t),
+            yaw = Mathf.LerpAngle(a.yaw, b.yaw, t),
+            leanOffset = Mathf.Lerp(a.leanOffset, b.leanOffset, t),
+            aimPitch = Mathf.Lerp(a.aimPitch, b.aimPitch, t),
+            flags = a.flags,
+            teleportId = b.teleportId,
+            charge = (byte)Mathf.RoundToInt(Mathf.Lerp(a.charge, b.charge, t)),
+        };
     }
 
     // ------------------------------------------------------------------
@@ -2546,7 +2650,7 @@ public class PlayerLocomotion : NetworkBehaviour
     {
         // Rotation (yaw) : appliquée ICI plutôt que dans PlayerCameraLook, pour qu'elle fasse
         // partie intégrante de la fonction déterministe rejouée par la prédiction/réconciliation.
-        // Rotation RELATIVE (transform.Rotate) : voir ReceiveCorrectionClientRpc pour pourquoi le
+        // Rotation RELATIVE (transform.Rotate) : voir ApplyPendingCorrection pour pourquoi le
         // recalage de la rotation au yaw confirmé, avant rejeu, est indispensable avec ce choix.
         transform.Rotate(0f, snap.lookX * yawSensitivity, 0f, Space.World);
 
@@ -2616,9 +2720,9 @@ public class PlayerLocomotion : NetworkBehaviour
         StanceProfile profile = GetStanceProfile(stance);
 
         // Capsule de collision appliquée ICI, dans la fonction déterministe, et pas seulement
-        // dans Update() : un rejeu de réconciliation tourne en dehors d'Update (depuis la
-        // ClientRpc de correction), et doit donc reconstituer lui-même la bonne capsule avant
-        // d'appeler controller.Move(). Voir ApplySimulationCapsule.
+        // dans UpdateStanceVisuals() : un rejeu de réconciliation passe avant elle, et doit donc
+        // reconstituer lui-même la bonne capsule avant d'appeler controller.Move(). Voir
+        // ApplySimulationCapsule.
         ApplySimulationCapsule(stance);
 
         // Vers l'avant seulement, diagonales avant comprises : ni de côté, ni en arrière (2026-10-10).
@@ -2919,12 +3023,7 @@ public class PlayerLocomotion : NetworkBehaviour
         Vector3 feet = transform.position + Vector3.up * (bottom + radius);
         Vector3 head = transform.position + Vector3.up * (bottom + standingProfile.controllerHeight - radius);
 
-        bool blocked = Physics.CheckCapsule(feet, head, radius, obstacleMask, QueryTriggerInteraction.Ignore);
-        if (debugDrawVaultRays)
-        {
-            Debug.DrawLine(feet, head, blocked ? Color.red : Color.green, 0.2f);
-        }
-        return !blocked;
+        return !Physics.CheckCapsule(feet, head, radius, obstacleMask, QueryTriggerInteraction.Ignore);
     }
 
     private StanceProfile GetStanceProfile(Stance stance) => stance switch
@@ -2956,23 +3055,22 @@ public class PlayerLocomotion : NetworkBehaviour
     /// </summary>
     private void ApplySimulationCapsule(Stance stance)
     {
-        StanceProfile profile = GetStanceProfile(stance);
-
-        float centerY = CapsuleCenterHeight(profile);
-
         // Court-circuit : écrire height/radius force PhysX à reconstruire le collider, inutile de
-        // le faire à chaque frame alors que la posture ne change que rarement.
-        if (Mathf.Approximately(controller.height, profile.controllerHeight)
-            && Mathf.Approximately(controller.radius, profile.controllerRadius)
-            && Mathf.Approximately(controller.center.y, centerY))
-        {
-            return;
-        }
+        // le faire à chaque input alors que la posture ne change que rarement. Seule cette fonction
+        // écrit ces dimensions : la dernière posture appliquée dit tout, sans rien relire du contrôleur.
+        if (capsuleApplied && stance == capsuleStance) return;
+        capsuleApplied = true;
+        capsuleStance = stance;
 
+        StanceProfile profile = GetStanceProfile(stance);
         controller.height = profile.controllerHeight;
         controller.radius = profile.controllerRadius;
-        controller.center = new Vector3(0f, centerY, 0f);
+        controller.center = new Vector3(0f, CapsuleCenterHeight(profile), 0f);
     }
+
+    // La posture que porte la capsule de collision (voir ApplySimulationCapsule).
+    private bool capsuleApplied;
+    private Stance capsuleStance;
 
     /// <summary>
     /// Hauteur du centre de la capsule au-dessus de la RACINE du joueur, choisie pour que la
@@ -3107,12 +3205,7 @@ public class PlayerLocomotion : NetworkBehaviour
         return sprinting ? PlayerSoundEvent.FootstepRun : PlayerSoundEvent.FootstepWalk;
     }
 
-    private NoiseLevel ComputeNoiseLevel()
-    {
-        NoiseLevel level = GetNoiseLevel(IsMoving, CurrentStance, IsSprinting, IsSneaking);
-        CurrentNoise = level;
-        return level;
-    }
+    private NoiseLevel ComputeNoiseLevel() => GetNoiseLevel(IsMoving, CurrentStance, IsSprinting, IsSneaking);
 
     /// <summary>Niveau de bruit d'un déplacement. Fonction pure, testée.
     ///
@@ -3248,6 +3341,9 @@ public class PlayerLocomotion : NetworkBehaviour
     /// </summary>
     private float ComputeAllowedLeanOffset(int state)
     {
+        // Sans lean, rien à calculer : c'est presque tous les inputs.
+        if (state == 0) return 0f;
+
         Stance stance = networkStance.Value.current;
         float targetOffset = state * MaxLeanOffset(stance, state);
         if (Mathf.Abs(targetOffset) <= 0.01f) return targetOffset;
@@ -3336,13 +3432,21 @@ public class PlayerLocomotion : NetworkBehaviour
     ///
     /// Partagée par le propriétaire (sa caméra, à son propre rythme d'images) et le serveur (la
     /// surface touchable, au rythme des inputs reçus) : les deux suivent la même courbe, aux
-    /// petites différences de pas près, comme avant avec MoveTowards.
+    /// petites différences de pas près, comme avant avec MoveTowards. Tout près de la cible, le pas la rend
+    /// exactement : SmoothDamp l'approche sans l'atteindre, et le lean changeait encore 3 s durant, dans les
+    /// flottants dénormalisés, à faire réécrire les zones touchables de chaque robot à chaque image.
     /// </summary>
     public static float StepLean(float current, float target, ref float velocity, float smoothTime, float dt)
     {
         if (dt <= 0f) return current;
-        return Mathf.SmoothDamp(current, target, ref velocity, Mathf.Max(0.001f, smoothTime), Mathf.Infinity, dt);
+        float next = Mathf.SmoothDamp(current, target, ref velocity, Mathf.Max(0.001f, smoothTime), Mathf.Infinity, dt);
+        if (Mathf.Abs(next - target) >= LeanSettleDistance || Mathf.Abs(velocity) >= LeanSettleSpeed) return next;
+        velocity = 0f;
+        return target;
     }
+
+    // En deçà de ces écarts (m, m/s), le lean est arrivé.
+    private const float LeanSettleDistance = 1e-5f, LeanSettleSpeed = 1e-3f;
 
     private void TriggerLandingKick(float fallSpeed)
     {
@@ -3807,6 +3911,23 @@ public class PlayerLocomotion : NetworkBehaviour
         // premier sweep part de l'ancienne (autoSyncTransforms vaut false dans ce projet).
         Physics.SyncTransforms();
     }
+
+    /// <summary>Prédit un input comme le propriétaire à chaque image (PredictInput), sans réseau. `frameTime` : la durée
+    /// de l'image ; `now` : son heure.</summary>
+    public void TestPredict(Vector2 move, float lookX, float frameTime, double simTime = 0, float now = 0f)
+        => PredictInput(new MovementInputSnapshot { move = move, lookX = lookX }, frameTime, simTime, now);
+
+    /// <summary>Une correction qui arrive du serveur (ReceiveCorrectionRpc).</summary>
+    public void TestReceiveCorrection(CorrectionPacket correction) => StoreCorrection(correction);
+
+    /// <summary>Le début de la simulation de l'image, où la correction reçue s'applique.</summary>
+    public void TestApplyCorrection() => ApplyPendingCorrection();
+
+    /// <summary>Les inputs prédits que le serveur n'a pas encore confirmés.</summary>
+    public int TestUnconfirmedInputs => unconfirmedInputs.Count;
+
+    /// <summary>La durée du dernier input rangé pour le serveur : celle qu'il recevra.</summary>
+    public float TestLastQueuedDuration => outgoingInputs[outgoingInputs.Count - 1].wire.deltaTime;
 
     /// <summary>Un input tel qu'il voyage (Pack), pour vérifier qu'il arrive tel qu'il est parti.</summary>
     public static InputWire TestPack(Vector2 move, float lookX, float aimPitch, float dt, bool sprint, bool sneak, bool aim,

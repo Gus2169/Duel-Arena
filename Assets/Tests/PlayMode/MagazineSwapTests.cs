@@ -96,9 +96,7 @@ public class MagazineSwapTests
         HeldWeapons.WearTaserGlove(arms, false);
         foreach (Animator a in new[] { body, arms })
         {
-            Transform hand = a.GetBoneTransform(HumanBodyBones.RightHand);
-            HeldWeapons.Build(hand, loadout, WeaponLooks.Default, attachments);
-            HeldWeapons.Show(hand, loadout, weapon);
+            HeldWeapons.Show(a.GetBoneTransform(HumanBodyBones.RightHand), loadout, weapon, WeaponLooks.Default, attachments);
         }
         bodyView = new MagazineSwap.View(body, false);
         armsView = new MagazineSwap.View(arms, true);
@@ -308,6 +306,34 @@ public class MagazineSwapTests
         Assert.IsNull(bodyView.InHand, "Le rechargement coupé, le chargeur neuf reste dans la main.");
         Assert.IsNull(armsView.InHand);
         Assert.IsTrue(held == null, "La copie du chargeur neuf n'est pas détruite.");
+    }
+
+    /// <summary>Hors d'un rechargement, la vue n'a rien à suivre, et MagazineSwap saute alors tout son tour. Elle y revient
+    /// après un rechargement coupé comme après un rechargement fini : sans ça, le tour ne se sauterait plus, ou se
+    /// sauterait l'arme encore sans chargeur.</summary>
+    [UnityTest]
+    public IEnumerator HorsDUnRechargement_LaVueEstAuRepos_EtYRevient()
+    {
+        Setup(WeaponAttachments.None);
+        Drive(false);
+        yield return Wait(0.3f);
+        Assert.IsTrue(bodyView.AtRest && armsView.AtRest, "Hors d'un rechargement, la vue doit être au repos.");
+
+        Drive(true);
+        for (float t = 0f; t < 2f && bodyView.InHand == null; t += Time.deltaTime) yield return null;
+        Assert.IsNotNull(bodyView.InHand, "Garde : le chargeur neuf est dans la main.");
+        Assert.IsFalse(bodyView.AtRest || armsView.AtRest, "En plein rechargement, la vue a de quoi faire.");
+
+        Drive(false);   // coupé
+        yield return null;
+        Assert.IsTrue(bodyView.AtRest && armsView.AtRest, "Le rechargement coupé, la vue doit revenir au repos.");
+
+        Drive(true);
+        yield return Wait(reloadDuration * 0.9f);
+        Assert.IsFalse(bodyView.AtRest, "Le chargeur neuf en place, le rechargement n'est pas fini : la vue n'est pas au repos.");
+        Drive(false);
+        yield return null;
+        Assert.IsTrue(bodyView.AtRest && armsView.AtRest, "Le rechargement fini, la vue doit revenir au repos.");
     }
 
     /// <summary>

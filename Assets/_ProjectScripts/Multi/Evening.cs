@@ -89,15 +89,6 @@ public static class Evening
         public readonly List<KeyValuePair<GameModeId, int>> winsByMode = new List<KeyValuePair<GameModeId, int>>();
         internal int firstSeen;
 
-        public int WinsIn(GameModeId mode)
-        {
-            foreach (KeyValuePair<GameModeId, int> pair in winsByMode)
-            {
-                if (pair.Key == mode) return pair.Value;
-            }
-            return 0;
-        }
-
         internal void AddWin(GameModeId mode)
         {
             wins++;

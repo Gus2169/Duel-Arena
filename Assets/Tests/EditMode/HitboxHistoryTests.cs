@@ -164,6 +164,62 @@ public class HitboxHistoryTests
     }
 
     [Test]
+    public void PileSurUnePose_CEstLIntervalleQuiFinitSurElle()
+    {
+        // Le coup de poing juge la garde sur la pose rembobinée : pile sur une pose, ses drapeaux sont ceux de
+        // l'intervalle qui finit sur elle, comme le frappeur l'a vu. Sur tout un historique, à chaque pose.
+        var history = new List<PlayerLocomotion.HitboxPose>();
+        for (int i = 0; i < 300; i++)
+        {
+            PlayerLocomotion.HitboxPose pose = Pose(10f + i * 0.25f, i);
+            pose.guard = i % 2 == 1;
+            history.Add(pose);
+        }
+
+        for (int i = 1; i < history.Count; i++)
+        {
+            Assert.IsTrue(PlayerLocomotion.SampleHitboxHistory(history, history[i].time, out var pile));
+            Assert.AreEqual(i, pile.position.x, 0.0001f, $"Pile sur la pose {i}.");
+            Assert.AreEqual(history[i - 1].guard, pile.guard, $"Pile sur la pose {i}, la garde est celle du début de l'intervalle.");
+
+            double milieu = (history[i - 1].time + history[i].time) * 0.5;
+            Assert.IsTrue(PlayerLocomotion.SampleHitboxHistory(history, milieu, out var entre));
+            Assert.AreEqual(i - 0.5f, entre.position.x, 0.0001f, $"Entre les poses {i - 1} et {i}.");
+            Assert.AreEqual(history[i - 1].guard, entre.guard);
+        }
+    }
+
+    [Test]
+    public void ADatesEgales_LaPremierePaireCompte()
+    {
+        // Deux poses au même instant : on prend l'intervalle qui arrive sur la première des deux.
+        var history = new List<PlayerLocomotion.HitboxPose> { Pose(10f, 0f), Pose(11f, 1f), Pose(11f, 5f), Pose(12f, 9f) };
+
+        Assert.IsTrue(PlayerLocomotion.SampleHitboxHistory(history, 11f, out var result));
+        Assert.AreEqual(1f, result.position.x, 0.0001f);
+    }
+
+    [Test]
+    public void LHistorique_SeTailleParPaquets_SansPerdreUnePoseDeLaFenetre()
+    {
+        // Un retrait décale toute la liste : il attend qu'il y ait de quoi faire. La fenêtre reste entière.
+        const int Fenetre = 100;
+        var history = new List<PlayerLocomotion.HitboxPose>();
+        int plusLongue = 0;
+        for (int i = 0; i < 1000; i++)
+        {
+            history.Add(Pose(i, i));
+            double cutoff = i - Fenetre;
+            PlayerLocomotion.RemoveOlderThan(history, cutoff);
+            Assert.LessOrEqual(history[0].time, System.Math.Max(0.0, cutoff), $"Une pose de la fenêtre a disparu à la pose {i}.");
+            plusLongue = Mathf.Max(plusLongue, history.Count);
+        }
+
+        Assert.LessOrEqual(plusLongue, Fenetre + PlayerLocomotion.HistoryTrimBatch, "Les poses périmées ne s'accumulent pas.");
+        Assert.Greater(plusLongue, Fenetre + PlayerLocomotion.HistoryTrimBatch / 2, "L'historique ne se taille pas à chaque pose.");
+    }
+
+    [Test]
     public void UneSeulePose_LaRenvoieQuelQueSoitLInstant()
     {
         var history = new List<PlayerLocomotion.HitboxPose> { Pose(10f, 7f) };

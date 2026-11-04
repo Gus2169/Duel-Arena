@@ -798,6 +798,17 @@ public class GameModesTests
         Assert.AreEqual(1f, ZoneLayout.WallFade(40f, radius, 0.25f, 6f), 1e-4f, "De loin : tout son éclat.");
     }
 
+    /// <summary>Hors de la Zone, ce que chaque machine en montre ne coûte rien ; mais la zone qui disparaît s'éteint encore une
+    /// fois (ses anneaux, ses parois, ses colonnes, ses arcs).</summary>
+    [Test]
+    public void LaZone_NeCouteRienHorsDuMode_MaisSEteintUneDerniereFois()
+    {
+        Assert.IsFalse(ZoneLayout.MustDraw(anyShown: false, shownBefore: false), "Rien de montré, avant comme maintenant : rien à faire.");
+        Assert.IsTrue(ZoneLayout.MustDraw(anyShown: true, shownBefore: false), "Une zone apparaît.");
+        Assert.IsTrue(ZoneLayout.MustDraw(anyShown: true, shownBefore: true), "Elle reste.");
+        Assert.IsTrue(ZoneLayout.MustDraw(anyShown: false, shownBefore: true), "Elle vient de partir : un dernier passage l'éteint.");
+    }
+
     [Test]
     public void LArene_ADesZones_DegageesEtEquitables()
     {

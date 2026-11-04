@@ -44,16 +44,14 @@ public class LobbyController : MonoBehaviour
         public readonly string name;
         public readonly Color32 paint;
         public readonly bool host, local;
-        public readonly ChassisId chassis;
 
-        public Entry(string id, string name, Color32 paint, bool host, bool local, ChassisId chassis = ChassisId.CT01)
+        public Entry(string id, string name, Color32 paint, bool host, bool local)
         {
             this.id = id;
             this.name = name;
             this.paint = paint;
             this.host = host;
             this.local = local;
-            this.chassis = chassis;
         }
     }
 
@@ -232,6 +230,7 @@ public class LobbyController : MonoBehaviour
         });
     }
 
+#if UNITY_EDITOR
     /// <summary>Montre l'écran du salon avec ces données, sans le service : pour voir l'écran dans tous ses
     /// états (seul, à deux, à six) lors des captures.</summary>
     public void ShowPreview(View view)
@@ -239,6 +238,7 @@ public class LobbyController : MonoBehaviour
         mainMenu.ShowScreenByName(MainMenuController.LobbyScreen);
         Show(view);
     }
+#endif
 
     private void Show(View view)
     {
@@ -470,8 +470,10 @@ public class LobbyController : MonoBehaviour
         local = entry.local,
     };
 
+#if UNITY_EDITOR
     /// <summary>Un joueur pour un aperçu de l'écran (ShowPreview).</summary>
     public static Entry PreviewEntry(string name, Color32 paint, bool host, bool local) => new Entry(name, name, paint, host, local);
+#endif
 
     /// <summary>Les joueurs du salon, l'hôte d'abord puis les autres dans leur ordre d'arrivée, chacun avec
     /// la couleur qu'il aura en partie.</summary>
@@ -496,8 +498,7 @@ public class LobbyController : MonoBehaviour
             string name = OnlineSession.NameOf(player);
             Color32 paint = palette.Count > 0 ? PlayerPaint.PickPaint(palette, taken, OnlineSession.ColorOf(player)) : new Color32(244, 190, 28, 255);
             taken.Add(paint);
-            entries.Add(new Entry(player.Id, string.IsNullOrEmpty(name) ? $"Joueur {i + 1}" : name, paint, player.Id == hostId, player.Id == localId,
-                                  OnlineSession.ChassisOf(player)));
+            entries.Add(new Entry(player.Id, string.IsNullOrEmpty(name) ? $"Joueur {i + 1}" : name, paint, player.Id == hostId, player.Id == localId));
         }
         return entries;
     }

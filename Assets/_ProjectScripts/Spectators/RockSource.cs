@@ -28,7 +28,9 @@ public class RockSource : MonoBehaviour
     private bool shownDepleted;
     private float loosened; // de 0 (intact) à 1 (prêt à céder)
 
-    public Collider Body => body;
+    /// <summary>La place du morceau hors d'une secousse : il sort un peu plus du bloc à chaque coup.</summary>
+    private Vector3 ChunkPosition => chunkRestPosition + Vector3.forward * (0.06f * loosened);
+
     public Vector3 DropPosition => dropPoint != null ? dropPoint.position : transform.position + transform.forward * 0.6f;
 
     /// <summary>L'index du bloc dans la Tribune (l'état réseauté est rangé par index).</summary>
@@ -42,6 +44,8 @@ public class RockSource : MonoBehaviour
             chunkRestPosition = chunk.localPosition;
             chunkRestScale = chunk.localScale;
         }
+        // Rien à faire entre deux coups, sur chaque machine et même sans spectateur : Show l'allume le temps d'une secousse.
+        enabled = false;
     }
 
     /// <summary>Le point du bloc le plus proche de `from` (pour le poing qui l'atteint).</summary>
@@ -50,7 +54,11 @@ public class RockSource : MonoBehaviour
     /// <summary>Montre l'état publié par le serveur : `hits` coups reçus sur `hitsToBreak`, ou épuisé.</summary>
     public void Show(int hits, int hitsToBreak, bool depleted)
     {
-        if (hits != shownHits && !depleted && hits > 0) shakeUntil = Time.time + 0.18f;
+        if (hits != shownHits && !depleted && hits > 0)
+        {
+            shakeUntil = Time.time + 0.18f;
+            enabled = true;
+        }
         shownHits = hits;
         shownDepleted = depleted;
         // Le morceau sort un peu plus du bloc à chaque coup : on voit qu'il va céder.
@@ -58,15 +66,18 @@ public class RockSource : MonoBehaviour
         if (chunk == null) return;
         chunk.gameObject.SetActive(!depleted);
         chunk.localScale = chunkRestScale;
-        chunk.localPosition = chunkRestPosition + Vector3.forward * (0.06f * loosened);
+        chunk.localPosition = ChunkPosition;
     }
 
     private void Update()
     {
-        if (chunk == null || shownDepleted) return;
-        Vector3 shake = Time.time < shakeUntil
-            ? new Vector3(Mathf.Sin(Time.time * 90f), Mathf.Sin(Time.time * 70f + 1f), 0f) * 0.015f
-            : Vector3.zero;
-        chunk.localPosition = chunkRestPosition + Vector3.forward * (0.06f * loosened) + shake;
+        if (chunk == null || shownDepleted || Time.time >= shakeUntil)
+        {
+            if (chunk != null) chunk.localPosition = ChunkPosition;
+            enabled = false;
+            return;
+        }
+        Vector3 shake = new Vector3(Mathf.Sin(Time.time * 90f), Mathf.Sin(Time.time * 70f + 1f), 0f) * 0.015f;
+        chunk.localPosition = ChunkPosition + shake;
     }
 }

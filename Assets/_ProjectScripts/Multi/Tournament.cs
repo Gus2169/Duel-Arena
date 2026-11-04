@@ -176,27 +176,6 @@ public static class Tournament
     /// copies servent même à trois joueurs). La finale se joue dans la première. Fonction pure, testée.</summary>
     public static int ArenaFor(int tour, int index) => (tour + index) % MaxArenas;
 
-    /// <summary>Ceux qui se reposent pendant un tour : les joueurs encore là qui n'y ont pas de match.</summary>
-    public static void Resting(IReadOnlyList<ulong> players, IReadOnlyList<Match> matches, int tour, ICollection<ulong> left,
-                               List<ulong> result)
-    {
-        result.Clear();
-        foreach (ulong id in players)
-        {
-            if (left != null && left.Contains(id)) continue;
-            bool plays = false;
-            foreach (Match m in matches)
-            {
-                if (m.tour == tour && m.Involves(id) && !m.forfeit)
-                {
-                    plays = true;
-                    break;
-                }
-            }
-            if (!plays) result.Add(id);
-        }
-    }
-
     /// <summary>Tous les matchs de ce tour sont-ils finis ?</summary>
     public static bool TourDone(IReadOnlyList<Match> matches, int tour)
     {

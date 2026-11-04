@@ -721,6 +721,181 @@ public class MoveDeterminismTests
         Assert.Less(highest, 1.25f, "Le robot ne saute pas plus haut que la caisse et sa marge.");
     }
 
+    // ------------------------------------------------------------------
+    // La réconciliation : ce que le joueur fait d'une correction du serveur
+    // ------------------------------------------------------------------
+
+    private const float Lacet = 1.5f; // un mouvement de souris : le rejeu doit aussi refaire la rotation
+
+    private void Predire(int inputs, float heure = 0f)
+    {
+        for (int i = 0; i < inputs; i++) player.TestPredict(Vector2.up, Lacet, Dt, 0, heure);
+    }
+
+    private void Simuler(int inputs)
+    {
+        for (int i = 0; i < inputs; i++) player.TestMove(Vector2.up, Lacet, false, false, false, false, 0, Dt);
+    }
+
+    private static PlayerLocomotion.CorrectionPacket CorrectionDe(PlayerLocomotion.SimulationState etat, int sequence)
+        => new PlayerLocomotion.CorrectionPacket
+        {
+            sequence = sequence,
+            position = etat.position,
+            verticalVelocity = etat.verticalVelocity,
+            yaw = etat.rotation.eulerAngles.y,
+            velocity = etat.currentVelocity,
+        };
+
+    /// <summary>Ce que le serveur a simulé des `inputs` premiers inputs : il voit le joueur 50 cm plus loin.</summary>
+    private PlayerLocomotion.SimulationState EtatDuServeur(PlayerLocomotion.SimulationState depart, int inputs)
+    {
+        player.TestRestoreState(depart);
+        Simuler(inputs);
+        PlayerLocomotion.SimulationState etat = player.TestCaptureState();
+        etat.position += Vector3.right * 0.5f;
+        return etat;
+    }
+
+    /// <summary>Où un rejeu de `inputs` inputs doit arriver depuis l'état du serveur. Le cap voyage en degrés : le rejeu
+    /// repart de lui, pas du quaternion d'origine.</summary>
+    private PlayerLocomotion.SimulationState RejeuAttendu(PlayerLocomotion.SimulationState confirme, int inputs)
+    {
+        confirme.rotation = Quaternion.Euler(0f, confirme.rotation.eulerAngles.y, 0f);
+        player.TestRestoreState(confirme);
+        Simuler(inputs);
+        return player.TestCaptureState();
+    }
+
+    private void AssertRejoue(PlayerLocomotion.SimulationState attendu, string message)
+    {
+        PlayerLocomotion.SimulationState etat = player.TestCaptureState();
+        Assert.AreEqual(0f, Vector3.Distance(attendu.position, etat.position), 1e-4f, message);
+        Assert.AreEqual(0f, Mathf.DeltaAngle(attendu.rotation.eulerAngles.y, etat.rotation.eulerAngles.y), 1e-3f, message);
+    }
+
+    /// <summary>
+    /// Un recalage rejoue tous les inputs en attente, un balayage du contrôleur chacun : au plus un par image. À 60
+    /// images/s, deux corrections peuvent arriver dans la même, et chacune faisait son rejeu dans sa réception. Rien
+    /// ne bouge à la réception, et seule la plus récente s'applique, en tête de la simulation.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator DeuxCorrectionsDansLaMemeImage_FontUnSeulRejeu_EnTeteDeSimulation()
+    {
+        yield return null;
+        Settle();
+        PlayerLocomotion.SimulationState depart = player.TestCaptureState();
+        PlayerLocomotion.SimulationState serveur = EtatDuServeur(depart, 10);
+        PlayerLocomotion.SimulationState attendu = RejeuAttendu(serveur, 20);
+
+        player.TestRestoreState(depart);
+        Predire(30);
+        PlayerLocomotion.SimulationState predit = player.TestCaptureState();
+        Assert.Greater(Vector3.Distance(attendu.position, predit.position), 0.3f, "Garde anti-vacuité : la prédiction doit être fausse.");
+
+        player.TestReceiveCorrection(CorrectionDe(serveur, 4));
+        player.TestReceiveCorrection(CorrectionDe(serveur, 9));
+        AssertBitIdentical(predit, player.TestCaptureState());
+        Assert.AreEqual(30, player.TestUnconfirmedInputs, "Rien ne se rejoue ni ne se confirme à la réception.");
+
+        player.TestApplyCorrection();
+        Assert.AreEqual(20, player.TestUnconfirmedInputs, "La correction la plus récente confirme ses inputs.");
+        AssertRejoue(attendu, "Le rejeu repart de la correction la plus récente.");
+
+        PlayerLocomotion.SimulationState rejoue = player.TestCaptureState();
+        player.TestApplyCorrection();
+        AssertBitIdentical(rejoue, player.TestCaptureState());
+    }
+
+    [UnityTest]
+    public IEnumerator UneCorrectionSousLeSeuil_ConfirmeSesInputs_SansRecaler()
+    {
+        yield return null;
+        Settle();
+
+        Predire(10);
+        PlayerLocomotion.SimulationState confirme = player.TestCaptureState();
+        confirme.position += Vector3.right * 0.01f; // sous le seuil de 5 cm
+        Predire(20);
+        PlayerLocomotion.SimulationState predit = player.TestCaptureState();
+
+        player.TestReceiveCorrection(CorrectionDe(confirme, 9));
+        player.TestApplyCorrection();
+
+        Assert.AreEqual(20, player.TestUnconfirmedInputs, "Garde anti-vacuité : la correction a bien été appliquée.");
+        AssertBitIdentical(predit, player.TestCaptureState());
+    }
+
+    [UnityTest]
+    public IEnumerator UneCorrectionPlusAncienne_ArriveeApres_EstIgnoree()
+    {
+        yield return null;
+        Settle();
+        PlayerLocomotion.SimulationState depart = player.TestCaptureState();
+        PlayerLocomotion.SimulationState serveur = EtatDuServeur(depart, 10);
+        PlayerLocomotion.SimulationState attendu = RejeuAttendu(serveur, 20);
+
+        player.TestRestoreState(depart);
+        Predire(30);
+
+        // Elles voyagent en non fiable : une plus ancienne peut arriver après, et ferait rejouer des inputs confirmés.
+        player.TestReceiveCorrection(CorrectionDe(serveur, 9));
+        player.TestReceiveCorrection(CorrectionDe(depart, 4));
+        player.TestApplyCorrection();
+
+        Assert.AreEqual(20, player.TestUnconfirmedInputs);
+        AssertRejoue(attendu, "La correction la plus récente reste celle qui compte.");
+    }
+
+    [UnityTest]
+    public IEnumerator UnInputSansReponseDepuisUneSeconde_NeSeRejouePlus()
+    {
+        yield return null;
+        Settle();
+        PlayerLocomotion.SimulationState depart = player.TestCaptureState();
+        PlayerLocomotion.SimulationState serveur = EtatDuServeur(depart, 10);
+        PlayerLocomotion.SimulationState attendu = RejeuAttendu(serveur, 15);
+
+        // Une coupure : sans borne, tout ce qu'elle a laissé se rejouait dans une seule image.
+        player.TestRestoreState(depart);
+        Predire(30, 0f);
+        Assert.AreEqual(30, player.TestUnconfirmedInputs, "Garde anti-vacuité : ils attendent.");
+        Predire(15, 1.5f);
+        Assert.AreEqual(15, player.TestUnconfirmedInputs, "Ce qui a plus d'une seconde est oublié.");
+
+        // La correction d'un input oublié : la séquence est introuvable, c'est le recalage sûr.
+        player.TestReceiveCorrection(CorrectionDe(serveur, 9));
+        player.TestApplyCorrection();
+        AssertRejoue(attendu, "Le recalage repart de la correction, et ne rejoue que ce qui reste.");
+    }
+
+    /// <summary>
+    /// Le serveur borne la durée d'un input à 0,1 s, et le joueur simulait la durée de son image, jusqu'à 0,333 s : le
+    /// moindre à-coup finissait par un recalage, alors que le réseau allait bien. Move() doit recevoir le même dt des
+    /// deux côtés, et c'est ce dt qui part sur le réseau.
+    /// </summary>
+    [UnityTest]
+    public IEnumerator UneImageTropLongue_LeJoueurSimuleCeQueLeServeurSimulera()
+    {
+        yield return null;
+        Settle();
+        PlayerLocomotion.SimulationState depart = player.TestCaptureState();
+
+        const float Image = 0.15f;
+        player.TestRestoreState(depart);
+        player.TestPredict(Vector2.up, Lacet, Image);
+        PlayerLocomotion.SimulationState joueur = player.TestCaptureState();
+        float envoyee = player.TestLastQueuedDuration;
+        Assert.Less(envoyee, Image, "Le joueur n'envoie pas plus que ce que le serveur simulera.");
+
+        // Le serveur simule le même input, à la durée qu'il borne (ApplyBufferedServerInputs).
+        player.TestRestoreState(depart);
+        player.TestMove(Vector2.up, Lacet, false, false, false, false, 0, PlayerLocomotion.InputDuration(envoyee));
+
+        Assert.Greater(Vector3.Distance(depart.position, joueur.position), 0.1f, "Garde anti-vacuité : le joueur doit avancer.");
+        AssertBitIdentical(joueur, player.TestCaptureState());
+    }
+
     [UnityTest]
     public IEnumerator VaultRejoue_SuitExactementLeMemeArc()
     {

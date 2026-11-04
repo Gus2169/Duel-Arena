@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using NUnit.Framework;
+using Unity.Collections;
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
@@ -196,6 +198,52 @@ public class ShotFeedbackTests
     private static IEnumerable<GameObject> Models(WeaponData data)
     {
         if (data.modelPrefab != null) yield return data.modelPrefab;
+    }
+
+    /// <summary>Le tir diffusé aux autres : les tampons du serveur servent d'un tir à l'autre, ils peuvent être plus longs
+    /// que celui-ci, et seuls ses plombs partent.</summary>
+    [Test]
+    public void UnTirDiffuse_SeRelitTelQuIlAEteEcrit_SansCeQuiSuitSesPlombs()
+    {
+        var ends = new[] { new Vector3(1f, 2f, 3f), new Vector3(4f, 5f, 6f), new Vector3(7f, 8f, 9f) };
+        var normals = new[] { Vector3.up, Vector3.right, Vector3.forward };
+        var packet = new WeaponController.ShotPacket { count = 2, ends = ends, normals = normals };
+
+        using var writer = new FastBufferWriter(256, Allocator.Temp);
+        writer.WriteNetworkSerializable(packet);
+        using var reader = new FastBufferReader(writer, Allocator.Temp);
+        reader.ReadNetworkSerializable(out WeaponController.ShotPacket read);
+
+        Assert.AreEqual(2, read.count);
+        for (int i = 0; i < 2; i++)
+        {
+            Assert.AreEqual(ends[i], read.ends[i]);
+            Assert.AreEqual(normals[i], read.normals[i]);
+        }
+        Assert.AreEqual(1 + 2 * 24, writer.Length, "Un octet pour le compte, puis 24 octets par plomb.");
+    }
+
+    /// <summary>Le tampon partagé de la réception grandit au besoin : l'éditeur des armes peut donner plus de plombs à une gerbe.</summary>
+    [Test]
+    public void UnTirDePlusDePlombsQueLeTamponDeReception_SeRelitEnEntier()
+    {
+        const int count = 40;
+        var ends = new Vector3[count];
+        var normals = new Vector3[count];
+        for (int i = 0; i < count; i++)
+        {
+            ends[i] = new Vector3(i, 0f, 1f);
+            normals[i] = new Vector3(0f, i, 1f);
+        }
+
+        using var writer = new FastBufferWriter(2048, Allocator.Temp);
+        writer.WriteNetworkSerializable(new WeaponController.ShotPacket { count = count, ends = ends, normals = normals });
+        using var reader = new FastBufferReader(writer, Allocator.Temp);
+        reader.ReadNetworkSerializable(out WeaponController.ShotPacket read);
+
+        Assert.AreEqual(count, read.count);
+        Assert.AreEqual(ends[count - 1], read.ends[count - 1]);
+        Assert.AreEqual(normals[count - 1], read.normals[count - 1]);
     }
 
     /// <summary>Échap revient d'un seul écran, de partout où c'est sans risque.</summary>

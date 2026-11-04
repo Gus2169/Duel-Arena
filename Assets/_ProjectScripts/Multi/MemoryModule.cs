@@ -76,9 +76,6 @@ public class MemoryModuleViews
     private GameObject prefab;
     private bool prefabLoaded;
 
-    /// <summary>Les modules montrés.</summary>
-    public int Count => shown.Count;
-
     public void Sync(NetworkList<KillConfirmed.Module> modules, Transform parent)
     {
         gone.Clear();

@@ -14,11 +14,9 @@ using UnityEngine.SceneManagement;
 /// ne retouche jamais les images à la main (MenuArtwork).
 ///
 /// - L'arène (MultiTestScene), ouverte à côté de la scène courante puis refermée sans rien y enregistrer :
-///   le fond de l'écran titre (vu de la tribune, des robots sur la passerelle et deux duellistes face à face),
-///   la vue d'ensemble (salon, détail des modes), et la carte vue de dessus avec ses éléments clés, lus dans
-///   la scène : les points d'apparition (PlayerSpawnPoints), le garde-corps de la tribune et ses blocs
-///   (Tribune).
-/// - Le stand de tir (StandDeTir) : la ligne de tir et ses mannequins, et la Fosse vue d'en haut.
+///   le fond de l'écran titre (vu de la tribune, des robots sur la passerelle et deux duellistes face à face)
+///   et la vue d'ensemble (salon, détail des modes).
+/// - Le stand de tir (StandDeTir) : la ligne de tir et ses mannequins.
 ///
 /// Les robots sont des copies du modèle du préfab joueur (RobotAppearance), peintes aux couleurs de la
 /// palette et posées par leurs clips, sur le layer Default : seule la lumière de la scène les éclaire.
@@ -37,9 +35,6 @@ public static class MenuArtworkCapture
 
     // Rangs de la palette des robots (PlayerPaint, préfab joueur) : orange, bleu, magenta, vert, cyan, violet, jaune.
     private const int Orange = 0, Blue = 1, Magenta = 2, Green = 3, Cyan = 4, Violet = 5, Yellow = 6;
-
-    /// <summary>Marge autour du garde-corps sur la carte : la passerelle (3,5 m) et son mur.</summary>
-    private const float MapMargin = 5f;
 
     [MenuItem("Duel Arena/Menu/Capturer les images du menu")]
     public static void CaptureFromMenu()
@@ -122,37 +117,9 @@ public static class MenuArtworkCapture
             IReadOnlyList<Color32> palette = Palette();
             Clips clips = LoadClips();
 
-            // ---- La carte d'abord, à la lumière de la scène : vue de dessus, le +z du monde en haut.
-            var mapRect = new Rect(railRect.xMin - MapMargin, railRect.yMin - MapMargin, railRect.width + MapMargin * 2f, railRect.height + MapMargin * 2f);
-            int mapWidth = 1024, mapHeight = Mathf.RoundToInt(mapWidth * mapRect.height / mapRect.width);
             Camera cam = NewCamera(temp.transform);
-            cam.orthographic = true;
-            cam.orthographicSize = mapRect.height * 0.5f;
-            cam.transform.SetPositionAndRotation(new Vector3(mapRect.center.x, 120f, mapRect.center.y),
-                Quaternion.LookRotation(Vector3.down, Vector3.forward));
-            cam.nearClipPlane = 1f;
-            cam.farClipPlane = 240f;
-            cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0.04f, 0.05f, 0.07f, 1f);
-            artwork.arenaTopDown = SaveRender(cam, mapWidth, mapHeight, "Menu_Carte.png", report);
-            artwork.topDownWorldRect = mapRect;
 
-            var markers = new List<MapMarker>();
-            string[] labels = { "A", "B", "C", "D" };
-            for (int i = 0; i < spawns.Length; i++)
-            {
-                if (spawns[i] == null) continue;
-                markers.Add(new MapMarker { kind = MapMarkerKind.Spawn, position = Ground(spawns[i].position), label = i < labels.Length ? labels[i] : (i + 1).ToString() });
-            }
-            foreach (RockSource source in tribune.RockSources)
-            {
-                if (source != null) markers.Add(new MapMarker { kind = MapMarkerKind.RockSource, position = Ground(source.transform.position), label = "" });
-            }
-            artwork.mapMarkers = markers.ToArray();
-            artwork.walkwayRail = rail;
-            report.AppendLine($"Carte : {mapRect.width:0} × {mapRect.height:0} m, {spawns.Length} points d'apparition, {tribune.RockSources.Count} blocs.");
-
-            // ---- Puis l'arène de nuit, comme une salle de spectacle : projecteurs, lampes de la tribune, brume. L'arène
+            // ---- L'arène de nuit, comme une salle de spectacle : projecteurs, lampes de la tribune, brume. L'arène
             // habillée a déjà les siens.
             if (!dressed)
             {
@@ -362,7 +329,6 @@ public static class MenuArtworkCapture
         private readonly FogMode fogMode;
         private readonly float fogDensity;
         private readonly List<(Light light, float intensity, Color color)> suns = new();
-        private readonly List<Light> spots = new();
 
         public NightMood(Scene scene)
         {
@@ -401,7 +367,6 @@ public static class MenuArtworkCapture
             spot.intensity = intensity;
             spot.color = new Color(1f, 0.95f, 0.86f);
             spot.shadows = shadows ? LightShadows.Soft : LightShadows.None;
-            spots.Add(spot);
         }
 
         /// <summary>Une lampe, jaune comme celles de la maquette sauf couleur donnée.</summary>
@@ -412,16 +377,6 @@ public static class MenuArtworkCapture
             lamp.range = range;
             lamp.intensity = intensity;
             lamp.color = color ?? new Color(1f, 0.7f, 0.25f);
-        }
-
-        /// <summary>Éteint les projecteurs ajoutés (un autre cadrage en pose d'autres).</summary>
-        public void ClearSpots()
-        {
-            foreach (Light spot in spots)
-            {
-                if (spot != null) Object.DestroyImmediate(spot.gameObject);
-            }
-            spots.Clear();
         }
 
         private static Light NewLight(Transform parent, string name, LightType type)
@@ -453,7 +408,7 @@ public static class MenuArtworkCapture
     }
 
     // ------------------------------------------------------------------
-    // Le stand de tir et la Fosse
+    // Le stand de tir
     // ------------------------------------------------------------------
 
     private static void CaptureRange(MenuArtwork artwork, System.Text.StringBuilder report)
@@ -464,7 +419,6 @@ public static class MenuArtworkCapture
         SceneManager.MoveGameObjectToScene(temp, range);
         var graphs = new List<PlayableGraph>();
         NightMood mood = null;
-        var hidden = new List<Renderer>();
         try
         {
             SceneManager.SetActiveScene(range);
@@ -507,34 +461,9 @@ public static class MenuArtworkCapture
                 artwork.rangeImage = SaveRender(cam, 1280, 720, "Menu_Stand.png", report);
             }
             else report.AppendLine("Stand : pas de poste de tir (PlayerSpawnPoints), image non refaite.");
-
-            ShootingCourse course = Object.FindObjectsByType<ShootingCourse>(FindObjectsInactive.Include)
-                .Find(c => c.gameObject.scene == range);
-            if (course != null && course.Sections.Count > 0)
-            {
-                Bounds bounds = course.StartZone;
-                foreach (ShootingCourse.Section section in course.Sections) bounds.Encapsulate(section.bounds);
-                Vector3 c = bounds.center;
-                float size = Mathf.Max(bounds.size.x, bounds.size.z);
-                if (mood != null)
-                {
-                    mood.ClearSpots();
-                    mood.AddSpot(temp.transform, c + new Vector3(0f, 24f, 0f), Vector3.down, 80f, 60f, 520f, true);
-                    mood.AddSpot(temp.transform, c + new Vector3(-bounds.size.x * 0.3f, 20f, -bounds.size.z * 0.3f), Vector3.down, 70f, 50f, 300f, false);
-                    mood.AddSpot(temp.transform, c + new Vector3(bounds.size.x * 0.3f, 20f, bounds.size.z * 0.3f), Vector3.down, 70f, 50f, 300f, false);
-                }
-                // Vue d'en haut, au-dessus du plafond (qu'on ne voit que d'en dessous) : ce qui pend dessous cacherait la Fosse.
-                if (dressed) hidden = HideHallTop(range);
-                Vector3 eye = c + new Vector3(-size * 0.45f, size * 0.55f, -size * 0.55f);
-                cam.fieldOfView = 44f;
-                cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation((c - eye).normalized, Vector3.up));
-                artwork.courseImage = SaveRender(cam, 1280, 720, "Menu_Fosse.png", report);
-            }
-            else report.AppendLine("Fosse : ShootingCourse introuvable, image non refaite.");
         }
         finally
         {
-            foreach (Renderer r in hidden) if (r != null) r.enabled = true;
             foreach (PlayableGraph graph in graphs)
             {
                 if (graph.IsValid()) graph.Destroy();
@@ -626,24 +555,6 @@ public static class MenuArtworkCapture
         return Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg;
     }
 
-    /// <summary>Le point de la passerelle (sa ligne médiane, ou à défaut le garde-corps) le plus proche de
-    /// `target`, au niveau de son sol.</summary>
-    private static Vector3 WalkwayPointNear(Tribune tribune, Vector3 target, float floorTop)
-    {
-        Vector3[] centerline = Vector3Array(tribune, "walkwayCenterline");
-        Vector3 best = target;
-        float bestDistance = float.MaxValue;
-        foreach (Vector3 p in centerline)
-        {
-            float d = new Vector2(p.x - target.x, p.z - target.z).sqrMagnitude;
-            if (d >= bestDistance) continue;
-            bestDistance = d;
-            best = p;
-        }
-        best.y = floorTop;
-        return best;
-    }
-
     private static Camera NewCamera(Transform parent)
     {
         var go = new GameObject("CameraCapture");
@@ -713,8 +624,6 @@ public static class MenuArtworkCapture
         }
     }
 
-    private static Vector2 Ground(Vector3 p) => new Vector2(p.x, p.z);
-
     private static Rect RectOf(Vector2[] points)
     {
         if (points == null || points.Length == 0) return new Rect(-30f, 0f, 60f, 60f);
@@ -747,15 +656,6 @@ public static class MenuArtworkCapture
         if (property == null || !property.isArray) return new Vector2[0];
         var values = new Vector2[property.arraySize];
         for (int i = 0; i < values.Length; i++) values[i] = property.GetArrayElementAtIndex(i).vector2Value;
-        return values;
-    }
-
-    private static Vector3[] Vector3Array(Object component, string field)
-    {
-        var property = new SerializedObject(component).FindProperty(field);
-        if (property == null || !property.isArray) return new Vector3[0];
-        var values = new Vector3[property.arraySize];
-        for (int i = 0; i < values.Length; i++) values[i] = property.GetArrayElementAtIndex(i).vector3Value;
         return values;
     }
 

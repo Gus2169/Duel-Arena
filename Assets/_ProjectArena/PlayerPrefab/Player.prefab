@@ -279,7 +279,7 @@ MonoBehaviour:
     m_Bits: 1
   m_VolumeTrigger: {fileID: 0}
   m_VolumeFrameworkUpdateModeOption: 2
-  m_RenderPostProcessing: 0
+  m_RenderPostProcessing: 1
   m_Antialiasing: 0
   m_AntialiasingQuality: 2
   m_StopNaN: 0
@@ -528,12 +528,11 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
-  debugDrawVaultRays: 1
   debugFloodServerInputs: 0
   debugFloodMultiplier: 10
   positionReconciliationThreshold: 0.05
   yawReconciliationThreshold: 1
-  interpolationDelay: 0.05
+  interpolationDelay: 0.02
   hitboxHistoryDuration: 1
 --- !u!114 &6943044066884809316
 MonoBehaviour:

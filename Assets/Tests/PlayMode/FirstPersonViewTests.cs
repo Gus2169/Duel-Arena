@@ -48,6 +48,58 @@ public class FirstPersonViewTests
         Assert.AreEqual(Vector3.zero, animator.GetBoneTransform(HumanBodyBones.RightUpperLeg).localScale);
     }
 
+    /// <summary>La seule présence de la sonde fait calculer le déplacement de racine à l'Animator (OnAnimatorMove) : le corps
+    /// la garde pour caler ses pieds, la copie s'en défait.</summary>
+    [UnityTest]
+    public IEnumerator LaCopie_NeGardePasLaSondeDuDeplacementDeRacine()
+    {
+        source = TestCharacter.InstantiateModel(out _);
+        source.AddComponent<AnimatorRootMotionProbe>();
+        cameraGo = new GameObject("CameraTest");
+        GameObject view = FirstPersonView.BuildView(source, cameraGo.transform, LayerMask.NameToLayer(FirstPersonView.LayerName), out _, out _);
+        yield return null;
+
+        Assert.IsTrue(source.TryGetComponent(out AnimatorRootMotionProbe _), "Garde : le corps garde la sienne.");
+        Assert.IsFalse(view.TryGetComponent(out AnimatorRootMotionProbe _), "La copie garde la sonde : son Animator calcule pour rien.");
+    }
+
+    /// <summary>Les bras tiennent une pose fixe, posée une fois (HoldViewPose), et ne reprennent du corps à chaque image que
+    /// ce qui change (MirrorMovingGestures). Rallumés (de spectateur à duelliste), ils reviennent aux valeurs par défaut de
+    /// leurs paramètres : la pose fixe se repose alors (PlayerAnimator.MirrorToView).</summary>
+    [UnityTest]
+    public IEnumerator LesBras_TiennentLeurPoseFixe_EtLaPerdentEnSeRallumant()
+    {
+        source = TestCharacter.InstantiateModel(out Animator body);
+        cameraGo = new GameObject("CameraTest");
+        GameObject view = FirstPersonView.BuildView(source, cameraGo.transform, LayerMask.NameToLayer(FirstPersonView.LayerName), out Animator arms, out _);
+        yield return null;
+
+        PlayerAnimator.HoldViewPose(arms);
+        Assert.IsTrue(arms.GetBool("Aiming"), "Les bras tiennent toujours la pose de visée.");
+        Assert.AreEqual(0f, arms.GetFloat("SpeedMult"), "Leurs poses d'attente ne défilent pas.");
+        Assert.AreEqual(1f, arms.GetLayerWeight(1), "Le haut du corps pèse de tout son poids.");
+
+        body.SetBool("Reloading", true);
+        body.SetFloat("ReloadSpeed", 1.5f);
+        body.SetFloat("Pistolet", 1f);
+        body.SetFloat("SpeedMult", 1f);
+        body.SetBool("Aiming", false);
+        PlayerAnimator.MirrorMovingGestures(body, arms, 0.5f);
+        Assert.IsTrue(arms.GetBool("Reloading"), "Le rechargement passe aux bras.");
+        Assert.AreEqual(1.5f, arms.GetFloat("ReloadSpeed"));
+        Assert.AreEqual(1f, arms.GetFloat("Pistolet"), "La tenue passe aux bras.");
+        Assert.AreEqual(0.5f, arms.GetLayerWeight(2), 1e-5f, "Le poids du taser passe aux bras.");
+        Assert.IsTrue(arms.GetBool("Aiming"), "La pose fixe ne suit pas le corps.");
+        Assert.AreEqual(0f, arms.GetFloat("SpeedMult"), "La pose fixe ne suit pas le corps.");
+
+        view.SetActive(false);
+        view.SetActive(true);
+        yield return null;
+        Assert.IsFalse(arms.GetBool("Aiming"), "Garde : rallumé, un Animator revient aux valeurs par défaut de ses paramètres.");
+        PlayerAnimator.HoldViewPose(arms);
+        Assert.IsTrue(arms.GetBool("Aiming"));
+    }
+
     /// <summary>
     /// La copie ne montre que ses bras (2026-10-29, demandé par l'utilisateur) : sur chaque châssis, ses pièces du buste et
     /// des clavicules, rendues seules, ne couvrent rien, vues de face, quand celles du corps couvrent une bonne part de

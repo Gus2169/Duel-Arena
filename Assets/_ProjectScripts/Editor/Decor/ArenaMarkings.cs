@@ -28,11 +28,11 @@ public static class ArenaMarkings
         var root = new GameObject(RootName).transform;
         root.SetParent(decor, false);
         Material white = MarkingMaterial("Decor_Marquage_Blanc", DecorMaterials.BlancCasse, 0.45f);
-        Material black = MarkingMaterial("Decor_Marquage_Noir", DecorMaterials.Noir, 0.3f);
+        MarkingMaterial("Decor_Marquage_Noir", DecorMaterials.Noir, 0.3f);   // rien ici ne le pose, mais l'appel crée son asset
         int texts = 0;
 
         // Les lignes de tir, d'un mur d'enceinte à l'autre, sous les blocs comme ailleurs (rien ne dépasse des murs :
-        // vue de la tribune ou sur la carte du salon, une ligne ne sort pas de l'arène).
+        // vue de la tribune, une ligne ne sort pas de l'arène).
         Physics.SyncTransforms();
         int world = LayerMask.GetMask("Default");
         var lines = new DecorMeshes.Builder();
@@ -118,6 +118,9 @@ public static class ArenaMarkings
     // Les marquages
     // ------------------------------------------------------------------
 
+    /// <summary>La file de rendu des marquages : la première des transparents, avant les marques des tirs et les faisceaux.</summary>
+    internal const int MarkingRenderQueue = (int)RenderQueue.GeometryLast + 1;
+
     /// <summary>La peinture d'un marquage : la couleur donnée, usée par plaques (le support se voit à travers), sans
     /// ombre ni profondeur à elle (elle est collée à sa surface) ni contour.</summary>
     internal static Material MarkingMaterial(string name, Color color, float wear)
@@ -135,7 +138,9 @@ public static class ArenaMarkings
         material.SetColor("_CouleurMarquage", color);
         material.SetFloat("_UsureMarquage", wear);
         material.SetFloat("_Contour", 0f);
-        material.renderQueue = (int)RenderQueue.AlphaTest;
+        // Dans la plage des transparents : sous le depth priming, les opaques ne passent qu'à profondeur égale à leur
+        // prépasse, et une peinture sans prépasse à elle n'en a pas (les marquages au sol disparaissaient).
+        material.renderQueue = MarkingRenderQueue;
         material.SetOverrideTag("RenderType", "TransparentCutout");
         Material saved = RobotChassisBuilder.SaveMaterial($"{DecorMaterials.Folder}/{name}.mat", material);
         // Sur le matériau enregistré : la recopie de SaveMaterial ne reprend pas les passes coupées.

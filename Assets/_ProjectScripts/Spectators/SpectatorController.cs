@@ -120,7 +120,7 @@ public class SpectatorController : NetworkBehaviour
 #endif
     }
 
-    public static IReadOnlyList<SpectatorController> Spawned => spawned;
+    public static SpawnedView<SpectatorController> Spawned => new SpawnedView<SpectatorController>(spawned);
 
     private PlayerInputReader input;
     private PlayerLocomotion locomotion;
@@ -526,6 +526,11 @@ public class SpectatorController : NetworkBehaviour
     /// <summary>L'œil du joueur tel que le serveur le connaît (posture publiée, sans lean).</summary>
     private Vector3 ServerEye => transform.position + Vector3.up * (locomotion != null ? locomotion.EyeLocal(locomotion.NetworkedStance).y : 1.65f);
 
+    /// <summary>Le récit de la tribune (qui frappe qui), utile au banc de test : dans l'Editor seulement. En build, l'appel
+    /// disparaît à la compilation, chaîne comprise.</summary>
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    private static void BenchLog(string text) => Debug.Log(text);
+
     /// <summary>La molette (2026-10-27) : ranger l'objet tenu (les poings sortent) ou le ressortir. Sans
     /// objet, rien à ranger.</summary>
     [ServerRpc]
@@ -550,7 +555,10 @@ public class SpectatorController : NetworkBehaviour
         Vector3 offset = origin - transform.position;
         if ((origin - ServerEye).sqrMagnitude > maxOriginDistance * maxOriginDistance)
         {
+            WeaponController.ServerNoteRefusal("coup de poing d'une origine trop loin de l'œil");
+#if UNITY_EDITOR
             Debug.LogWarning($"[Serveur] Coup de poing rejeté : origine à {Vector3.Distance(origin, ServerEye):F1} m de l'œil (max {maxOriginDistance} m).", this);
+#endif
             return;
         }
         serverLastPunchAt = now;
@@ -630,12 +638,12 @@ public class SpectatorController : NetworkBehaviour
         if (victim.ServerGuardsAgainst(targetTime, origin))
         {
             victim.GuardedClientRpc(direction);
-            Debug.Log($"[Spectateurs] {PlayerMatchState.NameOf(victim.OwnerClientId)} pare le coup de {PlayerMatchState.NameOf(OwnerClientId)} (rewind {rewind * 1000f:F0} ms).");
+            BenchLog($"[Spectateurs] {PlayerMatchState.NameOf(victim.OwnerClientId)} pare le coup de {PlayerMatchState.NameOf(OwnerClientId)} (rewind {rewind * 1000f:F0} ms).");
             return;
         }
         victim.PunchedClientRpc();
         victim.ServerStun(punchStunDuration, direction);
-        Debug.Log($"[Spectateurs] {PlayerMatchState.NameOf(OwnerClientId)} frappe {PlayerMatchState.NameOf(victim.OwnerClientId)} (rewind {rewind * 1000f:F0} ms).");
+        BenchLog($"[Spectateurs] {PlayerMatchState.NameOf(OwnerClientId)} frappe {PlayerMatchState.NameOf(victim.OwnerClientId)} (rewind {rewind * 1000f:F0} ms).");
     }
 
     [ClientRpc]
@@ -713,7 +721,10 @@ public class SpectatorController : NetworkBehaviour
         Vector3 eye = ServerEye;
         if ((origin - eye).sqrMagnitude > maxOriginDistance * maxOriginDistance)
         {
+            WeaponController.ServerNoteRefusal("lancer d'une origine trop loin de l'œil");
+#if UNITY_EDITOR
             Debug.LogWarning($"[Serveur] Lancer rejeté : origine à {Vector3.Distance(origin, eye):F1} m de l'œil (max {maxOriginDistance} m).", this);
+#endif
             return;
         }
         // La main dans un mur ou derrière le garde-corps : l'objet part de l'œil.
@@ -764,23 +775,23 @@ public class SpectatorController : NetworkBehaviour
         if (ServerGuardsAgainst(NetworkManager.ServerTime.Time, ServerEye - rockVelocity))
         {
             GuardedClientRpc(rockVelocity);
-            Debug.Log($"[Spectateurs] {PlayerMatchState.NameOf(OwnerClientId)} pare un caillou.");
+            BenchLog($"[Spectateurs] {PlayerMatchState.NameOf(OwnerClientId)} pare un caillou.");
             return;
         }
         // Touché : il le voit, même pendant son répit, où le caillou ne l'étourdit pas.
         RockHitClientRpc(rockVelocity, origin, false, OwnerOnly);
         if (ServerStun(rockStunDuration, rockVelocity.normalized))
-            Debug.Log($"[Spectateurs] {PlayerMatchState.NameOf(OwnerClientId)} étourdi par un caillou.");
+            BenchLog($"[Spectateurs] {PlayerMatchState.NameOf(OwnerClientId)} étourdi par un caillou.");
     }
 
     /// <summary>Serveur : un caillou lancé de `origin` touche ce DUELLISTE. Aucun dégât : sa visée est
     /// secouée, et il voit d'où le caillou est parti, chez lui seulement (catégorie C, déclenchée par le
     /// serveur).</summary>
-    public void ServerRockHitDuelist(Vector3 rockVelocity, Vector3 point, Vector3 origin)
+    public void ServerRockHitDuelist(Vector3 rockVelocity, Vector3 origin)
     {
         if (!IsServer || IsSpectatorRole) return;
         RockHitClientRpc(rockVelocity, origin, true, OwnerOnly);
-        Debug.Log($"[Spectateurs] Caillou sur le duelliste {PlayerMatchState.NameOf(OwnerClientId)}.");
+        BenchLog($"[Spectateurs] Caillou sur le duelliste {PlayerMatchState.NameOf(OwnerClientId)}.");
     }
 
     /// <summary>Une RPC pour le seul propriétaire de ce robot.</summary>
@@ -828,7 +839,7 @@ public class SpectatorController : NetworkBehaviour
 
     /// <summary>Serveur : le joueur change de rôle. Un spectateur qui entre dans l'arène lâche ce qu'il
     /// tenait sur la tribune et n'est plus étourdi.</summary>
-    public void ServerOnRoleChanged(PlayerRole role)
+    public void ServerOnRoleChanged()
     {
         if (!IsServer) return;
         ServerDropCarried(Vector3.zero);

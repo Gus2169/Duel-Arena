@@ -46,8 +46,10 @@ public class MatchEndScreen : MonoBehaviour
     private VictoryStage stage;
     private bool shown;
 
-    // Ce que montrent le vote et le compte à rebours : refaits seulement quand cela change.
+    // Ce que montrent le vote et le compte à rebours : refaits seulement quand cela change, chacun à son rythme (une
+    // seconde de moins ne recrée pas les pastilles du vote).
     private int shownVoteKey = int.MinValue;
+    private int shownSeconds = int.MinValue;
 
     private void OnEnable()
     {
@@ -68,7 +70,7 @@ public class MatchEndScreen : MonoBehaviour
         rematchButton.clicked += VoteRematch;
         salonButton.clicked += VoteSalon;
         shown = false;
-        shownVoteKey = int.MinValue;
+        shownVoteKey = shownSeconds = int.MinValue;
     }
 
     private void OnDisable()
@@ -95,6 +97,7 @@ public class MatchEndScreen : MonoBehaviour
         {
             shown = show;
             screen.EnableInClassList("hidden", !show);
+            shownVoteKey = shownSeconds = int.MinValue;
             if (show) Fill(rm);
             else if (stage != null) stage.Hide();
         }
@@ -111,24 +114,27 @@ public class MatchEndScreen : MonoBehaviour
     {
         PlayerMatchState local = LocalState();
         int seconds = Mathf.CeilToInt(rm.PhaseTimeRemaining);
-        int key = seconds;
-        key = key * 31 + (int)rm.Decision;
+        int key = (int)rm.Decision;
         key = key * 31 + (rm.WonByForfeit ? 1 : 0);
         key = key * 31 + (rm.VoteOpen ? 1 : 0);
         key = key * 31 + (rm.NextMatchRotates ? 1 : 0);
         key = key * 31 + (local != null && local.IsMatchPlayer ? 1 : 0);
         foreach (PlayerMatchState state in PlayerMatchState.Spawned)
         {
-            if (state != null && state.IsMatchPlayer) key = key * 31 + (int)state.OwnerClientId * 4 + (int)state.Vote;
+            if (state == null || !state.IsMatchPlayer) continue;
+            key = key * 31 + (int)state.OwnerClientId * 4 + (int)state.Vote;
+            key = key * 31 + state.DisplayName.GetHashCode();
         }
-        if (key == shownVoteKey) return;
+        bool voteChanged = key != shownVoteKey;
+        if (!voteChanged && seconds == shownSeconds) return;
         shownVoteKey = key;
+        shownSeconds = seconds;
 
         // Au Tournoi, pas de vote : le salon vient à la fin de l'écran du champion.
         bool vote = !rm.WonByForfeit && !rm.TournamentMode;
         voteBlock.EnableInClassList("hidden", !vote);
         string rematch = rm.NextMatchRotates ? "Match suivant" : "Revanche";
-        if (vote)
+        if (vote && voteChanged)
         {
             voteStatus.Clear();
             foreach (PlayerMatchState state in PlayerMatchState.Spawned)
@@ -368,7 +374,7 @@ public class MatchEndScreen : MonoBehaviour
             return;
         }
         if (stage == null) stage = VictoryStage.Create();
-        stage.Show(victorySpot, playerPrefab, chassis, paint, celebrationClips, seed);
+        stage.Show(victorySpot, playerPrefab, chassis, paint, celebrationClips, seed, GameHud.LocalPlayerCamera);
     }
 
     private void QuitMatch()

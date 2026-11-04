@@ -1,22 +1,27 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Feedback visuel de tir en Game view : la flamme de bouche d'une arme à balles, ou la trace
-/// lumineuse d'un rayon (le raygun). PLACEHOLDER assumé, appelé
-/// par WeaponController.Fire() (feedback local du tireur) et par BroadcastShotClientRpc (ce que voient
-/// les autres joueurs). Depuis le 2026-10-16, les armes à balles n'ont plus de traçant (demandé par
-/// l'utilisateur) : la flamme de bouche (WeaponData.shotIsBeam à faux).
+/// Feedback visuel de tir en Game view : la flamme de bouche d'une arme à balles, le rayon d'une arme
+/// laser (WeaponData.shotIsBeam, à la couleur WeaponData.tracerColor), l'éclat d'une arme qui se charge.
+/// PLACEHOLDER assumé, appelé par WeaponController.Fire() (feedback local du tireur) et par
+/// BroadcastShotClientRpc (ce que voient les autres joueurs).
 ///
 /// Entièrement procédural : pas de prefab à préparer, pas de matériau à créer à la main. Le shader
 /// utilisé est détecté automatiquement pour rester compatible Built-in RP / URP. Pensé pour être
 /// remplacé plus tard par de vrais VFX (Particle System, tracer avec traînée...) sans changer
-/// l'API publique (SpawnTracer) — les appelants n'auront rien à changer le jour où le visuel sera
-/// amélioré. Là où le tir arrive, c'est ShotImpacts.
+/// l'API publique (SpawnMuzzleFlash, SpawnTracer) — les appelants n'auront rien à changer le jour où le
+/// visuel sera amélioré. Là où le tir arrive, c'est ShotImpacts.
+///
+/// Un tir ne crée rien : c'est le chemin le plus chaud des effets, chaque machine y passe pour chaque tir de
+/// chaque joueur, jusqu'à 9 coups par seconde ou 8 rayons d'un coup. Flammes et rayons sortent d'une réserve
+/// faite à l'apparition du robot, et y reviennent à leur échéance. Elle est sous sa racine, hors du modèle, que
+/// copient l'épave et la vue subjective : une flamme n'entre dans le modèle que le temps de brûler, à la bouche de
+/// l'arme.
 /// </summary>
 public class WeaponVisualFeedback : MonoBehaviour
 {
     [Header("Trace de tir")]
-    [SerializeField] private Color tracerColor = new Color(1f, 0.85f, 0.3f);
     [SerializeField] private float tracerWidth = 0.015f;
     [SerializeField] private float tracerDuration = 0.05f;
 
@@ -42,15 +47,98 @@ public class WeaponVisualFeedback : MonoBehaviour
     [SerializeField] private float chargeLightIntensity = 2f;
     [SerializeField] private float chargeLightRange = 3f;
 
+    // Ce que la réserve tient prêt : la flamme d'un coup et celle de la kill cam, tenue 0,45 s ; les rayons d'un tir de
+    // FX-3. Tout est pris, elle grandit : un effet ne s'éteint jamais avant son heure.
+    private const int FlamesInReserve = 2, RaysInReserve = 8;
+
+    /// <summary>Une flamme ou un rayon de la réserve, et l'instant où il s'éteint.</summary>
+    private sealed class Effect
+    {
+        public Renderer shape;
+        public float hideAt;
+    }
+
     private static Mesh flashMesh;
     private static Mesh glowQuad;
     private int flashCount;
     private MeshRenderer chargeGlow;
     private Light chargeLight;
+    [System.NonSerialized] private Transform reserve;
+    private readonly List<Effect> flames = new List<Effect>();
+    private readonly List<Effect> rays = new List<Effect>();
+    private bool anyShown;
 
-    /// <summary>L'éclat de la charge est-il montré ? (tests)</summary>
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+    /// <summary>L'éclat de la charge est-il montré ? (banc de test)</summary>
     public bool ChargeGlowShown => chargeGlow != null && chargeGlow.enabled;
     public Transform ChargeGlowTransform => chargeGlow != null ? chargeGlow.transform : null;
+#endif
+
+    private void Awake()
+    {
+        GetUnlitShader();
+        for (int i = 0; i < RaysInReserve; i++) NewRay();
+        if (muzzleFlashMaterial == null) return;
+        for (int i = 0; i < FlamesInReserve; i++) NewFlame();
+    }
+
+    private void LateUpdate()
+    {
+        if (!anyShown) return;
+        float now = Time.time;
+        anyShown = HideDue(flames, now) | HideDue(rays, now);
+    }
+
+    /// <summary>Éteint ce qui est échu et le rend à la réserve. Reste-t-il quelque chose de montré ?</summary>
+    private bool HideDue(List<Effect> effects, float now)
+    {
+        bool stillShown = false;
+        for (int i = effects.Count - 1; i >= 0; i--)
+        {
+            Effect effect = effects[i];
+            if (effect.shape == null)
+            {
+                effects.RemoveAt(i);
+                continue;
+            }
+            GameObject go = effect.shape.gameObject;
+            if (!go.activeSelf) continue;
+            if (now < effect.hideAt)
+            {
+                stillShown = true;
+                continue;
+            }
+            go.SetActive(false);
+            go.transform.SetParent(Reserve, false);
+        }
+        return stillShown;
+    }
+
+    /// <summary>Le premier effet éteint, ou null. Une arme refaite (HeldWeapons) emporte la flamme qui brûlait à sa
+    /// bouche : elle sort de la liste, une autre renaîtra.</summary>
+    private static Effect FirstIdle(List<Effect> effects)
+    {
+        for (int i = effects.Count - 1; i >= 0; i--)
+        {
+            Effect effect = effects[i];
+            if (effect.shape == null) effects.RemoveAt(i);
+            else if (!effect.shape.gameObject.activeSelf) return effect;
+        }
+        return null;
+    }
+
+    private Transform Reserve
+    {
+        get
+        {
+            if (reserve == null)
+            {
+                reserve = new GameObject("Réserve des tirs").transform;
+                reserve.SetParent(transform, false);
+            }
+            return reserve;
+        }
+    }
 
     /// <summary>
     /// L'éclat d'une arme qui se charge (le FX-2) à sa bouche `muzzle` : d'autant plus gros et lumineux
@@ -153,7 +241,8 @@ public class WeaponVisualFeedback : MonoBehaviour
         float roll = flashCount * 137.5f;
         float scale = (0.85f + 0.3f * (0.5f + 0.5f * Mathf.Sin(flashCount * 2.3f))) * Mathf.Clamp(size, 0.1f, 5f);
 
-        var go = new GameObject("FlammeBouche");
+        Effect flame = FirstIdle(flames) ?? NewFlame();
+        GameObject go = flame.shape.gameObject;
         go.layer = muzzle.gameObject.layer;
         go.transform.SetParent(muzzle, false);
         go.transform.position = muzzle.position;
@@ -162,6 +251,18 @@ public class WeaponVisualFeedback : MonoBehaviour
         go.transform.localScale = new Vector3(muzzleFlashSize * scale / Mathf.Max(1e-4f, parentScale.x),
                                               muzzleFlashSize * scale / Mathf.Max(1e-4f, parentScale.y),
                                               muzzleFlashLength * scale / Mathf.Max(1e-4f, parentScale.z));
+        flame.hideAt = Time.time + (duration > 0f ? duration : muzzleFlashDuration);
+        go.SetActive(true);
+        anyShown = true;
+        return go;
+    }
+
+    // Une flamme éteinte, dans la réserve : sa pose et son layer viennent de chaque coup.
+    private Effect NewFlame()
+    {
+        var go = new GameObject("FlammeBouche");
+        go.SetActive(false);
+        go.transform.SetParent(Reserve, false);
         go.AddComponent<MeshFilter>().sharedMesh = FlashMesh();
         var renderer = go.AddComponent<MeshRenderer>();
         renderer.sharedMaterial = muzzleFlashMaterial;
@@ -183,8 +284,9 @@ public class WeaponVisualFeedback : MonoBehaviour
             light.shadows = LightShadows.None;
         }
 
-        Destroy(go, duration > 0f ? duration : muzzleFlashDuration);
-        return go;
+        var flame = new Effect { shape = renderer };
+        flames.Add(flame);
+        return flame;
     }
 
     /// <summary>Le maillage de la flamme, dans le repère de la bouche (+Z le long du canon) : une
@@ -243,28 +345,40 @@ public class WeaponVisualFeedback : MonoBehaviour
         return material;
     }
 
-    /// <summary>Trace visuelle instantanée entre le point de départ et le point d'arrivée du tir.</summary>
-    public void SpawnTracer(Vector3 start, Vector3 end) => SpawnTracer(start, end, tracerColor);
-
-    /// <summary>Même trace, à la couleur de l'arme (WeaponData.tracerColor : le rayon des armes laser),
-    /// `weight` fois plus épaisse et plus durable (le tir chargé du FX-2).</summary>
+    /// <summary>Trace visuelle instantanée entre le point de départ et le point d'arrivée du tir, à la couleur de
+    /// l'arme (WeaponData.tracerColor : le rayon des armes laser), `weight` fois plus épaisse et plus durable (le tir
+    /// chargé du FX-2).</summary>
     public void SpawnTracer(Vector3 start, Vector3 end, Color color, float weight = 1f)
     {
-        var go = new GameObject("ShotTracer");
-        var lr = go.AddComponent<LineRenderer>();
+        Effect ray = FirstIdle(rays) ?? NewRay();
+        var lr = (LineRenderer)ray.shape;
 
         lr.sharedMaterial = TracerMaterial(color);
         lr.startColor = color;
         lr.endColor = color;
         lr.startWidth = tracerWidth * weight;
         lr.endWidth = tracerWidth * weight;
-        lr.positionCount = 2;
-        lr.useWorldSpace = true;
         lr.SetPosition(0, start);
         lr.SetPosition(1, end);
+
+        ray.hideAt = Time.time + tracerDuration * weight;
+        lr.gameObject.SetActive(true);
+        anyShown = true;
+    }
+
+    // Un rayon éteint, dans la réserve : en coordonnées du monde, il ne suit pas le robot qui le porte.
+    private Effect NewRay()
+    {
+        var go = new GameObject("ShotTracer");
+        go.SetActive(false);
+        go.transform.SetParent(Reserve, false);
+        var lr = go.AddComponent<LineRenderer>();
+        lr.positionCount = 2;
+        lr.useWorldSpace = true;
         lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         lr.receiveShadows = false;
-
-        Destroy(go, tracerDuration * weight);
+        var ray = new Effect { shape = lr };
+        rays.Add(ray);
+        return ray;
     }
 }

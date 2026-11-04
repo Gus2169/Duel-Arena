@@ -37,14 +37,28 @@ public static class RobotBurst
     private static readonly Color OilDark = new Color(0.3f, 0.17f, 0.05f, 1f);
     private static readonly Color MetalGrey = new Color(0.46f, 0.48f, 0.52f, 1f);
 
+    /// <summary>Le temps (s) au bout duquel une gerbe se détruit d'elle-même.</summary>
+    private const float Lifetime = 10f;
+
     private static Material oilMaterial, sparkMaterial, debrisMaterial, wakeMaterial;
     private static Mesh debrisMesh;
 
+    /// <summary>Charge tout de suite ce que crachent les robots, à leur apparition : sinon les matériaux et les éclats
+    /// se chargent à la première mort, dans l'image de l'impact.</summary>
+    public static void Prepare()
+    {
+        OilMaterial();
+        SparkMaterial();
+        DebrisMaterial();
+        _ = WakeMaterial;
+        DebrisMesh();
+    }
+
     /// <summary>La gerbe de l'impact, en `point`, dans le sens du coup (`direction`) : huile, étincelles, éclats de
     /// blindage gris et à la couleur du robot (`paint`), un éclair. Renvoie sa racine (détruite d'elle-même au bout de
-    /// `lifetime` s si > 0).</summary>
+    /// Lifetime).</summary>
     public static GameObject Impact(Transform parent, Vector3 point, Vector3 direction, RobotCorpse.BurstSeverity severity,
-                                    Color paint, int layer, float lifetime = 10f)
+                                    Color paint, int layer)
     {
         float strength = StrengthOf(severity);
         Quaternion facing = Facing(direction);
@@ -53,26 +67,26 @@ public static class RobotBurst
         Sparks(root.transform, layer, Mathf.RoundToInt(60 * strength), 3f, 9f * strength, 0f, 0);
         Debris(root.transform, layer, Mathf.RoundToInt(10 * strength), paint, strength);
         Flash(root.transform, layer, 5f * strength, 3.5f);
-        Finish(root, lifetime);
+        Finish(root);
         return root;
     }
 
     /// <summary>Une articulation rompue, en `point`, du côté du corps resté (`parent` : il la suit) : l'huile gicle vers
     /// `direction` par saccades, puis goutte ; des étincelles grésillent.</summary>
     public static GameObject Stump(Transform parent, Vector3 point, Vector3 direction, RobotCorpse.BurstSeverity severity,
-                                   int layer, float lifetime = 10f)
+                                   int layer)
     {
         float strength = StrengthOf(severity);
         GameObject root = Root("Articulation rompue", parent, point, Facing(direction), layer);
         OilSpurts(root.transform, layer, strength);
         Drips(root.transform, layer, 3f);
         Sparks(root.transform, layer, Mathf.RoundToInt(25 * strength), 2f, 6f, 1.4f, 6);
-        Finish(root, lifetime);
+        Finish(root);
         return root;
     }
 
     /// <summary>La traînée d'huile derrière une pièce qui vole (elle la suit, l'huile reste là où elle est tombée).</summary>
-    public static GameObject Trail(Transform piece, Vector3 point, int layer, float lifetime = 10f)
+    public static GameObject Trail(Transform piece, Vector3 point, int layer)
     {
         GameObject root = Root("Trainee d'huile", piece, point, Quaternion.identity, layer);
         ParticleSystem oil = Create(root.transform, "Trainee", layer, OilMaterial());
@@ -90,20 +104,21 @@ public static class RobotBurst
         shape.radius = 0.03f;
         Splat(oil);
         Stretch(oil, 0.04f, 1.2f);
-        Finish(root, lifetime);
+        Finish(root);
         return root;
     }
 
-    /// <summary>Le ralenti de la kill cam : chaque système de `effect` avance à `speed` fois le temps (et l'éclair aussi).</summary>
+    /// <summary>Le ralenti de la kill cam : chaque gerbe de `corpse` avance à `speed` fois le temps (et l'éclair aussi).
+    /// Appelé à chaque image, il ne parcourt que les gerbes que l'épave retient, et seulement si la vitesse change.</summary>
+    public static void SetSpeed(RobotCorpse corpse, float speed)
+    {
+        if (corpse != null) corpse.SetBurstSpeed(speed);
+    }
+
+    /// <summary>La même chose, pour l'épave que porte `effect`.</summary>
     public static void SetSpeed(GameObject effect, float speed)
     {
-        if (effect == null) return;
-        foreach (ParticleSystem system in effect.GetComponentsInChildren<ParticleSystem>(true))
-        {
-            var main = system.main;
-            main.simulationSpeed = Mathf.Max(0f, speed);
-        }
-        foreach (BurstFlash flash in effect.GetComponentsInChildren<BurstFlash>(true)) flash.speed = Mathf.Max(0f, speed);
+        if (effect != null && effect.TryGetComponent(out RobotCorpse corpse)) corpse.SetBurstSpeed(speed);
     }
 
     // ------------------------------------------------------------------
@@ -300,10 +315,10 @@ public static class RobotBurst
         return root;
     }
 
-    private static void Finish(GameObject root, float lifetime)
+    private static void Finish(GameObject root)
     {
         root.SetActive(true);
-        if (lifetime > 0f && Application.isPlaying) Object.Destroy(root, lifetime);
+        if (Application.isPlaying) Object.Destroy(root, Lifetime);
     }
 
     private static ParticleSystem Create(Transform root, string name, int layer, Material material)

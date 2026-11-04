@@ -22,8 +22,11 @@ public class SalonPanel : MonoBehaviour
 {
     [SerializeField] private UIDocument document;
 
-    [Tooltip("L'image et le nom de l'arène : les images du menu.")]
-    [SerializeField] private MenuArtwork artwork;
+    [Tooltip("La vue d'ensemble de l'arène (Menu_Arene.png, comme au salon du menu). Posée ici plutôt que tout MenuArtwork : ses grandes images n'ont rien à faire dans l'arène.")]
+    [SerializeField] private Texture2D arenaImage;
+
+    [Tooltip("Le nom de l'arène (celui de MenuArtwork).")]
+    [SerializeField] private string arenaName = "";
 
     /// <summary>Le salon est-il affiché ? (le curseur est alors libre, voir GameHud)</summary>
     public static bool IsShown { get; private set; }
@@ -47,7 +50,7 @@ public class SalonPanel : MonoBehaviour
         salon.LeaveClicked += Quit;
         salon.PlayerClicked += ChangeTeam;
         salon.ShuffleClicked += ShuffleTeams;
-        salon.SetArena(artwork != null ? artwork.arenaOverview : null, artwork != null ? artwork.arenaName : "");
+        salon.SetArena(arenaImage, arenaName);
         shown = false;
         shownKey = int.MinValue;
         current = this;

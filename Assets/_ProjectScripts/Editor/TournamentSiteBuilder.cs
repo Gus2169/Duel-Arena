@@ -33,7 +33,6 @@ public static class TournamentSiteBuilder
     public const string LanePrefabPath = "Assets/_ProjectArena/Modes/MatchTournoi.prefab";
     private const string ScreenMaterialPath = "Assets/_ProjectArena/Modes/Tournoi_Ecran.mat";
     private const string BankPath = "Assets/_ProjectScenes/MultiTestScene_SalleAttente_Decor.asset";
-    private const string GameHudPath = "Assets/_ProjectUI/Game/GameHud.uxml";
 
     /// <summary>Les copies de l'arène : la première est celle de la scène.</summary>
     public static readonly Vector3[] ArenaOffsets = { Vector3.zero, new Vector3(2000f, 0f, 0f), new Vector3(-2000f, 0f, 0f) };
@@ -185,7 +184,9 @@ public static class TournamentSiteBuilder
         go.transform.localPosition = source.localPosition;
         go.transform.localRotation = source.localRotation;
         go.transform.localScale = source.localScale;
-        GameObjectUtility.SetStaticEditorFlags(go, GameObjectUtility.GetStaticEditorFlags(source.gameObject));
+        // Sans lot statique : il refait un maillage par copie, chargé à chaque arrivée dans l'arène, même
+        // pour un duel, où les copies restent éteintes (21,6 Mo de plus à la build du 2026-11-03).
+        GameObjectUtility.SetStaticEditorFlags(go, GameObjectUtility.GetStaticEditorFlags(source.gameObject) & ~StaticEditorFlags.BatchingStatic);
         foreach (Component c in source.GetComponents<Component>())
         {
             if (c == null || c is Transform || !Kept(c)) continue;

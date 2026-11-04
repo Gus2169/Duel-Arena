@@ -58,8 +58,8 @@ public sealed class BreakActionView
     /// <summary>La copie de la cartouche neuve dans la main gauche, ou null.</summary>
     public GameObject InHand => inHand;
 
-    /// <summary>La part du rechargement montrée à cette image (0 pour une arme vide hors du rechargement), ou NaN.</summary>
-    public float Shown => last;
+    /// <summary>Aucune arme qui s'ouvre sous cette vue, rien à rendre : d'ici la prochaine, Step ne changerait rien.</summary>
+    public bool AtRest => boundTo == null && !posed && hidden.Count == 0 && inHand == null;
 
     /// <summary>
     /// Une image. `shown` : le modèle d'arme montré (null : aucun) ; `gesture` : le geste de l'arme en main s'il s'ouvre

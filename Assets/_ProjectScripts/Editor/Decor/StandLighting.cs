@@ -154,21 +154,6 @@ public static class StandLighting
         GameObject sconceObject = ArenaDecorBuilder.Part(root.transform, "Appliques", bank.Add(sconces.ToMesh("Stand_Appliques")), materials["Decor_Charpente"], ArenaDecorBuilder.HallLayerMask);
         sconceObject.GetComponent<MeshRenderer>().sharedMaterials = new[] { materials["Decor_Charpente"], materials["Decor_LampeTiede"] };
 
-        // Ce que le sol éclairé renverrait vers le plafond (en attendant la lumière cuite), sur le seul calque de la salle.
-        int fills = 0;
-        float middle = StandDecorBuilder.StandRoom.center.x;
-        foreach (Vector2 p in new[] { new Vector2(middle, 8f), new Vector2(middle, 30f), new Vector2(middle, 52f), new Vector2(32f, 5f), new Vector2(52f, 5f), new Vector2(32f, 36f), new Vector2(52f, 36f) })
-        {
-            Light fill = ArenaLighting.NewLight(root.transform, "Reflet du sol", LightType.Point);
-            fill.transform.position = new Vector3(p.x, 7.5f, p.y);
-            fill.range = 18f;
-            fill.intensity = 2f;
-            fill.color = ArenaLighting.Froid;
-            fill.shadows = LightShadows.None;
-            ArenaLighting.SetLayers(fill, ArenaDecorBuilder.HallLayerMask);
-            fills++;
-        }
-
         // L'ambiance de l'arène : sombre et bleutée, sans ciel ; la même brume.
         RenderSettings.ambientMode = AmbientMode.Trilight;
         RenderSettings.ambientSkyColor = new Color(0.085f, 0.095f, 0.115f);
@@ -213,7 +198,7 @@ public static class StandLighting
 
         int probes = BuildLightProbes(root.transform);
         Lightmapping.lightingSettings = ArenaLighting.LightingSettingsAsset(scene);
-        report.AppendLine($"Lumière : la rampe générale, {spots} projecteurs et {beams} faisceaux, {lamps} lampes (auvent, bureaux, salle de précision), {washers} lampes rasantes, {fills} reflets du sol, {probes} sondes de lumière ; brume, trois sondes de reflets, post-traitement. Lumière indirecte : Duel Arena > Stand de tir > Cuire la lumière du stand.");
+        report.AppendLine($"Lumière : la rampe générale, {spots} projecteurs et {beams} faisceaux, {lamps} lampes (auvent, bureaux, salle de précision), {washers} lampes rasantes, {probes} sondes de lumière ; brume, trois sondes de reflets, post-traitement. Lumière indirecte : Duel Arena > Stand de tir > Cuire la lumière du stand.");
     }
 
     /// <summary>Où pendent les rampes de projecteurs (x, z), et la force de leur projecteur.</summary>

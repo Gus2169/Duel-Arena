@@ -145,13 +145,6 @@ public static class BodyLayout
         u = d.y;
     }
 
-    /// <summary>Bras de levier : distance de l'œil à l'axe de lean passant par le pivot.</summary>
-    public static float LeanArm(in StanceBody body, Vector3 eye)
-    {
-        LeanPlane(body, eye, out float dx, out float u);
-        return Mathf.Sqrt(dx * dx + u * u);
-    }
-
     /// <summary>Décalage latéral de l'œil pour un angle signé (degrés, positif = vers la droite).</summary>
     public static float LateralOffsetForAngle(in StanceBody body, Vector3 eye, float angleDegrees)
     {

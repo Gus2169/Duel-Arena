@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Reflection;
 using NUnit.Framework;
 using Unity.Collections;
 using Unity.Netcode;
@@ -227,6 +228,96 @@ public class NetworkStreamTests
         using var reader = new FastBufferReader(writer, Allocator.Temp);
         reader.ReadNetworkSerializable(out PlayerLocomotion.InputPacket read);
         Assert.AreEqual(0, read.count);
+    }
+
+    // ------------------------------------------------------------------
+    // Les corrections du serveur
+    // ------------------------------------------------------------------
+
+    private static PlayerLocomotion.CorrectionPacket Correction(bool vaulting) => new PlayerLocomotion.CorrectionPacket
+    {
+        sequence = 1234,
+        position = new Vector3(1f, 2f, 3f),
+        verticalVelocity = -4f,
+        yaw = 123.5f,
+        velocity = new Vector3(5f, 0.25f, -6f),
+        vaulting = vaulting,
+        vaultTimer = 0.2f,
+        vaultStart = new Vector3(7f, 8f, 9f),
+        vaultEnd = new Vector3(10f, 11f, 12f),
+        vaultPeakY = 1.4f,
+    };
+
+    private static PlayerLocomotion.CorrectionPacket Relire(PlayerLocomotion.CorrectionPacket correction, out int octets)
+    {
+        using var writer = new FastBufferWriter(128, Allocator.Temp);
+        writer.WriteNetworkSerializable(correction);
+        octets = writer.Length;
+        using var reader = new FastBufferReader(writer, Allocator.Temp);
+        reader.ReadNetworkSerializable(out PlayerLocomotion.CorrectionPacket read);
+        return read;
+    }
+
+    private static void AssertEtatDeBase(PlayerLocomotion.CorrectionPacket read)
+    {
+        PlayerLocomotion.CorrectionPacket sent = Correction(read.vaulting);
+        Assert.AreEqual(sent.sequence, read.sequence);
+        Assert.AreEqual(sent.position, read.position);
+        Assert.AreEqual(sent.verticalVelocity, read.verticalVelocity);
+        Assert.AreEqual(sent.yaw, read.yaw);
+        Assert.AreEqual(sent.velocity, read.velocity);
+    }
+
+    [Test]
+    public void UneCorrection_EnPleinFranchissement_PorteToutLEtatDuFranchissement()
+    {
+        // SimulationState : tout ce que Move() cumule doit voyager quand il compte.
+        PlayerLocomotion.CorrectionPacket read = Relire(Correction(true), out int octets);
+        Assert.IsTrue(read.vaulting);
+        AssertEtatDeBase(read);
+        Assert.AreEqual(0.2f, read.vaultTimer);
+        Assert.AreEqual(new Vector3(7f, 8f, 9f), read.vaultStart);
+        Assert.AreEqual(new Vector3(10f, 11f, 12f), read.vaultEnd);
+        Assert.AreEqual(1.4f, read.vaultPeakY);
+        Assert.AreEqual(69, octets);
+    }
+
+    [Test]
+    public void UneCorrection_HorsFranchissement_NePortePasSonEtat()
+    {
+        // Hors d'un franchissement, Move() ne le relit pas (BeginVault réécrit tout) : 32 octets de moins, à chaque envoi.
+        PlayerLocomotion.CorrectionPacket read = Relire(Correction(false), out int octets);
+        Assert.IsFalse(read.vaulting);
+        AssertEtatDeBase(read);
+        Assert.AreEqual(0f, read.vaultTimer, "Rien n'a voyagé.");
+        Assert.AreEqual(Vector3.zero, read.vaultEnd, "Rien n'a voyagé.");
+        Assert.AreEqual(37, octets);
+    }
+
+    private static int NamedArgument(CustomAttributeData attribute, string name)
+    {
+        foreach (CustomAttributeNamedArgument argument in attribute.NamedArguments)
+            if (argument.MemberName == name) return System.Convert.ToInt32(argument.TypedValue.Value);
+        return -1;
+    }
+
+    /// <summary>Une RPC universelle s'ouvre à tous par défaut, et Netcode la relaie d'un client à l'autre : sans la
+    /// permission, un client modifié recalerait le robot d'un autre joueur, ou lui ferait ignorer les vraies corrections
+    /// en annonçant un grand numéro. Une ClientRpc n'avait pas ce défaut.</summary>
+    [TestCase("ReceiveCorrectionRpc", SendTo.Owner)]
+    [TestCase("PoseRpc", SendTo.NotOwner)]
+    public void SeulLeServeur_EnvoieLesCorrectionsEtLesPoses_EnNonFiable(string rpc, SendTo target)
+    {
+        MethodInfo method = typeof(PlayerLocomotion).GetMethod(rpc, BindingFlags.NonPublic | BindingFlags.Instance);
+        Assert.IsNotNull(method, $"{rpc} a changé de nom.");
+        CustomAttributeData attribute = null;
+        foreach (CustomAttributeData data in method.GetCustomAttributesData())
+            if (data.AttributeType == typeof(RpcAttribute)) attribute = data;
+        Assert.IsNotNull(attribute, $"{rpc} n'est plus une RPC universelle.");
+
+        Assert.AreEqual((int)target, System.Convert.ToInt32(attribute.ConstructorArguments[0].Value), "Sa cible.");
+        Assert.AreEqual((int)RpcInvokePermission.Server, NamedArgument(attribute, nameof(RpcAttribute.InvokePermission)), "Seul le serveur l'envoie.");
+        Assert.AreEqual((int)RpcDelivery.Unreliable, NamedArgument(attribute, nameof(RpcAttribute.Delivery)), "Un flux continu voyage en non fiable.");
     }
 
     // ------------------------------------------------------------------

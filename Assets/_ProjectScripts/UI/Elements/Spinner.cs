@@ -30,13 +30,25 @@ namespace DuelArena.UI
             {
                 spin ??= schedule.Execute(() =>
                 {
-                    if (resolvedStyle.display == DisplayStyle.None) return;
+                    if (!Displayed) return;
                     angle = (angle + 9f) % 360f;
                     MarkDirtyRepaint();
                 }).Every(16);
                 spin.Resume();
             });
             RegisterCallback<DetachFromPanelEvent>(_ => spin?.Pause());
+        }
+
+        /// <summary>Se voit-il ? `.hidden` est posé sur son bloc, pas sur lui : `resolvedStyle.display` ne regarde que
+        /// l'élément lui-même, il faut remonter les parents.</summary>
+        public bool Displayed
+        {
+            get
+            {
+                for (VisualElement element = this; element != null; element = element.parent)
+                    if (element.resolvedStyle.display == DisplayStyle.None) return false;
+                return true;
+            }
         }
 
         private void Draw(MeshGenerationContext ctx)

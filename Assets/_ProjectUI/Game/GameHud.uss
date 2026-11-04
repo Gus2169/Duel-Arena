@@ -338,12 +338,6 @@
     -unity-text-align: upper-left;
 }
 
-.loadout-card-key {
-    font-size: 13px;
-    color: rgb(255, 106, 19);
-    -unity-font-style: bold;
-}
-
 .loadout-card-name {
     font-size: 20px;
     -unity-font-style: bold;

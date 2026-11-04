@@ -28,6 +28,9 @@ using UnityEngine.UIElements;
 /// sont sauvegardés en JSON (GameSettings.SaveBindingOverrides) ; c'est PlayerInputReader qui les recharge
 /// sur SA PROPRE instance (chaque `new PlayerControls()` déserialise une copie indépendante de l'asset
 /// généré), au lancement comme en pleine partie.
+///
+/// Le panneau ne se branche qu'à sa première ouverture (OnShown, Wire) : ce composant est sur le menu, sur /GameUI et
+/// au stand, et personne ne l'ouvre à chaque chargement de scène.
 /// </summary>
 public class OptionsController : MonoBehaviour
 {
@@ -95,6 +98,7 @@ public class OptionsController : MonoBehaviour
 
     private PlayerControls controls;
     private InputActionRebindingExtensions.RebindingOperation activeRebind;
+    private VisualElement wiredPage;   // la première page de l'arbre branché (voir Wire)
 
     /// <summary>Un remappage attend une touche : Échap l'annule, il ne doit pas aussi fermer le
     /// menu d'Échap (PauseMenu) qui affiche ce panneau en partie.</summary>
@@ -104,17 +108,6 @@ public class OptionsController : MonoBehaviour
     {
         if (document == null) document = GetComponent<UIDocument>();
         root = document.rootVisualElement;
-
-        controls = new PlayerControls();
-        GameSettings.ApplyBindingOverrides(controls.asset);
-
-        WireTabs();
-        WireGameplay();
-        WireAudio();
-        WireGraphics();
-        WireControls();
-        WireApply();
-        LoadFromSettings();
     }
 
     private void OnDisable()
@@ -132,7 +125,25 @@ public class OptionsController : MonoBehaviour
     public void OnShown()
     {
         if (root == null) return;
+        Wire();
         LoadFromSettings();
+    }
+
+    /// <summary>Retrouve les éléments, une fois par arbre : un second branchement doublerait les clics, et un arbre neuf
+    /// (l'UIDocument recrée le sien quand il se réactive) se rebranche.</summary>
+    private void Wire()
+    {
+        controls ??= new PlayerControls();   // OnDisable libère les siens ; LoadFromSettings y pose les remappages
+
+        VisualElement page = root.Q<VisualElement>("pageGameplay");
+        if (page == wiredPage) return;
+        wiredPage = page;
+        WireTabs();
+        WireGameplay();
+        WireAudio();
+        WireGraphics();
+        WireControls();
+        WireApply();
     }
 
     // ------------------------------------------------------------------

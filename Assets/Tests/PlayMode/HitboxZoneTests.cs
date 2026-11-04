@@ -119,6 +119,41 @@ public class HitboxZoneTests
     }
 
     [UnityTest]
+    public IEnumerator UnLean_NeReecritPasLesJambes_MaisUneAutrePostureLesReplace()
+    {
+        yield return null;
+        hitbox.Apply(PlayerLocomotion.Stance.Standing, EyeStanding, 0f);
+        Transform head = hitbox.Colliders[0].transform;
+        Transform legs = hitbox.Colliders[2].transform;
+
+        // Une zone qu'on déplace à la main y reste si rien ne la réécrit. Transform.hasChanged ne le dirait pas : il ne se
+        // lève pas pour une écriture de la valeur qu'elle a déjà.
+        Vector3 legsPlace = legs.localPosition, moved = legsPlace + Vector3.up;
+        legs.localPosition = moved;
+        head.hasChanged = false;
+        hitbox.Apply(PlayerLocomotion.Stance.Standing, EyeStanding, 0.2f);
+        Assert.IsTrue(head.hasChanged, "Garde anti-vacuité : le lean déplace la tête.");
+        Assert.AreEqual(moved, legs.localPosition, "Le lean ne bouge pas les jambes : les réécrire, c'est les faire recalculer pour rien.");
+        legs.localPosition = legsPlace;
+
+        Vector3 headPlace = head.localPosition;
+        moved = headPlace + Vector3.up;
+        head.localPosition = moved;
+        hitbox.Apply(PlayerLocomotion.Stance.Standing, EyeStanding, 0.2f);
+        Assert.AreEqual(moved, head.localPosition, "La même pose ne réécrit rien.");
+        head.localPosition = headPlace;
+
+        // Le rewind passe par ici avec une pose passée, puis la pose courante : chaque changement s'applique.
+        legs.hasChanged = false;
+        hitbox.Apply(PlayerLocomotion.Stance.Prone, EyeProne, 0.1f);
+        Assert.IsTrue(legs.hasChanged, "Une autre posture replace les jambes.");
+        Assert.AreEqual(HitboxZoneType.Legs, ShootDown(0.38f, -0.80f)?.Zone, "La pose passée a sa seconde jambe.");
+        hitbox.Apply(PlayerLocomotion.Stance.Standing, EyeStanding, 0.2f);
+        Assert.IsNull(ShootDown(0.38f, -0.80f), "De retour, la seconde jambe n'est plus là.");
+        Assert.AreEqual(HitboxZoneType.Legs, ShootAlongZ(0f, 0.50f)?.Zone, "De retour, les jambes sont à leur place.");
+    }
+
+    [UnityTest]
     public IEnumerator HorsPositionAllongee_LaSecondeJambeNExistePas()
     {
         yield return null;

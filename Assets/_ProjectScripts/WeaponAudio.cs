@@ -421,12 +421,6 @@ public class WeaponAudio : MonoBehaviour
 #if UNITY_EDITOR || UNITY_INCLUDE_TESTS
     /// <summary>Tests : la voix du rechargement complet joue-t-elle ?</summary>
     public bool TestReloadPlaying => reloadVoice != null && reloadVoice.isPlaying;
-    /// <summary>Tests : la montée en charge joue-t-elle, et à quel volume ?</summary>
-    public bool TestChargePlaying(out float volume)
-    {
-        volume = chargeVoice != null ? chargeVoice.volume : 0f;
-        return chargeVoice != null && chargeVoice.isPlaying;
-    }
     /// <summary>Tests : la voix de la mécanique (culasse, pompe, cartouches) joue-t-elle ?</summary>
     public bool TestMechanicsPlaying => mechanicsVoice != null && mechanicsVoice.isPlaying;
     /// <summary>Tests : les queues de réverbération qui jouent encore, et leur volume.</summary>

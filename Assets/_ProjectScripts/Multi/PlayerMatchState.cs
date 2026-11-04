@@ -5,6 +5,24 @@ using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
+/// Une liste d'objets apparus, en lecture seule, que l'on parcourt à chaque image : un `foreach` sur l'interface
+/// IReadOnlyList met son énumérateur en boîte, une allocation à chaque boucle ; celui-ci reste une structure. Rien d'autre
+/// que son script n'écrit la liste.
+/// </summary>
+public readonly struct SpawnedView<T> : IReadOnlyList<T>
+{
+    private readonly List<T> list;
+
+    public SpawnedView(List<T> list) => this.list = list;
+
+    public int Count => list.Count;
+    public T this[int index] => list[index];
+    public List<T>.Enumerator GetEnumerator() => list.GetEnumerator();
+    IEnumerator<T> IEnumerable<T>.GetEnumerator() => list.GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => list.GetEnumerator();
+}
+
+/// <summary>
 /// La fiche d'un joueur dans la partie (2026-10-12) : son pseudo, sa préparation avant la manche et
 /// ses statistiques du match. Posée sur la racine du prefab joueur.
 ///
@@ -14,7 +32,9 @@ using UnityEngine;
 /// - « prêt » ne se demande que pendant la préparation (ReadyServerRpc) ; le serveur le remet à faux
 ///   à chaque manche (RoundManager.BeginRound) ;
 /// - les statistiques sont comptées par le serveur pendant les manches (WeaponController,
-///   TaserController, RoundManager), jamais déclarées par le client.
+///   TaserController, RoundManager), jamais déclarées par le client, et publiées à la fin du match :
+///   seul l'écran de fin les lit, et une variable réseau qui change à chaque tir enverrait autant de
+///   messages fiables à chaque client (ServerPublishStats).
 ///
 /// Catégorie C réseautée : la simulation n'en lit rien. Le pseudo et les statistiques ne sont
 /// qu'affichés (HUD, écran de fin) ; « prêt », lui, décide du départ du décompte et ferme le choix
@@ -90,6 +110,9 @@ public class PlayerMatchState : NetworkBehaviour
     private readonly NetworkVariable<MatchStats> stats = new NetworkVariable<MatchStats>(
         default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+    // Serveur : le compte en cours, que `stats` rattrape à la fin du match (ServerPublishStats).
+    private MatchStats countedStats;
+
     // Le rôle (2026-10-13) : duelliste, ou spectateur de la tribune qui attend son tour (GDD § 4). Décidé
     // par le serveur seul (RoundManager, DuelRoster). Duelliste par défaut : hors d'une partie (tests,
     // scène sans boucle de manches), tout le monde se bat, comme avant la tribune.
@@ -131,7 +154,7 @@ public class PlayerMatchState : NetworkBehaviour
     private static readonly List<PlayerMatchState> spawned = new List<PlayerMatchState>();
 
     /// <summary>Les fiches des joueurs présents.</summary>
-    public static IReadOnlyList<PlayerMatchState> Spawned => spawned;
+    public static SpawnedView<PlayerMatchState> Spawned => new SpawnedView<PlayerMatchState>(spawned);
 
     // Le rechargement de domaine est désactivé à l'entrée en Play Mode : sans cette remise à zéro, une
     // fiche d'une session précédente pourrait encore « porter » son pseudo.
@@ -171,6 +194,7 @@ public class PlayerMatchState : NetworkBehaviour
     /// fermer le choix de l'arme chez lui sans attendre la réponse du serveur.</summary>
     public bool ReadyOrRequested => ready.Value || readyRequested;
 
+    /// <summary>Ses statistiques, publiées à la fin du match (ServerPublishStats) : celles d'avant pendant qu'il se joue.</summary>
     public MatchStats Stats => stats.Value;
 
     /// <summary>Le rôle publié par le serveur : duelliste ou spectateur.</summary>
@@ -377,29 +401,47 @@ public class PlayerMatchState : NetworkBehaviour
         ready.Value = true;
     }
 
-    public void ServerSetReady(bool value)
+    public void ServerClearReady()
     {
-        if (IsServer && ready.Value != value) ready.Value = value;
+        if (IsServer && ready.Value) ready.Value = false;
     }
 
     public void ServerResetStats()
     {
-        if (IsServer) stats.Value = default;
+        if (!IsServer) return;
+        countedStats = default;
+        stats.Value = default;
     }
 
     public void ServerRecordShot(bool hit, bool head, float damage)
     {
-        if (IsServer) stats.Value = stats.Value.WithShot(hit, head, damage);
+        if (IsServer) countedStats = countedStats.WithShot(hit, head, damage);
     }
 
     public void ServerRecordDamage(float damage)
     {
-        if (IsServer && damage > 0f) stats.Value = stats.Value.WithDamage(damage);
+        if (IsServer && damage > 0f) countedStats = countedStats.WithDamage(damage);
     }
 
     public void ServerRecordRoundWin(float duration)
     {
-        if (IsServer) stats.Value = stats.Value.WithRoundWin(duration);
+        if (IsServer) countedStats = countedStats.WithRoundWin(duration);
+    }
+
+    /// <summary>Serveur : ses statistiques partent à tous. Sans effet si rien n'a changé.</summary>
+    public void ServerPublishStats()
+    {
+        if (IsServer) stats.Value = countedStats;
+    }
+
+    /// <summary>Serveur : un match vient de finir (RoundManager.SetPhase) : les statistiques de chacun partent, l'écran de fin
+    /// les lira. Tous les joueurs : au Tag Team, ceux qui attendent sur la tribune ont aussi joué.</summary>
+    public static void ServerPublishAllStats()
+    {
+        foreach (PlayerMatchState state in spawned)
+        {
+            if (state != null && state.IsSpawned) state.ServerPublishStats();
+        }
     }
 
     /// <summary>La fiche du joueur `clientId`, ou null.</summary>

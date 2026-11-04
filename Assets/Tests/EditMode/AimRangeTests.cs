@@ -244,6 +244,59 @@ public class AimRangeTests
         }
     }
 
+    /// <summary>Un tir ne recopie que la place de ses impacts, et ne refait qu'elle à chaque niveau de mip : de loin, la cible
+    /// doit montrer ce qu'aurait donné Apply(true) sur toute la texture, y compris l'impact d'avant, qui vient de perdre son
+    /// cœur blanc. Sans ses mips, un impact disparaît à 50 m sans aucune erreur.</summary>
+    [Test]
+    public void UnImpact_SeVoitDeLoin_CommeSiTouteLaCibleAvaitEteRefaite()
+    {
+        var go = new GameObject("Salle de précision (test)");
+        int size = AimRange.TextureSize;
+        var reference = new Texture2D(size, size, TextureFormat.RGBA32, true, false);
+        try
+        {
+            var aim = go.AddComponent<AimRange>();
+            Texture2D texture = aim.Texture;
+            Color32[] fresh = texture.GetPixels32(1);
+
+            aim.RegisterImpact(new Vector2(0.9f, -0.41f));
+            // Le tir suivant arrive à une autre image (en mode Édition, l'image ne change pas : on la fait changer).
+            typeof(AimRange).GetField("volleyFrame", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(aim, -5);
+            aim.RegisterImpact(new Vector2(-1.2f, 0.7f));
+
+            reference.SetPixels32(texture.GetPixels32());
+            reference.Apply(true);
+            int last = texture.mipmapCount - 1;
+            Assert.AreEqual(reference.mipmapCount - 1, last, "Garde : la même chaîne de mips.");
+            Assert.Greater(last, 5, "Garde : la cible a ses mips.");
+            // Le dernier niveau, 1 × 1, vient d'un carré de 3 × 3 : aucune distance du pupitre ne le montre.
+            for (int mip = 1; mip < last; mip++)
+            {
+                Color32[] shown = texture.GetPixels32(mip), expected = reference.GetPixels32(mip);
+                Assert.AreEqual(expected.Length, shown.Length, $"Niveau {mip} : la même taille.");
+                int worst = 0;
+                for (int i = 0; i < shown.Length; i++)
+                {
+                    worst = Mathf.Max(worst, Mathf.Abs(shown[i].r - expected[i].r));
+                    worst = Mathf.Max(worst, Mathf.Abs(shown[i].g - expected[i].g));
+                    worst = Mathf.Max(worst, Mathf.Abs(shown[i].b - expected[i].b));
+                }
+                Assert.LessOrEqual(worst, 2 * mip + 2, $"Niveau {mip} : ce qu'aurait donné Apply(true), à ses arrondis près.");
+            }
+
+            Color32[] marked = texture.GetPixels32(1);
+            int changed = 0;
+            for (int i = 0; i < fresh.Length; i++)
+                if (!fresh[i].Equals(marked[i])) changed++;
+            Assert.That(changed, Is.InRange(40, 240), "Le niveau 1 montre les deux impacts, et rien d'autre.");
+        }
+        finally
+        {
+            Object.DestroyImmediate(go);
+            Object.DestroyImmediate(reference);
+        }
+    }
+
     /// <summary>Après un rechargement du code, une salle restée ouverte peut garder une texture et des pixels d'une autre
     /// taille (Unity y recopie les champs privés d'un type sérialisable ; vu le 2026-10-28, quand la cible est passée de 512
     /// à 768 pixels : SetPixels32 levait une exception) : la cible se refait à la bonne taille.</summary>

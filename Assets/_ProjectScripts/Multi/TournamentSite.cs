@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
@@ -9,6 +10,13 @@ using UnityEngine;
 ///
 /// Lu par le serveur pour placer les joueurs (PlayerLocomotion.ServerMoveToSpawnPoint : les points d'apparition de l'arène,
 /// décalés vers sa copie ; ceux de la salle d'attente), et par chaque machine pour les écrans (TournamentFeeds).
+///
+/// Il pèse deux fois l'arène : chaque caméra trierait ses rendus et ses lumières à chaque image, dans toutes les parties.
+/// Chaque machine l'éteint donc au lancement et ne l'allume que pour le Tournoi (SetLive), d'après les réglages publiés, les
+/// mêmes partout : le Move() d'un client y voit les colliders du serveur. La racine reste allumée : on la cherche
+/// (Instance), et TournamentFeeds vit dessus. Les objets réseau de scène aussi, avec leurs parents : le serveur ne fait
+/// apparaître que ceux qui sont actifs. 🚨 Seulement à l'exécution : éteint dans la scène, le site ne se cuirait plus, et
+/// TournamentSiteTests ne verrait plus ses colliders.
 /// </summary>
 [DisallowMultipleComponent]
 public class TournamentSite : MonoBehaviour
@@ -27,6 +35,10 @@ public class TournamentSite : MonoBehaviour
 
     private static TournamentSite cached;
 
+    // Ce que SetLive allume et éteint, retenu à son premier appel.
+    [System.NonSerialized] private List<GameObject> switchable;
+    [System.NonSerialized] private bool live = true;
+
     /// <summary>Le site de la scène, ou null (le stand, le menu, une arène sans tournoi).</summary>
     public static TournamentSite Instance
     {
@@ -34,6 +46,76 @@ public class TournamentSite : MonoBehaviour
         {
             if (cached == null) cached = FindAnyObjectByType<TournamentSite>();
             return cached;
+        }
+    }
+
+    private void Awake()
+    {
+        // Le rechargement de scène est désactivé à l'entrée en Play Mode : ces champs survivent d'une session à l'autre.
+        switchable = null;
+        live = true;
+        SetLive(false);
+    }
+
+    private void Update()
+    {
+        RoundManager rm = RoundManager.Instance;
+        bool tournament = rm != null && rm.Mode == GameModeId.Tournament;
+        bool wanted = WantedLive(tournament, live, live && !tournament && AnyRobotOutsideFirstArena());
+        if (wanted != live) SetLive(wanted);
+    }
+
+    /// <summary>
+    /// Le site doit-il être allumé ? Pour le Tournoi ; et, s'il l'est, tant qu'un robot n'a pas regagné l'arène de la scène :
+    /// le tournoi fini, les joueurs attendent le match suivant dans la salle, et l'hôte peut changer de mode au salon sans que
+    /// personne n'y soit replacé (`robotOutside`) : l'éteindre leur retirerait le sol. Fonction pure, testée.
+    /// </summary>
+    public static bool WantedLive(bool tournament, bool live, bool robotOutside) => tournament || (live && robotOutside);
+
+    private bool AnyRobotOutsideFirstArena()
+    {
+        var players = PlayerLocomotion.SpawnedPlayers;
+        for (int i = 0; i < players.Count; i++)
+        {
+            PlayerLocomotion player = players[i];
+            if (player != null && ArenaAt(player.transform.position) != 0) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Allume ou éteint le site. Le serveur l'allume aussi au départ du tournoi, sans attendre son Update : les
+    /// joueurs y partent à cette image même.</summary>
+    public void SetLive(bool value)
+    {
+        if (value == live) return;
+        live = value;
+        switchable ??= Switchable(transform);
+        foreach (GameObject part in switchable)
+        {
+            if (part != null) part.SetActive(value);
+        }
+        // Physics.autoSyncTransforms vaut false : les colliders rallumés doivent répondre tout de suite.
+        Physics.SyncTransforms();
+    }
+
+    /// <summary>Ce qui s'éteint du site posé sous `root` : tout, sauf les objets réseau de scène et leurs parents. Les plus
+    /// hauts objets qui n'en contiennent pas ; ce que la scène a déjà éteint reste à part. Fonction sans état, testée sur
+    /// la scène.</summary>
+    public static List<GameObject> Switchable(Transform root)
+    {
+        var result = new List<GameObject>();
+        CollectSwitchable(root, result);
+        return result;
+    }
+
+    private static void CollectSwitchable(Transform parent, List<GameObject> result)
+    {
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            Transform child = parent.GetChild(i);
+            if (!child.gameObject.activeSelf || child.TryGetComponent(out NetworkObject _)) continue;
+            if (child.GetComponentInChildren<NetworkObject>(true) != null) CollectSwitchable(child, result);
+            else result.Add(child.gameObject);
         }
     }
 
